@@ -53,6 +53,7 @@ The official confidential computing zoo documentation can be found at https://cc
 Bolow are quick links to some of the most important papes:
 - [TensorFlow Serving Cluster PPML based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/tf_serving_cluster.html)
 
+---
 
 # Confidential Computing Zoo Solution Table
 
