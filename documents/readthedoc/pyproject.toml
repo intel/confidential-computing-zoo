@@ -3,6 +3,6 @@ requires = ["flit_core >=3.2,<4"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "CloudSecurity"
-authors = [{name = "RodgerZhu", email = "rodgerzhu@cloudsecurity"}]
+name = "Confidential Computing Zoo"
+authors = [{name = "RodgerZhu", email = "yunge.zhu@intel.com"}]
 dynamic = ["version", "description"]
