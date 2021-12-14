@@ -10,7 +10,7 @@ sphinxemoji
 setuptools==41.0.1
 docutils==0.14
 mock==1.0.1
-pillow==5.4.1
+pillow==8.3.2
 sphinx==4.0.2
 alabaster>=0.7,<0.8,!=0.7.5
 commonmark==0.8.1
