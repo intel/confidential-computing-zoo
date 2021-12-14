@@ -55,7 +55,7 @@ Bolow are quick links to some of the most important papes:
 
 |  Solutions    |  TEE    | Application    |  LibOS    |   Remote Attestation   |   Encryption/Decryption    |TLS    |
 | ----          | ----            |----            | ----      |----             |----      |----      |
-|   [TensorFlow Serving Cluster PPML based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/tf_serving_cluster.html)   |  SGX |TensorFlow Serving   |  Gramine    |  [Secret Provinsion Service](https://cczoo.readthedocs.io)| Yes |  gRPC  |
+|   [TensorFlow Serving Cluster PPML based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html)   |  SGX |TensorFlow Serving   |  Gramine    |  [Secret Provinsion Service](https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html#start-secret-provision-service)| Yes |  gRPC  |
 
 
 ---
