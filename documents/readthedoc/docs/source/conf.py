@@ -19,11 +19,11 @@ html_theme = "sphinx_rtd_theme"
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 #html_theme = "sphinx_book_theme"
 html_theme_options = {
-    "repository_url": "https://github.com/RodgerZhu/Cloud_Security",
+    "repository_url": "https://github.com/intel/confidential-computing-zoo",
     "use_repository_button": True,
     "use_issues_button": True,
     "use_edit_page_button": True,
-    "path_to_docs": "doc/source",
+    "path_to_docs": "docs/source",
     "home_page_in_toc": True,
 }
 
@@ -35,9 +35,9 @@ source_suffix = {'.rst': 'restructuredtext',
 
 master_doc = 'index'
 
-project = 'CloudSecurity'
-copyright = '2020, CloudSecurity Authors'
-author = 'CloudSecurity Authors'
+project = 'Confidential Computing Zoo'
+copyright = '2021, CCZoo Contributors'
+author = 'CCZoo Contributors'
 
 # The short X.Y version
 #version = ''
@@ -128,7 +128,7 @@ html_static_path = ['_static']
 # -- Options for HTMLHelp output ---------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'CloudSecurity Documentation'
+htmlhelp_basename = 'Confidential Computing Zoo Documentation'
 
 
 # -- Options for LaTeX output ------------------------------------------------
@@ -155,8 +155,8 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'CloudSecurity.tex', 'CloudSecurity Documentation',
-     'CloudSecurity', 'manual'),
+    (master_doc, 'cczoo.tex', 'CCZoo Documentation',
+     'CCZoo', 'manual'),
 ]
 
 
@@ -165,7 +165,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'CloudSecurity', 'CloudSecurity Documentation',
+    (master_doc, 'Confidential Computing Zoo', 'CCZoo Documentation',
      [author], 1)
 ]
 
@@ -176,8 +176,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'CloudSecurity', 'CloudSecurity Documentation',
-     author, 'CloudSecurity', 'One line description of project.',
+    (master_doc, 'Confidential Computing Zoo', 'CCZoo Documentation',
+     author, 'CCZoo Contributors', 'One line description of project.',
      'Miscellaneous'),
 ]
 
