@@ -1,74 +1,54 @@
-# Confidential Computing Zoo
+<div align="center">
 
-Confidential Computing Zoo (CCZoo) is an open source to provide confidential computiong
-solutions based on Intel technologies below:
-- Intel® Trusted Execution Environment (TEE) technology
-  - Intel® Software Guard Extensions (Intel® SGX).
-    Intel® SGX 1/2 offers hardware-based memory encryption that isolates specific
-    application code and data in memory. Intel® SGX allows user-level code to
-    allocate private regions of memory, called enclaves, which are designed to
-    be protected from processes running at higher privilege levels. Only Intel®
-    SGX offers such a granular level of control and protection.
-    For more information, please refer to [Intel® SGX](https://www.intel.com/content/www/us/en/architecture-and-technology/software-guard-extensions.html).
-  - Intel® Trust Domain Extensions (Intel® TDX).
-    Intel® TDX is introducing new, architectural elements to help deploy hardware-isolated,
-    virtual machines (VMs) called trust domains (TDs). Intel TDX is designed to isolate
-    VMs from the virtual-machine manager (VMM)/hypervisor and any other non-TD software
-    on the platform to protect TDs from a broad range of software. For more infermation,
-    please refer to [Intel® TDX](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html).
-- Intel Homomorphic Encryption Acceleration Library (HEXL) (In Planning)
+<p align="center"> <img src="documents/readthedoc/docs/source/Images/cczoo.jpg" height="140px"><br></p>
+---
+
+**Confidential Computing Zoo ( CCZoo )** is an open source to provide **Feasible**,**Code-Easy-Adoption**, **Solution-Driven**, **Scalable**,reference End-to-End solutions, which are based on Intel® Software Guard Extensions (Intel® SGX), Trust Domain Extensions (Intel® TDX) technology and Intel® Homomorphic Encryption Acceleration Library.
 
 
-CCZoo is not limited to provide various reference implementation based on Intel® TEE technology,
-but also provide the solution driven, easy adoption, scalable best pactices to help users in:
-- Having an overall understaning of an End-to-End solution based on Intel® TEE.
-- Quick adoption or reference under similar senarios in CCZoo with security design based on Intel® TEE.
+# Confidential Computing Zoo Solution Table
 
-CCZoo provides confidential computing best practices with below features:
-- Whole Flow Data Security
-  - Runtime Security
-  - In-Transit Security
-  - At-Rest Security
-- Application Integrity
-  - Remote Attestation
-- Full Coverage Data Security
-  - Input query, output score, model
-- Elasticity(Optional)
-  - Kubernets
+| Solutions                                                    | Cloud  Deployment                                            | TEE     | HE       | Application        | LibOS   | Remote Attestation                                           | Encryption /Decryption | CPU HW Acceleration | TLS  | Status        |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------- | -------- | ------------------ | ------- | ------------------------------------------------------------ | ---------------------- | ------------------- | ---- | ------------- |
+| [TensorFlow Serving Cluster PPML based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html) | [Aliyun ECS](https://help.aliyun.com/document_detail/342755.html) | SGX     | -        | TensorFlow Serving | Gramine | [Secret Provinsion Service](https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html#start-secret-provision-service) | Yes                    | -                   | gRPC | **Published** |
+| Vertical Federal Learning based on SGX                       | -                                                            | SGX     | -        | TensorFlow         | Gramine | 2-way RA-TLS                                                 | Yes                    | -                   | gRPC | In progress   |
+| Horizontal Federal Learning                                  | -                                                            | SGX     | -        | TensorFlow         | Gramine | 2-way RA-TLS                                                 | Yes                    | -                   | gRPC | In progress   |
+| FATE Paillier logical regression+optimization                | -                                                            | -       | Paillier | -                  | -       | -                                                            | Yes                    | -                   | -    | In progress   |
+| Leveled HE logical regression inference                      | -                                                            | -       | HE       | -                  | -       | -                                                            | Yes                    | -                   | -    | In progress   |
+| MPC Optimization                                             | -                                                            | -       | HE       | -                  | -       | -                                                            | -                      | -                   | -    | Not Start     |
+| gRPC supporting Intel RA-TLS                                 | -                                                            | SGX/TDX | -        | -                  | -       | Yes                                                          | Yes                    | -                   | gRPC | In progress   |
+| Attestation Server & KMS                                     | -                                                            | SGX/TDX | -        | -                  | -       | -                                                            | -                      | -                   | -    | Not Start     |
+| Secure BigDL Recommend system                                | -                                                            | SGX     | -        | -                  | -       | -                                                            | -                      | -                   | -    | Not Start     |
 
-To let users reproduce the solutions easily with mninal porting effoert, CCZoo adopts LibOS
-to protect applications from a malicious system stack. The main LibOS we adopted is [Gramine](https://github.com/gramineproject/gramine)
-and [Occlum](https://github.com/occlum/occlum). CCZoo also deloy the each solutions
-with containerization dockerfile. Users can follow each documents of the solutions to reproduce
-it.
+---
+There are some high barriers for users to adopt Intel TEE directly. For example, the implementation of Intel SGX and TDX run through a deep stack, from hardware, firmware to software, to guarantee the final runtime security. To better understand the design of SGX and TDX, developers may need spend much time to read related papers. Also, it requires developers to follow Intel SGX SDK(Software Development Kit) to integrate their applications with Intel SGX, which will take lots efforts.
 
-CCZoo is a growing project and we have a growing contributor and maintainer community.
-Our goal is to continue this growth in both contributions and community adoption.
+LibOS, which provides the capability to bring unmodified applications into Confidential Computing with Intel SGX and make it easy for developers to use SGX,  sometimes only provide simple samples or tutorials for developers to develop their applications, without providing more feasible, scalable functions or solutions.
+
+Some CSPs now integrate Intel SGX technology in their cloud service, however, they provide limited resource or E2E reference solutions for their customers to demonstrate the usage of SGX in a practical way.
+
+To well address above problems and provide more flexible solutions,  CCZoo contribute a **Confidential Computing Zoo Solution Table** as above for users, developers, Intel to
+
+- Have an overall understanding of an End-to-End solution based on Intel® TEE and HE.
+- Quick adoption or reference under similar scenarios in CCZoo based on Intel® TEE or HE.
+- Propagate Intel security capabilities and deployments.
+- Endorse by more customers, run in open model with broad partners.
+
 
 ---
 
 # Confidential Computing Zoo Documentation
 
 The official confidential computing zoo documentation can be found at https://cczoo.readthedocs.io.
-Bolow are quick links to some of the most important papes:
+Below are quick links to some of the most important papers:
+
 - [TensorFlow Serving Cluster PPML based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/tf_serving_cluster.html)
 
 ---
 
-# Confidential Computing Zoo Solution Table
 
-|  Solutions    |  TEE    | Application    |  LibOS    |   Remote Attestation   |   Encryption/Decryption    |TLS    |
-| ----          | ----            |----            | ----      |----             |----      |----      |
-|   [TensorFlow Serving Cluster PPML based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html)   |  SGX |TensorFlow Serving   |  Gramine    |  [Secret Provinsion Service](https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html#start-secret-provision-service)| Yes |  gRPC  |
-
-
----
 
 # Community Involvement
 
 - Please submit issues in this project if there is any question or request.
 - Welcome PRs for contributions.
-
----
-
-
