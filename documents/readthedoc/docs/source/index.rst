@@ -1,61 +1,41 @@
 Welcome to Confidential Computing Zoo's documentation!
 ======================================================
 
-Confidential Computing Zoo (CCZoo) is an open source to provide confidential computiong
-solutions based on Intel technologies below.
+**Confidential Computing Zoo ( CCZoo )** is an open source to provide **Feasible**, **Code-Easy-Adoption**, **Solution-Driven**, **Scalable**, reference End-to-End solutions, which are based on Intel® Software Guard Extensions (Intel® SGX), Trust Domain Extensions (Intel® TDX) technology and Intel® Homomorphic Encryption Acceleration Library. 
 
-- Intel® Trusted Execution Environment (TEE) technology
+ CCZoo contribute a **Confidential Computing Zoo Solution Table** for users, developers, Intel to 
 
-  - Intel® Software Guard Extensions (Intel® SGX).
-    Intel® SGX 1/2 offers hardware-based memory encryption that isolates specific
-    application code and data in memory. Intel® SGX allows user-level code to
-    allocate private regions of memory, called enclaves, which are designed to
-    be protected from processes running at higher privilege levels. Only Intel®
-    SGX offers such a granular level of control and protection.
-    For more information, please refer to `Intel® SGX <https://www.intel.com/content/www/us/en/architecture-and-technology/software-guard-extensions.html>`__.
-  - Intel® Trust Domain Extensions (Intel® TDX).
-    Intel® TDX is introducing new, architectural elements to help deploy hardware-isolated,
-    virtual machines (VMs) called trust domains (TDs). Intel TDX is designed to isolate
-    VMs from the virtual-machine manager (VMM)/hypervisor and any other non-TD software
-    on the platform to protect TDs from a broad range of software. For more infermation,
-    please refer to `Intel® TDX <https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html>`__.
-- Intel Homomorphic Encryption Acceleration Library (HEXL) (In Planning)
+- Have an overall understanding of an End-to-End solution based on Intel® TEE and HE.
+- Quick adoption or reference under similar scenarios in CCZoo based on Intel® TEE or HE.
+- Propagate Intel security capabilities and deployments.
+- Endorse by more customers, run in open model with broad partners.
 
 
-CCZoo is not limited to provide various reference implementation based on Intel® TEE technology,
-but also provide the solution driven, easy adoption, scalable best pactices to help users in:
++-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
+| Solutions                                                                                                                                 | Cloud Deployment                                                     | TEE     | HE       | Application        | LibOS   | Remote Attestation                                                                                                                                    | Encryption /Decryption | CPU HW Acceleration | TLS  | Status      |
++===========================================================================================================================================+======================================================================+=========+==========+====================+=========+=======================================================================================================================================================+========================+=====================+======+=============+
+| `TensorFlow Serving Cluster PPML based on SGX <https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html>`__ | `Aliyun ECS <https://help.aliyun.com/document_detail/342755.html>`__ | SGX     | /        | TensorFlow Serving | Gramine | `Secret Provinsion Service <https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html#start-secret-provision-service>`__ | Yes                    | /                   | gRPC | Published   |
++-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
+| Vertical Federal Learning based on SGX                                                                                                    | /                                                                    | SGX     | /        | TensorFlow         | Gramine | 2-way RA-TLS                                                                                                                                          | Yes                    | /                   | gRPC | In progress |
++-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
+| Horizontal Federal Learning                                                                                                               | /                                                                    | SGX     | /        | TensorFlow         | Gramine | 2-way RA-TLS                                                                                                                                          | Yes                    | /                   | gRPC | In progress |
++-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
+| Leveled HE logical regression inference                                                                                                   | /                                                                    | /       | HE       | /                  | /       | /                                                                                                                                                     | Yes                    | /                   | /    | In progress |
++-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
+| FATE Paillier logical regression+optimization                                                                                             | /                                                                    | /       | Paillier | /                  | /       | /                                                                                                                                                     | Yes                    | /                   | /    | In progress |
++-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
+| MPC Optimization                                                                                                                          | /                                                                    | /       | HE       | /                  | /       | /                                                                                                                                                     | /                      | /                   | /    | Not Start   |
++-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
+| gRPC supporting Intel RA-TLS                                                                                                              | /                                                                    | SGX/TDX | /        | /                  | /       | Yes                                                                                                                                                   | Yes                    | /                   | gRPC | In progress |
++-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
+| Attestation Server & KMS                                                                                                                  | /                                                                    | SGX/TDX | /        | /                  | /       | /                                                                                                                                                     | /                      | /                   | /    | Not Start   |
++-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
+| Secure BigDL Recommend system                                                                                                             | /                                                                    | SGX     | /        | /                  | /       | /                                                                                                                                                     | /                      | /                   | /    | Not Start   |
++-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
 
-- Having an overall understaning of an End-to-End solution based on Intel® TEE.
-- Quick adoption or reference under similar senarios in CCZoo with security design based on Intel® TEE.
 
-CCZoo provides confidential computing best practices with below features:
-
-- Whole Flow Data Security
-
-  - Runtime Security
-  - In-Transit Security
-  - At-Rest Security
-
-- Application Integrity
-
-  - Remote Attestation
-
-- Full Coverage Data Security
-
-  - Input query, output score, model
-
-- Elasticity(Optional)
-
-  - Kubernets
-
-To let users reproduce the solutions easily with mninal porting effoert, CCZoo adopts LibOS
-to protect applications from a malicious system stack. The main LibOS we adopted is `Gramine <https://github.com/gramineproject/gramine>`__
-and `Occlum <https://github.com/occlum/occlum>`__. CCZoo also deloy the each solutions
-with containerization dockerfile. Users can follow each documents of the solutions to reproduce
-it.
 
 CCZoo is a growing project and we have a growing contributor and maintainer community.
-Our goal is to continue this growth in both contributions and community adoption.
 
 
 
