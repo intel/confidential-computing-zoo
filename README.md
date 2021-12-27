@@ -1,7 +1,8 @@
 <div align="center">
 
 <p align="center"> <img src="documents/readthedoc/docs/source/Images/cczoo.jpg" height="140px"><br></p>
----
+
+</div>
 
 **Confidential Computing Zoo ( CCZoo )** is an open source to provide **Feasible**,**Code-Easy-Adoption**, **Solution-Driven**, **Scalable**,reference End-to-End solutions, which are based on Intel® Software Guard Extensions (Intel® SGX), Trust Domain Extensions (Intel® TDX) technology and Intel® Homomorphic Encryption Acceleration Library.
 
