@@ -50,3 +50,4 @@ Table of Contents
    :caption: Solution Deployment
 
    Solutions/tensorflow-serving-cluster/index.rst
+   Solutions/horizontal-federated-learning/hfl.md
