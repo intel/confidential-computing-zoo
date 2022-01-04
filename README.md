@@ -21,7 +21,7 @@ document section that explains the corresponding details and then guides you to 
 | ------------------------------------------------------------ | ------------------------------------------------------------ | ------- | -------- | ------------------ | ------- | ------------------------------------------------------------ | ---------------------- | ------------------- | ---- | ------------- |
 | [TensorFlow Serving Cluster PPML based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html) | [Aliyun ECS](https://help.aliyun.com/document_detail/342755.html) | SGX     | -        | TensorFlow Serving | Gramine | [Secret Provinsion Service](https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html#start-secret-provision-service) | Yes                    | -                   | gRPC | **Published** |
 | Vertical Federal Learning based on SGX                       | -                                                            | SGX     | -        | TensorFlow         | Gramine | 2-way RA-TLS                                                 | Yes                    | -                   | gRPC | In progress   |
-| Horizontal Federal Learning                                  | -                                                            | SGX     | -        | TensorFlow         | Gramine | 2-way RA-TLS                                                 | Yes                    | -                   | gRPC | In progress   |
+| [Horizontal Federal Learning](https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html)                                  | -                                                            | SGX     | -        | TensorFlow         | Gramine | 2-way RA-TLS                                                 | Yes                    | -                   | gRPC | In progress   |
 | FATE Paillier logical regression+optimization                | -                                                            | -       | Paillier | -                  | -       | -                                                            | Yes                    | -                   | -    | In progress   |
 | Leveled HE logical regression inference                      | -                                                            | -       | HE       | -                  | -       | -                                                            | Yes                    | -                   | -    | In progress   |
 | MPC Optimization                                             | -                                                            | -       | HE       | -                  | -       | -                                                            | -                      | -                   | -    | Not Start     |
@@ -51,8 +51,8 @@ To well address above problems and provide more flexible solutions,  CCZoo contr
 The official confidential computing zoo documentation can be found at https://cczoo.readthedocs.io.
 Below are quick links to some of the most important papers:
 
-- [TensorFlow Serving Cluster PPML based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/tf_serving_cluster.html)
-
+- [TensorFlow Serving Cluster PPML based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html)
+- [Horizontal Federal Learning based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html) 
 ---
 
 
