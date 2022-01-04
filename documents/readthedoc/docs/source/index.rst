@@ -1,14 +1,16 @@
 Welcome to Confidential Computing Zoo's documentation!
 ======================================================
 
-**Confidential Computing Zoo ( CCZoo )** is an open source to provide **Feasible**, **Code-Easy-Adoption**, **Solution-Driven**, **Scalable**, reference End-to-End solutions, which are based on Intel® Software Guard Extensions (Intel® SGX), Trust Domain Extensions (Intel® TDX) technology and Intel® Homomorphic Encryption Acceleration Library. 
+Confidential Computing Zoo (CCZoo) is a collection of code-ready reference solutions, which can be used as a copy-paste developer guide, demonstrating how to apply modern
+security technologies to real-life cloud business scenarios, in order to facilitate the developers to build their own end-to-end Confidential Computing solutions more easily.
+Some of the solutions are also validated on the public cloud services, such as Alibaba Cloud, AWS, Azure, etc.
 
- CCZoo contribute a **Confidential Computing Zoo Solution Table** for users, developers, Intel to 
+The concerned modern security technologies are (but not limited to): TEE (Trusted Execution Environment, such as Intel® SGX and TDX), HE (Homomorphic Encryption) and its
+hardware accelerations, Remote Attestation, LibOS, cryptographic and its hardware accelerations. The concerned business scenarios are (but not limited to): cloud native AI
+inference, vertical and horizontal federated learning, big data analytics, key management, RPC (Remote Process Call, such as gRPC), etc.
 
-- Have an overall understanding of an End-to-End solution based on Intel® TEE and HE.
-- Quick adoption or reference under similar scenarios in CCZoo based on Intel® TEE or HE.
-- Propagate Intel security capabilities and deployments.
-- Endorse by more customers, run in open model with broad partners.
+CCZoo maintains a live table, as below, to indicate the correlations between business usages (rows) and security technologies (columns). Each hyperlink will direct you to the
+document section that explains the corresponding details and then guides you to the source codes. Enjoy!
 
 
 +-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
@@ -48,3 +50,4 @@ Table of Contents
    :caption: Solution Deployment
 
    Solutions/tensorflow-serving-cluster/index.rst
+   Solutions/horizontal-federated-learning/hfl.md
