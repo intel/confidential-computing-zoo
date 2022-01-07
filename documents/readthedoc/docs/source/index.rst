@@ -13,27 +13,388 @@ CCZoo maintains a live table, as below, to indicate the correlations between bus
 document section that explains the corresponding details and then guides you to the source codes. Enjoy!
 
 
-+-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
-| Solutions                                                                                                                                 | Cloud Deployment                                                     | TEE     | HE       | Application        | LibOS   | Remote Attestation                                                                                                                                    | Encryption /Decryption | CPU HW Acceleration | TLS  | Status      |
-+===========================================================================================================================================+======================================================================+=========+==========+====================+=========+=======================================================================================================================================================+========================+=====================+======+=============+
-| `TensorFlow Serving Cluster PPML based on SGX <https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html>`__ | `Aliyun ECS <https://help.aliyun.com/document_detail/342755.html>`__ | SGX     | /        | TensorFlow Serving | Gramine | `Secret Provinsion Service <https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html#start-secret-provision-service>`__ | Yes                    | /                   | gRPC | Published   |
-+-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
-| Vertical Federal Learning based on SGX                                                                                                    | /                                                                    | SGX     | /        | TensorFlow         | Gramine | 2-way RA-TLS                                                                                                                                          | Yes                    | /                   | gRPC | In progress |
-+-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
-| `Horizontal Federal Learning <https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html>`__                 | /                                                                    | SGX     | /        | TensorFlow         | Gramine | 2-way RA-TLS                                                                                                                                          | Yes                    | /                   | gRPC | In progress | 
-+-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
-| Leveled HE logical regression inference                                                                                                   | /                                                                    | /       | HE       | /                  | /       | /                                                                                                                                                     | Yes                    | /                   | /    | In progress |
-+-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
-| FATE Paillier logical regression+optimization                                                                                             | /                                                                    | /       | Paillier | /                  | /       | /                                                                                                                                                     | Yes                    | /                   | /    | In progress |
-+-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
-| MPC Optimization                                                                                                                          | /                                                                    | /       | HE       | /                  | /       | /                                                                                                                                                     | /                      | /                   | /    | Not Start   |
-+-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
-| gRPC supporting Intel RA-TLS                                                                                                              | /                                                                    | SGX/TDX | /        | /                  | /       | Yes                                                                                                                                                   | Yes                    | /                   | gRPC | In progress |
-+-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
-| Attestation Server & KMS                                                                                                                  | /                                                                    | SGX/TDX | /        | /                  | /       | /                                                                                                                                                     | /                      | /                   | /    | Not Start   |
-+-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
-| Secure BigDL Recommend system                                                                                                             | /                                                                    | SGX     | /        | /                  | /       | /                                                                                                                                                     | /                      | /                   | /    | Not Start   |
-+-------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------+---------+----------+--------------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------+---------------------+------+-------------+
+.. raw:: html
+
+   <embed>
+      <table style="width:100%;" cellpadding="2" cellspacing="0" border="1" bordercolor="#000000">
+      	<tbody>
+      		<tr>
+      			<td rowspan="2" style="text-align:center;">
+      				<strong><span style="font-family:Arial;">Sol<span style="background-color:#E53333;"></span>utions<span style="background-color:#E53333;"></span></span></strong><br />
+      			</td>
+      			<td rowspan="2" style="text-align:center;">
+      				<span style="color:#333333;font-family:Arial;"><strong>Key   Applications</strong></span><br />
+      			</td>
+      			<td rowspan="2" style="text-align:center;">
+      				<span style="color:#333333;font-family:Arial;"><strong>Status</strong></span><br />
+      			</td>
+      			<td rowspan="2" style="text-align:center;">
+      				<span style="color:#333333;font-family:Arial;"><strong>Validated  in Public Cloud</strong></span><br />
+      			</td>
+      			<td colspan="7" style="text-align:center;">
+      				<strong><span style="font-family:Arial;">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&nbsp;&nbsp; &nbsp; S</span></strong><span style="color:#24292F;font-family:-apple-system, BlinkMacSystemFont, &quot;font-size:16px;background-color:#FFFFFF;"><strong><span style="font-family:Arial;">ecurity Technologies</span></strong><strong></strong></span><br />
+      			</td>
+      		</tr>
+      		<tr>
+      			<td style="text-align:center;">
+      				<span style="color:#333333;font-family:Arial;"><strong>TEE</strong></span><br />
+      			</td>
+      			<td style="text-align:center;">
+      				<strong><span style="font-family:Arial;">HE</span></strong> 
+      			</td>
+      			<td style="text-align:center;">
+      				<strong><span style="font-family:Arial;">LibOS</span></strong> 
+      			</td>
+      			<td style="text-align:center;">
+      				<p>
+      					<span style="font-family:Arial;"><strong>Remote</strong></span> 
+      				</p>
+      				<p>
+      					<span style="font-family:Arial;"><strong>Attestation</strong></span> 
+      				</p>
+      			</td>
+      			<td style="text-align:center;">
+      				<p>
+      					<span style="font-family:Arial;"><strong>Encryption</strong></span> 
+      				</p>
+      				<p>
+      					<span style="font-family:Arial;"><strong>/Decryption</strong></span> 
+      				</p>
+      			</td>
+      			<td style="text-align:center;">
+      				<strong></strong> 
+      				<p>
+      					<span style="color:#333333;font-family:Arial;"><strong>CPU HW&nbsp;</strong></span> 
+      				</p>
+      				<p>
+      					<span style="color:#333333;font-family:Arial;"><strong>Acceleration</strong></span> 
+      				</p>
+      			</td>
+      			<td style="text-align:center;">
+      				<strong><span style="font-family:Arial;">TLS</span></strong> 
+      			</td>
+      		</tr>
+      		<tr>
+      			<td>
+      				<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html" target="_blank"><span style="font-family:Arial;"><strong>TensorFlow Serving Cluster PPML based on SGX</strong></span></a></span><br />
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">TensorFlow Serving, K8s</span><br />
+      			</td>
+      			<td>
+      				<strong><span style="font-family:Arial;">Published</span></strong> 
+      			</td>
+      			<td>
+      				<span class="md-plain"><a href="https://help.aliyun.com/document_detail/342755.html" target="_blank"><span style="font-family:Arial;"><strong>Aliyun ECS</strong></span></a></span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">SGX</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Gramine</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Yes</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Yes</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">gRPC</span><br />
+      			</td>
+      		</tr>
+      		<tr>
+      			<td>
+      				<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html" target="_blank"><span style="font-family:Arial;"><strong>Horizontal Federal Learning</strong></span></a></span><br />
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">TensorFlow</span><br />
+      			</td>
+      			<td>
+      				<strong><span style="font-family:Arial;">Published</span></strong><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">SGX</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Gramine</span><br />
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">2-way RA-TLS</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Yes</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">gRPC</span><br />
+      			</td>
+      		</tr>
+      		<tr>
+      			<td>
+      				<span style="font-family:Arial;">Vertical Federal Learning based on SGX</span><br />
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">TensorFlow</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">In Progress</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">SGX</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Gramine</span><br />
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">2-way RA-TLS</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Yes</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">gRPC</span><br />
+      			</td>
+      		</tr>
+      		<tr>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">FATE Paillier logical regression+optimization</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">In progress</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">Paillier</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Yes</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      		</tr>
+      		<tr>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">Leveled HE logical regression inference</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">In progress</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">HE</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Yes</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      		</tr>
+      		<tr>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">MPC Optimization</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Not Start</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">HE</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      		</tr>
+      		<tr>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">gRPC supporting Intel RA-TLS</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">In progress</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">SGX/TDX</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">2-way RA-TLS</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">gRPC</span><br />
+      			</td>
+      		</tr>
+      		<tr>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">Attestation Server &amp; KMS</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">Not Start</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">SGX/TDX</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Yes</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      		</tr>
+      		<tr>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">Secure BigDL Recommend system</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="color:#333333;font-family:Arial;">Not Start</span><br />
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">SGX</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">Yes</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      			<td>
+      				<span style="font-family:Arial;">-</span> 
+      			</td>
+      		</tr>
+      	</tbody>
+      </table>
+      <br />
+      <br />
+      
+   </embed>
 
 
 
