@@ -19,9 +19,7 @@ little or even no modification.
 Developer can be freed from writing any extra enclave-aware code.
 The common design framework of LibOS is as below. 
 
-<div align="center">
-<p align="center"> <img src="libos.png" height="340px"><br></p>
-</div>
+![](libos.png)
 
 Currently, the open-source LibOSs supporting Intel SGX are Gramine, Occlum, SCONE
 and Fortanix, etc.
@@ -69,12 +67,7 @@ As a LibOS, it enables *legacy* applications to run on SGX with *little or even 
 of source code, thus protecting the confidentiality and integrity of user workloads
 transparently.
 
-<div align="center">
-
-<p align="center"> <img src="occlum.png" height="140px"><br></p>
-
-</div>
-
+![](occlum.png)
 
 Occlum has the following salient features:
 
