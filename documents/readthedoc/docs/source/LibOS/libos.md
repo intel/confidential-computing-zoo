@@ -1,17 +1,17 @@
 # Why LibOS for SGX?
-Intel SGX helps to protecte selected code and data from modificationin  via application
+Intel SGX helps to protect selected code and data from modifications via application
 isolation technology. Applications can benefit from confidentiality and integrity
 guarantees of Intel SGX, but developers need to be very skilled for effective
 partitioning and code modification for Intel SGX environment. Meanwhile, SGX SDK
 provides limited system call interface so that applications in an Enclave would
-fail to run becase of unexported interface.
+fail to run because of unexposed interface.
 
 To well support applications running in Intel SGX Enclave, many LibOS approaches
 are designed and deployed.
 
 LibOS can provides below benefits:
 - Providing a smart spot to partition untrusted/trusted system
-- Without expanding unstrusted interface
+- Without expanding untrusted interface
 - Best chance of porting the whole application into an Enclave
 
 Based on above facilities, applications can run directly into SGX Enclave with
@@ -23,7 +23,7 @@ The common design framework of LibOS is as below.
 <p align="center"> <img src="libos.png" height="340px"><br></p>
 </div>
 
-Currently, the open-source LibOSs spporting Intel SGX are Gramine, Occlum, SCONE
+Currently, the open-source LibOSs supporting Intel SGX are Gramine, Occlum, SCONE
 and Fortanix, etc.
 In CCZoo, the used LibOSs are Gramine and Occlum.
 
@@ -48,7 +48,7 @@ For additional security, Gramine performs cryptographic and semantic checks at
 untrusted host interface. Developers provide a manifest file to configure the
 application environment and isolation policies, Gramine automatically does the rest.
 
-### Gramine offical link
+### Gramine official link
 
 The official Gramine documentation can be found at https://gramine.readthedocs.io.
 Gramine opensource GitHub can be found at https://github.com/gramineproject/gramine.
@@ -98,7 +98,7 @@ Occlum has the following salient features:
   on Occlum inside SGX enclaves can be as simple as only typing several shell
   commands (see the next section).
 
-### Occlum offical link
+### Occlum official link
 The official Occlum can be found at https://occlum.io/.
 Occlum opensource GitHub can be found at https://github.com/gramineproject/gramine.
 
