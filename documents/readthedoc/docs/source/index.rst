@@ -55,3 +55,9 @@ Table of Contents
 
    Solutions/tensorflow-serving-cluster/index.rst
    Solutions/horizontal-federated-learning/hfl.md
+
+.. toctree::
+   :maxdepth: 1
+   :caption: LibOS Introduction
+
+   LibOS/libos.md
