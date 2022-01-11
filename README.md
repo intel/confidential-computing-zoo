@@ -147,6 +147,111 @@ document section that explains the corresponding details and then guides you to 
 		</tr>
 		<tr>
 			<td>
+				<span style="color:#333333;font-family:Arial;">gRPC supporting Intel RA-TLS</span><br />
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span style="color:#333333;font-family:Arial;">In progress</span><br />
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span style="color:#333333;font-family:Arial;">SGX/TDX</span><br />
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span style="color:#333333;font-family:Arial;">2-way RA-TLS</span><br />
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span style="font-family:Arial;">gRPC</span><br />
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<span style="color:#444444;font-family:Arial;">Secure logistic regression training base on TEE &amp;&nbsp;</span><span style="color:#444444;font-family:Arial;">HE</span><br />
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span style="font-family:Arial;">In Progress</span><br />
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				HE
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				gRPC
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<span style="color:#333333;font-family:Arial;">Leveled HE logical regression inference</span><br />
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span style="font-family:Arial;">In Progress</span><br />
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				HE
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+		</tr>
+		<tr>
+			<td>
 				<span style="font-family:Arial;">Vertical Federal Learning based on SGX</span><br />
 			</td>
 			<td>
@@ -182,147 +287,42 @@ document section that explains the corresponding details and then guides you to 
 		</tr>
 		<tr>
 			<td>
-				<span style="color:#333333;font-family:Arial;">FATE Paillier logical regression+optimization</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">In progress</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="color:#333333;font-family:Arial;">Paillier</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">Yes</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-		</tr>
-		<tr>
-			<td>
-				<span style="color:#333333;font-family:Arial;">Leveled HE logical regression inference</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">In progress</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">HE</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">Yes</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-		</tr>
-		<tr>
-			<td>
-				<span style="color:#333333;font-family:Arial;">MPC Optimization</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">Not Start</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">HE</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-		</tr>
-		<tr>
-			<td>
-				<span style="color:#333333;font-family:Arial;">gRPC supporting Intel RA-TLS</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="color:#333333;font-family:Arial;">In progress</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="color:#333333;font-family:Arial;">SGX/TDX</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="color:#333333;font-family:Arial;">2-way RA-TLS</span><br />
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">gRPC</span><br />
-			</td>
-		</tr>
-		<tr>
-			<td>
 				<span style="color:#333333;font-family:Arial;">Attestation Server &amp; KMS</span><br />
+			</td>
+			<td>
+				<span style="font-family:Arial;">-</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;"><span style="color:#333333;font-family:Arial;">Not Start</span></span><br />
+			</td>
+			<td>
+				<span style="font-family:Arial;">-</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;"><span style="font-family:Arial;">SGX</span></span> 
+			</td>
+			<td>
+				<span style="color:#333333;font-family:Arial;">-</span><br />
+			</td>
+			<td>
+				<span>-</span>
+			</td>
+			<td>
+				<span>Yes</span>
+			</td>
+			<td>
+				<span style="font-family:Arial;">Yes</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">-</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">gRPC</span>
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<span style="color:#444444;font-family:Arial;">Secure Database querying based on HE</span><br />
 			</td>
 			<td>
 				<span style="font-family:Arial;">-</span> 
@@ -334,7 +334,10 @@ document section that explains the corresponding details and then guides you to 
 				<span style="font-family:Arial;">-</span> 
 			</td>
 			<td>
-				<span style="color:#333333;font-family:Arial;">SGX/TDX</span><br />
+				<span style="font-family:Arial;">-</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">HE</span> 
 			</td>
 			<td>
 				<span style="font-family:Arial;">-</span> 
@@ -344,9 +347,6 @@ document section that explains the corresponding details and then guides you to 
 			</td>
 			<td>
 				<span style="font-family:Arial;">Yes</span> 
-			</td>
-			<td>
-				<span style="font-family:Arial;">-</span> 
 			</td>
 			<td>
 				<span style="font-family:Arial;">-</span> 
@@ -369,7 +369,7 @@ document section that explains the corresponding details and then guides you to 
 				<span style="font-family:Arial;">-</span> 
 			</td>
 			<td>
-				<span style="font-family:Arial;">SGX</span> 
+				<span style="font-family:Arial;"><span style="color:#333333;font-family:Arial;">SGX/TDX</span></span> 
 			</td>
 			<td>
 				<span style="font-family:Arial;">-</span> 
@@ -378,7 +378,33 @@ document section that explains the corresponding details and then guides you to 
 				<span style="font-family:Arial;">-</span> 
 			</td>
 			<td>
-				<span style="font-family:Arial;">Yes</span> 
+				<span>Yes</span>
+			</td>
+			<td>
+				<span>Yes</span>
+			</td>
+			<td>
+				<span style="font-family:Arial;">-</span> 
+			</td>
+			<td>
+				<span>-</span>
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<span style="color:#333333;font-family:Arial;">MPC Optimization</span><br />
+			</td>
+			<td>
+				<span style="font-family:Arial;">-</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">Not Start</span><br />
+			</td>
+			<td>
+				<span style="font-family:Arial;">-</span> 
+			</td>
+			<td>
+				<br />
 			</td>
 			<td>
 				<span style="font-family:Arial;">-</span> 
@@ -387,28 +413,22 @@ document section that explains the corresponding details and then guides you to 
 				<span style="font-family:Arial;">-</span> 
 			</td>
 			<td>
+				-
+			</td>
+			<td>
 				<span style="font-family:Arial;">-</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">-</span> 
+			</td>
+			<td>
+				-
 			</td>
 		</tr>
 	</tbody>
 </table>
 <br />
 <br />
-
----
-There are some high barriers for users to adopt Intel TEE directly. For example, the implementation of Intel SGX and TDX run through a deep stack, from hardware, firmware to software, to guarantee the final runtime security. To better understand the design of SGX and TDX, developers may need spend much time to read related papers. Also, it requires developers to follow Intel SGX SDK(Software Development Kit) to integrate their applications with Intel SGX, which will take lots efforts.
-
-LibOS, which provides the capability to bring unmodified applications into Confidential Computing with Intel SGX and make it easy for developers to use SGX,  sometimes only provide simple samples or tutorials for developers to develop their applications, without providing more feasible, scalable functions or solutions.
-
-Some CSPs now integrate Intel SGX technology in their cloud service, however, they provide limited resource or E2E reference solutions for their customers to demonstrate the usage of SGX in a practical way.
-
-To well address above problems and provide more flexible solutions,  CCZoo contributes the **Confidential Computing Zoo Solution Table** as above for users, developers, Intel to
-
-- Have an overall understanding of an End-to-End solution based on Intel® TEE and HE.
-- Quick adoption or reference under similar scenarios in CCZoo based on Intel® TEE or HE.
-- Propagate Intel security capabilities and deployments.
-- Endorse by more customers, run in open model with broad partners.
-
 
 ---
 
