@@ -447,3 +447,5 @@ Below are quick links to some of the most important papers:
 
 - Please submit issues in this project if there is any question or request.
 - Welcome PRs for contributions.
+
+You can check CCZoo previous PDT meeting munites [here](https://github.com/intel/confidential-computing-zoo/wiki/CCZoo-PDT-Meeting).
