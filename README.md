@@ -448,4 +448,9 @@ Below are quick links to some of the most important papers:
 - Please submit issues in this project if there is any question or request.
 - Welcome PRs for contributions.
 
+Welcome to join the Wechat group or Slack channel for CCZoo tech discussion.
+- [Wechat](https://github.com/intel/confidential-computing-zoo/issues/18)
+- [Slack Channel](https://join.slack.com/t/cc-zoo/shared_invite/zt-13c1of71t-1U8C61vbLZWxu0JuwbGi5w)
+
+
 You can check CCZoo previous PDT meeting munites [here](https://github.com/intel/confidential-computing-zoo/wiki/CCZoo-PDT-Meeting).
