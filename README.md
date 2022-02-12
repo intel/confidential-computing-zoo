@@ -147,25 +147,25 @@ document section that explains the corresponding details and then guides you to 
 		</tr>
 		<tr>
 			<td>
-				<span style="color:#333333;font-family:Arial;">gRPC supporting Intel RA-TLS</span><br />
+				<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html" target="_blank"><span style="font-family:Arial;"><strong>gRPC supporting Intel RA-TLS</strong></span></a></span><br />
+			</td>
+			<td>
+				<span style="color:#333333;font-family:Arial;">gRPC</span><br />
+			</td>
+			<td>
+				<strong><span style="font-family:Arial;">Published</span></strong><br />
 			</td>
 			<td>
 				-
 			</td>
 			<td>
-				<span style="color:#333333;font-family:Arial;">In progress</span><br />
+				<span style="font-family:Arial;">SGX/TDX</span> 
 			</td>
 			<td>
 				-
 			</td>
 			<td>
-				<span style="color:#333333;font-family:Arial;">SGX/TDX</span><br />
-			</td>
-			<td>
-				-
-			</td>
-			<td>
-				-
+				Gramine
 			</td>
 			<td>
 				<span style="color:#333333;font-family:Arial;">2-way RA-TLS</span><br />
