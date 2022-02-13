@@ -39,9 +39,6 @@ WORKER_HOSTS=$3
 if [ "$ROLE" == "ps0" ]; then
     make_custom_env
     taskset -c 0-3 stdbuf -o0 python -u train.py --task_index=0 --job_name=ps 2>&1 $PS_HOSTS $WORKER_HOSTS | tee -a ps0-python.log &
-elif [ "$ROLE" == "ps1" ]; then
-    make_custom_env
-    taskset -c 4-7 stdbuf -o0 python -u train.py --task_index=1 --job_name=ps 2>&1 $PS_HOSTS $WORKER_HOSTS | tee -a ps1-python.log &
 elif [ "$ROLE" == "worker0" ]; then
     make_custom_env
     taskset -c 8-11 stdbuf -o0 python -u train.py --task_index=0 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | tee -a worker0-python.log &
