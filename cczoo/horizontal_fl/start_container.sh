@@ -22,10 +22,16 @@ else
     ip_addr=127.0.0.1
 fi
 
-if  [ ! -n "$2" ] ; then
+if  [ -n "$2" ] ; then
+    name=$2
+else
+    name=ps0
+fi
+
+if  [ ! -n "$3" ] ; then
     tag=latest
 else
-    tag=$2
+    tag=$3
 fi
 
 docker run -it \
@@ -34,8 +40,10 @@ docker run -it \
     --security-opt seccomp=unconfined \
     --device=/dev/sgx_enclave:/dev/sgx/enclave \
     --device=/dev/sgx_provision:/dev/sgx/provision \
+    --name=${name} \
     -v /var/run/aesmd/aesm:/var/run/aesmd/aesm \
     -v /home:/home/host-home \
+	--net=host \
     --add-host=pa.com:127.0.0.1 \
     --add-host=pb.com:127.0.0.1 \
     --add-host=attestation.service.com:${ip_addr} \

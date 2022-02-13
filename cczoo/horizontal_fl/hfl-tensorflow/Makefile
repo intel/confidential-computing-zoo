@@ -32,7 +32,7 @@ ifeq ($(SGX),1)
 all: python.manifest.sgx python.sig python.token
 endif
 
-################################ fedlearner MANIFEST ###############################
+################################ MANIFEST ###############################
 
 python.manifest: python.manifest.template
 	gramine-manifest \
