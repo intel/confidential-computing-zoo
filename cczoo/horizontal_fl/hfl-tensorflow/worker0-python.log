@@ -1,0 +1,19 @@
+2022-01-13 13:08:08.602582: W tensorflow/stream_executor/platform/default/dso_loader.cc:60] Could not load dynamic library 'libcudart.so.11.0'; dlerror: libcudart.so.11.0: cannot open shared object file: No such file or directory
+2022-01-13 13:08:09.970740: W tensorflow/stream_executor/platform/default/dso_loader.cc:60] Could not load dynamic library 'libcuda.so.1'; dlerror: libcuda.so.1: cannot open shared object file: No such file or directory
+2022-01-13 13:08:09.970808: W tensorflow/stream_executor/cuda/cuda_driver.cc:326] failed call to cuInit: UNKNOWN ERROR (303)
+Traceback (most recent call last):
+  File "train.py", line 262, in <module>
+    tf.app.run(main=main)
+  File "/usr/local/lib/python3.6/dist-packages/tensorflow/python/platform/app.py", line 40, in run
+    _run(main=main, argv=argv, flags_parser=_parse_flags_tolerate_undef)
+  File "/usr/local/lib/python3.6/dist-packages/absl/app.py", line 312, in run
+    _run_main(main, args)
+  File "/usr/local/lib/python3.6/dist-packages/absl/app.py", line 258, in _run_main
+    sys.exit(main(argv))
+  File "train.py", line 259, in main
+    train()
+  File "train.py", line 181, in train
+    images_train,labels_train = cifar10_input.distorted_inputs(path,batch_size=batch_size)
+  File "/home/siyuan/confidential-computing-zoo-1/cczoo/horizontal_fl/hfl-tensorflow/cifar10_input.py", line 155, in distorted_inputs
+    raise ValueError('Failed to find file: ' + f)
+ValueError: Failed to find file: cifar-10-batches-bin/data_batch_1.bin

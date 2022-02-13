@@ -60,7 +60,7 @@ ENV LC_ALL=C.UTF-8 LANG=C.UTF-8
 ENV WERROR=1
 ENV SGX=1
 
-RUN apt-get install -y gawk bison python3-click python3-jinja2 golang ninja-build python3
+RUN apt-get install -y gawk bison python3-click python3-jinja2 golang ninja-build
 RUN apt-get install -y libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler
 RUN apt-get install -y libgmp-dev libmpfr-dev libmpc-dev libisl-dev
 
@@ -138,6 +138,9 @@ RUN cd /hfl-tensorflow && wget https://www.cs.toronto.edu/~kriz/cifar-10-binary.
 # disable apport
 RUN echo "enabled=0" > /etc/default/apport
 RUN echo "exit 0" > /usr/sbin/policy-rc.d
+
+# make project
+RUN cd /hfl-tensorflow && test-sgx.sh make
 
 # Clean tmp files
 RUN apt-get clean all \
