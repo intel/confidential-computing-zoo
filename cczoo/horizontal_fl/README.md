@@ -75,8 +75,8 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 ./build_docker_image.sh
 ```
 
-### Start container and aesm service
-Start four containers (ps0, worker0, worker1) and start the aesm service.
+### Start containers and aesm services
+Start three containers (ps0, worker0, worker1) and aesm services.
 ```shell
 ./start_container.sh <attestation ip addr> ps0
 /start_aesm_service.sh
