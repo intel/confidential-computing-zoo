@@ -99,9 +99,6 @@ RUN cd ${GRAMINEDIR}/subprojects/cJSON* \
 
 COPY configs /
 
-RUN echo "enabled=0" > /etc/default/apport
-RUN echo "exit 0" > /usr/sbin/policy-rc.d
-
 # Clean tmp files
 RUN apt-get clean all \
     && rm -rf /var/lib/apt/lists/* \
