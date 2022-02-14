@@ -30,7 +30,7 @@ fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"
-proxy_server="http://child-prc.intel.com:913" # your http proxy server
+# proxy_server="" # your http proxy server
 
 cd `dirname $0`
 
