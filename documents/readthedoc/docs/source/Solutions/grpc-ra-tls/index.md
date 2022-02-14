@@ -1,4 +1,4 @@
-# gRPC RA-TLS
+# gRPC supporting Intel RA-TLS
 
 This solution presents an enhanced [gRPC](https://grpc.io/) (Remote Procedure Call) framework to 
 guarantee security during transmission and runtime via two-way 
@@ -26,7 +26,7 @@ RA-TLS integrates Intel SGX remote attestation with the establishment of a stand
 connection. Remote attestation is performed during the connection setup by embedding the attestation 
 evidence into the endpoints TLS public key certificate.
 
-<div align=center><img src="img/tls-v13-handshake.svg" /></div>
+![](img/tls-v13-handshake.svg)
 
 In the gRPC TLS handshake phase, the certificates is generated and verified as 
 following.
