@@ -439,6 +439,7 @@ Below are quick links to some of the most important papers:
 
 - [TensorFlow Serving Cluster PPML based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html)
 - [Horizontal Federal Learning based on SGX](https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html) 
+- [gRPC-based RA-TLS](https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html)
 ---
 
 
