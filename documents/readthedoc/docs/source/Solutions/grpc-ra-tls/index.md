@@ -1,4 +1,4 @@
-# gRPC RA-TLS
+# gRPC supporting Intel RA-TLS
 
 This solution presents an enhanced [gRPC](https://grpc.io/) (Remote Procedure Call) framework to 
 guarantee security during transmission and runtime via two-way 
