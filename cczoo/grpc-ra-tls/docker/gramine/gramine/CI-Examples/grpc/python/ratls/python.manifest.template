@@ -79,7 +79,6 @@ sgx.trusted_files = [
   "file:{{ python.distlib }}/",
   "file:/usr/local/lib/python3.6/dist-packages/",
   "file:/etc/ssl/certs/ca-certificates.crt",
-  "file:/etc/default/apport",
   "file:/etc/mime.types",
   "file:server.py",
   "file:client.py",
