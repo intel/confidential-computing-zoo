@@ -64,32 +64,42 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 - framework: TensorFlow 2.4.2
 - model: ResNet-50
 - dataset: Cifar-10
-- ps num: 2
+- ps num: 1
 - worker num: 2
+- container num: 3
 
 ### Build Docker image
-
 ```shell
 ./build_docker_image.sh
 ```
 
-### Start container
+### Start containers and aesm services
+Start three containers (ps0, worker0, worker1) and aesm services.
 ```shell
-./start_container.sh <attestation ip addr>
+./start_container.sh <attestation ip addr> ps0
+/start_aesm_service.sh
 ```
-
-### Start aesm service
 ```shell
+./start_container.sh <attestation ip addr> worker0
+/start_aesm_service.sh
+```
+```shell
+./start_container.sh <attestation ip addr> worker1
 /start_aesm_service.sh
 ```
 
 ### Run the training scripts
+Run the script for the corresponding job in each container.
 ```shell
 cd hfl-tensorflow
-test-sgx.sh make
 test-sgx.sh ps0
-test-sgx.sh ps1
+```
+```shell
+cd hfl-tensorflow
 test-sgx.sh worker0
+```
+```shell
+cd hfl-tensorflow
 test-sgx.sh worker1
 ```
 

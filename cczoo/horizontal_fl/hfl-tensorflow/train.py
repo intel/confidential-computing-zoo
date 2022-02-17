@@ -24,15 +24,20 @@ import time
 tf.disable_eager_execution()
 
 # Configuration of cluster 
-ps_hosts = [ "localhost:60002", "localhost:60003"]
-worker_hosts = [ "localhost:61002", "localhost:61003"]
 
-tf.app.flags.DEFINE_string("job_name", "worker", "One of 'ps', 'worker'")
+tf.app.flags.DEFINE_string("job_name", "worker", "'ps' or 'worker'")
 tf.app.flags.DEFINE_integer("task_index", 0, "Index of task within the job")
-
-cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
+tf.app.flags.DEFINE_string("ps_hosts", "['localhost:60002']", "ps hosts")
+tf.app.flags.DEFINE_string("worker_hosts", "['localhost:61002','localhost:61003']", "worker hosts")
 
 FLAGS = tf.app.flags.FLAGS
+
+ps_hosts = eval(FLAGS.ps_hosts)
+worker_hosts = eval(FLAGS.worker_hosts)
+
+# cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
+cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
+
 
 def get_batch(x_train, y_train, batch_size):
     # num_epochs = 128
