@@ -47,7 +47,7 @@ def command_arguments():
         help='The server socket address.'
     )
     parser.add_argument(
-        '-cfg',
+        '-config',
         '--config',
         type=str,
         required=False,
