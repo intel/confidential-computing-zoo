@@ -28,8 +28,7 @@ the computing resources of the remote SGX-enabled server and combine the
 data of the two parties to jointly run a specific program. The specific
 process is as follows.
 
-![]("./img/cross_language.jpeg"){width="6.72081583552056in"
-height="3.249202755905512in"}
+![]("../img/cross_language.jpeg")
 
 1.  The SGX-enabled remote server will load the program into the enclave
     created by SGX and then generate a signature. The signature contains
