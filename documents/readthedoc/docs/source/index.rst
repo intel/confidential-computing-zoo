@@ -56,6 +56,7 @@ Table of Contents
    Solutions/tensorflow-serving-cluster/index.rst
    Solutions/horizontal-federated-learning/hfl.md
    Solutions/grpc-ra-tls/index.md
+   Solutions/ehsm-kms/index.md
 
 .. toctree::
    :maxdepth: 1
