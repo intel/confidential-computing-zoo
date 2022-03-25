@@ -28,7 +28,7 @@ the computing resources of the remote SGX-enabled server and combine the
 data of the two parties to jointly run a specific program. The specific
 process is as follows.
 
-![]("../img/cross_language.jpeg")
+![image](https://github.com/hhr293/confidential-computing-zoo/blob/main/documents/readthedoc/docs/source/Solutions/cross_language_framework_based_gramine/img/cross_language.jpeg)
 
 1.  The SGX-enabled remote server will load the program into the enclave
     created by SGX and then generate a signature. The signature contains
