@@ -57,6 +57,7 @@ Table of Contents
    Solutions/horizontal-federated-learning/hfl.md
    Solutions/grpc-ra-tls/index.md
    Solutions/ehsm-kms/index.md
+   Solutions/rats-tls/index.md
 
 .. toctree::
    :maxdepth: 1
