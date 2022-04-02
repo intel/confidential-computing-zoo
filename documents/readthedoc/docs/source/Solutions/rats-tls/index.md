@@ -1,25 +1,6 @@
-# Table of Content
+# RATS-TLS
 
-- [Introduction](#introduction)
-- [Overview](#overview)
-  - [Use hardware as the root of trust to extend the data security boundary](#use-hardware-as-the-root-of-trust-to-extend-the-data-security-boundary)
-  - [Secure and trusted communication of heterogeneous HW-TEE nodes](#secure-and-trusted-communication-of-heterogeneous-hw-tee-nodes)
-  - [Modular design with strong scalability](#modular-design-with-strong-scalability)
-- [Work process](#work-process)
-  - [Initialization stage](#initialization-stage)
-  - [Running stage](#running-stage)
-- [Instances design](#instances-design)
-  - [TLS Wrapper instance](#tls-wrapper-instance)
-  - [Enclave Attester instance](#enclave-attester-instance)
-  - [Enclave Verifier instance](#enclave-verifier-instance)
-  - [Crypto Wrapper instance](#crypto-wrapper-instance)
-- [Application scenario](#application-scenario)
-  - [Enclave Attestation Architecture](#enclave-attestation-architecture-eaa)
-- [Reference](#reference)
-
----
-
-# Introduction
+## Introduction
 
 Data has three states throughout its life cycle: At-Rest (static), In-Transit (transmitting), and In-Use (in use). In computing, data exists in three states: in transit, at rest, and in use. Data traversing the network is "in transit", data in storage is "at rest", and data being processed is "in use". In a world where we are constantly storing, consuming, and sharing sensitive data - from credit card data to medical records, from firewall configurations to our geolocation data -protecting sensitive data in all of its states is more critical than ever. Cryptography is now commonly deployed to provide both data confidentiality (stopping unauthorized viewing) and data integrity (preventing or detecting unauthorized changes). While techniques to protect data in transit and at rest are now commonly deployed, the third state - protecting data in use - is the new frontier[1]. 
 
@@ -40,7 +21,7 @@ In order to solve the above challenges, we proposed **Rats-TLS, a mutual transpo
 - Able to support different cryptographic algorithm libraries.
 - Able to support mutual TLS authentication between different types of HW-TEE.
 
-# Overview
+## Overview
 
 ![architecture.png](./img/architecture.png)
 
@@ -58,7 +39,7 @@ In total, the design of Rats-TLS has the following features:
 - Supports secure and trusted communication of heterogeneous HW-TEE nodes, not limited to platforms.
 - Modular design with strong scalability.
 
-## Use hardware as the root of trust to extend the data security boundary
+### Use hardware as the root of trust to extend the data security boundary
 
 In contrast to the PKI used in the modern web where the trust root is a list of root certificate authorities
 maintained by a handful of entities such as Aliyun, Google, and Microsoft, we want to use Hardware TEE (for example, Intel SGX) as a hardware root of trust. Attester needs to provide the challenger with the necessary evidence during the TLS connection stage so that the challenger can prove that the attester is running in a trusted HW-TEE (for example, Intel SGX).
@@ -91,7 +72,7 @@ Client/Challenger must verify the evidence to determine the trustworthiness of t
 
 In addition, the verifier must check if the hash of the Rats-TLS certificate’s public key is present in the enclave’s report. This is how the Rats-TLS  key is tied to a particular enclave instance. Finally, the verifier compares the enclave’s identity (e.g., MRENCLAVE and MRSIGNER) against the expected identity.
 
-## Secure and trusted communication of heterogeneous HW-TEE nodes
+### Secure and trusted communication of heterogeneous HW-TEE nodes
 
 In some cases, the client and server can run on different confidential computing platforms, and there may be different quote types of attestation reports obtained by the server. How to effectively verify multiple types of quote instances and establish a secure channel is a problem.
 
@@ -109,7 +90,7 @@ Assuming there are two platforms, Intel SGX and Intel TDX, these two platforms n
 
 ![attestation.png](./img/attestation.png)
 
-## Modular design with strong scalability
+### Modular design with strong scalability
 
 Due to the limitation of the SGX SDK programming language, we currently put Rats-TLS and all instances in the SGX Enclave to generate an enclave image signed by SGX, which cannot support flexible application modular. But for confidential computing encrypted virtual machines (such as Intel SGX, Intel TDX) form or SGX LibOS form, Rats-TLS can give full play to the advantages of modular structure and strong scalability.
 
@@ -122,11 +103,11 @@ Through Registration APIs, a flexible "plug-in" mechanism can be realized, and i
 - If the developer needs to support a new instance type (for example, OpenSSL wrapper instance), just need to develop the function of the corresponding instance and don't need to pay attention to the details of other instance types.
 - Different TLS Wrapper instances, Atttester instances, Verifier instances, and Crypto instances can be combined with each other to meet diverse needs in different scenarios.
 
-# Work process
+## Work process
 
 The workflow of Rats-TLS is mainly divided into two stages: initialization and running.
 
-## Initialization stage
+### Initialization stage
 
 In the SGX SDK mode, due to the programming constraints of SGX, all instances (TLS Wrapper instances, Attester instances, Verifier instances, and Crypto instances) are packaged into the static library `librats_tls.a`. The static library contains function callbacks address for each instance. 
 
@@ -166,7 +147,7 @@ Taking the loading of Crypto Wrapper as an example, the specific process is as f
   - The context information of the Crypto Wrapper instance is registered in the `crypto_wrappers_opts` array in the Crypto Wrapper subsystem.
   - Sort all Crypto Wrapper instances in the `crypto_wrappers_opts` array according to priority.
 
-## Running stage
+### Running stage
 
 The client and the server establish a secure channel through five Rats TLS APIs and then perform data transmission.
 
@@ -198,7 +179,7 @@ As shown in the following figure: Rats TLS will sequentially call the `clean_up(
 
 ![rats\_tls\_cleanup.png](./img/rats_tls_cleanup.png)
 
-# Instances design
+## Instances design
 
 According to the respective responsibilities and constraints of each instance, we have designed common metadata and APIs for each type of instance.
 
@@ -239,7 +220,7 @@ typedef struct {
 tls_wrapper_err_t tls_wrapper_register(const tls_wrapper_opts_t *opts);
 ```
 
-## Enclave Attester instance
+### Enclave Attester instance
 
 Each Attester instance is designed with the following metadata and API to be responsible for collecting evidence from the local platform operating environment. The following is the meaning of each metadata and method.
 
@@ -277,7 +258,7 @@ typedef struct {
 enclave_attester_err_t enclave_attester_register(const enclave_attester_opts_t *opts);
 ```
 
-## Enclave Verifier instance
+### Enclave Verifier instance
 
 Each Verifier instance is designed with the following metadata and API to verify the received quote data in various formats. The following is the meaning of each metadata and method.
 
@@ -314,7 +295,7 @@ typedef struct {
 enclave_verifier_err_t enclave_verifier_register(const enclave_verifier_opts_t *opts);
 ```
 
-## Crypto Wrapper instance
+### Crypto Wrapper instance
 
 Each Crypto Wrapper instance is designed with the following metadata and API to cooperate with other instances to complete operations related to cryptographic algorithms. The following is the meaning of each metadata and method.
 
@@ -349,13 +330,13 @@ typedef struct {
 crypto_wrapper_err_t crypto_wrapper_register(const crypto_wrapper_opts_t *opts);
 ```
 
-# Application scenario
+## Application scenario
 
-## Enclave Attestation Architecture (EAA)
+### Enclave Attestation Architecture (EAA)
 
 Rats-TLS is mainly used in Enclave Attestation Architecture (EAA). EAA is a universal and cross-platform remote attestation architecture for cloud scenarios. The communication between different components of EAA needs to establish a trusted and secure channel based on Rats-TLS, so that tenants can clearly know whether their workload is loaded in a real TEE environment. Please refer to [the documentation](https://www.alibabacloud.com/help/doc-detail/259685.htm) for details of EAA.
 
-# Reference
+## Reference
 
 [1] https://confidentialcomputing.io/wp-content/uploads/sites/85/2021/03/confidentialcomputing_outreach_whitepaper-8-5x11-1.pdf  
 [2] https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.70.4562&rep=rep1&type=pdf  
