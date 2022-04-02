@@ -341,3 +341,22 @@ Rats-TLS is mainly used in Enclave Attestation Architecture (EAA). EAA is a univ
 [1] https://confidentialcomputing.io/wp-content/uploads/sites/85/2021/03/confidentialcomputing_outreach_whitepaper-8-5x11-1.pdf  
 [2] https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.70.4562&rep=rep1&type=pdf  
 [3] https://arxiv.org/ftp/arxiv/papers/1801/1801.05863.pdf 
+
+
+---
+
+## Cloud Deployment
+
+### 1. Azure Cloud
+
+[Azure confidential computing services](https://azure.microsoft.com/en-us/solutions/confidential-compute/) are
+available and provide access to VMs with Intel SGX enabled in [DCsv2](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv2-series) and [DCsv3](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series)
+VM instances. 
+
+The configuration of the instance as blow:
+
+- Instance Type  : [Standard_DC16s_v3](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series)
+- Instance Kernel: 5.13
+- Instance OS    : Ubuntu20.04
+- Instance Encrypted Memory: 128GB(64G EPC Memory)
+- Instance vCPU  : 16
