@@ -345,9 +345,9 @@ Rats-TLS is mainly used in Enclave Attestation Architecture (EAA). EAA is a univ
 
 ---
 
-# Cloud Deployment
+## Cloud Deployment
 
-## 1. Azure Cloud
+### 1. Azure Cloud
 
 [Azure confidential computing services](https://azure.microsoft.com/en-us/solutions/confidential-compute/) are
 available and provide access to VMs with Intel SGX enabled in [DCsv2](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv2-series) and [DCsv3](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series)

@@ -107,10 +107,11 @@ test-sgx.sh worker1
 
 - [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
 
+---
 
-# Cloud Deployment
+## Cloud Deployment
 
-## 1. Aliyun ECS
+### 1. Aliyun ECS
 
 [Aliyun ECS](https://help.aliyun.com/product/25365.html) (Elastic Compute Service) is
 an IaaS (Infrastructure as a Service) level cloud computing service provided by Alibaba
@@ -129,7 +130,7 @@ The configuration of the ECS instance as blow:
 
 ***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Aliyun PCCS server address.
 
-## 2. Tencent Cloud
+### 2. Tencent Cloud
 
 Tencent Cloud Virtual Machine (CVM) provide one instance named [M6ce](https://cloud.tencent.com/document/product/213/11518#M6ce),
 which supports Intel® SGX encrypted computing technology.
