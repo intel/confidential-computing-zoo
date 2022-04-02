@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright (c) 2021 Intel Corporation
 #
@@ -13,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/bin/bash
 set -ex
 
 shopt -s expand_aliases
@@ -48,33 +48,28 @@ function make_custom_env() {
 }
 
 ROLE=$1
+PS_HOSTS=$2
+WORKER_HOSTS=$3
+
 if [ "$ROLE" == "make" ]; then
-    rm -rf model *.log
     make clean && make | make_logfilter
-    kill -9 `pgrep -f gramine`
 elif [ "$ROLE" == "ps0" ]; then
     make_custom_env
-    taskset -c 0-3 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=ps --loglevel=debug 2>&1 | runtime_logfilter | tee -a ps0-gramine-python.log &
+    taskset -c 0-3 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=ps $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a ps0-gramine-python.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
-elif [ "$ROLE" == "ps1" ]; then
-    make_custom_env
-    taskset -c 4-7 stdbuf -o0 gramine-sgx python -u train.py --task_index=1 --job_name=ps --loglevel=debug 2>&1 | runtime_logfilter | tee -a ps1-gramine-python.log &
-    if [ "$DEBUG" != "0" ]; then
-        wait && kill -9 `pgrep -f gramine`
-    fi
-
 elif [ "$ROLE" == "worker0" ]; then
     make_custom_env
-    taskset -c 8-11 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=worker --loglevel=debug 2>&1 | runtime_logfilter | tee -a worker0-gramine-python.log &
+    taskset -c 8-11 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a worker0-gramine-python.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 elif [ "$ROLE" == "worker1" ]; then
     make_custom_env
-    taskset -c 11-15 stdbuf -o0 gramine-sgx python -u train.py --task_index=1 --job_name=worker --loglevel=debug 2>&1 | runtime_logfilter | tee -a worker1-gramine-python.log &
+    taskset -c 11-15 stdbuf -o0 gramine-sgx python -u train.py --task_index=1 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a worker1-gramine-python.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 fi
+
