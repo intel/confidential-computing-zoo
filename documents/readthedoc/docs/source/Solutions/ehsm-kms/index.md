@@ -23,7 +23,6 @@ This below diagram depicts the high-level architecture of the eHSM-KMS,
 
 - The eHSM-KMS manager
     - A webservice hosted with the nodejs framework, which will send requests to eHSM-core enclave for cryptographic operations through the ffi native interfaces.
-    - Provide public cryptographic APIs via [RESTFUL interfaces](https://github.com/intel/ehsm/blob/bad3ba0525fa1c03f1cab55c48288df26df877af/docs/API_Reference.md) to the users. key generation, key importing/export, encryption/decryption, sign/verify, etc.
     - Provide API access KEY and APP ID enrollment APIs.
     - Manage key properties, store/retrieve those info to/from DB. (WIP)
         - Storing CMK Keyblobs, Key Versions and CMK rotation management.
@@ -36,7 +35,7 @@ Since only the user with valid APPID and APIKey could request the public cryptog
 The below diagram depicts the flow how to enroll a valid APPID and APIKey for the user,
 ![apikey-and-appid-enrollment](./img/apikey-and-appid-enrollment.PNG)
 
-For more details about each cryptographic APIs, please refer to the doc [API_Reference.md](https://github.com/intel/ehsm/blob/bad3ba0525fa1c03f1cab55c48288df26df877af/docs/API_Reference.md).
+For more details about each cryptographic APIs, please refer to the doc [API_Reference.md](https://github.com/intel/ehsm/blob/5c91d6dc367040606cfe55fab9c3f553deeb7243/docs/API_Reference.md#ehsm-rest-api-reference).
 
 ---
 
@@ -80,9 +79,9 @@ eHSM-KMS provides a protocol based the SGX attestation to securely provision the
 ---
 
 ## Build Instructions
-For more details please refer to [build-instructions](https://github.com/intel/ehsm/blob/bad3ba0525fa1c03f1cab55c48288df26df877af/docs/build-instructions.md).
+For more details please refer to [build-instructions](https://github.com/intel/ehsm/blob/5c91d6dc367040606cfe55fab9c3f553deeb7243/docs/build-instructions.md#build-instructions).
 
 ---
 
 ## Deployment
-For more details please refer to [deployment-instructions](https://github.com/intel/ehsm/blob/bad3ba0525fa1c03f1cab55c48288df26df877af/docs/deployment-instructions.md).
+For more details please refer to [deployment-instructions](https://github.com/intel/ehsm/blob/5c91d6dc367040606cfe55fab9c3f553deeb7243/docs/deployment-instructions.md#ehsm-kms-deployment-with-k8s).
