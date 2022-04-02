@@ -651,7 +651,7 @@ Below table shows solutions and component projects validated in public clouds. A
       </td>
     </tr>
     <tr>
-      <td colspan="2"><strong>&nbsp; &nbsp; &nbsp;Validated&nbsp; Solution&nbsp;</strong>
+      <td colspan="2"><strong>Validated Solution&nbsp;</strong>
       </td>
       <td>
         <ul>
@@ -682,6 +682,7 @@ Below table shows solutions and component projects validated in public clouds. A
     </tr>
   </tbody>
 </table>
+
 
 ---
 
