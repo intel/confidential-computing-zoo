@@ -1,3 +1,6 @@
+[submodule "cczoo/ehsm/ehsm"]
+	path = cczoo/ehsm/ehsm
+	url = https://github.com/intel/ehsm.git
 [submodule "cczoo/rats-tls/rats-tls"]
 	path = cczoo/rats-tls/rats-tls
 	url = https://github.com/inclavare-containers/rats-tls.git
