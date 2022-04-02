@@ -23,7 +23,6 @@ This below diagram depicts the high-level architecture of the eHSM-KMS,
 
 - The eHSM-KMS manager
     - A webservice hosted with the nodejs framework, which will send requests to eHSM-core enclave for cryptographic operations through the ffi native interfaces.
-    - Provide public cryptographic APIs via [RESTFUL interfaces](https://github.com/intel/ehsm/blob/5c91d6dc367040606cfe55fab9c3f553deeb7243/docs/API_Reference.md#ehsm-rest-api-reference) to the users. key generation, key importing/export, encryption/decryption, sign/verify, etc.
     - Provide API access KEY and APP ID enrollment APIs.
     - Manage key properties, store/retrieve those info to/from DB. (WIP)
         - Storing CMK Keyblobs, Key Versions and CMK rotation management.
