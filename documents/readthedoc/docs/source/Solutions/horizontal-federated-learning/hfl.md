@@ -1,4 +1,4 @@
-# Horizontal Federated Learning with Intel SGX Solution
+# Horizontal Federated Learning
 
 This solution presents a framework for developing a PPML(Privacy-Preserving Machine Learning) solution based on TensorFlow - Horizontal Federated Learning with Intel SGX.
 
@@ -6,7 +6,7 @@ This solution presents a framework for developing a PPML(Privacy-Preserving Mach
 
 How to ensure the privacy of participants in the distributed training process of deep neural networks is a current hot topic. Federated learning can solve the problem to a certain extent. In horizontal federated learning, each participant uses its own local data for algorithm iteration and only uploads gradient information instead of raw data, which guarantees data privacy to a large extent. 
 
-The commonly used encryption method in federated learning is Homomorphic Encryption(HE). In addition to HE, trusted execution environment (TEE) technology uses plaintext for calculation and uses a trusted computing base to ensure security. Intel SGX technology is a concrete realization of TEE technology. In this horizontal federated learning solution, we adopted a privacy protection computing solution based on Intel SGX technology.
+The commonly used encryption method in federated learning is Holomorphic Encryption(HE). In addition to HE, trusted execution environment (TEE) technology uses plaintext for calculation and uses a trusted computing base to ensure security. Intel SGX technology is a concrete realization of TEE technology. In this horizontal federated learning solution, we adopted a privacy protection computing solution based on Intel SGX technology.
 
 ### Encrypted runtime environment
  Intel SGX technology offers hardware-based memory encryption that isolates specific application code and data in memory. Intel SGX allows user-level code to allocate private regions of memory, called enclaves, which are designed to be protected from processes running at higher privilege levels.
@@ -31,7 +31,7 @@ We use the Remote Attestation with Transport Layer Security (RA-TLS) of Intel SG
 To solve the problem of how to verify the untrusted application integrity, we use RA-TLS to verify the Intel SGX enclave. It ensures that the runtime application is a trusted version.
 
 ## Workflow
-In the training process, each worker uses local data in its enclave to complete a round of training, and then sends the gradient information in the backpropagation process to the parameter server through the RA-TLS technology, and then the parameter server completes the gradient aggregation and update network parameters, and then send the updated parameters to each worker. The workflow is as follows:
+In the training process, each worker uses local data in its enclave to complete a round of training, and then sends the gradient information in the back propagation process to the parameter server through the RA-TLS technology, and then the parameter server completes the gradient aggregation and update network parameters, and then send the updated parameters to each worker. The workflow is as follows:
 
 ![](images/HFL.svg)
 
@@ -106,3 +106,41 @@ test-sgx.sh worker1
 <div id="refer-anchor-1"></div>
 
 - [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
+
+
+# Cloud Deployment
+
+## 1. Aliyun ECS
+
+[Aliyun ECS](https://help.aliyun.com/product/25365.html) (Elastic Compute Service) is
+an IaaS (Infrastructure as a Service) level cloud computing service provided by Alibaba
+Cloud. It builds security-enhanced instance families [g7t, c7t, r7t](https://help.aliyun.com/document_detail/207734.html)
+based on Intel® SGX technology to provide a trusted and confidential environment
+with a higher security level.
+
+The configuration of the ECS instance as blow:
+
+- Instance Type  : [g7t](https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k).
+- Instance Kernel: 4.19.91-24
+- Instance OS    : Alibaba Cloud Linux 2.1903
+- Instance Encrypted Memory: 32G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server Addr: [sgx-dcap-server.cn-hangzhou.aliyuncs.com](https://help.aliyun.com/document_detail/208095.html)
+
+***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Aliyun PCCS server address.
+
+## 2. Tencent Cloud
+
+Tencent Cloud Virtual Machine (CVM) provide one instance named [M6ce](https://cloud.tencent.com/document/product/213/11518#M6ce),
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the M6ce instance as blow:
+
+- Instance Type  : [M6ce.4XLARGE128](https://cloud.tencent.com/document/product/213/11518#M6ce)
+- Instance Kernel: 5.4.119-19-0009.1
+- Instance OS    : TencentOS Server 3.1
+- Instance Encrypted Memory: 64G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: [sgx-dcap-server-tc.sh.tencent.cn](https://cloud.tencent.com/document/product/213/63353)
+
+***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
