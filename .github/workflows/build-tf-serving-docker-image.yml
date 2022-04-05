@@ -1,0 +1,28 @@
+name: Docker Image CI
+
+on:
+  pull_request:
+    branches: [ branch0.1/tf-serving-cluster ]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build the TF Docker image
+      run: |
+        cd ./tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving
+        docker build -f gramine_tf_serving.dockerfile . -t tf_serving:$(date +%s)
+        
+    - name: Build the SP Docker image
+      run: |
+        cd ./tensorflow-serving-cluster/tensorflow-serving/docker/secret_prov
+        docker build -f secret_prov.dockerfile . -t sp_serving:$(date +%s)
+        
+    - name: Check Docker image Status
+      run: docker images
+      
