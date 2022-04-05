@@ -1,4 +1,4 @@
-name: Docker Image CI
+name: TF-Serving Docker Image CI
 
 on:
   pull_request:
