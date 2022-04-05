@@ -5,17 +5,14 @@ protect user privacy. Programs running in the SGX enclave will avoid
 external snooping and tampering. However, due to the diversity of user
 needs, their programs may be in different languages, such as Python,
 Java, and even Rust, Go. While the bottom layer of Intel SGX is
-developed based on C, there is no interface for other languages, and
-Gramine officially provided by Intel only supports limited languages,
-such as Python and Java. If users want to use other languages to run
-programs in the SGX enclave, they must modify the program, which will
-bring great inconvenience to users.
+developed based on C, there is no interface for other languages in ra-tls secret or data transmission which 
+brings great inconvenience to users.
 
 ## Introduction
-To reduce users' burden, we provide a Cross languages ​​framework based
+To reduce users' burden, we provide a Cross languages framework based
 on Gramine, which provides interfaces to translate other languages to C.
 Users can use the interface provided to convert different languages
-​​into C, so users can deploy their own App in the SGX environment
+into C, so users can deploy their own App in the SGX environment
 without feeling.
 ## Encrypt/decrypt key retrieval
 Encrypt/decrypt key retrieval based on KMS provided by Intel. KMS (Key Management System) is a hardware-software combined system that provides customers with capabilities to create and manage cryptographic keys and control their use for their cloud services.
