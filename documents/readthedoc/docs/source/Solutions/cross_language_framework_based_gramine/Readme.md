@@ -18,9 +18,10 @@ Users can use the interface provided to convert different languages
 ​​into C, so users can deploy their own App in the SGX environment
 without feeling.
 ## Encrypt/decrypt key retrieval
-
+Encrypt/decrypt key retrieval based on KMS provided by Intel. KMS (Key Management System) is a hardware-software combined system that provides customers with capabilities to create and manage cryptographic keys and control their use for their cloud services.
 ## Data transmission between safe parties and enclave
-
+All data transimitted between parties and enclave is encrypted, and the data can only be decrypted in
+secure enclave. 
 ## Java interface for gramine ra-tls
 
 This framework can be used in many scenarios. The following is a
