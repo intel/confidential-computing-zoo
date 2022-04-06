@@ -5,10 +5,7 @@ on:
     - cron:  '* 12 * * 5'
 
 jobs:
-  main_build_schedule:
-
-  build:
-
+  test_schedule:
     runs-on: ubuntu-latest
 
     steps:
