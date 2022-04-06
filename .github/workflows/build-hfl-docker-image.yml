@@ -13,7 +13,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Build the gRPC-TLS Docker image
+    - name: Build the HFL Docker image
       run: |
         cd cczoo/horizontal_fl
         docker build -f horizontal_fl.dockerfile . -t hfl-sgx:$(date +%s)
