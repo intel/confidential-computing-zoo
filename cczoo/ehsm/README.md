@@ -1,5 +1,5 @@
-# ehsm
-To retrieve ehsm source code, use one of below commands:
+# ehsm-kms
+To retrieve ehsm-kms source code, use one of below commands:
 ```bash
 git clone --recursive https://github.com/intel/confidential-computing-zoo
 ```
