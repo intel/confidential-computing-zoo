@@ -579,7 +579,7 @@ Below table shows solutions and component projects validated in public clouds. A
 <table border="1" cellpadding="1" cellspacing="1" style="width:500px">
   <tbody>
     <tr>
-      <td colspan="2"><strong>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;Public Cloud</strong>
+      <td colspan="2"><strong>&nbsp; &nbsp; &nbsp;Public Cloud</strong>
       </td>
       <td><strong>Alibaba Cloud</strong>
       </td>
