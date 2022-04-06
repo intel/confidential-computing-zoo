@@ -241,7 +241,7 @@ The configuration of the DCsv3 instance as blow:
       </td>
       <td>
         <ul>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/ehsm-kms/index.html">eHSM</a>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/ehsm-kms/index.html">eHSM-KMS</a>
             <br />
             <br />
             <br />

@@ -78,7 +78,7 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td style="text-align:center;"><strong>Vault</strong>
       </td>
-      <td style="text-align:center;"><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html"><strong>eHSM</strong></a>
+      <td style="text-align:center;"><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html"><strong>eHSM-KMS</strong></a>
       </td>
     </tr>
     <tr>
@@ -412,7 +412,7 @@ document section that explains the corresponding details and then guides you to 
       </td>
     </tr>
     <tr>
-      <td><strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html">eHSM</a></strong>
+      <td><strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html">eHSM-KMS</a></strong>
       </td>
       <td>Yes
       </td>
@@ -671,7 +671,7 @@ Below table shows solutions and component projects validated in public clouds. A
       </td>
       <td>
         <ul>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/ehsm-kms/index.html">eHSM</a>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/ehsm-kms/index.html">eHSM-KMS</a>
             <br />
             <br />
             <br />
