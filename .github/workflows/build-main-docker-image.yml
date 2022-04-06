@@ -1,0 +1,40 @@
+name: Main Branch Docker Image CI
+
+on:
+  schedule:
+    - cron:  '* 12 * * 5'
+
+jobs:
+  main_build_schedule:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build the TF Docker image
+      run: |
+        cd cczoo/tensorflow-serving-cluster/tensorflow-serving/docker
+        docker build -f gramine_tf_serving.dockerfile . -t tf_serving:$(date +%s)
+        
+    - name: Build the SP Docker image
+      run: |
+        cd cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/secret_prov
+        docker build -f secret_prov.dockerfile . -t sp_serving:$(date +%s)
+
+    - name: Build the HFL Docker image
+      run: |
+        cd cczoo/horizontal_fl
+        docker build -f horizontal_fl.dockerfile . -t hfl-sgx:$(date +%s)
+
+
+    - name: Build the gRPC-TLS Docker image
+      run: |
+        cd cczoo/grpc-ra-tls/docker/gramine
+        docker build -f grpc-gramine-sgx-dev.dockerfile . -t grpc-tls:$(date +%s)
+        
+    - name: Check Docker image Status
+      run: docker images
+      
