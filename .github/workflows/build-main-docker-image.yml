@@ -2,7 +2,7 @@ name: Main Branch Docker Image CI
 
 on:
   schedule:
-    - cron:  '* 12 * * 5'
+    - cron:  '* 12 * * 6'
 
 jobs:
   test_schedule:
