@@ -13,7 +13,7 @@ jobs:
 
     - name: Build the TF Docker image
       run: |
-        cd cczoo/tensorflow-serving-cluster/tensorflow-serving/docker
+        cd cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving
         docker build -f gramine_tf_serving.dockerfile . -t tf_serving:$(date +%s)
         
     - name: Build the SP Docker image
