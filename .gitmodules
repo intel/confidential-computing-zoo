@@ -4,3 +4,6 @@
 [submodule "cczoo/rats-tls/rats-tls"]
 	path = cczoo/rats-tls/rats-tls
 	url = https://github.com/inclavare-containers/rats-tls.git
+[submodule "cczoo/pytorch/sgx-pytorch"]
+	path = cczoo/pytorch/sgx-pytorch
+	url = https://github.com/intel/sgx-pytorch.git
