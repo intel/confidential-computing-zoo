@@ -5,7 +5,7 @@ be validated in public clouds to verify the versatility, stability, robustness.
 We will provide detailed configurations of each public clouds for reference, and
 notes of the diversity in each cloud for easy deployment.
 
-We now have validated solutions in Alibaba Cloud, Tencent Cloud and Azure Cloud.
+We now have validated solutions in Alibaba Cloud, Tencent Cloud.
 There will be more solutions be validated in more public cloud environments in the
 future.
 
