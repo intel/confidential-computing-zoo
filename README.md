@@ -74,7 +74,7 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td><strong><span style="font-size:22px">*</span><a href="https://cczoo.readthedocs.io/en/main/Solutions/rats-tls/index.html">RATS-TLS</a></strong>
       </td>
-      <td><strong><span style="font-size:22px">*</span></strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html"><font face="Arial"><strong>RA-g</strong></font><strong><span style="font-family:Arial">RPC</span></strong></a>
+      <td><strong><span style="font-size:22px">*</span></strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html"><font face="Arial"><strong>RA-TLS g</strong></font><strong><span style="font-family:Arial">RPC</span></strong></a>
       </td>
       <td style="text-align:center;"><strong>Vault</strong>
       </td>
@@ -392,15 +392,15 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td>-
       </td>
-      <td>-
+      <td>Yes
       </td>
-      <td>-
+      <td>Yes
       </td>
       <td>-
       </td>
       <td>Yes
       </td>
-      <td>Yes
+      <td>-
       </td>
       <td>Yes
       </td>
