@@ -14,24 +14,29 @@ jobs:
     - name: Build the TF Docker image
       run: |
         cd cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving
-        docker build -f gramine_tf_serving.dockerfile . -t tf_serving:$(date +%s)
+        docker build -f gramine_tf_serving.dockerfile . -t tf_serving:latest
+        docker images
+        docker rmi tf_serving:latest
         
     - name: Build the SP Docker image
       run: |
         cd cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/secret_prov
-        docker build -f secret_prov.dockerfile . -t sp_serving:$(date +%s)
+        docker build -f secret_prov.dockerfile . -t sp_serving:latest
+        docker images
+        docker rmi sp_serving:latest
 
     - name: Build the HFL Docker image
       run: |
         cd cczoo/horizontal_fl
-        docker build -f horizontal_fl.dockerfile . -t hfl-sgx:$(date +%s)
+        docker build -f horizontal_fl.dockerfile . -t hfl-sgx:latest
+        docker images
+        docker rmi hfl-sgx:latest
 
 
     - name: Build the gRPC-TLS Docker image
       run: |
         cd cczoo/grpc-ra-tls/docker/gramine
-        docker build -f grpc-gramine-sgx-dev.dockerfile . -t grpc-tls:$(date +%s)
-        
-    - name: Check Docker image Status
-      run: docker images
+        docker build -f grpc-gramine-sgx-dev.dockerfile . -t grpc-tls:latest
+        docker images
+        docker rmi grpc-tls:latest
       
