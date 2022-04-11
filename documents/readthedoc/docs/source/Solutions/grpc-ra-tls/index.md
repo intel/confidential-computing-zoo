@@ -241,7 +241,7 @@ Please refer to the examples for makefile and build script modifications.
 
 ## Cloud Deployment
 
-### 1. Aliyun ECS
+### 1. Alibaba Cloud
 
 [Aliyun ECS](https://help.aliyun.com/product/25365.html) (Elastic Compute Service) is
 an IaaS (Infrastructure as a Service) level cloud computing service provided by Alibaba
