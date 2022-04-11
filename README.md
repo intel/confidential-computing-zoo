@@ -552,7 +552,7 @@ from CCZoo and evolve to a standalone project.
       </td>
       <td>Published
       </td>
-      <td><a href="https://cczoo.readthedocs.io/en/main/Cloud/cloudDeployment.html#azure-cloud"><font face="Arial">Azure Cloud</font></a>
+      <td><span class="md-plain"><font face="Arial"><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#aliyun-ecs">Alibaba Cloud</a></font></span>
       </td>
     </tr>
     <tr>
@@ -569,6 +569,7 @@ from CCZoo and evolve to a standalone project.
     </tr>
   </tbody>
 </table>
+
 
 
 ---
@@ -589,8 +590,6 @@ Below table shows solutions and component projects validated in public clouds. A
       </td>
       <td><strong>Tencent Cloud</strong>
       </td>
-      <td><strong>Azure Cloud</strong>
-      </td>
     </tr>
     <tr>
       <td rowspan="6" style="text-align: left;"><strong>Instance&nbsp;</strong>
@@ -601,8 +600,6 @@ Below table shows solutions and component projects validated in public clouds. A
       </td>
       <td><a href="https://cloud.tencent.com/document/product/213/11518#M6ce">M6ce.4XLARGE128&nbsp;</a>
       </td>
-      <td><a href="https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series">Standard_DC16s_v3</a>
-      </td>
     </tr>
     <tr>
       <td style="text-align: left;">Kernel
@@ -610,8 +607,6 @@ Below table shows solutions and component projects validated in public clouds. A
       <td>4.19.91-24
       </td>
       <td>5.4.119-19-0009.1
-      </td>
-      <td>5.13
       </td>
     </tr>
     <tr>
@@ -621,8 +616,6 @@ Below table shows solutions and component projects validated in public clouds. A
       </td>
       <td>TencentOS Server 3.1
       </td>
-      <td>Ubuntu20.04
-      </td>
     </tr>
     <tr>
       <td style="text-align: left;">Memory
@@ -631,13 +624,9 @@ Below table shows solutions and component projects validated in public clouds. A
       </td>
       <td>64G(32G EPC Memory)
       </td>
-      <td>128GB(64G EPC Memory)
-      </td>
     </tr>
     <tr>
       <td style="text-align: left;">vCPU
-      </td>
-      <td>16
       </td>
       <td>16
       </td>
@@ -650,8 +639,6 @@ Below table shows solutions and component projects validated in public clouds. A
       <td><a href="https://help.aliyun.com/document_detail/208095.html">sgx-dcap-server.cn-hangzhou.aliyuncs.com</a>
       </td>
       <td><a href="https://cloud.tencent.com/document/product/213/63353">sgx-dcap-server-tc.sh.tencent.cn&nbsp;</a>
-      </td>
-      <td><a href="https://docs.microsoft.com/en-us/azure/confidential-computing/quick-create-portal#install-azure-dcap-client">Azure DCAP</a>
       </td>
     </tr>
     <tr>
@@ -673,19 +660,10 @@ Below table shows solutions and component projects validated in public clouds. A
           <li>Secure logistic regression training base on TEE &amp; HE</li>
         </ul>
       </td>
-      <td>
-        <ul>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/ehsm-kms/index.html">eHSM-KMS</a>
-            <br />
-            <br />
-            <br />
-            <br />
-            &nbsp;</li>
-        </ul>
-      </td>
     </tr>
   </tbody>
 </table>
+
 
 
 ---
