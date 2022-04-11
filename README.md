@@ -556,7 +556,7 @@ from CCZoo and evolve to a standalone project.
       </td>
     </tr>
     <tr>
-      <td colspan="1"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><strong>gRPC Supporting Intel RA-TLS</strong></a>
+      <td colspan="1"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><strong>RA-TLS Enhanced gRPC</strong></a>
       </td>
       <td>This project provides an enhanced&nbsp;<a href="https://grpc.io/">gRPC</a>&nbsp;(Remote Procedure Call) framework to guarantee security during transmission and runtime via two-way&nbsp;<a href="https://arxiv.org/pdf/1801.05863">RA-TLS</a>&nbsp;(Intel SGX Remote Attestation with Transport Layer Security) based on&nbsp;<a href="https://en.wikipedia.org/wiki/Trusted_execution_environment">TEE</a>&nbsp;(Trusted Execution Environment).
       </td>
@@ -661,7 +661,7 @@ Below table shows solutions and component projects validated in public clouds. A
         <ul>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML&nbsp;</a></li>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></li>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">gRPC supporting Intel RA-TLS</a></li>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a></li>
           <li>Secure logistic regression training base on TEE &amp; HE</li>
         </ul>
       </td>
@@ -669,7 +669,7 @@ Below table shows solutions and component projects validated in public clouds. A
         <ul>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML&nbsp;</a></li>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></li>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">gRPC supporting Intel RA-TLS</a></li>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a></li>
           <li>Secure logistic regression training base on TEE &amp; HE</li>
         </ul>
       </td>
