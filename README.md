@@ -527,7 +527,11 @@ document section that explains the corresponding details and then guides you to 
 
 # Incubating Component Projects
 
-Besides solutions, CCZoo is also incubating component level projects with secure technologies, which can be standardized and versatile components, to be easily adopted in secure solutions. Incubating component  projects are now engaged in many solutions in CCZoo to validate  security and robustness.
+Besides reference solutions, CCZoo is also incubating new projects of key security
+components that are commonly used by multiple CCZoo reference solutions. Once any
+of them is proven useful enough and stable enough via a thorough validation with
+CCZoo reference solutions running on various public cloud services, it will graduate
+from CCZoo and evolve to a standalone project.
 
 <table border="1" bordercolor="#000000" cellpadding="2" cellspacing="0" style="width:100%">
   <tbody>
