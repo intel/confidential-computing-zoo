@@ -1,8 +1,8 @@
 name: HFL-TensorFlow Docker Image CI
 
 on:
-  pull_request:
-    branches: [ branch0.1/hfl-tensorflow ]
+  push:
+    branches: [ main ]
 
 jobs:
 
