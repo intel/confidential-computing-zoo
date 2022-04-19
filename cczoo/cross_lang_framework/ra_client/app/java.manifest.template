@@ -46,10 +46,10 @@ sgx.trusted_files = [
   "file:/usr/share/java/java-atk-wrapper.jar",
   "file:MultiThreadMain.class",
   "file:SyncedCounter.class",
+  "file:test",
   "file:GramineJni/gramine_jni.class",
   "file:GramineJni/gramine_xx.class",
   "file:/usr/lib/libgramine_jni.so",
-  "file:certs/test-ca-sha256.crt",
   "file:certs/ca_cert.crt",
 ]
 

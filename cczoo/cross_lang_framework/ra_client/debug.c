@@ -9,10 +9,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
-
+#include <stdarg.h>
 #include "secret_prov.h"
 
 #define SEND_STRING "MORE"
+
 
 static int list_dir(char *path) {
     DIR *d;
