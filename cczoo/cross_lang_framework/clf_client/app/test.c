@@ -2,12 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
-int secret_prov_test();
-int get_key(uint8_t* key, uint32_t key_len);
-int get_file_2_buff(char* fname, uint64_t offset, uint8_t* data, uint64_t len, uint64_t* ret_len);
-int get_file_size(char* fname, uint64_t* ret_len);
-int put_result(char* fname, uint64_t offset, uint8_t* data, int32_t len);
+#include "clf_client.h"
 
 int main()
 {

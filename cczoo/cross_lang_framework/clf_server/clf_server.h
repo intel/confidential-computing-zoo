@@ -1,5 +1,5 @@
-#ifndef __RA_SERVER_h__
-#define __RA_SERVER_h__
+#ifndef __CLF_SERVER_h__
+#define __CLF_SERVER_h__
 
 #include <stdint.h>
 

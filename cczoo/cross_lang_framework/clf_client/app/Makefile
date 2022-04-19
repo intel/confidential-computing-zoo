@@ -81,6 +81,7 @@ CFLAGS += -O0 -ggdb3
 CFLAGS += -fPIE
 CFLAGS += -Wall -std=c11 \
           -I ../../inc \
+          -I ../ \
           -I$(GRAMINEDIR)/Pal/src/host/Linux-SGX/tools/ra-tls \
           -I /usr/lib/jvm/java-11-openjdk-amd64/include/ \
           -I /usr/lib/jvm/java-11-openjdk-amd64/include/linux/ \
