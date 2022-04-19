@@ -20,7 +20,7 @@ CFLAGS += -fPIC
 LDFLAGS += -shared
 
 .PHONY: all
-all: libgramine_jni.so ra_client_java_lib
+all: libgramine_jni.so clf_client_java_lib
 
 #---------- libgramine_jni.so --------
 CFLAGS += -Wall -std=c11 \
@@ -31,14 +31,14 @@ CFLAGS += -Wall -std=c11 \
           $(shell pkg-config --cflags mbedtls_gramine)
 LDFLAGS += $(shell pkg-config --libs mbedtls_gramine)
 
-ra_client_comm_src := \
-	ra_client.c \
+clf_client_comm_src := \
+	clf_client.c \
 	debug.c
 
-ra_client_comm_objs := $(ra_client_comm_src:%.c=../%.o)
+clf_client_comm_objs := $(clf_client_comm_src:%.c=../%.o)
 
 .PHONY: libgramine_jni.so
-libgramine_jni.so: $(ra_client_comm_objs) gramine_jni.c
+libgramine_jni.so: $(clf_client_comm_objs) gramine_jni.c
 	$(CC) $^ $(CFLAGS) $(LDFLAGS) -lsecret_prov_attest -o $@
 	sudo cp $@ /usr/lib/$@
 	md5sum $@ /usr/lib/$@
@@ -52,8 +52,8 @@ CLASS_FILES = $(SOURCE_FILES:.java=.class)
 %.class: %.java
 	javac -d ../app $<
 
-.PHONY: ra_client_java_lib
-ra_client_java_lib: $(CLASS_FILES)
+.PHONY: clf_client_java_lib
+clf_client_java_lib: $(CLASS_FILES)
 	
 #---------- clean ----------------
 .PHONY: clean

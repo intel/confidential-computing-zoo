@@ -74,7 +74,7 @@ test.sig: test.manifest.sgx
 test.token: test.sig
 	gramine-sgx-get-token --output $@ --sig $<
 
-lib_src = ra_client.c debug.c
+lib_src = clf_client.c debug.c
 lib_obj = $(lib_src:%.c=../%.o)
 
 CFLAGS += -O0 -ggdb3

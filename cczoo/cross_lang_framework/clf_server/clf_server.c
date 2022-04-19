@@ -13,7 +13,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "secret_prov.h"
-#include "ra_server.h"
+#include "clf_server.h"
 
 #define EXPECTED_STRING "MORE"
 #define SECRET_STRING "42" /* answer to ultimate question of life, universe, and everything */

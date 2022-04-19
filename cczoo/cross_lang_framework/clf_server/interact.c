@@ -14,7 +14,7 @@
 #include <unistd.h>
 #include "secret_prov.h"
 #include "cross_comm.h"
-#include "ra_server.h"
+#include "clf_server.h"
 
 #define MAX_FILE_RW_BUF_SIZE		(4*1024*1024)
 #define MIN_FILE_RW_BUF_SIZE		(64*1024)
