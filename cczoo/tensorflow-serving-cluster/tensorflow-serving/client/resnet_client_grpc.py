@@ -27,13 +27,23 @@ from tensorflow_serving.apis import prediction_service_pb2_grpc
 from utils import *
 
 class benchmark_engine(object):
-    def __init__(self, url, image_flag=None, certificate=None, batch_size=1, concurrent_num=64, response_time=10):
+    def __init__(self,
+                 url,
+                 image_flag=None,
+                 root_cert=None,
+                 private_key=None,
+                 certificate_chain=None,
+                 batch_size=1,
+                 concurrent_num=64,
+                 response_time=10):
         self.url = url
+        self.image_flag = image_flag
         self.batch_size = batch_size
         self.response_time = response_time
         self.concurrent_num = concurrent_num
-        self.image_flag = image_flag
-        self.certificate = certificate
+        self.root_cert = None if not root_cert else open(root_cert, 'rb').read()
+        self.private_key = None if not private_key else open(private_key, 'rb').read()
+        self.certificate_chain = None if not certificate_chain else open(certificate_chain, 'rb').read()
         self.request_signatures = []
         self.request_stubs = []
         self.__prepare__()
@@ -68,7 +78,7 @@ class benchmark_engine(object):
         response_list = []
 
         # create channel
-        if self.certificate == None:
+        if self.root_cert == None:
             async with grpc.aio.insecure_channel(self.url) as channel:
                 stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
                 if loop_num != 0:
@@ -91,7 +101,9 @@ class benchmark_engine(object):
                         tps = self.batch_size / latency
                         print(format_string.format('insecure', task_idx, self.batch_size, 1000*latency, tps))
         else:
-            creds = grpc.ssl_channel_credentials(root_certificates=open(self.certificate, 'rb').read())
+            creds = grpc.ssl_channel_credentials(root_certificates =self.root_cert,
+                                                 private_key=self.private_key,
+                                                 certificate_chain=self.certificate_chain)
             async with grpc.aio.secure_channel(self.url, creds) as channel:
                 stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
                 if loop_num != 0:
@@ -153,7 +165,7 @@ class benchmark_engine(object):
             print(format_string.format(self.concurrent_num, self.batch_size, e2e_time, 1000*latency, tps))
 
 def main():
-    benchmark_app = benchmark_engine(args.url, args.img, args.crt, args.batch, args.cnum)
+    benchmark_app = benchmark_engine(args.url, args.img, args.ca, args.key, args.crt, args.batch, args.cnum)
     if args.loop != 0:
         # warm up
         benchmark_app.run(5)
@@ -163,14 +175,15 @@ def main():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--url', type=str, help='gRPC API Serving URL: IP:8500')
-    parser.add_argument('--img', default=None, type=str, help='Image path')
-    parser.add_argument('--crt', default=None, type=str, help='TLS certificate file path')
-    parser.add_argument('--batch', default=1, type=int, help='Batch size')
-    parser.add_argument('--cnum', default=16, type=int, help='Concurrent connection num')
-    parser.add_argument('--loop', default=200, type=int, help='Requests loop num: 0 (infinite loop)')
+    parser.add_argument('-url', default='localhost:8500', type=str, help='gRPC API Serving URL: IP:8500')
+    parser.add_argument('-img', default=None, type=str, help='Image path')
+    parser.add_argument('-ca', default=None, type=str, help='SSL CA file path')
+    parser.add_argument('-key', default=None, type=str, help='SSL key file path')
+    parser.add_argument('-crt', default=None, type=str, help='SSL certificate file path')
+    parser.add_argument('-batch', default=1, type=int, help='Batch size')
+    parser.add_argument('-cnum', default=16, type=int, help='Concurrent connection num')
+    parser.add_argument('-loop', default=200, type=int, help='Requests loop num: 0 (infinite loop)')
 
     args = parser.parse_args()
 
     main()
-
