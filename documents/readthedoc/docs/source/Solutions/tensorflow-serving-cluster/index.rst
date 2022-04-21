@@ -189,13 +189,20 @@ and TensorFlow Serving.
 
 For example::
 
-   service_domain_name=grpc.tf-serving.service.com
-   ./generate_ssl_config.sh ${service_domain_name}
-   tar -cvf ssl_configure.tar ssl_configure
+   one-way::
+      service_domain_name=grpc.tf-serving.service.com
+      ./generate_oneway_ssl_config.sh ${service_domain_name}
+      tar -cvf ssl_configure.tar ssl_configure
 
-``generate_ssl_config.sh`` will generate the directory ``ssl_configure`` which
-includes ``server.crt``, ``server.key`` and ``ssl.cfg``.
-``server.crt`` will be used by the remote client and ``ssl.cfg`` will be used by
+   two-way::
+      service_domain_name=grpc.tf-serving.service.com
+      client_domain_name=client.tf-serving.service.com
+      ./generate_twoway_ssl_config.sh ${service_domain_name} ${client_domain_name}
+      tar -cvf ssl_configure.tar ssl_configure
+
+``generate_*_ssl_config.sh`` will generate the directory ``ssl_configure`` which
+includes ``server/cert.pem``, ``server/key.pem``, ``client/cert.pem``, ``client/key.pem`` and ``ssl.cfg``.
+Those pems will be used by the remote client and ``ssl.cfg`` will be used by
 TensorFlow Serving.
 
 1.3 Create encrypted model file
@@ -413,7 +420,13 @@ request client is good.
 ^^^^^^^^^^^^^^^^^^^^^^^
 Start the remote request with dummy image::
 
-   python3 ./resnet_client_grpc.py --url ${service_domain_name}:8500 --crt `pwd -P`/ssl_configure/server.crt --batch 1 --cnum 1 --loop 50
+   one-way::
+
+      python3 ./resnet_client_grpc.py --batch 1 --cnum 1 --loop 50 --url ${service_domain_name}:8500 --crt `pwd -P`/ssl_configure/server/cert.pem
+
+   two-way::
+
+      python3 ./resnet_client_grpc.py --batch 1 --cnum 1 --loop 50 --url ${service_domain_name}:8500 --ca `pwd -P`/ssl_configure/ca_cert.pem --crt `pwd -P`/ssl_configure/client/cert.pem --key `pwd -P`/ssl_configure/client/key.pem
 
 You can get the inference result printed in the terminal window.
 
