@@ -181,29 +181,40 @@ The converted model file will be under::
 
    models/resnet50-v15-fp32/1/saved_model.pb
 
-1.2 Create the TLS certificate
+1.2 Create the SSL/TLS certificate
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-We choose gRPC TLS and create the one-way TLS Keys and certificates by setting
+We choose gRPC SSL/TLS and create the SSL/TLS Keys and certificates by setting
 TensorFlow Serving domain name to establish a communication link between client
 and TensorFlow Serving.
 
+For ensuring security of the data being transferred between a client and server, SSL/TLS can be implemented either one-way or two-way. 
+
 For example::
 
-   one-way::
+   one-way(client verify server)::
+
       service_domain_name=grpc.tf-serving.service.com
       ./generate_oneway_ssl_config.sh ${service_domain_name}
       tar -cvf ssl_configure.tar ssl_configure
 
-   two-way::
+      ``generate_oneway_ssl_config.sh`` will generate the directory 
+      ``ssl_configure`` which includes ``server/*.pem`` and ``ssl.cfg``.
+      ``server/cert.pem`` will be used by the remote client and ``ssl.cfg`` 
+      will be used by TensorFlow Serving.
+
+   two-way(server and client verify each other)::
+
       service_domain_name=grpc.tf-serving.service.com
       client_domain_name=client.tf-serving.service.com
-      ./generate_twoway_ssl_config.sh ${service_domain_name} ${client_domain_name}
+      ./generate_twoway_ssl_config.sh ${service_domain_name} 
+      ${client_domain_name}
       tar -cvf ssl_configure.tar ssl_configure
 
-``generate_*_ssl_config.sh`` will generate the directory ``ssl_configure`` which
-includes ``server/cert.pem``, ``server/key.pem``, ``client/cert.pem``, ``client/key.pem`` and ``ssl.cfg``.
-Those pems will be used by the remote client and ``ssl.cfg`` will be used by
-TensorFlow Serving.
+      ``generate_twoway_ssl_config.sh`` will generate the directory 
+      ``ssl_configure`` which includes ``server/*.pem``, ``client/*.pem``, 
+      ``ca_*.pem`` and ``ssl.cfg``.
+      ``client/*.pem`` and ``ca_cert.pem`` will be used by the remote client 
+      and ``ssl.cfg`` will be used by TensorFlow Serving.
 
 1.3 Create encrypted model file
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
