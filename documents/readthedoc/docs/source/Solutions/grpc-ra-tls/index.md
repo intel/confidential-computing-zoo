@@ -1,4 +1,4 @@
-# gRPC supporting Intel RA-TLS
+# RA-TLS Enhanced gRPC
 
 This solution presents an enhanced [gRPC](https://grpc.io/) (Remote Procedure Call) framework to 
 guarantee security during transmission and runtime via two-way 
@@ -241,7 +241,7 @@ Please refer to the examples for makefile and build script modifications.
 
 ## Cloud Deployment
 
-### 1. Aliyun ECS
+### 1. Alibaba Cloud
 
 [Aliyun ECS](https://help.aliyun.com/product/25365.html) (Elastic Compute Service) is
 an IaaS (Infrastructure as a Service) level cloud computing service provided by Alibaba

@@ -5,7 +5,7 @@ be validated in public clouds to verify the versatility, stability, robustness.
 We will provide detailed configurations of each public clouds for reference, and
 notes of the diversity in each cloud for easy deployment.
 
-We now have validated solutions in Alibaba Cloud, Tencent Cloud and Azure Cloud.
+We now have validated solutions in Alibaba Cloud, Tencent Cloud.
 There will be more solutions be validated in more public cloud environments in the
 future.
 
@@ -83,7 +83,7 @@ The configuration of the ECS instance as blow:
         <ul>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML&nbsp;</a>(<strong>*<a href="https://help.aliyun.com/document_detail/342755.html">Alibaba Best Practice</a>*</strong>)</li>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></li>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">gRPC supporting Intel RA-TLS</a></li>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a></li>
           <li>Secure logistic regression training base on TEE &amp; HE</li>
         </ul>
       </td>
@@ -162,7 +162,7 @@ The configuration of the M6ce instance as blow:
         <ul>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML&nbsp;</a></li>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></li>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">gRPC supporting Intel RA-TLS</a></li>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a></li>
           <li>Secure logistic regression training base on TEE &amp; HE</li>
         </ul>
       </td>
@@ -173,82 +173,3 @@ The configuration of the M6ce instance as blow:
 
 ---
 
-## Azure Cloud
-
-[Azure confidential computing services](https://azure.microsoft.com/en-us/solutions/confidential-compute/) are
-available and provide access to VMs with Intel SGX enabled in [DCsv2](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv2-series) and [DCsv3](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series)
-VM instances. 
-
-The configuration of the DCsv3 instance as blow:
-
-<table border="1" cellpadding="1" cellspacing="1" style="width:500px">
-  <tbody>
-    <tr>
-      <td colspan="2"><strong>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp;Public Cloud</strong>
-      </td>
-      <td><strong>&nbsp; &nbsp; Azure Cloud</strong>
-      </td>
-    </tr>
-    <tr>
-      <td rowspan="6">
-        <p>&nbsp;
-        </p>
-        <p><strong>Instance&nbsp;</strong>
-        </p>
-      </td>
-      <td style="text-align: left;">Type
-      </td>
-      <td><a href="https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series">Standard_DC16s_v3</a>
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: left;">Kernel
-      </td>
-      <td>5.13
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: left;">OS
-      </td>
-      <td>Ubuntu20.04
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: left;">Memory
-      </td>
-      <td>128GB(64G EPC Memory)
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: left;">vCPU
-      </td>
-      <td>16
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: left;">PCCS Server
-      </td>
-      <td><a href="https://docs.microsoft.com/en-us/azure/confidential-computing/quick-create-portal#install-azure-dcap-client">Azure DCAP</a>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="2">
-        <p>
-          <br />
-          <br />
-          <strong>Validated Solution&nbsp;</strong>
-        </p>
-      </td>
-      <td>
-        <ul>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/ehsm-kms/index.html">eHSM</a>
-            <br />
-            <br />
-            <br />
-            <br />
-            &nbsp;</li>
-        </ul>
-      </td>
-    </tr>
-  </tbody>
-</table>

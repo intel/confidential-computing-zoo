@@ -74,11 +74,11 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td><strong><span style="font-size:22px">*</span><a href="https://cczoo.readthedocs.io/en/main/Solutions/rats-tls/index.html">RATS-TLS</a></strong>
       </td>
-      <td><strong><span style="font-size:22px">*</span></strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html"><font face="Arial"><strong>RA-g</strong></font><strong><span style="font-family:Arial">RPC</span></strong></a>
+      <td><strong><span style="font-size:22px">*</span></strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html"><font face="Arial"><strong>RA-TLS g</strong></font><strong><span style="font-family:Arial">RPC</span></strong></a>
       </td>
       <td style="text-align:center;"><strong>Vault</strong>
       </td>
-      <td style="text-align:center;"><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html"><strong>eHSM</strong></a>
+      <td style="text-align:center;"><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html"><strong>eHSM-KMS</strong></a>
       </td>
     </tr>
     <tr>
@@ -392,15 +392,15 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td>-
       </td>
-      <td>-
+      <td>Yes
       </td>
-      <td>-
+      <td>Yes
       </td>
       <td>-
       </td>
       <td>Yes
       </td>
-      <td>Yes
+      <td>-
       </td>
       <td>Yes
       </td>
@@ -412,7 +412,7 @@ document section that explains the corresponding details and then guides you to 
       </td>
     </tr>
     <tr>
-      <td><strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html">eHSM</a></strong>
+      <td><strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html">eHSM-KMS</a></strong>
       </td>
       <td>Yes
       </td>
@@ -527,7 +527,11 @@ document section that explains the corresponding details and then guides you to 
 
 # Incubating Component Projects
 
-Besides solutions, CCZoo is also incubating component level projects with secure technologies, which can be standardized and versatile components, to be easily adopted in secure solutions. Incubating component  projects are now engaged in many solutions in CCZoo to validate  security and robustness.
+Besides reference solutions, CCZoo is also incubating new projects of key security
+components that are commonly used by multiple CCZoo reference solutions. Once any
+of them is proven useful enough and stable enough via a thorough validation with
+CCZoo reference solutions running on various public cloud services, it will graduate
+from CCZoo and evolve to a standalone project.
 
 <table border="1" bordercolor="#000000" cellpadding="2" cellspacing="0" style="width:100%">
   <tbody>
@@ -548,11 +552,11 @@ Besides solutions, CCZoo is also incubating component level projects with secure
       </td>
       <td>Published
       </td>
-      <td><a href="https://cczoo.readthedocs.io/en/main/Cloud/cloudDeployment.html#azure-cloud"><font face="Arial">Azure Cloud</font></a>
+      <td><span class="md-plain"><font face="Arial"><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#aliyun-ecs">Alibaba Cloud</a></font></span>
       </td>
     </tr>
     <tr>
-      <td colspan="1"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><strong>gRPC Supporting Intel RA-TLS</strong></a>
+      <td colspan="1"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><strong>RA-TLS Enhanced gRPC</strong></a>
       </td>
       <td>This project provides an enhanced&nbsp;<a href="https://grpc.io/">gRPC</a>&nbsp;(Remote Procedure Call) framework to guarantee security during transmission and runtime via two-way&nbsp;<a href="https://arxiv.org/pdf/1801.05863">RA-TLS</a>&nbsp;(Intel SGX Remote Attestation with Transport Layer Security) based on&nbsp;<a href="https://en.wikipedia.org/wiki/Trusted_execution_environment">TEE</a>&nbsp;(Trusted Execution Environment).
       </td>
@@ -567,6 +571,7 @@ Besides solutions, CCZoo is also incubating component level projects with secure
 </table>
 
 
+
 ---
 
 # Cloud Deployment
@@ -579,13 +584,11 @@ Below table shows solutions and component projects validated in public clouds. A
 <table border="1" cellpadding="1" cellspacing="1" style="width:500px">
   <tbody>
     <tr>
-      <td colspan="2"><strong>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;Public Cloud</strong>
+      <td colspan="2"><strong>&nbsp; &nbsp; &nbsp;Public Cloud</strong>
       </td>
       <td><strong>Alibaba Cloud</strong>
       </td>
       <td><strong>Tencent Cloud</strong>
-      </td>
-      <td><strong>Azure Cloud</strong>
       </td>
     </tr>
     <tr>
@@ -597,8 +600,6 @@ Below table shows solutions and component projects validated in public clouds. A
       </td>
       <td><a href="https://cloud.tencent.com/document/product/213/11518#M6ce">M6ce.4XLARGE128&nbsp;</a>
       </td>
-      <td><a href="https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series">Standard_DC16s_v3</a>
-      </td>
     </tr>
     <tr>
       <td style="text-align: left;">Kernel
@@ -606,8 +607,6 @@ Below table shows solutions and component projects validated in public clouds. A
       <td>4.19.91-24
       </td>
       <td>5.4.119-19-0009.1
-      </td>
-      <td>5.13
       </td>
     </tr>
     <tr>
@@ -617,8 +616,6 @@ Below table shows solutions and component projects validated in public clouds. A
       </td>
       <td>TencentOS Server 3.1
       </td>
-      <td>Ubuntu20.04
-      </td>
     </tr>
     <tr>
       <td style="text-align: left;">Memory
@@ -627,13 +624,9 @@ Below table shows solutions and component projects validated in public clouds. A
       </td>
       <td>64G(32G EPC Memory)
       </td>
-      <td>128GB(64G EPC Memory)
-      </td>
     </tr>
     <tr>
       <td style="text-align: left;">vCPU
-      </td>
-      <td>16
       </td>
       <td>16
       </td>
@@ -647,8 +640,6 @@ Below table shows solutions and component projects validated in public clouds. A
       </td>
       <td><a href="https://cloud.tencent.com/document/product/213/63353">sgx-dcap-server-tc.sh.tencent.cn&nbsp;</a>
       </td>
-      <td><a href="https://docs.microsoft.com/en-us/azure/confidential-computing/quick-create-portal#install-azure-dcap-client">Azure DCAP</a>
-      </td>
     </tr>
     <tr>
       <td colspan="2"><strong>Validated Solution&nbsp;</strong>
@@ -657,7 +648,7 @@ Below table shows solutions and component projects validated in public clouds. A
         <ul>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML&nbsp;</a></li>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></li>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">gRPC supporting Intel RA-TLS</a></li>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a></li>
           <li>Secure logistic regression training base on TEE &amp; HE</li>
         </ul>
       </td>
@@ -665,23 +656,14 @@ Below table shows solutions and component projects validated in public clouds. A
         <ul>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML&nbsp;</a></li>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></li>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">gRPC supporting Intel RA-TLS</a></li>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a></li>
           <li>Secure logistic regression training base on TEE &amp; HE</li>
-        </ul>
-      </td>
-      <td>
-        <ul>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/ehsm-kms/index.html">eHSM</a>
-            <br />
-            <br />
-            <br />
-            <br />
-            &nbsp;</li>
         </ul>
       </td>
     </tr>
   </tbody>
 </table>
+
 
 
 ---
