@@ -1,4 +1,4 @@
-# Horizontal Federated Learning
+# Horizontal Federated Learning with Intel SGX Solution
 
 This solution presents a framework for developing a PPML(Privacy-Preserving Machine Learning) solution based on TensorFlow - Horizontal Federated Learning with Intel SGX.
 
@@ -6,10 +6,10 @@ This solution presents a framework for developing a PPML(Privacy-Preserving Mach
 
 How to ensure the privacy of participants in the distributed training process of deep neural networks is a current hot topic. Federated learning can solve the problem to a certain extent. In horizontal federated learning, each participant uses its own local data for algorithm iteration and only uploads gradient information instead of raw data, which guarantees data privacy to a large extent. 
 
-The commonly used encryption method in federated learning is Holomorphic Encryption(HE). In addition to HE, trusted execution environment (TEE) technology uses plaintext for calculation and uses a trusted computing base to ensure security. Intel SGX technology is a concrete realization of TEE technology. In this horizontal federated learning solution, we adopted a privacy protection computing solution based on Intel SGX technology.
+The commonly used encryption method in federated learning is Homomorphic Encryption(HE). In addition to HE, trusted execution environment (TEE) technology uses plaintext for calculation and uses a trusted computing base to ensure security. Intel SGX technology is a concrete realization of TEE technology. In this horizontal federated learning solution, we adopted a privacy protection computing solution based on Intel SGX technology.
 
 ### Encrypted runtime environment
- Intel SGX technology offers hardware-based memory encryption that isolates specific application code and data in memory. Intel SGX allows user-level code to allocate private regions of memory, called enclaves, which are designed to be protected from processes running at higher privilege levels.
+Intel SGX technology offers hardware-based memory encryption that isolates specific application code and data in memory. Intel SGX allows user-level code to allocate private regions of memory, called enclaves, which are designed to be protected from processes running at higher privilege levels.
 
 Intel SGX also helps protect against SW attacks even if OS/drivers/BIOS/VMM/SMM are compromised and helps increase protections for secrets even when attacker has full control of platform.
 
@@ -31,7 +31,7 @@ We use the Remote Attestation with Transport Layer Security (RA-TLS) of Intel SG
 To solve the problem of how to verify the untrusted application integrity, we use RA-TLS to verify the Intel SGX enclave. It ensures that the runtime application is a trusted version.
 
 ## Workflow
-In the training process, each worker uses local data in its enclave to complete a round of training, and then sends the gradient information in the back propagation process to the parameter server through the RA-TLS technology, and then the parameter server completes the gradient aggregation and update network parameters, and then send the updated parameters to each worker. The workflow is as follows:
+In the training process, each worker uses local data in its enclave to complete a round of training, and then sends the gradient information in the backpropagation process to the parameter server through the RA-TLS technology, and then the parameter server completes the gradient aggregation and update network parameters, and then send the updated parameters to each worker. The workflow is as follows:
 
 ![](images/HFL.svg)
 
@@ -75,18 +75,21 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 
 ### Start containers and aesm services
 Start three containers (ps0, worker0, worker1) and aesm services.
+If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`.
 ```shell
-./start_container.sh <attestation ip addr> ps0
-/start_aesm_service.sh
+./start_container.sh ps0 <PCCS ip addr>
+./start_aesm_service.sh
 ```
 ```shell
-./start_container.sh <attestation ip addr> worker0
-/start_aesm_service.sh
+./start_container.sh worker0 <PCCS ip addr>
+./start_aesm_service.sh
 ```
 ```shell
-./start_container.sh <attestation ip addr> worker1
-/start_aesm_service.sh
+./start_container.sh worker1 <PCCS ip addr>
+./start_aesm_service.sh
 ```
+
+If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud.
 
 ### Run the training scripts
 Run the script for the corresponding job in each container.
@@ -103,12 +106,7 @@ cd hfl-tensorflow
 test-sgx.sh worker1
 ```
 
-<div id="refer-anchor-1"></div>
-
-- [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
-
 ---
-
 ## Cloud Deployment
 
 ### 1. Aliyun ECS
@@ -145,3 +143,7 @@ The configuration of the M6ce instance as blow:
 - Instance SGX PCCS Server: [sgx-dcap-server-tc.sh.tencent.cn](https://cloud.tencent.com/document/product/213/63353)
 
 ***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
+
+<div id="refer-anchor-1"></div>
+
+- [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)

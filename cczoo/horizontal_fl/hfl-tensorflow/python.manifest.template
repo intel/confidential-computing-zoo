@@ -72,7 +72,7 @@ fs.mount.keras.uri = "file:/root/.keras/keras.json"
 sgx.debug = false
 sgx.remote_attestation = true
 sgx.nonpie_binary = true
-sgx.enclave_size = "16G"
+sgx.enclave_size = "8G"
 sgx.thread_num = 512
 sgx.protected_files_key = "ffeeddccbbaa99887766554433221100"
 
