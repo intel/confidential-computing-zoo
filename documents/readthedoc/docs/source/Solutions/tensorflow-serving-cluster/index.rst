@@ -187,11 +187,11 @@ We choose gRPC SSL/TLS and create the SSL/TLS Keys and certificates by setting
 TensorFlow Serving domain name to establish a communication link between client
 and TensorFlow Serving.
 
-For ensuring security of the data being transferred between a client and server, SSL/TLS can be implemented either one-way or two-way. 
+For ensuring security of the data being transferred between a client and server, SSL/TLS can be implemented either one-way TLS authentication or two-way TLS authentication (mutual TLS authentication).
 
 For example::
 
-   one-way(client verify server)::
+   one-way SSL/TLS authentication(client verifies server)::
 
       service_domain_name=grpc.tf-serving.service.com
       ./generate_oneway_ssl_config.sh ${service_domain_name}
@@ -202,7 +202,7 @@ For example::
       ``server/cert.pem`` will be used by the remote client and ``ssl.cfg`` 
       will be used by TensorFlow Serving.
 
-   two-way(server and client verify each other)::
+   two-way SSL/TLS authentication(server and client verify each other)::
 
       service_domain_name=grpc.tf-serving.service.com
       client_domain_name=client.tf-serving.service.com
@@ -431,11 +431,11 @@ request client is good.
 ^^^^^^^^^^^^^^^^^^^^^^^
 Start the remote request with dummy image::
 
-   one-way::
+   one-way SSL/TLS authentication::
 
       python3 ./resnet_client_grpc.py --batch 1 --cnum 1 --loop 50 --url ${service_domain_name}:8500 --crt `pwd -P`/ssl_configure/server/cert.pem
 
-   two-way::
+   two-way SSL/TLS authentication::
 
       python3 ./resnet_client_grpc.py --batch 1 --cnum 1 --loop 50 --url ${service_domain_name}:8500 --ca `pwd -P`/ssl_configure/ca_cert.pem --crt `pwd -P`/ssl_configure/client/cert.pem --key `pwd -P`/ssl_configure/client/key.pem
 
