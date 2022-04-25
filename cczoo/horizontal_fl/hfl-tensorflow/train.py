@@ -182,19 +182,10 @@ def train():
             
             features = tf.placeholder(tf.float32, [None, 24, 24, 3])
             labels = tf.placeholder(tf.int64, [None])
-            # labels = tf.placeholder(tf.int64, [None, 10])
             model = Cifar10Model()
             logits = model(features, training=True)
             logits = tf.cast(logits, tf.float32)
 
-            # predictions = {
-            #     'classes': tf.argmax(logits, axis=1),
-            #     'probabilities': tf.nn.softmax(logits, name='softmax_tensor')
-            # }
-            # accuracy = tf.metrics.accuracy(labels, predictions['classes'])
-
-            # cross_entropy = tf.losses.softmax_cross_entropy(
-                # logits=logits, onehot_labels=labels)
             cross_entropy = tf.losses.sparse_softmax_cross_entropy(
                 logits=logits, labels=labels)
             weight_decay = 2e-4
@@ -228,7 +219,6 @@ def train():
             train_writer.add_graph(tf.get_default_graph())
             init_op = tf.global_variables_initializer()
 
-        # hooks = [tf.train.StopAtStepHook(last_step=60)]
         config = tf.ConfigProto(intra_op_parallelism_threads=4, inter_op_parallelism_threads=4)
 
         with tf.train.MonitoredTrainingSession(master="grpc://" + worker_hosts[FLAGS.task_index],
@@ -237,17 +227,13 @@ def train():
                                             save_checkpoint_steps=400,
                                             config=config,
                                             ) as mon_sess:
-                                            # hooks=hooks) as mon_sess:
             load_end_time = time.time()
             load_time = load_end_time - load_start_time
             print("load time: %.3f" %load_time) 
-            # while not mon_sess.should_stop():
             for i in range(int(train_epochs/len(worker_hosts))):
-                print("epoch: %d" % i)
                 for _ in range(int(50000/batch_size)):
                     iter_start_time = time.time()
                     x_batch, y_batch = mon_sess.run([images_train,labels_train])
-                    # x_batch, y_batch = generate_data(batch_size)
                     _, step, loss_v, logits_, labels_, = mon_sess.run([train_op, global_step, loss, logits, labels], feed_dict={features: x_batch, labels: y_batch})
                     iter_end_time = time.time()
                     iter_time = iter_end_time-iter_start_time
