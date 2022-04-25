@@ -1,11 +1,10 @@
-========================================
-TensorFlow Serving Cluster PPML Solution
-========================================
+===============================
+TensorFlow Serving Cluster PPML 
+===============================
 
 This solution presents a framework for developing a PPML (Privacy-Preserving
 Machine Learning) solution - `TensorFlow Serving <https://www.tensorflow.org/tfx/guide/serving>`__
 cluster with Intel SGX and Gramine.
-
 
 Introduction
 ------------
@@ -569,3 +568,44 @@ Stop any previous Kubernetes service if you started it::
 
    cd <tensorflow-serving-cluster dir>/<tensorflow-serving>/docker/tf_serving/kubernetes
    kubectl delete -f gramine-tf-serving/deploy.yaml
+
+
+Cloud Deployment
+----------------
+
+1. Alibaba Cloud
+~~~~~~~~~~~~~~~~
+
+`Aliyun ECS <https://help.aliyun.com/product/25365.html>`__ (Elastic Compute Service) is
+an IaaS (Infrastructure as a Service) level cloud computing service provided by Alibaba
+Cloud. It builds security-enhanced instance families ( `g7t, c7t, r7t <https://help.aliyun.com/document_detail/207734.html>`__ ) based on Intel® SGX
+technology to provide a trusted and confidential environment with a higher security level.
+
+The configuration of the ECS instance as blow:
+
+- Instance Type  : `g7t <https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k>`__.
+- Instance Kernel: 4.19.91-24
+- Instance OS    : Alibaba Cloud Linux 2.1903
+- Instance Encrypted Memory: 32G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: `sgx-dcap-server.cn-hangzhou.aliyuncs.com <https://help.aliyun.com/document_detail/208095.html>`__
+
+``Notice:`` Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Aliyun PCCS server address.
+
+This solution is also published in Aliyun as the best practice - `Deploy TensorFlow Serving in Aliyun ECS security-enhanced instance <https://help.aliyun.com/document_detail/342755.html>`__.
+
+
+2. Tencent Cloud
+~~~~~~~~~~~~~~~~
+
+Tencent Cloud Virtual Machine (CVM) provide one instance named `M6ce <https://cloud.tencent.com/document/product/213/11518#M6ce>`__,
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the M6ce instance as blow:
+
+- Instance Type  : `M6ce.4XLARGE128 <https://cloud.tencent.com/document/product/213/11518#M6ce>`__.
+- Instance Kernel: 5.4.119-19-0009.1
+- Instance OS    : TencentOS Server 3.1
+- Instance Encrypted Memory: 64G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: `sgx-dcap-server-tc.sh.tencent.cn <https://cloud.tencent.com/document/product/213/63353>`__
