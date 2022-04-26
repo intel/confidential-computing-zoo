@@ -26,7 +26,7 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	int ret = STATUS_FAIL;
 	msg_resp_t resp = {0};
 	uint8_t* buf = 0;
- 
+
 	if(!ctx || !req)
 		return STATUS_FAIL;
 

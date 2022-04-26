@@ -1,5 +1,7 @@
 # Quick Start
 
+GRAMINEDIR=/home/ubuntu/gramine make
+
 ```sh
 
 RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 \

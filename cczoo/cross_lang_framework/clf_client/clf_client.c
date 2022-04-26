@@ -16,7 +16,7 @@
 /*
  * Get the symmetric key for input data decryption  and result encryption
  */
-int get_key(uint8_t* key, uint32_t key_len) {
+int get_key(int8_t* key, int32_t key_len) {
 	int ret = STATUS_FAIL;
 	struct ra_tls_ctx ctx = {0};
 	uint8_t* secret = NULL;
@@ -62,7 +62,7 @@ out:
 /*
  * Get file size so client can allocate buffer correspondingly
  */
-int get_file_size(char* fname, uint64_t* ret_len) {
+int get_file_size(char* fname, int64_t* ret_len) {
 	int ret = STATUS_FAIL;
 	int bytes;
 	struct ra_tls_ctx ctx = {0};
@@ -107,7 +107,7 @@ out:
 /*
  * Get file from server
  */
-int get_file_2_buff(char* fname, uint64_t offset, uint8_t* data, uint64_t len, uint64_t* ret_len) {
+int get_file_2_buff(char* fname, int64_t offset, int8_t* data, int32_t len, int32_t* ret_len) {
 	int ret = STATUS_FAIL;
 	int bytes;
 	struct ra_tls_ctx ctx = {0};
@@ -163,7 +163,7 @@ out:
 /*
  * Put result to server
  */
-int put_result(char* fname, uint64_t offset, uint8_t* data, int32_t len) {
+int put_result(char* fname, int64_t offset, int8_t* data, int32_t len) {
 	int ret = STATUS_FAIL;
 	int bytes;
 	struct ra_tls_ctx ctx = {0};

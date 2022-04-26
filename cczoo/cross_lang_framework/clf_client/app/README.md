@@ -22,10 +22,10 @@ Run `make SGX=1` (non-debug) or `make SGX=1 DEBUG=1` (debug) in the directory.
 
 Without SGX:
 
-    gramine-direct java MultiThreadMain
+    gramine-direct java clf_test
 
 With SGX:
 
-    gramine-sgx java -Xmx8G MultiThreadMain
+    gramine-sgx java -Xmx8G clf_test
 
 Note: If using 64G or greater enclave sizes, the JVM flag `-Xmx8G` can be omitted in gramine-sgx.

@@ -21,7 +21,7 @@ GRAMINE_LOG_LEVEL = error
 endif
 
 SOURCE_FILES = \
-	MultiThreadMain.java
+	clf_test.java
 
 CLASS_FILES = $(SOURCE_FILES:.java=.class)
 
