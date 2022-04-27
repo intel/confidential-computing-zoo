@@ -189,20 +189,19 @@ and TensorFlow Serving.
 
 For ensuring security of the data being transferred between a client and server, SSL/TLS can be implemented either one-way TLS authentication or two-way TLS authentication (mutual TLS authentication).
 
-For example::
-
-   one-way SSL/TLS authentication(client verifies server)::
+one-way SSL/TLS authentication(client verifies server)::
 
       service_domain_name=grpc.tf-serving.service.com
       ./generate_oneway_ssl_config.sh ${service_domain_name}
       tar -cvf ssl_configure.tar ssl_configure
 
-      ``generate_oneway_ssl_config.sh`` will generate the directory 
-      ``ssl_configure`` which includes ``server/*.pem`` and ``ssl.cfg``.
-      ``server/cert.pem`` will be used by the remote client and ``ssl.cfg`` 
-      will be used by TensorFlow Serving.
+``generate_oneway_ssl_config.sh`` will generate the directory 
+``ssl_configure`` which includes ``server/*.pem`` and ``ssl.cfg``.
+``server/cert.pem`` will be used by the remote client and ``ssl.cfg`` 
+will be used by TensorFlow Serving.
+      
 
-   two-way SSL/TLS authentication(server and client verify each other)::
+two-way SSL/TLS authentication(server and client verify each other)::
 
       service_domain_name=grpc.tf-serving.service.com
       client_domain_name=client.tf-serving.service.com
@@ -210,11 +209,12 @@ For example::
       ${client_domain_name}
       tar -cvf ssl_configure.tar ssl_configure
 
-      ``generate_twoway_ssl_config.sh`` will generate the directory 
-      ``ssl_configure`` which includes ``server/*.pem``, ``client/*.pem``, 
-      ``ca_*.pem`` and ``ssl.cfg``.
-      ``client/*.pem`` and ``ca_cert.pem`` will be used by the remote client 
-      and ``ssl.cfg`` will be used by TensorFlow Serving.
+``generate_twoway_ssl_config.sh`` will generate the directory 
+``ssl_configure`` which includes ``server/*.pem``, ``client/*.pem``, 
+``ca_*.pem`` and ``ssl.cfg``.
+``client/*.pem`` and ``ca_cert.pem`` will be used by the remote client 
+and ``ssl.cfg`` will be used by TensorFlow Serving.
+      
 
 1.3 Create encrypted model file
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
