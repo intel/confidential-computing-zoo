@@ -108,6 +108,8 @@ cd hfl-tensorflow
 test-sgx.sh worker1
 ```
 
+You can see the training log information from the workers' terminals to confirm that the training is running normally. The model files generated during training will be saved in the `model` folder.
+
 ---
 ## Cloud Deployment
 
