@@ -89,7 +89,7 @@ If running locally, please fill in the local PCCS server address in `<PCCS ip ad
 ./start_aesm_service.sh
 ```
 
-If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud.
+If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
 
 ### Run the training scripts
 Run the script for the corresponding job in each container.
