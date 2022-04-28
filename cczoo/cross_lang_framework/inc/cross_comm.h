@@ -20,8 +20,9 @@ typedef enum {
 typedef enum {
 	STATUS_SUCCESS			= 0,
 	STATUS_FAIL				= 0x20221000,
-	STATUS_OUT_OF_MEM		= 0x20221001,
-	STATUS_NET_SEND_FAIL	= 0x20221002
+	STATUS_BAD_PARAM		= 0x20221001,
+	STATUS_OUT_OF_MEM		= 0x20221002,
+	STATUS_NET_SEND_FAIL	= 0x20221003
 } status_t;
 
 typedef struct _msg_req_t {
@@ -64,6 +65,11 @@ typedef struct _msg_resp_t {
 } msg_resp_t;
 
 #define log_error(fmt, ...)                      \
+    do {                                         \
+            fprintf(stderr, fmt, ##__VA_ARGS__); \
+    } while (0)
+
+#define log_debug(fmt, ...)                      \
     do {                                         \
             fprintf(stderr, fmt, ##__VA_ARGS__); \
     } while (0)

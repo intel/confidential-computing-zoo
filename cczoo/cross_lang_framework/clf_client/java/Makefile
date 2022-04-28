@@ -50,7 +50,7 @@ SOURCE_FILES = \
 CLASS_FILES = $(SOURCE_FILES:.java=.class)
 
 %.class: %.java
-	javac -d ../app $<
+	javac -Xlint:deprecation -d ../app $<
 
 .PHONY: clf_client_java_lib
 clf_client_java_lib: $(CLASS_FILES)

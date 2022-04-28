@@ -12,25 +12,42 @@
 
 #include "secret_prov.h"
 #include "cross_comm.h"
+#include "clf_client.h"
+
+#define start_secret_prov()		\
+	do{\
+		ret = secret_provision_start((const char *)ip_port, (const char *)ca_cert, &ctx);\
+		if (ret < 0) {\
+			log_error("[error] secret_provision_start() returned %d\n", ret);\
+			goto out;\
+		}\
+	}while(0)
+
+#define clean_secret_prov()		\
+	do{\
+		secret_provision_destroy();\
+		secret_provision_close(&ctx);\
+	}while(0)
+
 
 /*
  * Get the symmetric key for input data decryption  and result encryption
  */
-int get_key(int8_t* key, int32_t key_len) {
+int get_key(int8_t* ip_port, int8_t* ca_cert, int8_t* key, int32_t key_len) {
 	int ret = STATUS_FAIL;
 	struct ra_tls_ctx ctx = {0};
 	uint8_t* secret = NULL;
 	size_t secret_size = 0;
 
-	log_error("key[0]:%d key[1]:%d key_len:%d sizeof(msg_type_t):%lu\n", key[0], key[1], key_len, sizeof(msg_type_t));
-
-	/* secret provisioning was not run as part of initialization, run it now */
-	ret = secret_provision_start("VM-0-3-ubuntu:4433",
-								 "certs/ca_cert.crt", &ctx);
-	if (ret < 0) {
-		log_error("[error] secret_provision_start() returned %d\n", ret);
-		goto out;
+	if(!ip_port || !ca_cert || !key) {
+		return STATUS_BAD_PARAM;
 	}
+
+	log_error("get_key() key[0]:%d key[1]:%d key_len:%d sizeof(msg_type_t):%lu\n", key[0], key[1], key_len, sizeof(msg_type_t));
+	dump_buff((char*)key, key_len);
+
+	/* connect server */
+	start_secret_prov();
 
 	ret = secret_provision_get(&secret, &secret_size);
 	if (ret < 0) {
@@ -47,6 +64,7 @@ int get_key(int8_t* key, int32_t key_len) {
 
 	log_error("secret_size:%lu secret:%s\n", secret_size, secret);
 	if (key_len < secret_size) {
+		log_error("Failed. key_len(%d) < secret_size(%lu)\n", key_len, secret_size);
 		ret = STATUS_FAIL;
 		goto out;
 	}
@@ -54,27 +72,26 @@ int get_key(int8_t* key, int32_t key_len) {
 	memcpy(key, secret, secret_size);
 	ret = STATUS_SUCCESS;
 out:
-	secret_provision_destroy();
-	secret_provision_close(&ctx);
+	clean_secret_prov();
 	return ret;
 }
 
 /*
  * Get file size so client can allocate buffer correspondingly
  */
-int get_file_size(char* fname, int64_t* ret_len) {
+int get_file_size(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t* ret_len) {
 	int ret = STATUS_FAIL;
 	int bytes;
 	struct ra_tls_ctx ctx = {0};
 	msg_req_t req = {0};
 	msg_resp_t resp = {0};
 
-	ret = secret_provision_start("VM-0-3-ubuntu:4433",
-                                 "certs/ca_cert.crt", &ctx);	//TODO: should NOT hardcode target machine
-	if (ret < 0) {
-		fprintf(stderr, "[error] secret_provision_start() returned %d\n", ret);
-		goto out;
+	if(!ip_port || !ca_cert || !fname || !ret_len) {
+		return STATUS_BAD_PARAM;
 	}
+
+	/* connect server */
+	start_secret_prov();
 
 	ret = STATUS_FAIL;
 	req.msg_type = MSG_GET_DATA_SIZE;
@@ -99,27 +116,26 @@ int get_file_size(char* fname, int64_t* ret_len) {
 
 	ret = STATUS_SUCCESS;
 out:
-	secret_provision_destroy();
-	secret_provision_close(&ctx);
+	clean_secret_prov();
 	return ret;
 }
 
 /*
  * Get file from server
  */
-int get_file_2_buff(char* fname, int64_t offset, int8_t* data, int32_t len, int32_t* ret_len) {
+int get_file_2_buff(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t offset, int8_t* data, int32_t len, int32_t* ret_len) {
 	int ret = STATUS_FAIL;
 	int bytes;
 	struct ra_tls_ctx ctx = {0};
 	msg_req_t req = {0};
 	msg_resp_t resp = {0};
 
-	ret = secret_provision_start("VM-0-3-ubuntu:4433",
-								 "certs/ca_cert.crt", &ctx);	//TODO: should NOT hardcode target machine
-	if (ret < 0) {
-		fprintf(stderr, "[error] secret_provision_start() returned %d\n", ret);
-		goto out;
+	if(!ip_port || !ca_cert || !fname || !data || !ret_len) {
+		return STATUS_BAD_PARAM;
 	}
+
+	/* connect server */
+	start_secret_prov();
 
 	ret = STATUS_FAIL;
 	req.msg_type = MSG_GET_DATA;
@@ -155,27 +171,26 @@ int get_file_2_buff(char* fname, int64_t offset, int8_t* data, int32_t len, int3
 
 	ret = STATUS_SUCCESS;
 out:
-	secret_provision_destroy();
-	secret_provision_close(&ctx);
+	clean_secret_prov();
 	return ret;
 }
 
 /*
  * Put result to server
  */
-int put_result(char* fname, int64_t offset, int8_t* data, int32_t len) {
+int put_result(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t offset, int8_t* data, int32_t len) {
 	int ret = STATUS_FAIL;
 	int bytes;
 	struct ra_tls_ctx ctx = {0};
 	msg_req_t req = {0};
 	msg_resp_t resp = {0};
 
-	ret = secret_provision_start("VM-0-3-ubuntu:4433",
-								 "certs/ca_cert.crt", &ctx);	//TODO: should NOT hardcode target machine
-	if (ret < 0) {
-		fprintf(stderr, "[error] secret_provision_start() returned %d\n", ret);
-		goto out;
+	if(!ip_port || !ca_cert || !fname || !data) {
+		return STATUS_BAD_PARAM;
 	}
+
+	/* connect server */
+	start_secret_prov();
 
 	ret = STATUS_FAIL;
 	req.msg_type = MSG_PUT_RESULT;
@@ -205,7 +220,6 @@ int put_result(char* fname, int64_t offset, int8_t* data, int32_t len) {
 
 	ret = STATUS_SUCCESS;
 out:
-	secret_provision_destroy();
-	secret_provision_close(&ctx);
+	clean_secret_prov();
 	return ret;
 }
