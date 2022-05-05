@@ -3,6 +3,19 @@
 This framework aims to ease different programming languages to use Gramine
 based sgx functionality. Currently it only supports Java.
 
+## Concepts and architecture
+
+### Architecture
+<div align=center>
+<img src=../../documents/readthedoc/docs/source/Solutions/cross_language_framework_based_gramine/img/cross_language.jpeg>
+</div>
+
+### clf_client
+The central machine in which running the SGX enclave. Key and data will be transferred to this machine via TLS encrypted channel.
+
+### clf_server
+It contains data and key that will be transferred to client. There may be more than one clf_server especially in multi-party confidential computation scenario.
+
 ## Build and installation
 
 - Clone Gramine repo to local
