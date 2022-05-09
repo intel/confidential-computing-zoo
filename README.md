@@ -548,7 +548,7 @@ from CCZoo and evolve to a standalone project.
     <tr>
       <td colspan="1"><a href="https://cczoo.readthedocs.io/en/main/Solutions/rats-tls/index.html"><strong>RATS-TLS</strong></a>
       </td>
-      <td>This project provides a proof-of-concept implementation on how to integrate Intel SGX remote attestation into the TLS connection setup. Conceptually, it extends the standard X.509 certificate&nbsp;with SGX-related information. It also provides three non-SGX clients (<a href="https://github.com/cloud-security-research/sgx-ra-tls/blob/master/deps/mbedtls/programs/ssl/ssl_client1.c">mbedtls</a>,&nbsp;<a href="https://github.com/cloud-security-research/sgx-ra-tls/blob/master/deps/wolfssl-examples/tls/client-tls.c">wolfSSL</a>,&nbsp;<a href="https://github.com/cloud-security-research/sgx-ra-tls/blob/master/openssl-client.c">OpenSSL</a>)&nbsp;to show how seamless remote attestation works with different TLS libraries.&nbsp;
+      <td>This project provides a proof-of-concept implementation on how to integrate Intel SGX and TDX remote attestation into the TLS connection setup. Conceptually, it extends the standard X.509 certificate&nbsp;with SGX and TDX related information. It also provides two non-SGX clients (Wolfssl and OpenSSL)&nbsp;to show how seamless remote attestation works with different TLS libraries.&nbsp;
       </td>
       <td>Published
       </td>
