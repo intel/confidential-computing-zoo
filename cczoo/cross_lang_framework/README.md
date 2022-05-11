@@ -7,7 +7,7 @@ based sgx functionality. Currently it only supports Java.
 
 ### Architecture
 <div align=center>
-<img src=../../documents/readthedoc/docs/source/Solutions/cross_language_framework_based_gramine/img/cross_language.jpeg>
+<img src=../../documents/readthedoc/docs/source/Solutions/cross_language_framework_based_gramine/img/cross_language_framework.png>
 </div>
 
 ### clf_client
