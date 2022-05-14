@@ -32,7 +32,7 @@ the computing resources of the remote SGX-enabled server and combine the
 data of the two parties to jointly run a specific program. The specific
 process is as follows.
 
-![image](./img/cross_language.jpeg)
+![image](./img/cross_language_framework.png)
 
 1.  The SGX-enabled remote server will compile the app code provided by A and B and produces a signature. The signature contains
     the hash value of the program (to ensure that the program has not

@@ -9,10 +9,25 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
-
+#include <stdarg.h>
 #include "secret_prov.h"
+#include "cross_comm.h"
 
 #define SEND_STRING "MORE"
+
+
+void dump_buff(char *buff, int len) {
+	for(int i = 0; i<len; ) {
+		log_debug("%.2X", buff[i]);
+		i++;
+		if(0==i%8) {
+			log_debug("\n");
+		} else {
+			log_debug("-");
+		}
+	}
+	log_debug("\n\n");
+}
 
 static int list_dir(char *path) {
     DIR *d;

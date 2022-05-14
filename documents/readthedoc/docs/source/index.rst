@@ -56,6 +56,7 @@ Table of Contents
    Solutions/tensorflow-serving-cluster/index.rst
    Solutions/horizontal-federated-learning/hfl.md
    Solutions/grpc-ra-tls/index.md
+   Solutions/cross_language_framework_based_gramine/Readme.md
 
 .. toctree::
    :maxdepth: 1
