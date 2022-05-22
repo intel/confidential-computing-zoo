@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 #
 # Copyright (c) 2021 Intel Corporation
 #
@@ -13,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/usr/bin/env bash
+
 set -e
 cd ${WORK_BASE_PATH}
 echo "Run Secret Porv Server!"
