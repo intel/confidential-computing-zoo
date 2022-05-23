@@ -418,12 +418,12 @@ Start the remote request with dummy image::
    one-way SSL/TLS authentication::
 
       cd /client
-      python3 ./resnet_client_grpc.py --batch 1 --cnum 1 --loop 50 --url ${service_domain_name}:8500 --crt `pwd -P`/ssl_configure/server/cert.pem
+      python3 ./resnet_client_grpc.py -batch 1 -cnum 1 -loop 50 -url ${service_domain_name}:8500 -crt `pwd -P`/ssl_configure/server/cert.pem
 
    two-way SSL/TLS authentication::
 
       cd /client
-      python3 ./resnet_client_grpc.py --batch 1 --cnum 1 --loop 50 --url ${service_domain_name}:8500 --ca `pwd -P`/ssl_configure/ca_cert.pem --crt `pwd -P`/ssl_configure/client/cert.pem --key `pwd -P`/ssl_configure/client/key.pem
+      python3 ./resnet_client_grpc.py -batch 1 -cnum 1 -loop 50 -url ${service_domain_name}:8500 -ca `pwd -P`/ssl_configure/ca_cert.pem -crt `pwd -P`/ssl_configure/client/cert.pem -key `pwd -P`/ssl_configure/client/key.pem
 
 You can get the inference result printed in the terminal window.
 
