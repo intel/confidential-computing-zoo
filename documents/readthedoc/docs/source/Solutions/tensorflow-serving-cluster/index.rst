@@ -189,7 +189,7 @@ one-way SSL/TLS authentication(client verifies server)::
 ``ssl_configure`` which includes ``server/*.pem`` and ``ssl.cfg``.
 ``server/cert.pem`` will be used by the remote client and ``ssl.cfg`` 
 will be used by TensorFlow Serving.
-      
+
 
 two-way SSL/TLS authentication(server and client verify each other)::
 
@@ -296,7 +296,8 @@ For example::
    cd <tensorflow_serving dir>/docker/tf_serving
    scp -r client@client_ip:<tensorflow_serving dir>/docker/client/models.tar .
    scp -r client@client_ip:<tensorflow_serving dir>/docker/client/ssl_configure.tar .
-   tar -xvf models.tar ssl_configure.tar
+   tar -xvf models.tar
+   tar -xvf ssl_configure.tar
 
 2.2 Build TensorFlow Serving Docker image
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
