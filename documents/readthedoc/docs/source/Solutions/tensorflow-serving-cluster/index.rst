@@ -281,6 +281,11 @@ Check the secret provision service log::
 
    docker logs <secret_prov_service_container_id>
 
+Get container IP address::
+
+   docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' container_id
+   
+
 2. Run TensorFlow Serving w/ Gramine in SGX-enabled machine
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Under SGX-enabled machine, please download source package::
