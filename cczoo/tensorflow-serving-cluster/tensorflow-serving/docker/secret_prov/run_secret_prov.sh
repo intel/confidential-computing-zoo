@@ -16,11 +16,14 @@
 #!/usr/bin/env bash
 set -e
 
+pccs.service.com="localhost:127.0.0.1"
+
 
 function usage_help() {
     echo -e "options:"
     echo -e "  -h Display help"
     echo -e "  -i {image_id}"
+    echo -e "  -a {pccs_domain}"
 }
 
 while getopts "h?i:" OPT; do
@@ -33,6 +36,10 @@ while getopts "h?i:" OPT; do
             echo -e "Option $OPTIND, image_id = $OPTARG"
             image_id=$OPTARG
             ;;
+        a)
+            echo -e "Option $OPTIND, pccs.service.com = $OPTARG"
+            pccs.service.com=$OPTARG
+            ;;        
         ?)
             echo -e "Unknown option $OPTARG"
             usage_help
@@ -41,4 +48,7 @@ while getopts "h?i:" OPT; do
     esac
 done
 
-docker run -itd -p 4433:4433 -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket ${image_id}
+docker run -itd -p 4433:4433 \
+       -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+       --add-host=${pccs.service.com} \
+       ${image_id}

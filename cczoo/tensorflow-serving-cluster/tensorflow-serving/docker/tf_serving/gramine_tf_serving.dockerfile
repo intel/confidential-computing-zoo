@@ -39,19 +39,28 @@ RUN apt-get update \
         coreutils \
         gawk \
         git \
+        golang \
         libcurl4-openssl-dev \
         libprotobuf-c-dev \
         protobuf-c-compiler \
+        python3.7 \
         python3-protobuf \
         python3-pip \
         python3-dev \
+        python3-click \
+        python3-jinja2 \
         libnss-mdns \
         libnss-myhostname \
+        libcurl4-openssl-dev \
+        libprotobuf-c-dev \
         lsb-release \
+        ninja-build \
         wget \
         curl \
-        init \
     && apt-get install -y --no-install-recommends apt-utils
+
+RUN ln -sf /usr/bin/python3.7 /usr/bin/python3
+RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55'
 
 RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list \
     && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -
@@ -80,10 +89,6 @@ RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
 RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${ISGX_DRIVER_PATH} \
     && cd ${ISGX_DRIVER_PATH} \
     && git checkout DCAP_1.11
-
-RUN apt-get install -y gawk bison python3-click python3-jinja2 golang  ninja-build python3
-RUN apt-get install -y libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler
-RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55'
 
 RUN openssl genrsa -3 -out ${SGX_SIGNER_KEY} 3072
 
@@ -119,9 +124,6 @@ COPY sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf
 EXPOSE 8500
 # REST
 EXPOSE 8501
-
-# Please replace pccs_host_machin_id with real IP address
-RUN echo "pccs_host_machin_id attestation.service.com" > /etc/hosts
 
 RUN chmod +x /usr/bin/tf_serving_entrypoint.sh
 RUN cat /etc/sgx_default_qcnl.conf
