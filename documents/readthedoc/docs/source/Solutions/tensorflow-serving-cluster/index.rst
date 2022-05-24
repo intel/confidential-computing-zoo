@@ -47,7 +47,7 @@ sensitive input data and the model. To this end, we use Intel SGX enclaves to
 isolate TensorFlow Serving's execution to protect data confidentiality and
 integrity, and to provide a cryptographic proof that the program is correctly
 initialized and running on legitimate hardware with the latest patches. We also
-use Gramine to simplify the task of porting TensorFlow Serving to SGX, without
+use LibOS Gramine to simplify the task of porting TensorFlow Serving to SGX, without
 any changes.
 
 .. image:: ./img/Gramine_TF_Serving_Flow.svg
@@ -56,8 +56,8 @@ any changes.
 
 In this tutorial, we use three machines: client trusted machine, it can be a non-SGX
 platform or an SGX platform; SGX-enabled machine, treated as untrusted machine;
-remote client machine. In this solution, you can also build it in one machine
-with SGX-enabled with below steps.
+remote client machine. In this solution, you can also deploy this solution in one SGX-enabled machine
+with below steps.
 
 Here we will show the complete workflow for using Kubernetes to manage the
 TensorFlow Serving running inside an SGX enclave with Gramine and its features
@@ -172,7 +172,7 @@ The converted model file will be under::
    models/resnet50-v15-fp32/1/saved_model.pb
 
 1.2 Create the SSL/TLS certificate
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 We choose gRPC SSL/TLS and create the SSL/TLS Keys and certificates by setting
 TensorFlow Serving domain name to establish a communication link between client
 and TensorFlow Serving.
@@ -216,7 +216,7 @@ It guarantees below items.
 - Integrity of user data. All user data are read from disk and then decrypted with
   MAC (Message Authentication Code) verified to detect any data tampering.
 
-- Matching of file name. When opening an existing file, the metadata of the to-be-openned
+- Matching of file name. When opening an existing file, the metadata of the to-be-opened
   file will be checked to ensure that the name of the file when created is the
   same as the name given to the open operation.
 
@@ -589,6 +589,11 @@ Stop any previous Kubernetes service if you started it::
 Cloud Deployment
 ----------------
 
+``Notice:``
+   1. Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with public cloud PCCS server address.
+   2. If you choose to run this solution in separated public cloud instance, please make sure the ports ``4433`` and ``8500-8501`` are enabled to access.
+
+
 1. Alibaba Cloud
 ~~~~~~~~~~~~~~~~
 
@@ -606,9 +611,7 @@ The configuration of the ECS instance as blow:
 - Instance vCPU  : 16
 - Instance SGX PCCS Server: `sgx-dcap-server.cn-hangzhou.aliyuncs.com <https://help.aliyun.com/document_detail/208095.html>`__
 
-``Notice:`` Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Aliyun PCCS server address.
-
-This solution is also published in Aliyun as the best practice - `Deploy TensorFlow Serving in Aliyun ECS security-enhanced instance <https://help.aliyun.com/document_detail/342755.html>`__.
+This solution is also published in Ali Cloud as the best practice - `Deploy TensorFlow Serving in Aliyun ECS security-enhanced instance <https://help.aliyun.com/document_detail/342755.html>`__.
 
 
 2. Tencent Cloud
