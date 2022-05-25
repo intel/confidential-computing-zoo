@@ -73,6 +73,7 @@ sgx.debug = false
 sgx.nonpie_binary = true
 sgx.enclave_size = "8G"
 sgx.thread_num = 512
+sgx.remote_attestation = true
 
 sgx.trusted_files = [
   "file:{{ entrypoint }}",
