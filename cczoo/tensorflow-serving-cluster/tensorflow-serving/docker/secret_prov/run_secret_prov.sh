@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 #
 # Copyright (c) 2021 Intel Corporation
 #
@@ -13,17 +15,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/usr/bin/env bash
 set -e
-
 
 function usage_help() {
     echo -e "options:"
     echo -e "  -h Display help"
     echo -e "  -i {image_id}"
+    echo -e "  -a {pccs_service_com}"
 }
 
-while getopts "h?i:" OPT; do
+pccs_service_com="localhost:127.0.0.1"
+
+while getopts "h?i:a:" OPT; do
     case $OPT in
         h|\?)
             usage_help
@@ -33,6 +36,10 @@ while getopts "h?i:" OPT; do
             echo -e "Option $OPTIND, image_id = $OPTARG"
             image_id=$OPTARG
             ;;
+        a)
+            echo -e "Option $OPTIND, pccs_service_com = $OPTARG"
+            pccs_service_com=$OPTARG
+            ;;      
         ?)
             echo -e "Unknown option $OPTARG"
             usage_help
@@ -41,4 +48,7 @@ while getopts "h?i:" OPT; do
     esac
 done
 
-docker run -itd -p 4433:4433 -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket ${image_id}
+docker run -itd -p 4433:4433 \
+       -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+       --add-host=${pccs_service_com} \
+       ${image_id}

@@ -96,8 +96,6 @@ RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
 
 COPY certs/server2-sha256.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/certs
 
-# Please replace pccs_host_machin_id with real IP address
-RUN echo "pccs_host_machin_id attestation.service.com" > /etc/hosts
 COPY sgx_default_qcnl.conf /etc/
 COPY entrypoint_secret_prov_server.sh /usr/bin/
 RUN chmod +x /usr/bin/entrypoint_secret_prov_server.sh
