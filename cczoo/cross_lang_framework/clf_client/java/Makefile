@@ -37,8 +37,13 @@ clf_client_comm_src := \
 
 clf_client_comm_objs := $(clf_client_comm_src:%.c=../%.o)
 
+clf_comm_src := \
+	util.c
+
+clf_comm_objs := $(clf_comm_src:%.c=../../comm/%.o)
+
 .PHONY: libgramine_jni.so
-libgramine_jni.so: $(clf_client_comm_objs) gramine_jni.c
+libgramine_jni.so: $(clf_client_comm_objs) $(clf_comm_objs)  gramine_jni.c
 	$(CC) $^ $(CFLAGS) $(LDFLAGS) -lsecret_prov_attest -o $@
 	sudo cp $@ /usr/lib/$@
 	md5sum $@ /usr/lib/$@
@@ -58,5 +63,5 @@ clf_client_java_lib: $(CLASS_FILES)
 #---------- clean ----------------
 .PHONY: clean
 clean:
-	$(RM) *.token *.sig *.manifest.sgx *.manifest *.class *.so *.o ../*.o
+	$(RM) *.token *.sig *.manifest.sgx *.manifest *.class *.so *.o $(clf_client_comm_objs) $(clf_comm_objs)
 

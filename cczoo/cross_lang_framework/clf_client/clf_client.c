@@ -43,9 +43,6 @@ int get_key(int8_t* ip_port, int8_t* ca_cert, int8_t* key, int32_t key_len) {
 		return STATUS_BAD_PARAM;
 	}
 
-	log_error("get_key() key[0]:%d key[1]:%d key_len:%d sizeof(msg_type_t):%lu\n", key[0], key[1], key_len, sizeof(msg_type_t));
-	dump_buff((char*)key, key_len);
-
 	/* connect server */
 	start_secret_prov();
 
@@ -69,9 +66,13 @@ int get_key(int8_t* ip_port, int8_t* ca_cert, int8_t* key, int32_t key_len) {
 		goto out;
 	}
 
-	memcpy(key, secret, secret_size);
+	memcpy(key, secret, key_len<secret_size?key_len:secret_size);
+	//log_error("key_len:%d. Key:\n", key_len);
+	//dump_buff((char*)key, key_len);
+
 	ret = STATUS_SUCCESS;
 out:
+	log_errcode(ret);
 	clean_secret_prov();
 	return ret;
 }

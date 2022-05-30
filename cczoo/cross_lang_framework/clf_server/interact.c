@@ -27,6 +27,8 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	msg_resp_t resp = {0};
 	uint8_t* buf = 0;
 
+	printf("Get Request: MSG_GET_DATA\n");
+
 	if(!ctx || !req)
 		return STATUS_FAIL;
 
@@ -90,6 +92,8 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 out:
 	if(buf)
 		free(buf);
+
+	log_errcode(ret);
 	return ret;
 }
 
@@ -99,7 +103,9 @@ out:
 int send_size(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	int ret = STATUS_FAIL;
 	msg_resp_t resp = {0};
- 
+
+	printf("Get Request: MSG_GET_DATA_SIZE\n");
+
 	if(!ctx || !req)
 		return STATUS_FAIL;
 
@@ -123,6 +129,7 @@ int send_size(struct ra_tls_ctx* ctx, msg_req_t *req) {
 
 	ret = STATUS_SUCCESS;
 out:
+	log_errcode(ret);
 	return ret;
 }
 
@@ -134,6 +141,8 @@ int put_result(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	msg_resp_t resp = {0};
 	uint8_t* buf = 0;
 	int64_t bytes = 0;
+
+	printf("Get Request: MSG_PUT_RESULT\n");
 
 	if(!ctx || !req)
 		return STATUS_FAIL;
@@ -164,7 +173,7 @@ int put_result(struct ra_tls_ctx* ctx, msg_req_t *req) {
 		bytes = secret_provision_read(ctx, (uint8_t *)buf, len);
 		if (bytes < 0) {
 			if (bytes == -ECONNRESET) {
-				fprintf(stderr, "[error] secret_provision_read() connection reset\n");
+				printf("Connection closed\n");
 				resp.status = STATUS_FAIL;
 				goto resp_result;
 			}
@@ -199,6 +208,7 @@ resp_result:
 out:
 	if(buf)
 		free(buf);
+	log_errcode(ret);
 	return ret;
 }
 
@@ -217,7 +227,7 @@ int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
 		bytes = secret_provision_read(ctx, (uint8_t *)&req, sizeof(msg_req_t));
 		if (bytes < 0) {
 			if (bytes == -ECONNRESET) {
-				fprintf(stderr, "[error] secret_provision_read() connection reset\n");
+				printf("Connection closed\n");
 				ret = STATUS_SUCCESS;
 				goto out;
 			}
@@ -244,7 +254,7 @@ int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
 
 	ret = 0;
 out:
-	fprintf(stderr, "communicate_with_client_callback OUT\n");
+	//fprintf(stderr, "communicate_with_client_callback OUT\n");
 	secret_provision_close(ctx);
 	return ret;
 }
