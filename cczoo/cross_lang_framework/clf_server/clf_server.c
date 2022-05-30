@@ -43,6 +43,8 @@ static void hexdump_mem(const void* data, size_t size) {
  */
 static int verify_measurements_callback(const char* mrenclave, const char* mrsigner,
                                         const char* isv_prod_id, const char* isv_svn) {
+	int ret = -1;	//error must be a negative value
+
 	assert(mrenclave && mrsigner && isv_prod_id && isv_svn);
 
 	pthread_mutex_lock(&g_print_lock);
@@ -58,22 +60,22 @@ static int verify_measurements_callback(const char* mrenclave, const char* mrsig
 	if(memcmp(g_mrenclave, null_mrenclave, MRENCLAVE_LEN)) {
 		if(memcmp(g_mrenclave, mrenclave, MRENCLAVE_LEN)) {
 			printf("mrenclave mismatch\n");
-			return 1;
+			return ret;
 		}
 	}
 	if(memcmp(g_mrsigner, null_mrsigner, MRSIGNER_LEN)) {
 		if(memcmp(g_mrsigner, mrsigner, MRSIGNER_LEN)) {
 			printf("mrsigner mismatch\n");
-			return 1;
+			return ret;
 		}
 	}
 	if(g_isv_prod_id!=0 && g_isv_prod_id!=*((uint16_t*)isv_prod_id)) {
 		printf("isv_prod_id mismatch\n");
-		return 1;
+		return ret;
 	}
 	if(g_isv_svn!=0 && g_isv_svn!=*((uint16_t*)isv_svn)){
 		printf("isv_svn mismatch\n");
-		return 1;
+		return ret;
 	}
 
 	return 0;
