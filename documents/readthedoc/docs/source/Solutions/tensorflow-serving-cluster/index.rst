@@ -124,7 +124,7 @@ Prerequisites
   to install the Intel SGX driver and SDK/PSW. Make sure to install the driver
   with ECDSA/DCAP attestation.
 
-- Gramine. Follow `Quick Start <https://gramine.readthedocs.io/en/latest/quickstart.html>`__
+- Gramine. Follow `Quick Start <https://gramine.readthedocs.io/en/stable/quickstart.html>`__
   to learn more about it.
 
 - TensorFlow Serving cluster scripts package. You can download the source package
