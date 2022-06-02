@@ -1,57 +1,108 @@
 # Cross languages framework based on Gramine
 
-Intel SGX is a software guard extended instruction set designed to
-protect user privacy. Programs running in the SGX enclave will avoid
-external snooping and tampering. However, due to the diversity of user
-needs, their programs may be in different languages, such as Python,
-Java, and even Rust, Go. While the bottom layer of Intel SGX is
-developed based on C, there is no interface for other languages in ra-tls secret or data transmission which 
-brings great inconvenience to users.
+Gramine libraries are C language modules, so non-C programming languages like java or python are not easy to do SGX remote attestation when using Gramine, meanwhile not easy to transfer key/data between untrust node (clf_client / where running SGX enclave) and trust node(clf_server). This framework aims to ease the non-C language programing, fills the last few miles that non-c programmers developing confidential software using SGX Gramine libOS.
 
-## Introduction
-To reduce users' burden, we provide a Cross languages framework based
-on Gramine, which provides interfaces to translate other languages to C.
-Users can use the interface provided to convert different languages
-into C, so users can deploy their own App in the SGX environment
-without feeling.
-## Encrypt/decrypt key retrieval
-Encrypt/decrypt key retrieval based on KMS provided by Intel. KMS (Key Management System) is a hardware-software combined system that provides customers with capabilities to create and manage cryptographic keys and control their use for their cloud services.
-## Data transmission between safe parties and enclave
-All data transimitted between parties and enclave is encrypted, and the data can only be decrypted in
-secure enclave. 
-## Java interface for gramine ra-tls
+## Problem this framework to solve
 
-This framework can be used in many scenarios. The following is a
-specific scenario involving the participation of multiple parties and
-the joint use of private data and programs. The participation of more
-users is also supported, but we use two users as an example to
-illustrate this process.
+![image](./img/clf_opportunity.png)
 
-User A and user B each have some private data locally. They want to use
-the computing resources of the remote SGX-enabled server and combine the
-data of the two parties to jointly run a specific program. The specific
-process is as follows.
+SGX is the hot confidential computation technology introduced by Intel and Gramine is the major SGX libOS. Users can develop confidential code upon Gramine. The problem is that Gramine is written in C language, and Gramine SDK is the Linux “.so” library. So, programming languages like Java cannot invoke these libraries to do remote attestation and transfer data directly. This makes these non-c developers hard to use Gramine and finally hard to engage SGX in their project. To invoke Gramine, they need to develop a language translation module like the red box in above figure. This is an extra and hard effort for them.
 
+## Concepts and architecture
+
+### clf_client
+The central machine in which running the SGX enclave. Key and data will be transferred to this machine via TLS encrypted channel.
+
+### clf_server
+It contains data and key that will be transferred to client. There may be more than one clf_server especially in multi-party confidential computation scenario.
+
+### Architecture
 ![image](./img/cross_language_framework.png)
 
-1.  The SGX-enabled remote server will compile the app code provided by A and B and produces a signature. The signature contains
-    the hash value of the program (to ensure that the program has not
-    been tampered with) and the Intel SGX certification certificate
-    (X.509 certificate chain to ensure that the machine is SGX enabled),
-    so programs placed in the enclave cannot be exposed or stolen), then the server loads the program into the enclave
-    created by SGX;
+This framework provides 3 capabilities to the user App: (1) Gets data encryption/decryption key that may be used in subsequent procedures; (2) Gets kinds of data resources from clf_server. These data resources are files in a specific folder of clf_server. This framework provides APIs like file reading and writing in Linux. User apps can easily get data just like reading local files, specifying offset and length; (3) Put the result to remote clf_server, like writing to a local file in Linux.
 
-2.  The remote server sends the self-signed certificate to both users A and B;
+clf_client runs in an untrust environment, e.g., in CSP public cloud, so SGX is used to ensure confidential computation. clf_server runs in a user trust environment where key/data/result resides. The key/data/result transfer between clf_client and clf_server is protected by TLS secure channel. Every operation target to clf_server will be verified using SGX remote attestation. If passed remote attestation(that is, clf_server trusts clf_client), then clf_server will send key/data to clf_client or accept the result from clf_client.
 
-3.  After A and B receive the signature sent by the remote server, they
-    will verify the signature. The verification includes the verification about the server(whether is is a real SGX-enablied machine) and the verfifivation about the code hash(whether the code has been changed). After the verification is passed, they
-    will get the key from local file or KMS. All local datas and files are pre-encrypted and pass the key and encrypted data file will be sent to
-    the server through the secure channel;
+The responsibility of this framework is to provide an easy and safe way for non-c language to transfer data, but it doesn’t care about how to use these data. It leaves the freedom to the user app to judge how to use these data and put results as they need.
 
-4.  After the remote server receives the key and encrypted data sent by
-    A and B, it will decrypt the data file in the SGX enclave, and then
-   execute the program according customer's logic ;
+### Workflow
+① User app (e.g., Java) call language-specific interface (get key / get data)
 
-5.  After the remote server finish the program and gets the result in
-    SGX enclave, it uses the keys get from the user to encrypt the
-    running result and send it back to users A and B.
+② language-specific interface calls clf_client lib
+
+③ clf_client lib gets key or data from clf_server via TLS secure channel. This may be between data centers. clf_server typically is deployed in the user’s private network
+
+④ clf_server checks client SGX signature and transfers key or data to the client as required
+
+⑤ Client App customer-specific logic decrypts the data got from clf_server using the key previously got from the clf_server
+
+⑥ Client App pushes the result back to the server via clf_client lib
+
+⑦ clf_server saves the result in the file system
+
+## Build and installation
+
+- Clone Gramine repo to local
+```bash
+git clone https://github.com/gramineproject/gramine.git
+```
+- Clone this repo to local
+```bash
+git clone https://github.com/intel/confidential-computing-zoo.git
+```
+- Build cross languages framework server part
+  Switch to the path of clf_server and type make
+```bash
+GRAMINEDIR=%gramine_repo_local_path% make
+```
+e.g.
+```bash
+cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server
+GRAMINEDIR=/home/ubuntu/gramine make
+```
+- Build JNI C language library and Jave package
+  Switch to Java JNI folder and type make
+```bash
+GRAMINEDIR=%gramine_repo_local_path% make
+```
+e.g.
+```bash
+cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_client/java
+GRAMINEDIR=/home/ubuntu/gramine make
+```
+- Build sample app
+  Switch to sample app folder and make
+```bash
+GRAMINEDIR=%gramine_repo_local_path% SGX_SIGNER_KEY=%sgx_signer_key_path% make SGX=1
+```
+e.g.
+```bash
+cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_client/app
+GRAMINEDIR=/home/ubuntu/gramine SGX_SIGNER_KEY=/home/ubuntu/gramine/Pal/src/host/Linux-SGX/signer/enclave-key.pem make SGX=1
+```
+
+## Run the framework and sample code
+We developed a functional test tool - clf_test. This tool demonstrates a Java app that runs inside the SGX enclave via Gramine easily gets keys and data from the remote clf_server and then pushes the result to clf_server at the end.
+
+- Launch the server
+```bash
+cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server
+
+RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 \
+RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 \
+./clf_server &
+```
+- Launch the sample app (client)
+```bash
+cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_client/app
+gramine-sgx java -Xmx8G clf_test
+```
+
+### clf_client
+
+![image](./img/clf_client.png)
+
+### clf_server
+
+![image](./img/clf_server.png)
+
