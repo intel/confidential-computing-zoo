@@ -92,12 +92,14 @@ int main(int argc, char** argv) {
 	char szVal[72];
 	const char conf[] = "clf_server.conf";
 	read_config(conf, "MRSigner", szVal, MRSIGNER_LEN, &len);
+	printf("MRSigner=%s\n", szVal);
 	hexstr2buff(szVal, g_mrsigner, MRSIGNER_LEN);
 	dump_buff(g_mrsigner, MRSIGNER_LEN);
 
 	read_config(conf, "MREnclave", szVal, MRENCLAVE_LEN, &len);
+	printf("MREnclave=%s\n", szVal);
 	hexstr2buff(szVal, g_mrenclave, MRENCLAVE_LEN);
-	dump_buff(g_mrenclave, MRSIGNER_LEN);
+	dump_buff(g_mrenclave, MRENCLAVE_LEN);
 
 	read_config_short(conf, "isv_prod_id", (int16_t*)&g_isv_prod_id);
 	printf("isv_prod_id=%d\n", g_isv_prod_id);
