@@ -22,7 +22,8 @@ typedef enum {
 	STATUS_FAIL				= 0x20221000,
 	STATUS_BAD_PARAM		= 0x20221001,
 	STATUS_OUT_OF_MEM		= 0x20221002,
-	STATUS_NET_SEND_FAIL	= 0x20221003
+	STATUS_NET_SEND_FAIL	= 0x20221003,
+	STATUS_OPEN_FILE_FAIL	= 0x20221004
 } status_t;
 
 typedef struct _msg_req_t {
@@ -73,6 +74,13 @@ typedef struct _msg_resp_t {
     do {                                         \
             fprintf(stderr, fmt, ##__VA_ARGS__); \
     } while (0)
+
+void log_errcode(status_t c);
+status_t read_config(const char* f, const char* key, char* val, int len, int *ret_len);
+status_t read_config_int(const char* f, const char* key, int* val);
+status_t read_config_short(const char* f, const char* key, int16_t* val);
+void hexstr2buff(char* s, char* buff, int buf_len);
+void dump_buff(char *buff, int len);
 
 #ifdef __cplusplus
 }

@@ -77,6 +77,9 @@ test.token: test.sig
 lib_src = clf_client.c debug.c
 lib_obj = $(lib_src:%.c=../%.o)
 
+lib_comm_src = util.c
+lib_comm_obj = $(lib_comm_src:%.c=../../comm/%.o)
+
 CFLAGS += -O0 -ggdb3
 CFLAGS += -fPIE
 CFLAGS += -Wall -std=c11 \
@@ -89,12 +92,12 @@ CFLAGS += -Wall -std=c11 \
 LDFLAGS += $(shell pkg-config --libs mbedtls_gramine)
 
 .PHONY: test
-test: test.c $(lib_obj)
+test: test.c $(lib_obj) $(lib_comm_obj)
 	$(CC) $^ $(CFLAGS) $(LDFLAGS) -lsecret_prov_attest -o $@
 
 .PHONY: clean
 clean:
-	$(RM) *.token *.sig *.manifest.sgx *.manifest *.class ../*.o test
+	$(RM) *.token *.sig *.manifest.sgx *.manifest *.class test $(lib_obj) $(lib_comm_obj)
 
 .PHONY: distclean
 distclean: clean

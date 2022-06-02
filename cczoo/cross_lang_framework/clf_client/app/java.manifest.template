@@ -30,7 +30,7 @@ sgx.enclave_size = "16G"
 
 # SGX needs minimum 64 threads for loading OpenJDK runtime.
 sgx.thread_num = 64
-sgx.debug = true
+# sgx.debug = true
 sgx.remote_attestation = true
 sgx.ra_client_spid = ""
 sgx.ra_client_linkable = false

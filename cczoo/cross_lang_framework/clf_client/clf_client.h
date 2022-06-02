@@ -14,8 +14,6 @@ int get_file_2_buff(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t offse
 int put_result(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t offset, int8_t* data, int32_t len);
 
 
-void dump_buff(char *buff, int len);
-
 #ifdef __cplusplus
 }
 #endif
