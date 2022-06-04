@@ -4,7 +4,7 @@ Gramine libraries are C language modules, so non-C programming languages like ja
 
 ## Problem this framework to solve
 
-![image](./img/clf_opportunity.png)
+![](./img/clf_opportunity.png)
 
 SGX is the hot confidential computation technology introduced by Intel and Gramine is the major SGX libOS. Users can develop confidential code upon Gramine. The problem is that Gramine is written in C language, and Gramine SDK is the Linux “.so” library. So, programming languages like Java cannot invoke these libraries to do remote attestation and transfer data directly. This makes these non-c developers hard to use Gramine and finally hard to engage SGX in their project. To invoke Gramine, they need to develop a language translation module like the red box in above figure. This is an extra and hard effort for them.
 
@@ -17,7 +17,7 @@ The central machine in which running the SGX enclave. Key and data will be trans
 It contains data and key that will be transferred to client. There may be more than one clf_server especially in multi-party confidential computation scenario.
 
 ### Architecture
-![image](./img/cross_language_framework.png)
+![](./img/cross_language_framework.png)
 
 This framework provides 3 capabilities to the user App: (1) Gets data encryption/decryption key that may be used in subsequent procedures; (2) Gets kinds of data resources from clf_server. These data resources are files in a specific folder of clf_server. This framework provides APIs like file reading and writing in Linux. User apps can easily get data just like reading local files, specifying offset and length; (3) Put the result to remote clf_server, like writing to a local file in Linux.
 
@@ -100,9 +100,9 @@ gramine-sgx java -Xmx8G clf_test
 
 ### clf_client
 
-![image](./img/clf_client.png)
+![](./img/clf_client.png)
 
 ### clf_server
 
-![image](./img/clf_server.png)
+![](./img/clf_server.png)
 
