@@ -5,6 +5,4 @@ sphinx:
 
 python:
   install:
-    - method: pip
-      path: .
     - requirements: documents/readthedoc/requirements.txt

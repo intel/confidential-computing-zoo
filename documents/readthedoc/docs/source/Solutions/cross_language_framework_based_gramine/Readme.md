@@ -17,6 +17,7 @@ The central machine in which running the SGX enclave. Key and data will be trans
 It contains data and key that will be transferred to client. There may be more than one clf_server especially in multi-party confidential computation scenario.
 
 ### Architecture
+
 ![](./img/cross_language_framework.svg)
 
 This framework provides 3 capabilities to the user App: (1) Gets data encryption/decryption key that may be used in subsequent procedures; (2) Gets kinds of data resources from clf_server. These data resources are files in a specific folder of clf_server. This framework provides APIs like file reading and writing in Linux. User apps can easily get data just like reading local files, specifying offset and length; (3) Put the result to remote clf_server, like writing to a local file in Linux.
