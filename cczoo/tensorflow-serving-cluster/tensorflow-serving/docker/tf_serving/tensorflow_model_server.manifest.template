@@ -48,11 +48,11 @@ fs.mount.pydisthome.path = "{{ python.distlib }}"
 fs.mount.pydisthome.uri = "file:{{ python.distlib }}"
 
 
-sgx.enclave_size = "32G"
+sgx.enclave_size = "4G"
 #
 # # Gramine creates stacks of 256KB by default. It is not enough for SciPy/NumPy
 # # packages, e.g., libopenblas dependency assumes more than 512KB-sized stacks.
-sys.stack.size = "10M"
+sys.stack.size = "4M"
 #
 # # Set the maximum number of enclave threads. For SGX v1, the number of enclave
 # # TCSes must be specified during signing, so the application cannot use more
@@ -60,7 +60,7 @@ sys.stack.size = "10M"
 # # thread for handling inter-process communication (IPC), and potentially another
 # # thread for asynchronous events. Therefore, the actual number of threads that
 # # the application can create is (sgx.thread_num - 2).
-sgx.thread_num = 800
+sgx.thread_num = 400
 
 sgx.nonpie_binary = true
 
