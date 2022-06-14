@@ -58,3 +58,4 @@ vault policy write app2_policy app2_policy.hcl
 APP2_TOKEN=$(vault token create -policy="app2_policy" -field=token)
 echo "APP2_TOKEN: "
 echo $APP2_TOKEN
+
