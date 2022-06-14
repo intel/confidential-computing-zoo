@@ -15,7 +15,8 @@
 
 # https://github.com/oscarlab/graphene/blob/master/Tools/gsc/images/graphene_aks.latest.dockerfile
 
-FROM ubuntu:18.04
+ARG base_image=ubuntu:18.04
+FROM ${base_image}
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV INSTALL_PREFIX=/usr/local
@@ -40,9 +41,14 @@ RUN apt-get update \
         vim \
         jq
 
-# Intel SGX PPA
-RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list \
-    && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add - \
+RUN if [ "${base_image}" = "ubuntu:18.04" ] ; \
+    then \
+        echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
+    else \
+        echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
+    fi
+
+RUN wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add - \
     && apt-get update
 
 # Install SGX-PSW
@@ -99,11 +105,18 @@ RUN cd ${GRAMINEDIR}/subprojects/cJSON* \
 
 COPY configs /
 
+RUN echo "enabled=0" > /etc/default/apport
+RUN echo "exit 0" > /usr/sbin/policy-rc.d
+
 # Clean tmp files
 RUN apt-get clean all \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf ~/.cache/* \
     && rm -rf /tmp/*
+
+# Use it to ignore packages authenticate in apt-get
+# ENV apt_arg="-o Acquire::AllowInsecureRepositories=true \
+#              -o Acquire::AllowDowngradeToInsecureRepositories=true"
 
 # Workspace
 ENV WORK_SPACE_PATH=${GRAMINEDIR}

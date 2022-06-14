@@ -62,10 +62,15 @@ images for developing the gRPC RA-TLS application.
 
         Refer to cczoo/common/docker/gramine/README.md
 
-        ```bash
-        cd cczoo/common/docker/gramine/
-        ./build_docker_image.sh
         ```
+        cd cczoo/common/docker/gramine
+
+        base_image=ubuntu:18.04
+        image_tag=gramine-sgx-dev:ubuntu-18.04-latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
+        ```
+
+        `ubuntu:18.04` and `ubuntu:20.04` could be selected as base_image.
 
    - On Occlum
 
@@ -73,6 +78,12 @@ images for developing the gRPC RA-TLS application.
 
         ```bash
         docker pull occlum/occlum:0.26.3-ubuntu18.04
+
+        cd cczoo/common/docker/occlum
+
+        base_image=occlum/occlum:0.26.3
+        image_tag=occlum-sgx-dev:latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
 2. Build gRPC RA-TLS docker image based on TEE docker image
@@ -80,10 +91,22 @@ images for developing the gRPC RA-TLS application.
    - On Gramine
 
         ```bash
-        cd cczoo/grpc-ra-tls/docker/gramine/
-        ./build_docker_image.sh
+        cd cczoo/grpc-ra-tls/gramine
+
+        base_image=gramine-sgx-dev:ubuntu-18.04-latest
+        image_tag=grpc-gramine-sgx-dev:ubuntu-18.04-latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
+        `gramine-sgx-dev:ubuntu-18.04-latest` and `gramine-sgx-dev:ubuntu-20.04-latest` 
+        could be selected as base_image.
+
+   - On Occlum
+
+        ```bash
+        cd cczoo/grpc-ra-tls/occlum
+        ./build_docker_image.sh
+        ```
 
 ## Config the remote attestation
 
@@ -133,12 +156,12 @@ In Gramine, it is defined in the template file.
 
 - Gramine
 
-   Refer to `cczoo/grpc-ra-tls/docker/gramine/README.md`
+   Refer to `cczoo/grpc-ra-tls/gramine/README.md`
 
    Prepare the docker container
 
    ```bash
-   cd cczoo/grpc-ra-tls/docker
+   cd cczoo/grpc-ra-tls/gramine
    
    #start and enter the docker container
    ./start_container.sh ${pccs_service_ip}
@@ -154,25 +177,52 @@ In Gramine, it is defined in the template file.
    ./build.sh
 
    #Run the server
-   cd runtime/server
-   gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json &
+   ./run.sh server &
 
    #Run the client
-   cd runtime/client
-   gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json
+   ./run.sh client
    ```
 
    Run the python example
 
    ```bash
    cd /gramine/CI-Examples/grpc/python/ratls
+
    ./build.sh
 
    #Run the server
-   gramine-sgx python -u server.py -host localhost:50051 -config dynamic_config.json &
+   ./run.sh server &
 
    #Run the client
-   gramine-sgx python -u client.py -host localhost:50051 -config dynamic_config.json
+   ./run.sh client
+   ```
+
+- Occlum
+
+   Refer to `cczoo/grpc-ra-tls/occlum/README.md`
+
+   Prepare the docker container
+
+   ```bash
+   cd cczoo/grpc-ra-tls/occlum
+   
+   #start and enter the docker container
+   ./start_container.sh ${pccs_service_ip}
+   ```
+
+   Run the cpp example
+
+   ```bash
+   cd ~/demos/ra_tls
+
+   ./prepare_and_build_package.sh
+   ./build_occlum_instance.sh
+
+   #Run the server
+   ./run.sh server &
+
+   #Run the client
+   ./run.sh client
    ```
 
 ## How to develop the gRPC applications with RA-TLS

@@ -24,5 +24,9 @@ to do software development.
 
 Execute the following command to build this docker image:
 ```
-./build_docker_image.sh
+base_image=ubuntu:18.04
+image_tag=gramine-sgx-dev:ubuntu-18.04-latest
+./build_docker_image.sh ${base_image} ${image_tag}
 ```
+
+`ubuntu:18.04` and `ubuntu:20.04` could be selected as base_image.
