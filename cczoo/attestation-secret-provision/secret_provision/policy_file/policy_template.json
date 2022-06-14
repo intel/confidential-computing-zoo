@@ -1,0 +1,83 @@
+[
+    {
+        "kms" : "none",
+        "app_list" : [
+            {
+                "id" : 1,
+                "mr_enclave" : "",
+                "secrets" : {
+                    "master_key" : "",
+                    "secret1" : "",
+                    "secret2" : ""
+                }
+            },
+            {
+                "id" : 2,
+                "mr_enclave" : "",
+                "secrets" : {
+                    "master_key" : "",
+                    "secret1" : "",
+                    "secret2" : ""
+                }
+            }
+        ]
+    },
+    {
+        "kms" : "vault",
+        "addr" : "",
+        "auth_method" : "token",
+        "root_key" : "",
+        "unseal_key" : "",
+        "app_list" : [
+            {
+                "id" : 1,
+                "mr_enclave" : "",
+                "app_token" : "",
+                "secrets" : {
+                    "master_key" : "",
+                    "secret1" : "",
+                    "secret2" : ""
+                }
+            },
+            {
+                "id" : 2,
+                "mr_enclave" : "",
+                "app_token" : "",
+                "secrets" : {
+                    "master_key" : "",
+                    "secret1" : "",
+                    "secret2" : ""
+                }
+            }
+        ]
+    },
+    {
+        "kms" : "ehsm",
+        "addr" : "",
+        "auth_method" : "",
+        "app_list" : [
+            {
+                "id" : 1,
+                "mr_enclave" : "",
+                "app_id" : "",
+                "api_key" : "",
+                "secrets" : {
+                    "master_key" : "",
+                    "secret1" : "",
+                    "secret2" : ""
+                }
+            },
+            {
+                "id" : 2,
+                "mr_enclave" : "",
+                "app_id" : "",
+                "api_key" : "",
+                "secrets" : {
+                    "master_key" : "",
+                    "secret1" : "",
+                    "secret2" : ""
+                }
+            }
+        ]
+    }
+]
