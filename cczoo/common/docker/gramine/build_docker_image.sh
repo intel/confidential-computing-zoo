@@ -17,9 +17,15 @@
 set -e
 
 if  [ -n "$1" ] ; then
-    image_tag=$1
+    base_image=$1
 else
-    image_tag=gramine-sgx-dev:latest
+    base_image=ubuntu:18.04
+fi
+
+if  [ -n "$2" ] ; then
+    image_tag=$2
+else
+    image_tag=gramine-sgx-dev:ubuntu-18.04-latest
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
@@ -32,6 +38,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
+    --build-arg base_image=${base_image} \
     -f gramine-sgx-dev.dockerfile \
     -t ${image_tag} \
     .

@@ -1,8 +1,8 @@
 name: Main Branch Docker Image CI
 
 on:
-  schedule:
-    - cron:  '* 12 * * 6'
+  push:
+    branches: [ main ]
 
 jobs:
   test_schedule:
@@ -24,14 +24,6 @@ jobs:
         docker build -f secret_prov.dockerfile . -t sp_serving:latest
         docker images
         docker rmi sp_serving:latest
-
-    - name: Build the HFL Docker image
-      run: |
-        cd cczoo/horizontal_fl
-        docker build -f horizontal_fl.dockerfile . -t hfl-sgx:latest
-        docker images
-        docker rmi hfl-sgx:latest
-
 
     - name: Build the gRPC-TLS Docker image
       run: |
