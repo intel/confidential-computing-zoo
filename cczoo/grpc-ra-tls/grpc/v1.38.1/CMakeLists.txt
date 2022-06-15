@@ -62,6 +62,16 @@ elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
   add_definitions(-DSGX_RA_TLS_DUMMY_BACKEND)
 endif()
 
+option(SGX_RA_TLS_SDK "Default SGX RA-TLS SDK" "DEFAULT")
+
+if(SGX_RA_TLS_SDK STREQUAL "DEFAULT")
+  message("SGX_RA_TLS_DEFAULT_SDK is defined")
+  add_definitions(-SGX_RA_TLS_DEFAULT_SDK)
+elseif(SGX_RA_TLS_SDK STREQUAL "LIBRATS")
+  message("SGX_RA_TLS_LIBRATS_SDK is defined")
+  add_definitions(-SGX_RA_TLS_LIBRATS_SDK)
+endif()
+
 set(gRPC_INSTALL_default ON)
 if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # Disable gRPC_INSTALL by default if building as a submodule
