@@ -46,7 +46,7 @@ The responsibility of this framework is to provide an easy and safe way for non-
 
 ## Build and installation
 
-- Clone Gramine repo to local, you need to build gramine from source code instead of install gramine directly, you can refer to the guidance of the link (https://gramine.readthedocs.io/en/stable/devel/building.html) . Make sure your OS and kernel machine meets the requirements.
+- Clone Gramine repo to local, you need to build gramine from source code instead of install gramine directly, you can refer to the guidance of the link (https://gramine.readthedocs.io/en/stable/devel/building.html) . Make sure your OS and kernel version meets the requirements.
 - Run the following command on Ubuntu LTS to install dependencies:
  ```bash
 sudo apt-get install openjdk-11-jdk-headless libatk-wrapper-java
