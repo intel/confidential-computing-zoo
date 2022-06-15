@@ -25,6 +25,10 @@ if [ -z ${SGX_RA_TLS_BACKEND} ]; then
     export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
 fi
 
+if [ -z ${SGX_RA_TLS_SDK} ]; then
+    export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
+fi
+
 # build and install abseil library
 # https://abseil.io/docs/cpp/quickstart-cmake.html
 if [ ! -d "${ABSEIL_PATH}/build" ]; then
@@ -49,6 +53,7 @@ cmake -DgRPC_INSTALL=ON \
       -DgRPC_BUILD_GRPC_RUBY_PLUGIN=OFF \
       -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
       -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
+      -DSGX_RA_TLS_SDK=${SGX_RA_TLS_SDK} \
       -DSGX_RA_TLS_BACKEND=${SGX_RA_TLS_BACKEND} \
       ..
 make -j `nproc`
