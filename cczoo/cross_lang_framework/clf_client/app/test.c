@@ -7,7 +7,7 @@
 int main()
 {
 	printf("test IN\n");
-	signed char ip_port[] = "VM-0-3-ubuntu:4433";
+	signed char ip_port[] = "localhost:4433";
 	signed char ca_cert[] = "certs/ca_cert.crt";
 	int8_t key[64] = {0};
 	get_key(ip_port, ca_cert, key, 64);
