@@ -2,7 +2,7 @@
 
 ## What is Gramine?
 
-Gramine (formerly called Graphene) is a lightweight library OS, designed to run a single application 
+[Gramine](https://github.com/gramineproject/gramine) (formerly called Graphene) is a lightweight library OS, designed to run a single application 
 with minimal host requirements. Gramine can run applications in an isolated environment with benefits
  comparable to running a complete OS in a virtual machine -- including guest customization, ease of 
  porting to different OSes, and process migration.

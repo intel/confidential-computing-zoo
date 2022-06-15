@@ -1,6 +1,6 @@
 # RA-TLS Enhanced gRPC
 
-This solution presents an enhanced [gRPC](https://grpc.io/) (Remote Procedure Call) framework to 
+This solution presents an enhanced [gRPC](https://grpc.io/) (Google Remote Procedure Call) framework to 
 guarantee security during transmission and runtime via two-way 
 [RA-TLS](https://arxiv.org/pdf/1801.05863) 
 (Intel SGX Remote Attestation with Transport Layer Security) based on 
@@ -11,20 +11,27 @@ guarantee security during transmission and runtime via two-way
 
 [gRPC](https://grpc.io/) is a modern, open source, high-performance remote procedure call (RPC) 
 framework that can run anywhere. It enables client and server applications to communicate 
-transparently, and simplifies the building of connected systems. For securing gRPC connections, the 
-SSL/TLS authentication mechanisms is built-in to gRPC.
+transparently, and simplifies the building of connected systems. 
 
-Transport Layer Security ([TLS](https://en.wikipedia.org/wiki/Transport_Layer_Security)) The 
-successor of the now-deprecated Secure Sockets Layer (SSL), is a cryptographic protocol designed to 
+gRPC is designed to work with a variety of authentication mechanisms, making it easy to safely 
+use gRPC to talk to other systems. For securing gRPC connections, the SSL/TLS authentication 
+mechanisms is built-in to gRPC, it can guarantee the security in transmission.
+
+Transport Layer Security ([TLS](https://en.wikipedia.org/wiki/Transport_Layer_Security)) the 
+successor of the now-deprecated Secure Sockets Layer (SSL) is a cryptographic protocol designed to 
 provide communications security over a computer network. The current version is 
-[TLS 1.3](https://datatracker.ietf.org/doc/html/rfc8446) defined in August 2018. During the TLS 
-handshake procedure, the public key certificates are used for key exchange. The public key 
-certificate is [X.509](https://en.wikipedia.org/wiki/X.509) format. It is either signed by a 
-certificate authority (CA) or is self-signed for binding an identity to a public key. 
+[TLS 1.3](https://datatracker.ietf.org/doc/html/rfc8446) defined in August 2018. 
 
-RA-TLS integrates Intel SGX remote attestation with the establishment of a standard TLS (v1.3) 
-connection. Remote attestation is performed during the connection setup by embedding the attestation 
-evidence into the endpoints TLS public key certificate.
+gRPC RA-TLS integrates TEE and Intel SGX RA-TLS technology, it establish a standard TLS (v1.3) 
+connection in TEE based on gRPC TLS/SSL mechanism. TEE guarantees code and data loaded inside to be 
+protected with respect to confidentiality and integrity in runtime.
+
+During the TLS handshake procedure, the public key certificates are used for key exchange. The 
+public key certificate is [X.509](https://en.wikipedia.org/wiki/X.509) format. It is either signed 
+by a certificate authority (CA) or is self-signed for binding an identity to a public key.
+
+Remote attestation is performed during the connection setup by embedding the attestation evidence 
+into the endpoints TLS public key certificate.
 
 ![](img/tls-v13-handshake.svg)
 
@@ -40,9 +47,15 @@ client and server both need to generate the certificates and verify each other.
 
 
 ## Trust execution environment
+A trusted execution environment (TEE) is a secure area of a main processor. It guarantees code and 
+data loaded inside to be protected with respect to confidentiality and integrity, Data integrity — 
+prevents unauthorized entities from altering data when any entity outside the TEE processes data, 
+Code integrity — the code in the TEE cannot be replaced or modified by unauthorized entities. 
+This is done by implementing unique, immutable, and confidential architectural security such as 
+Intel SGX (Software Guard Extensions).
+
 Intel SGX technology offers hardware-based memory encryption that isolates specific application code
- and data in memory. This solution provides the different gRPC framework running on different LibOS 
- (Gramine or Occlum).  
+ and data in memory. This solution provides the different gRPC framework running on different TEE.  
 
  - [Gramine](https://github.com/gramineproject/gramine) (formerly called Graphene) is a lightweight 
  library OS Based on Intel SGX technology, designed to run a single application with minimal host 
@@ -50,6 +63,7 @@ Intel SGX technology offers hardware-based memory encryption that isolates speci
 
  - [Occlum](https://github.com/occlum/occlum) (In progress)
 
+ - [TDX](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html) (TODO)
 
 ## Build and installation
 
