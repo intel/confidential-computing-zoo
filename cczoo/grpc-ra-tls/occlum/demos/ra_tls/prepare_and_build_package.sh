@@ -13,7 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -e
+set -ex
+
+if [ -z ${BUILD_TYPE} ]; then
+    export BUILD_TYPE=Debug
+fi
+
+if [ -z ${SGX_RA_TLS_BACKEND} ]; then
+    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
+fi
+
+if [ -z ${SGX_RA_TLS_SDK} ]; then
+    export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
+fi
 
 cd ${GRPC_PATH}/examples/cpp/ratls
 ./build.sh

@@ -19,6 +19,10 @@ if [ -z ${SGX_RA_TLS_BACKEND} ]; then
     export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
 fi
 
+if [ -z ${SGX_RA_TLS_SDK} ]; then
+    export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
+fi
+
 ${GRPC_PATH}/build_python.sh
 
 cur_dir=`dirname $0`
