@@ -1,6 +1,6 @@
-# gRPC supporting Intel RA-TLS
+# RA-TLS Enhanced gRPC
 
-This solution presents an enhanced [gRPC](https://grpc.io/) (Remote Procedure Call) framework to 
+This solution presents an enhanced [gRPC](https://grpc.io/) (Google Remote Procedure Call) framework to 
 guarantee security during transmission and runtime via two-way 
 [RA-TLS](https://arxiv.org/pdf/1801.05863) 
 (Intel SGX Remote Attestation with Transport Layer Security) based on 
@@ -11,20 +11,29 @@ guarantee security during transmission and runtime via two-way
 
 [gRPC](https://grpc.io/) is a modern, open source, high-performance remote procedure call (RPC) 
 framework that can run anywhere. It enables client and server applications to communicate 
-transparently, and simplifies the building of connected systems. For securing gRPC connections, the 
-SSL/TLS authentication mechanisms is built-in to gRPC.
+transparently, and simplifies the building of connected systems. 
 
-Transport Layer Security ([TLS](https://en.wikipedia.org/wiki/Transport_Layer_Security)) The 
-successor of the now-deprecated Secure Sockets Layer (SSL), is a cryptographic protocol designed to 
+gRPC is designed to work with a variety of authentication mechanisms, making it easy to safely 
+use gRPC to talk to other systems. For securing gRPC connections, the SSL/TLS authentication 
+mechanisms is built-in to gRPC, it can guarantee the security in transmission.
+
+Transport Layer Security ([TLS](https://en.wikipedia.org/wiki/Transport_Layer_Security)) the 
+successor of the now-deprecated Secure Sockets Layer (SSL) is a cryptographic protocol designed to 
 provide communications security over a computer network. The current version is 
-[TLS 1.3](https://datatracker.ietf.org/doc/html/rfc8446) defined in August 2018. During the TLS 
-handshake procedure, the public key certificates are used for key exchange. The public key 
-certificate is [X.509](https://en.wikipedia.org/wiki/X.509) format. It is either signed by a 
-certificate authority (CA) or is self-signed for binding an identity to a public key. 
+[TLS 1.3](https://datatracker.ietf.org/doc/html/rfc8446) defined in August 2018. 
 
-RA-TLS integrates Intel SGX remote attestation with the establishment of a standard TLS (v1.3) 
-connection. Remote attestation is performed during the connection setup by embedding the attestation 
-evidence into the endpoints TLS public key certificate.
+gRPC RA-TLS integrates TEE and Intel SGX RA-TLS technology, it establish a standard TLS (v1.3) 
+connection in TEE based on gRPC TLS/SSL mechanism. TEE guarantees code and data loaded inside to be 
+protected with respect to confidentiality and integrity in runtime.
+
+During the TLS handshake procedure, the public key certificates are used for key exchange. The 
+public key certificate is [X.509](https://en.wikipedia.org/wiki/X.509) format. It is either signed 
+by a certificate authority (CA) or is self-signed for binding an identity to a public key.
+
+Remote attestation is performed during the connection setup by embedding the attestation evidence 
+into the endpoints TLS public key certificate.
+
+![](img/tls-v13-handshake.svg)
 
 In the gRPC TLS handshake phase, the certificates is generated and verified as 
 following.
@@ -38,9 +47,15 @@ client and server both need to generate the certificates and verify each other.
 
 
 ## Trust execution environment
+A trusted execution environment (TEE) is a secure area of a main processor. It guarantees code and 
+data loaded inside to be protected with respect to confidentiality and integrity, Data integrity — 
+prevents unauthorized entities from altering data when any entity outside the TEE processes data, 
+Code integrity — the code in the TEE cannot be replaced or modified by unauthorized entities. 
+This is done by implementing unique, immutable, and confidential architectural security such as 
+Intel SGX (Software Guard Extensions).
+
 Intel SGX technology offers hardware-based memory encryption that isolates specific application code
- and data in memory. This solution provides the different gRPC framework running on different LibOS 
- (Gramine or Occlum).  
+ and data in memory. This solution provides the different gRPC framework running on different TEE.  
 
  - [Gramine](https://github.com/gramineproject/gramine) (formerly called Graphene) is a lightweight 
  library OS Based on Intel SGX technology, designed to run a single application with minimal host 
@@ -48,6 +63,7 @@ Intel SGX technology offers hardware-based memory encryption that isolates speci
 
  - [Occlum](https://github.com/occlum/occlum) (In progress)
 
+ - [TDX](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html) (TODO)
 
 ## Build and installation
 
@@ -60,10 +76,15 @@ images for developing the gRPC RA-TLS application.
 
         Refer to cczoo/common/docker/gramine/README.md
 
-        ```bash
-        cd cczoo/common/docker/gramine/
-        ./build_docker_image.sh
         ```
+        cd cczoo/common/docker/gramine
+
+        base_image=ubuntu:18.04
+        image_tag=gramine-sgx-dev:ubuntu-18.04-latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
+        ```
+
+        `ubuntu:18.04` and `ubuntu:20.04` could be selected as base_image.
 
    - On Occlum
 
@@ -71,6 +92,12 @@ images for developing the gRPC RA-TLS application.
 
         ```bash
         docker pull occlum/occlum:0.26.3-ubuntu18.04
+
+        cd cczoo/common/docker/occlum
+
+        base_image=occlum/occlum:0.26.3
+        image_tag=occlum-sgx-dev:latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
 2. Build gRPC RA-TLS docker image based on TEE docker image
@@ -78,10 +105,22 @@ images for developing the gRPC RA-TLS application.
    - On Gramine
 
         ```bash
-        cd cczoo/grpc-ra-tls/docker/gramine/
-        ./build_docker_image.sh
+        cd cczoo/grpc-ra-tls/gramine
+
+        base_image=gramine-sgx-dev:ubuntu-18.04-latest
+        image_tag=grpc-gramine-sgx-dev:ubuntu-18.04-latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
+        `gramine-sgx-dev:ubuntu-18.04-latest` and `gramine-sgx-dev:ubuntu-20.04-latest` 
+        could be selected as base_image.
+
+   - On Occlum
+
+        ```bash
+        cd cczoo/grpc-ra-tls/occlum
+        ./build_docker_image.sh
+        ```
 
 ## Config the remote attestation
 
@@ -131,12 +170,12 @@ In Gramine, it is defined in the template file.
 
 - Gramine
 
-   Refer to `cczoo/grpc-ra-tls/docker/gramine/README.md`
+   Refer to `cczoo/grpc-ra-tls/gramine/README.md`
 
    Prepare the docker container
 
    ```bash
-   cd cczoo/grpc-ra-tls/docker
+   cd cczoo/grpc-ra-tls/gramine
    
    #start and enter the docker container
    ./start_container.sh ${pccs_service_ip}
@@ -152,25 +191,52 @@ In Gramine, it is defined in the template file.
    ./build.sh
 
    #Run the server
-   cd runtime/server
-   gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json &
+   ./run.sh server &
 
    #Run the client
-   cd runtime/client
-   gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json
+   ./run.sh client
    ```
 
    Run the python example
 
    ```bash
    cd /gramine/CI-Examples/grpc/python/ratls
+
    ./build.sh
 
    #Run the server
-   gramine-sgx python -u server.py -host localhost:50051 -config dynamic_config.json &
+   ./run.sh server &
 
    #Run the client
-   gramine-sgx python -u client.py -host localhost:50051 -config dynamic_config.json
+   ./run.sh client
+   ```
+
+- Occlum
+
+   Refer to `cczoo/grpc-ra-tls/occlum/README.md`
+
+   Prepare the docker container
+
+   ```bash
+   cd cczoo/grpc-ra-tls/occlum
+   
+   #start and enter the docker container
+   ./start_container.sh ${pccs_service_ip}
+   ```
+
+   Run the cpp example
+
+   ```bash
+   cd ~/demos/ra_tls
+
+   ./prepare_and_build_package.sh
+   ./build_occlum_instance.sh
+
+   #Run the server
+   ./run.sh server &
+
+   #Run the client
+   ./run.sh client
    ```
 
 ## How to develop the gRPC applications with RA-TLS
@@ -233,3 +299,43 @@ Please refer to the examples for makefile and build script modifications.
     else:
         channel = grpc.insecure_channel(args.target)
     ```
+
+
+---
+
+## Cloud Deployment
+
+### 1. Alibaba Cloud
+
+[Aliyun ECS](https://help.aliyun.com/product/25365.html) (Elastic Compute Service) is
+an IaaS (Infrastructure as a Service) level cloud computing service provided by Alibaba
+Cloud. It builds security-enhanced instance families [g7t, c7t, r7t](https://help.aliyun.com/document_detail/207734.html)
+based on Intel® SGX technology to provide a trusted and confidential environment
+with a higher security level.
+
+The configuration of the ECS instance as blow:
+
+- Instance Type  : [g7t](https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k).
+- Instance Kernel: 4.19.91-24
+- Instance OS    : Alibaba Cloud Linux 2.1903
+- Instance Encrypted Memory: 32G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server Addr: [sgx-dcap-server.cn-hangzhou.aliyuncs.com](https://help.aliyun.com/document_detail/208095.html)
+
+***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Aliyun PCCS server address.
+
+### 2. Tencent Cloud
+
+Tencent Cloud Virtual Machine (CVM) provide one instance named [M6ce](https://cloud.tencent.com/document/product/213/11518#M6ce),
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the M6ce instance as blow:
+
+- Instance Type  : [M6ce.4XLARGE128](https://cloud.tencent.com/document/product/213/11518#M6ce)
+- Instance Kernel: 5.4.119-19-0009.1
+- Instance OS    : TencentOS Server 3.1
+- Instance Encrypted Memory: 64G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: [sgx-dcap-server-tc.sh.tencent.cn](https://cloud.tencent.com/document/product/213/63353)
+
+***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
