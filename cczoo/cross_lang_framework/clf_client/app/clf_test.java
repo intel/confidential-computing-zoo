@@ -13,7 +13,7 @@ public class clf_test {
 
 	public static void jni_test()
 	{
-		String ip_port = "VM-0-3-ubuntu:4433";
+		String ip_port = "localhost:4433";
 		String ca_cert = "certs/ca_cert.crt";
 		gramine_jni jni_so = new gramine_jni(ip_port.getBytes(), ca_cert.getBytes());
 
