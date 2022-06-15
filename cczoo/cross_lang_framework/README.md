@@ -46,7 +46,7 @@ The responsibility of this framework is to provide an easy and safe way for non-
 
 ## Build and installation
 
-- Clone Gramine repo to local, you need to build gramine from source code instead of install gramine directly, you can refer to the guidance of the link (https://gramine.readthedocs.io/en/stable/devel/building.html#) . Make sure your OS and kernel machine meets the requirements.
+- Clone Gramine repo to local, you need to build gramine from source code instead of install gramine directly, you can refer to the guidance of the link (https://gramine.readthedocs.io/en/stable/devel/building.html) . Make sure your OS and kernel machine meets the requirements.
 - Run the following command on Ubuntu LTS to install dependencies:
  ```bash
 sudo apt-get install openjdk-11-jdk-headless libatk-wrapper-java
@@ -76,7 +76,7 @@ cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_client/java
 GRAMINEDIR=/home/ubuntu/gramine make
 ```
 - Generate the private key suitable for signing SGX enclaves. SGX requires RSA 3072 keys with public exponent equal to 3.The default path which is usually $HOME/.config/gramine/enclave-key.pem. If you want to learn more about this command, you can refer to link 
-(ttps://gramine.readthedocs.io/en/stable/manpages/gramine-sgx-gen-private-key.html)
+(https://gramine.readthedocs.io/en/stable/manpages/gramine-sgx-gen-private-key.html)
 ```bash
 gramine-sgx-gen-private-key
 ```
