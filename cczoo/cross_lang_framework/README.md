@@ -103,13 +103,13 @@ RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 \
 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 \
 ./clf_server 
 ```
-- Launch the sample app (client) in another session
+- Launch the sample app (client) in another terminal
 ```bash
 cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_client/app
 gramine-sgx java -Xmx8G clf_test
 ```
 - Then from the server session you can see the value of MRSigner, then replace the original value of MRSigner in the clf_server.conf with the output value on the screen.
-- Kill the clf_server thread and rerun the command above the launch the server again, then go to another session to launch the sample app(client). the java example should success now.
+- Kill the clf_server thread and rerun the command above the launch the server again, then go to another terminal to launch the sample app(client). the java example should success now.
 - If you want to run the C sample
 ```bash
 gramine-sgx test
