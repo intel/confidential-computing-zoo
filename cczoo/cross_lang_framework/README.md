@@ -94,7 +94,7 @@ GRAMINEDIR=/home/ubuntu/gramine SGX_SIGNER_KEY=/home/ubuntu/.config/gramine/encl
 ```
 
 ## Run the framework and sample code
-- Users should determine the value of MRSIGNER at first, which depends on the specific machine, different machines have different MRSIGNER values.
+- Users should identify the value of MRSIGNER at first.
 - Launch the server in one session
 ```bash
 cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server
