@@ -16,6 +16,33 @@
 #define SEND_STRING "MORE"
 
 
+int test_secret_prov_connect() {
+    int ret;
+
+    struct ra_tls_ctx ctx = {0};
+
+    bool is_constructor = false;
+    char* str = getenv(SECRET_PROVISION_CONSTRUCTOR);
+    if (str && (!strcmp(str, "1") || !strcmp(str, "true") || !strcmp(str, "TRUE")))
+        is_constructor = true;
+
+    if (!is_constructor) {
+        /* secret provisioning was not run as part of initialization, run it now */
+        ret = secret_provision_start("VM-0-3-ubuntu:4433",
+                                     "certs/ca_cert.crt", &ctx);
+        if (ret < 0) {
+            fprintf(stderr, "[error] secret_provision_start() returned %d\n", ret);
+            goto out;
+        }
+    }
+
+    ret = 0;
+out:
+    secret_provision_destroy();
+    secret_provision_close(&ctx);
+    return ret;
+}
+
 static int list_dir(char *path) {
     DIR *d;
     struct dirent *dir;

@@ -3,33 +3,28 @@ loader.preload = "file:{{ gramine.libos }}"  # for compatibility with v1.0
 loader.entrypoint = "file:{{ gramine.libos }}"
 libos.entrypoint = "{{ entrypoint }}"
 
-loader.log_level = "error"
+loader.log_level = "all"
 
 loader.insecure__use_cmdline_argv = true
 
 loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}"
 
-fs.mount.lib.type = "chroot"
-fs.mount.lib.path = "/lib"
-fs.mount.lib.uri = "file:{{ gramine.runtimedir() }}"
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+  { path = "/usr{{ arch_libdir }}", uri = "file:/usr{{ arch_libdir }}" },
+  { path = "/etc", uri = "file:/etc" },
+  { path = "/encryption", uri = "file:/home/ubuntu/encryption", type = "encrypted" },
+  { path = "/plain", uri = "file:/home/ubuntu/plain" },
+]
 
-fs.mount.lib2.type = "chroot"
-fs.mount.lib2.path = "{{ arch_libdir }}"
-fs.mount.lib2.uri = "file:{{ arch_libdir }}"
-
-fs.mount.usr.type = "chroot"
-fs.mount.usr.path = "/usr"
-fs.mount.usr.uri = "file:/usr"
-
-fs.mount.etc.type = "chroot"
-fs.mount.etc.path = "/etc"
-fs.mount.etc.uri = "file:/etc"
+fs.insecure__keys.default = "ffeeddccbbaa99887766554433221100"
 
 # If using 64G or greater enclave sizes, the JVM flag `-Xmx8G` can be omitted in gramine-sgx.
-sgx.enclave_size = "16G"
+sgx.enclave_size = "4G"
 
 # SGX needs minimum 64 threads for loading OpenJDK runtime.
-sgx.thread_num = 64
+sgx.thread_num = 32
 sgx.debug = true
 sgx.remote_attestation = true
 sgx.ra_client_spid = ""
@@ -61,5 +56,8 @@ sgx.allowed_files = [
   "file:/etc/passwd",
   "file:/etc/gai.conf",
   "file:/etc/resolv.conf",
+  "file:/home/ubuntu/plain",
 ]
+
+
 

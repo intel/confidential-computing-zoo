@@ -25,7 +25,7 @@
 int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	int ret = STATUS_FAIL;
 	msg_resp_t resp = {0};
-	uint8_t* buf = 0;
+	int8_t* buf = 0;
 
 	printf("Get Request: MSG_GET_DATA\n");
 
@@ -33,8 +33,8 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 		return STATUS_FAIL;
 
 	/* get valid transmission length */
-	int64_t f_len = get_file_size((char*)req->get_data.fname);
-	if(f_len <= 0) {
+	int64_t f_len = filesize((char*)req->get_data.fname);
+	if(f_len < 0) {
 		resp.get_data.data_len = 0;
 		resp.status = STATUS_FAIL;
 	} else {
@@ -57,7 +57,7 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	/* alloc buf */
 	uint64_t buf_size = MAX_FILE_RW_BUF_SIZE;
 	while(!buf) {
-		buf = (uint8_t*)malloc(buf_size);
+		buf = (int8_t*)malloc(buf_size);
 		if(buf)
 			break;
 		buf_size /= 2;
@@ -75,11 +75,11 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 		for(; sent_len < resp.get_data.data_len; sent_len += len) {
 			len = buf_size < (resp.get_data.data_len-sent_len) ? buf_size : (resp.get_data.data_len-sent_len);
 			/* re-set len to real length read from file in case not all len is read */
-			len = fileread(req->get_data.fname, req->get_data.offset + sent_len, buf, len);
+			len = fileread((char*)req->get_data.fname, req->get_data.offset + sent_len, buf, len);
 			if(0 == len) {
 				break;
 			}
-			bytes = secret_provision_write(ctx, buf, len);
+			bytes = secret_provision_write(ctx, (uint8_t*)buf, len);
 			if (bytes < 0) {
 				fprintf(stderr, "[error] secret_provision_write(data) returned %d\n", bytes);
 				ret = STATUS_NET_SEND_FAIL;
@@ -110,8 +110,8 @@ int send_size(struct ra_tls_ctx* ctx, msg_req_t *req) {
 		return STATUS_FAIL;
 
 	/* get valid transmission length */
-	int64_t f_len = get_file_size((char*)req->get_size.fname);
-	if(f_len <= 0) {
+	int64_t f_len = filesize((char*)req->get_size.fname);
+	if(f_len < 0) {
 		resp.get_size.len = 0;
 		resp.status = STATUS_FAIL;
 	} else {
@@ -139,7 +139,7 @@ out:
 int put_result(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	int ret = STATUS_FAIL;
 	msg_resp_t resp = {0};
-	uint8_t* buf = 0;
+	int8_t* buf = 0;
 	int64_t bytes = 0;
 
 	printf("Get Request: MSG_PUT_RESULT\n");
@@ -150,7 +150,7 @@ int put_result(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	/* alloc buf */
 	uint64_t buf_size = MAX_FILE_RW_BUF_SIZE;
 	while(!buf) {
-		buf = (uint8_t*)malloc(buf_size);
+		buf = (int8_t*)malloc(buf_size);
 		if(buf)
 			break;
 		buf_size /= 2;
@@ -183,7 +183,7 @@ int put_result(struct ra_tls_ctx* ctx, msg_req_t *req) {
 			goto resp_result;
 		}
 
-		len = filewrite(req->put_res.fname, req->put_res.offset + received, buf, len);
+		len = filewrite((char*)req->put_res.fname, req->put_res.offset + received, buf, len);
 		/* return failure if not all the bytes been written */
 		if(bytes != len) {
 			resp.status = STATUS_FAIL;;
@@ -212,6 +212,12 @@ out:
 	return ret;
 }
 
+int socket_cnt = 0;
+int get_data_req_cnt = 0;
+int get_size_req_cnt = 0;
+int put_result_req_cnt = 0;
+int invalid_req_cnt = 0;
+
 /* this callback is called in a new thread associated with a client; be careful to make this code
  * thread-local and/or thread-safe */
 int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
@@ -219,7 +225,7 @@ int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
 	msg_req_t req = {0};
 	int bytes;
 
-	fprintf(stderr, "communicate_with_client_callback IN\n");
+	fprintf(stderr, "communicate_with_client_callback IN. socket_cnt=%d\n", ++socket_cnt);
 	/* if we reached this callback, the first secret was sent successfully */
 	//printf("--- Sent secret1 = '%s' ---\n", g_secret_pf_key_hex);
 
@@ -239,15 +245,19 @@ int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
 
 		switch (req.msg_type) {
 		case MSG_GET_DATA:
+			fprintf(stderr, "get_data_req_cnt=%d\n", ++get_data_req_cnt);
 			ret = send_data(ctx, &req);
 			break;
 		case MSG_GET_DATA_SIZE:
+			fprintf(stderr, "get_size_req_cnt=%d\n", ++get_size_req_cnt);
 			ret = send_size(ctx, &req);
 			break;
 		case MSG_PUT_RESULT:
+			fprintf(stderr, "put_result_req_cnt=%d\n", ++put_result_req_cnt);
 			ret = put_result(ctx, &req);
 			break;
 		default:
+			fprintf(stderr, "invalid_req_cnt=%d\n", ++invalid_req_cnt);
 			break;
 		}
 	}

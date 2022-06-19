@@ -4,7 +4,7 @@ public class gramine_jni {
 	public native int get_key(byte[] ip_port, byte[] ca_cert, byte[] key, int key_len);
 	public native int get_file_2_buff(byte[] ip_port, byte[] ca_cert, byte[] fname, long offset, byte[] data, int len, int[] ret_len);
 	public native int get_file_size(byte[] ip_port, byte[] ca_cert, byte[] fname, long[] ret_len);
-	public native int put_result(byte[] ip_port, byte[] ca_cert, byte[] fname, long offset, byte[] data, int len);
+	public native int put_result(byte[] ip_port, byte[] ca_cert, byte[] fname, long offset, byte[] data, int len, int[] ret_len);
 
 	static {
 		System.loadLibrary("gramine_jni");
@@ -48,10 +48,10 @@ public class gramine_jni {
 		return ret;
 	}
 
-	public int PutResult(byte[] fname, long offset, byte[] data, int len) throws Exception {
+	public int PutResult(byte[] fname, long offset, byte[] data, int len, int[] ret_len) throws Exception {
 		int ret = 0;
 		try {
-			ret = put_result(m_ip_port, m_ca_cert, fname, offset, data, len);
+			ret = put_result(m_ip_port, m_ca_cert, fname, offset, data, len, ret_len);
 		} catch (Exception e) {
 			throw new Exception("PutResult Failed.");
 		}

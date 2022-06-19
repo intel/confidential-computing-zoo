@@ -12,25 +12,30 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "clf_server.h"
+#include "cross_comm.h"
 
-uint64_t fileread(int8_t* f, uint64_t offset, uint8_t* buf, uint64_t len) {
+int64_t fileread(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 	int ret;
 	ssize_t bytes_read = 0;
+	int fd = 0;
 
-	int fd = open((char*)f, O_RDONLY);
+	if(!f || !buf)
+		return STATUS_BAD_PARAM;
+
+	/*TODO: Gramine bug, allowed filesystem, open() will change the buffer of f*/
+	fd = open((const char*)f, O_RDONLY);
 	if (fd < 0) {
 		fprintf(stderr, "[error] cannot open '%s'\n", f);
-		return 0;
+		goto out;
 	}
 
 	lseek(fd, offset, SEEK_SET);
 
 	while (1) {
-		ssize_t ret = read(fd, buf + bytes_read, len - bytes_read);
-		if (ret > 0) {
-			bytes_read += ret;
-		} else if (ret == 0) {
+		ssize_t bytes = read(fd, buf + bytes_read, len - bytes_read);
+		if (bytes > 0) {
+			bytes_read += bytes;
+		} else if (bytes == 0) {
 			/* end of file */
 			break;
 		} else if (errno == EAGAIN || errno == EINTR) {
@@ -42,14 +47,16 @@ uint64_t fileread(int8_t* f, uint64_t offset, uint8_t* buf, uint64_t len) {
 	}
 
 out:
-	ret = close(fd);
-	if (ret < 0) {
-		fprintf(stderr, "[error] cannot close '%s'\n", f);
+	if(fd>0) {
+		ret = close(fd);
+		if (ret < 0) {
+			fprintf(stderr, "[error] cannot close '%s'\n", f);
+		}
 	}
 	return bytes_read;
 }
 
-int64_t get_file_size(char* f) {
+int64_t filesize(char* f) {
 	struct stat st;
 	if(!f) {
 		return -1;
@@ -61,11 +68,14 @@ int64_t get_file_size(char* f) {
 	return st.st_size;
 }
 
-uint64_t filewrite(int8_t* f, uint64_t offset, uint8_t* buf, uint64_t len) {
+int64_t filewrite(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 	int ret;
 	ssize_t written = 0;
 
-	int fd = open((char*)f, O_RDWR | O_CREAT | O_TRUNC, 0600);
+	if(!f || !buf)
+		return STATUS_BAD_PARAM;
+
+	int fd = open((char*)f, O_RDWR | O_CREAT | O_TRUNC, 0666);
 	if (fd < 0) {
 		fprintf(stderr, "[error] cannot open '%s'\n", f);
 		return 0;
@@ -74,10 +84,10 @@ uint64_t filewrite(int8_t* f, uint64_t offset, uint8_t* buf, uint64_t len) {
 	lseek(fd, offset, SEEK_SET);
 
 	while( written < len ) {
-		ssize_t ret = write(fd, buf + written, len - written);
-		if (ret > 0) {
-			written += ret;
-		} else if (ret == 0) {
+		ssize_t bytes = write(fd, buf + written, len - written);
+		if (bytes > 0) {
+			written += bytes;
+		} else if (bytes == 0) {
 			/* may be disk full, break here */
 			break;
 		} else if (errno == EAGAIN || errno == EINTR) {
