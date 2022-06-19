@@ -82,6 +82,10 @@ status_t read_config_short(const char* f, const char* key, int16_t* val);
 void hexstr2buff(char* s, char* buff, int buf_len);
 void dump_buff(char *buff, int len);
 
+int64_t fileread(char* f, uint64_t offset, int8_t* buf, uint64_t len);
+int64_t filesize(char* f);
+int64_t filewrite(char* f, uint64_t offset, int8_t* buf, uint64_t len);
+
 #ifdef __cplusplus
 }
 #endif

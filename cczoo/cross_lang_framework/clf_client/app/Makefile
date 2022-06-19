@@ -74,10 +74,10 @@ test.sig: test.manifest.sgx
 test.token: test.sig
 	gramine-sgx-get-token --output $@ --sig $<
 
-lib_src = clf_client.c debug.c
+lib_src = clf_client.c clf_local.c clf_remote.c debug.c
 lib_obj = $(lib_src:%.c=../%.o)
 
-lib_comm_src = util.c
+lib_comm_src = util.c fop.c
 lib_comm_obj = $(lib_comm_src:%.c=../../comm/%.o)
 
 CFLAGS += -O0 -ggdb3

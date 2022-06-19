@@ -34,10 +34,10 @@ JNIEXPORT jint JNICALL Java_GramineJni_gramine_1jni_get_1file_1size
 /*
  * Class:     GramineJni_gramine_jni
  * Method:    put_result
- * Signature: ([B[B[BJ[BI)I
+ * Signature: ([B[B[BJ[BI[I)I
  */
 JNIEXPORT jint JNICALL Java_GramineJni_gramine_1jni_put_1result
-  (JNIEnv *, jobject, jbyteArray, jbyteArray, jbyteArray, jlong, jbyteArray, jint);
+  (JNIEnv *, jobject, jbyteArray, jbyteArray, jbyteArray, jlong, jbyteArray, jint, jintArray);
 
 #ifdef __cplusplus
 }

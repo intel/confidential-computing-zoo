@@ -33,12 +33,15 @@ LDFLAGS += $(shell pkg-config --libs mbedtls_gramine)
 
 clf_client_comm_src := \
 	clf_client.c \
+	clf_local.c \
+	clf_remote.c \
 	debug.c
 
 clf_client_comm_objs := $(clf_client_comm_src:%.c=../%.o)
 
 clf_comm_src := \
-	util.c
+	util.c \
+	fop.c
 
 clf_comm_objs := $(clf_comm_src:%.c=../../comm/%.o)
 
