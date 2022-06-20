@@ -10,7 +10,7 @@ int get_data_push_result_test()
 {
 	for(int i=0; i<1000; i++) {
 		printf("--------- test IN. i=%d---------\n", i);
-		signed char ip_port[] = "VM-0-3-ubuntu:4433";
+		signed char ip_port[] = "localhost:4433";
 		signed char ca_cert[] = "certs/ca_cert.crt";
 		int8_t key[64] = {0};
 		get_key(ip_port, ca_cert, key, 64);
