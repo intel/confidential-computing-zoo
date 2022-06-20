@@ -29,7 +29,11 @@ int64_t fileread(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 		goto out;
 	}
 
-	lseek(fd, offset, SEEK_SET);
+	off_t of = lseek(fd, offset, SEEK_SET);
+	if(of != offset) {
+		log_error("lseek error, expect %ld, actual %ld", offset, of);
+		goto out;
+	}
 
 	while (1) {
 		ssize_t bytes = read(fd, buf + bytes_read, len - bytes_read);
@@ -75,13 +79,17 @@ int64_t filewrite(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 	if(!f || !buf)
 		return STATUS_BAD_PARAM;
 
-	int fd = open((char*)f, O_RDWR | O_CREAT | O_TRUNC, 0666);
+	int fd = open((char*)f, O_RDWR | O_CREAT, 0666);
 	if (fd < 0) {
 		fprintf(stderr, "[error] cannot open '%s'\n", f);
 		return 0;
 	}
 
-	lseek(fd, offset, SEEK_SET);
+	off_t of = lseek(fd, offset, SEEK_SET);
+	if(of != offset) {
+		log_error("lseek error, expect %ld, actual %ld", offset, of);
+		goto out;
+	}
 
 	while( written < len ) {
 		ssize_t bytes = write(fd, buf + written, len - written);
