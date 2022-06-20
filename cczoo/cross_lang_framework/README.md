@@ -95,7 +95,7 @@ GRAMINEDIR=/home/ubuntu/gramine SGX_SIGNER_KEY=/home/ubuntu/.config/gramine/encl
 
 ## Run the framework and sample code
 - Users should identify the value of MRSIGNER at first.
-- Launch the server in one session
+- Launch the server in one terminal.
 ```bash
 cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server
 
@@ -108,9 +108,9 @@ RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 \
 cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_client/app
 gramine-sgx java -Xmx8G clf_test
 ```
-- From the server terminal users can see the value of MRSigner, then replace the original value of MRSigner in the clf_server.conf with the output value on the screen.
-- Kill the clf_server process and rerun the command above to launch the server again, then go to another terminal to launch the sample app(client). Java example should success now.
+- From the server terminal users can see the value of MRSigner/MRSIGNER/ISV_PROD_ID/ISV_SVN, then replace the original value in the clf_server.conf accordingly.
+- Rerun the example, example should success now.
 - If you want to run the C sample
 ```bash
 gramine-sgx test
-
+```
