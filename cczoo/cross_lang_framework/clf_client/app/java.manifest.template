@@ -14,9 +14,9 @@ fs.mounts = [
   { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
   { path = "/usr", uri = "file:/usr" },
   { path = "/etc", uri = "file:/etc" },
-  { path = "/encryption", uri = "file:/home/ubuntu/encryption", type = "encrypted" },
-  { path = "/plain", uri = "file:/home/ubuntu/plain" },
-  { path = "/readonly", uri = "file:/home/ubuntu/readonly" },
+#  { path = "/encryption", uri = "file:/home/ubuntu/encryption", type = "encrypted" },
+#  { path = "/plain", uri = "file:/home/ubuntu/plain" },
+#  { path = "/readonly", uri = "file:/home/ubuntu/readonly" },
 ]
 
 # If using 64G or greater enclave sizes, the JVM flag `-Xmx8G` can be omitted in gramine-sgx.
@@ -44,7 +44,7 @@ sgx.trusted_files = [
   "file:GramineJni/gramine_xx.class",
   "file:/usr/lib/libgramine_jni.so",
   "file:certs/ca_cert.crt",
-  "file:/home/ubuntu/readonly/",
+#  "file:/home/ubuntu/readonly/",
 ]
 
 sgx.allowed_files = [
@@ -56,6 +56,6 @@ sgx.allowed_files = [
   "file:/etc/passwd",
   "file:/etc/gai.conf",
   "file:/etc/resolv.conf",
-  "file:/home/ubuntu/plain",
+#  "file:/home/ubuntu/plain",
 ]
 
