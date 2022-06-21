@@ -1,10 +1,10 @@
 # Attestation and Secret Provision Service
 
 ## Introduction
-This solution provides a secret provision service following RA-TLS based remote attestation through gRPC. As the diagram below shows, secrets are stored in KMS that is hosted on tenant side beforehand. First, the tenant verifies the quote generated in a app enclave on CSP side. The tenant sends relevant secrets retrieved from KMS to the app enclave once passing quote verification. Thus, tenants can manage and manipulate various secrets through KMS.
+This solution provides a secret provision service following RA-TLS based remote attestation through gRPC. As the diagram below shows, secrets are stored in KMS that is hosted on tenant side beforehand. First, the tenant verifies the quote generated in a app enclave on CSP side. Once passing quote verification, KMS agent retrieves secrets from KMS and tenant sends them to the app enclave through a secure gRPC channel established when RA-TLS is completed. Secrets distribution is managed by Policy Manager according to pre-defined policy.
 
 <div align=center>
-<img src="https://github.com/intel-sandbox/confidential-computing-zoo/blob/as_kms/cczoo/attestation-secret-provision/image/asps_arch.png" width="75%">
+<img src="image/asps_arch.png" width="75%">
 </div>
 
 Remote Attestation with TLS (RA-TLS) process of ASPS:
