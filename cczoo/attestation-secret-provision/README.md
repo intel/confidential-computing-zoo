@@ -1,7 +1,7 @@
 # Attestation and Secret Provision Service
 
 ## Introduction
-This solution provides a secret provision service following RA-TLS based remote attestation through gRPC. As the diagram below shows, secrets are stored in KMS that is hosted on tenant side beforehand. First, the tenant verifies the quote generated in a app enclave on CSP side. Once passing quote verification, KMS agent retrieves secrets from KMS and tenant sends them to the app enclave through a secure gRPC channel established when RA-TLS is completed. Secrets distribution is managed by Policy Manager according to pre-defined policy.
+This solution provides a secret provision service following RA-TLS based remote attestation through gRPC. Secrets are stored in `KMS` that is hosted on tenant side beforehand and secrets distribution is managed by `Policy Manager` according to pre-defined policy. Once the tenant verifies the quote from CSP SGX Enclave successfully, `KMS Agent` retrieves secrets from `KMS` and tenant sends them to the remote CSP SGX Enclave through an established secure gRPC channel.
 
 <div align=center>
 <img src="image/asps_arch.png" width="75%">
@@ -9,11 +9,12 @@ This solution provides a secret provision service following RA-TLS based remote 
 
 Remote Attestation with TLS (RA-TLS) process of ASPS:
 
-1. The ASPS client send the request of key and X509 certificate embedded in sgx quote to the ASPS server vis TLS channel of gRPC.
-2. The ASPS server verify sgx quote recived from the ASPS client.
-3. The ASPS server(KMS client) send the key of the ASPS client(have passed the authentication) to KMS.
-4. The KMS server check and send the value to the ASPS server.
-5. The ASPS server send the value to the ASPS client.
+1. The ASPS client sends the request of key and X509 certificate embedded in sgx quote to the ASPS server vis TLS channel of gRPC.
+2. The ASPS server verifies sgx quote recived from the ASPS client.
+3. The ASPS server retrieves secrets from KMS according to pre-defined policy.
+4. The ASPS server sends secrets to the ASPS client.
+
+[gRPC-RA-TLS](https://github.com/intel/confidential-computing-zoo/tree/main/cczoo/grpc-ra-tls) is used in this solution to establish a secure gRPC channel. Tanant need to integrate ASPS client in their application and define a [policy](secret_provision/policy_file/policy_template.json) for secret distribution. Secrets for each application are distinguished by the value of mr_enclave. [Vault](https://www.vaultproject.io/) is supported as the default KMS backend. Users can also store their secrets in json file instead.
 
 ## Setup KMS Server
 
@@ -96,8 +97,8 @@ Typically, KMS server runs on a trusted machine on tenant side.
     ./build_occlum_instance.sh
     ```
 
-    It generated `occlum_instance_client` and `occlum_instance_server`, and `policy_vault.json` is in the `occlum_instance_server`.
-
+    It generated `occlum_instance_client` and `occlum_instance_server`, and `policy_vault.json` is in the `occlum_instance_server`.  
+     
     ```json
     # policy_vault.json
     {
@@ -106,12 +107,10 @@ Typically, KMS server runs on a trusted machine on tenant side.
         "app_token" : <your_app_token>,
         "secrets" : {
             "master_key" : "occlum/1/image_key",
-            "secret1" : "occlum/1/rsa_pubkey",
-            "secret2" : "occlum/1/rsa_prikey"
         }
     }
     ```
-    Next, manually replace the value of `app_token` with the `APP*_TOKEN` generated previously.
+    User need to adjust the policy manifest above accordingly. Replace the value of `mr_enclave` with the expected value of mr_enclave. Replace the value of `app_token` with the `APP*_TOKEN` generated previously. Configure `secrets` with the actual secret key names and corresponding values or KMS path. The key is `"master_key"` and the value is `"occlum/1/image_key"` in this example.
 
     Re-build the `occlum_instance_server` instance.
 
