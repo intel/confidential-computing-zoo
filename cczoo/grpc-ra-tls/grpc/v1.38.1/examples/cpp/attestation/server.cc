@@ -22,9 +22,9 @@
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 
 #ifdef BAZEL_BUILD
-#include "examples/protos/Attestation.grpc.pb.h"
+#include "examples/protos/secretmanager.grpc.pb.h"
 #else
-#include "Attestation.grpc.pb.h"
+#include "secretmanager.grpc.pb.h"
 #endif
 
 #include <string>
@@ -64,10 +64,10 @@ std::string read_file(std::string file_path) {
 class SecretMangerServiceImpl final :
     public Attestation::SecretManger::Service {
 public:
-    void Init(const char *config_file, const char *secret_file) {
-        grpc::sgx::ra_tls_parse_config(config);
+    void Init(std::string config_file, std::string secret_file) {
+        grpc::sgx::ra_tls_parse_config(config_file.c_str());
         grpc::sgx::ra_tls_verify_init();
-        this->ParseSecret(secret_file);
+        this->ParseSecret(secret_file.c_str());
         return;
     };
 
@@ -104,10 +104,10 @@ public:
             // std::cout << value << std::endl;
             status = grpc::StatusCode::OK;
         } catch (...) {
-            std::cout << "Not Found : " << request->name() << std::endl;
+            std::cout << "Not Found : " << request->key() << std::endl;
         };
 
-        reply->set_message(value);
+        reply->set_value(value);
         return grpc::Status(status, "");
     }
 private:

@@ -19,14 +19,14 @@ project(RA-TLS C CXX)
 include(../cmake/common.cmake)
 
 # Proto file
-get_filename_component(hw_proto "../../protos/secretmanger.proto" ABSOLUTE)
+get_filename_component(hw_proto "../../protos/secretmanager.proto" ABSOLUTE)
 get_filename_component(hw_proto_path "${hw_proto}" PATH)
 
 # Generated sources
-set(hw_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/secretmanger.pb.cc")
-set(hw_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/secretmanger.pb.h")
-set(hw_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/secretmanger.grpc.pb.cc")
-set(hw_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/secretmanger.grpc.pb.h")
+set(hw_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/secretmanager.pb.cc")
+set(hw_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/secretmanager.pb.h")
+set(hw_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/secretmanager.grpc.pb.cc")
+set(hw_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/secretmanager.grpc.pb.h")
 add_custom_command(
       OUTPUT "${hw_proto_srcs}" "${hw_proto_hdrs}" "${hw_grpc_srcs}" "${hw_grpc_hdrs}"
       COMMAND ${_PROTOBUF_PROTOC}
