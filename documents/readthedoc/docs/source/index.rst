@@ -30,6 +30,7 @@ Table of Contents
    Solutions/grpc-ra-tls/index.md
    Solutions/ehsm-kms/index.md
    Solutions/rats-tls/index.md
+   Solutions/attestation-secret-provision/index.md
 
 .. toctree::
    :maxdepth: 1
