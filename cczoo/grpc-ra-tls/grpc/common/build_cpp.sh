@@ -27,6 +27,8 @@ fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then
     export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
+elif [ "${SGX_RA_TLS_SDK}" == "LIBRATS" ]; then
+    ${GRPC_PATH}/build_librats_sdk.sh
 fi
 
 # build and install abseil library
@@ -34,8 +36,11 @@ fi
 if [ ! -d "${ABSEIL_PATH}/build" ]; then
     mkdir -p ${ABSEIL_PATH}/build
     cd ${ABSEIL_PATH}/build
-    cmake -DCMAKE_CXX_STANDARD=11 -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE \
-          -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} ..
+    cmake -DCMAKE_CXX_STANDARD=11 \
+          -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE \
+          -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+          -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
+          ..
     make -j `nproc`
     make install
     cd -
