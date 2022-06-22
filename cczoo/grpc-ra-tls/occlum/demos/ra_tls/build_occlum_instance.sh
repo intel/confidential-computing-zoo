@@ -2,7 +2,7 @@
 
 set -ex
 
-occlum_glibc=/opt/occlum/glibc/lib/
+export OCCLUM_GLIBC=/opt/occlum/glibc/lib
 
 get_mr() {
     sgx_sign dump -enclave ../occlum_instance_$1/build/lib/libocclum-libos.signed.so -dumpfile ../metadata_info_$1.txt
@@ -30,30 +30,37 @@ build_instance() {
         jq '.verify_mr_enclave = "off" |
             .verify_mr_signer = "off" |
             .verify_isv_prod_id = "off" |
-            .verify_isv_svn = "off" ' ${GRPC_PATH}/dynamic_config.json > image/dynamic_config.json 
+            .verify_isv_svn = "off" ' ${GRPC_PATH}/dynamic_config.json > image/dynamic_config.json
     elif [ "$postfix" == "server" ]; then
         jq '.verify_mr_enclave = "on" |
             .verify_mr_signer = "on" |
             .verify_isv_prod_id = "off" |
             .verify_isv_svn = "off" |
             .sgx_mrs[0].mr_enclave = ''"'`get_mr client mr_enclave`'" |
-            .sgx_mrs[0].mr_signer = ''"'`get_mr client mr_signer`'" ' ${GRPC_PATH}/dynamic_config.json > image/dynamic_config.json 
+            .sgx_mrs[0].mr_signer = ''"'`get_mr client mr_signer`'" ' ${GRPC_PATH}/dynamic_config.json > image/dynamic_config.json
     fi
 
     mkdir -p image/usr/share/grpc
     cp -rf ${INSTALL_PREFIX}/share/grpc/*  image/usr/share/grpc/
-    cp $occlum_glibc/libdl.so.2 image/$occlum_glibc
-    cp $occlum_glibc/librt.so.1 image/$occlum_glibc
-    cp $occlum_glibc/libm.so.6 image/$occlum_glibc
-    cp /lib/x86_64-linux-gnu/libtinfo.so.5 image/$occlum_glibc
-    cp /lib/x86_64-linux-gnu/libnss*.so.2 image/$occlum_glibc
-    cp /lib/x86_64-linux-gnu/libresolv.so.2 image/$occlum_glibc
+    cp ${OCCLUM_GLIBC}/libdl.so.2 image/${OCCLUM_GLIBC}
+    cp ${OCCLUM_GLIBC}/librt.so.1 image/${OCCLUM_GLIBC}
+    cp ${OCCLUM_GLIBC}/libm.so.6 image/${OCCLUM_GLIBC}
+    cp /lib/x86_64-linux-gnu/libtinfo.so.5 image/${OCCLUM_GLIBC}
+    cp /lib/x86_64-linux-gnu/libnss*.so.2 image/${OCCLUM_GLIBC}
+    cp /lib/x86_64-linux-gnu/libresolv.so.2 image/${OCCLUM_GLIBC}
     cp -rf /etc/hostname image/etc/
     cp -rf /etc/ssl image/etc/
     cp -rf /etc/passwd image/etc/
     cp -rf /etc/group image/etc/
     cp -rf /etc/nsswitch.conf image/etc/
     cp -rf ${GRPC_PATH}/examples/cpp/ratls/build/* image/bin/
+    if [ "${SGX_RA_TLS_SDK}" == "LIBRATS" ]; then
+        cp ${INSTALL_PREFIX}/lib/librats/librats_lib.so* image/${OCCLUM_GLIBC}
+        cp -rf ${INSTALL_PREFIX}/lib/librats/attesters/* image/${OCCLUM_GLIBC}
+        cp -rf ${INSTALL_PREFIX}/lib/librats/verifiers/* image/${OCCLUM_GLIBC}
+        cp -rf ${INSTALL_PREFIX}/lib/librats/attesters image/${OCCLUM_GLIBC}
+        cp -rf ${INSTALL_PREFIX}/lib/librats/verifiers image/${OCCLUM_GLIBC}
+    fi
     occlum build
     popd
 }
@@ -62,4 +69,3 @@ postfix=client
 build_instance
 postfix=server
 build_instance
-
