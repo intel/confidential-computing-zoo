@@ -14,7 +14,7 @@ Remote Attestation with TLS (RA-TLS) process of ASPS:
 3. The ASPS server retrieves secrets from KMS according to pre-defined policy.
 4. The ASPS server sends secrets to the ASPS client.
 
-[gRPC-RA-TLS](https://github.com/intel/confidential-computing-zoo/tree/main/cczoo/grpc-ra-tls) is used in this solution to establish a secure gRPC channel. Tanant need to integrate ASPS client in their application and define a [policy](secret_provision/policy_file/policy_template.json) for secret distribution. Secrets for each application are distinguished by the value of mr_enclave. [Vault](https://www.vaultproject.io/) is supported as the default KMS backend. Users can also store their secrets in json file instead.
+[gRPC-RA-TLS](https://github.com/intel/confidential-computing-zoo/tree/main/cczoo/grpc-ra-tls) is used in this solution to establish a secure gRPC channel. Tenant need to integrate ASPS client in their application and define a [policy](secret_provision/policy_file/policy_template.json) for secret distribution. Secrets for each application are distinguished by the value of mr_enclave. [Vault](https://www.vaultproject.io/) is supported as the default KMS backend. Users can also store their secrets in json file instead.
 
 ## Setup KMS Server
 
