@@ -20,9 +20,9 @@
 #include <grpcpp/security/sgx/sgx_ra_tls.h>
 
 #ifdef BAZEL_BUILD
-#include "examples/protos/Attestation.grpc.pb.h"
+#include "examples/protos/secretmanager.grpc.pb.h"
 #else
-#include "Attestation.grpc.pb.h"
+#include "secretmanager.grpc.pb.h"
 #endif
 
 #include "getopt.hpp"
