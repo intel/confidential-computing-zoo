@@ -4,8 +4,15 @@
 #### Executing the demo in Occlum
 
 The following command will download the gRPC source code and apply the ra-tls patches, then build gRPC source code and demo.
+
+[LibRATS](https://github.com/inclavare-containers/librats) is optional to replace the
+default RA-TLS SDK which is to generate and verify hardware quotes.
+```base
+export SGX_RA_TLS_SDK=LIBRATS
 ```
-./prepare_and_build_package.sh 
+
+```
+./prepare_and_build_package.sh
 ```
 
 The following command will generate the client and server occlum images. It automatically parses the mr_enclave and mr_signer of the client, and write the value into dynamic_config.json. If you want to verify the other measurements of client, please modify the dynamic_config.json before run the script.
