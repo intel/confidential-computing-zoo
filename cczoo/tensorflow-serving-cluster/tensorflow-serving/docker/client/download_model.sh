@@ -1,5 +1,3 @@
-#!/usr/bin/env bash
-
 #
 # Copyright (c) 2021 Intel Corporation
 #
@@ -15,11 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+#!/usr/bin/env bash
 
 set -e
-cd ${WORK_BASE_PATH}
-echo "Run Secret Porv Server!"
 
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libs stdbuf -o0 ./secret_prov_server_dcap 
+cur_dir=`pwd -P`
+models_abs_dir=${cur_dir}/models
+mkdir ${models_abs_dir}
 
-
+# resnet50-v15
+mkdir ${models_abs_dir}/resnet50-v15-fp32
+cd ${models_abs_dir}/resnet50-v15-fp32
+wget https://storage.googleapis.com/intel-optimized-tensorflow/models/v1_8/resnet50_fp32_pretrained_model.pb -O resnet50-v15-fp32.pb

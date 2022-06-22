@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 #
 # Copyright (c) 2021 Intel Corporation
 #
@@ -13,8 +15,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/usr/bin/env bash
-
 set -e
 
 unset http_proxy && unset https_proxy
@@ -24,7 +24,8 @@ make SGX=1 -j `nproc`
 
 #LD_LIBRARY_PATH="/opt/intel/sgx-aesm-service/aesm/:$LD_LIBRARY_PATH" /opt/intel/sgx-aesm-service/aesm/aesm_service
 
-gramine-sgx tensorflow_model_server \
+# Bind Core 0-3
+taskset -c 0-3 gramine-sgx tensorflow_model_server \
     --model_name=${model_name} \
     --model_base_path=/models/${model_name} \
     --port=8500 \

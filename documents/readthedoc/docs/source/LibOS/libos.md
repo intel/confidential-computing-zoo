@@ -48,16 +48,16 @@ application environment and isolation policies, Gramine automatically does the r
 
 ### Gramine official link
 
-The official Gramine documentation can be found at https://gramine.readthedocs.io.
-Gramine opensource GitHub can be found at https://github.com/gramineproject/gramine.
+The official Gramine documentation can be found at [Gramine Readthedoc](https://gramine.readthedocs.io/en/stable/index.html).
+Gramine opensource GitHub can be found at [Gramine GitHub](https://github.com/gramineproject/gramine).
 
 Below are quick links to some of the most important pages:
 
-- [Quick start and how to run applications](https://gramine.readthedocs.io/en/latest/quickstart.html)
-- [Complete building instructions](https://gramine.readthedocs.io/en/latest/devel/building.html)
-- [Gramine manifest file syntax](https://gramine.readthedocs.io/en/latest/manifest-syntax.html)
-- [Performance tuning & analysis of SGX applications in Gramine](https://gramine.readthedocs.io/en/latest/devel/performance.html)
-- [Remote attestation in Gramine](https://gramine.readthedocs.io/en/latest/attestation.html)
+- [Quick start and how to run applications](https://gramine.readthedocs.io/en/stable/quickstart.html)
+- [Building instructions](https://gramine.readthedocs.io/en/stable/devel/building.html)
+- [Gramine manifest file syntax](https://gramine.readthedocs.io/en/stable/manifest-syntax.html)
+- [Performance tuning & analysis of SGX applications in Gramine](https://gramine.readthedocs.io/en/stable/devel/performance.html)
+- [Remote attestation in Gramine](https://gramine.readthedocs.io/en/stable/attestation.html)
 
 ## Occlum
 
