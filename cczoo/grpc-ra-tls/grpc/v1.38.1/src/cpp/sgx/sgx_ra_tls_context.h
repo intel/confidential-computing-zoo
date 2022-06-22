@@ -75,6 +75,12 @@ struct ra_tls_context {
     class library_engine sgx_urts_lib;
     int (*verify_callback_f)(uint8_t* der_crt, size_t der_crt_size) = nullptr;
 #endif
+#ifdef SGX_RA_TLS_LIBRATS_SDK
+    class library_engine attest_lib;
+    class library_engine verify_lib;
+    class library_engine init_lib;
+    class library_engine cleanup_lib;
+#endif
 };
 
 extern struct ra_tls_context _ctx_;
