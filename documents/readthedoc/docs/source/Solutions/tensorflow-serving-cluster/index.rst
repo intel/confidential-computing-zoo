@@ -617,7 +617,7 @@ This solution is also published in Ali Cloud as the best practice - `Deploy Tens
 2. Tencent Cloud
 ~~~~~~~~~~~~~~~~
 
-Tencent Cloud Virtual Machine (CVM) provide one instance named `M6ce <https://cloud.tencent.com/document/product/213/11518#M6ce>`__,
+Tencent Cloud Virtual Machine (CVM) provides one instance named `M6ce <https://cloud.tencent.com/document/product/213/11518#M6ce>`__,
 which supports Intel® SGX encrypted computing technology.
 
 The configuration of the M6ce instance as blow:
@@ -628,3 +628,19 @@ The configuration of the M6ce instance as blow:
 - Instance Encrypted Memory: 64G
 - Instance vCPU  : 16
 - Instance SGX PCCS Server: `sgx-dcap-server-tc.sh.tencent.cn <https://cloud.tencent.com/document/product/213/63353>`__
+
+
+3. ByteDance Cloud
+~~~~~~~~~~~~~~~~~~
+
+ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the ebmg2t instance as blow:
+
+- Instance Type  : `ecs.ebmg2t.32xlarge`.
+- Instance Kernel: kernel-5.15
+- Instance OS    : ubuntu-20.04
+- Instance Encrypted Memory: 256G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: `sgx-dcap-server.bytedance.com`.

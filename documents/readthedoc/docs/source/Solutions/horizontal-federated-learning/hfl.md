@@ -149,3 +149,19 @@ The configuration of the M6ce instance as blow:
 <div id="refer-anchor-1"></div>
 
 - [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
+
+
+3. ByteDance Cloud
+~~~~~~~~~~~~~~~~~~
+
+ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the ebmg2t instance as blow:
+
+- Instance Type  : `ecs.ebmg2t.32xlarge`.
+- Instance Kernel: kernel-5.15
+- Instance OS    : ubuntu-20.04
+- Instance Encrypted Memory: 256G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: `sgx-dcap-server.bytedance.com`.
