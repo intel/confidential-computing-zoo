@@ -32,6 +32,8 @@ Table of Contents
    Solutions/ehsm-kms/index.md
    Solutions/rats-tls/index.md
    Solutions/cross_language_framework_based_gramine/Readme.md
+   Solutions/attestation-secret-provision/index.md
+
 
 .. toctree::
    :maxdepth: 1
