@@ -352,8 +352,7 @@ The configuration of the M6ce instance as blow:
 
 ***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
 
-3. ByteDance Cloud
-~~~~~~~~~~~~~~~~~~
+### 3. ByteDance Cloud
 
 ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
 which supports Intel® SGX encrypted computing technology.
