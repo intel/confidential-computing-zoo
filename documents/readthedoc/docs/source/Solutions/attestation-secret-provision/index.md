@@ -3,9 +3,7 @@
 ## Introduction
 This solution provides a secret provision service following RA-TLS based remote attestation through gRPC. Secrets are stored in `KMS` that is hosted on tenant side beforehand and secrets distribution is managed by `Policy Manager` according to pre-defined policy. Once the tenant verifies the quote from CSP SGX Enclave successfully, `KMS Agent` retrieves secrets from `KMS` and tenant sends them to the remote CSP SGX Enclave through an established secure gRPC channel.
 
-<div align=center>
-<img src="img/asps_arch.png" width="75%">
-</div>
+![](img/asps_arch.png)
 
 Remote Attestation with TLS (RA-TLS) process of ASPS:
 
