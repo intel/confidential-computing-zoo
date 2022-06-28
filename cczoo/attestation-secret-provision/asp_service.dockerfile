@@ -44,32 +44,14 @@ RUN mkdir -p ${INSTALL_PREFIX} \
     && sh cmake-linux.sh -- --skip-license --prefix=${INSTALL_PREFIX} \
     && rm cmake-linux.sh
 
-ENV WORK_SAPCE=/root
-ENV GRPC_ROOT=${WORK_SAPCE}/grpc
-ENV GRPC_PATH=${GRPC_ROOT}/src
-ENV SGX_RA_TLS_BACKEND=OCCLUM
-ENV BUILD_TYPE=Release
-
-ARG GRPC_V138_VERSION=v1.38.1
-ARG GRPC_V138_PATH=${GRPC_ROOT}/${GRPC_V138_VERSION}
-RUN git clone --recurse-submodules -b ${GRPC_V138_VERSION} https://github.com/grpc/grpc ${GRPC_V138_PATH}
-
-RUN ln -s ${GRPC_V138_PATH} ${GRPC_PATH}
-
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
-
-RUN pip3 install --upgrade pip setuptools==44.1.1 \
-    && pip3 install -r ${GRPC_PATH}/requirements.txt
-
 # Install Vault as KMS
 # https://learn.hashicorp.com/tutorials/vault/getting-started-install
 RUN wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null \
     && gpg --no-default-keyring --keyring /usr/share/keyrings/hashicorp-archive-keyring.gpg --fingerprint \
     && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list \
     && apt-get update \
-    && apt-get install -y vault
-
-RUN apt-get clean all \
+    && apt-get install -y vault \
+    && apt-get clean all \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf ~/.cache/* \
     && rm -rf /tmp/*
@@ -77,12 +59,39 @@ RUN apt-get clean all \
 RUN echo "enabled=0" > /etc/default/apport
 RUN echo "exit 0" > /usr/sbin/policy-rc.d
 
-COPY grpc_overlay/common ${GRPC_V138_PATH}
-COPY grpc_overlay/v1.38.1/*patch ${GRPC_V138_PATH}
-RUN cd ${GRPC_V138_PATH} && git apply *.patch
+ENV WORK_SAPCE=/root
+ENV CCZOO_ROOT=${WORK_SAPCE}/cczoo
+ENV CCZOO_PATH=${CCZOO_ROOT}/src
+ENV GRPC_ROOT=${WORK_SAPCE}/grpc
+ENV GRPC_PATH=${GRPC_ROOT}/src
+ENV SGX_RA_TLS_BACKEND=OCCLUM
+ENV SGX_RA_TLS_SDK=DEFAULT
+ENV BUILD_TYPE=Release
+
+ARG CCZOO_VERSION=v0.4
+ARG CCZOO_VERSION_PATH=${CCZOO_ROOT}/${CCZOO_VERSION}
+RUN git clone -b ${CCZOO_VERSION} https://github.com/intel/confidential-computing-zoo.git ${CCZOO_VERSION_PATH}
+
+RUN ln -s ${CCZOO_VERSION_PATH} ${CCZOO_PATH}
+
+ARG GRPC_VERSION=v1.38.1
+ARG GRPC_VERSION_PATH=${GRPC_ROOT}/${GRPC_VERSION}
+RUN git clone --recurse-submodules -b ${GRPC_VERSION} https://github.com/grpc/grpc.git ${GRPC_VERSION_PATH}
+
+RUN cp -r ${CCZOO_PATH}/cczoo/grpc-ra-tls/grpc/common/* ${GRPC_VERSION_PATH} \
+    && cp -r ${CCZOO_PATH}/cczoo/grpc-ra-tls/grpc/${GRPC_VERSION}/* ${GRPC_VERSION_PATH}
+
+RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
+
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+
+RUN pip3 install --upgrade pip setuptools==44.1.1 \
+    && pip3 install -r ${GRPC_PATH}/requirements.txt
 
 COPY store_secrets ${WORK_SAPCE}/store_secrets
 COPY secret_provision ${WORK_SAPCE}/secret_provision
 COPY asp_service ${WORK_SAPCE}/asp_service
 COPY dcap_configs /
 COPY occlum ${WORK_SAPCE}
+
+WORKDIR /root/demos/attestation-secret-provision
