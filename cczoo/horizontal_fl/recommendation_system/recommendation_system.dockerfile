@@ -106,7 +106,7 @@ RUN wget "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}
  && dpkg -i bazel_*.deb
 
 # deps 
-RUN pip3 install numpy keras_preprocessing 
+RUN pip3 install numpy keras_preprocessing
 
 # config and download TensorFlow
 ENV TF_VERSION=v2.4.2
@@ -130,17 +130,22 @@ RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_pack
 COPY patches/sgx_default_qcnl.conf /etc
 COPY patches/start_aesm_service.sh /
 
-# download and exact cifar-10 dataset
-RUN mkdir /hfl-tensorflow
-COPY hfl-tensorflow /hfl-tensorflow
-RUN cd /hfl-tensorflow && wget https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz
+RUN pip3 install pandas sklearn matplotlib
+
+
+# copy scripts
+RUN mkdir /scripts
+COPY scripts /scripts
+
+# prepare dataset
+RUN cd /scripts/dataset && tar -zxvf train.tar
 
 # disable apport
 RUN echo "enabled=0" > /etc/default/apport
 RUN echo "exit 0" > /usr/sbin/policy-rc.d
 
 # make project
-RUN cd /hfl-tensorflow && test-sgx.sh make
+RUN cd /scripts && test-sgx.sh make
 
 # Clean tmp files
 RUN apt-get clean all \

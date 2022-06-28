@@ -34,7 +34,7 @@ function make_custom_env() {
     export TF_GRPC_SGX_RA_TLS_ENABLE=on
     export TF_DISABLE_MKL=0
     export TF_ENABLE_MKL_NATIVE_FORMAT=1
-    export parallel_num_threads=4
+    export parallel_num_threads=2
     export INTRA_OP_PARALLELISM_THREADS=$parallel_num_threads
     export INTER_OP_PARALLELISM_THREADS=$parallel_num_threads
     export KMP_SETTINGS=1
@@ -55,19 +55,19 @@ if [ "$ROLE" == "make" ]; then
     make clean && make | make_logfilter
 elif [ "$ROLE" == "ps0" ]; then
     make_custom_env
-    taskset -c 0-3 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=ps $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a ps0-gramine-python.log &
+    taskset -c 0-1 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=ps $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a ps0-gramine-python.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 elif [ "$ROLE" == "worker0" ]; then
     make_custom_env
-    taskset -c 8-11 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a worker0-gramine-python.log &
+    taskset -c 8-9 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a worker0-gramine-python.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 elif [ "$ROLE" == "worker1" ]; then
     make_custom_env
-    taskset -c 11-15 stdbuf -o0 gramine-sgx python -u train.py --task_index=1 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a worker1-gramine-python.log &
+    taskset -c 16-17 stdbuf -o0 gramine-sgx python -u train.py --task_index=1 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a worker1-gramine-python.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
