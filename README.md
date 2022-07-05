@@ -438,7 +438,10 @@ Cluster PPML</strong></span></a> <br />
 				-
 			</td>
 			<td>
-				-
+				<p>
+					<span class="md-plain"><a href="https://www.intel.com/content/dam/www/central-libraries/us/en/documents/alibaba-ppml-ai-blog-pdf.pdf"><span>Ant Group</span></a>, <br />
+<a href="https://networkbuilders.intel.com/solutionslibrary/reference-architecture-for-confidential-computing-on-skt-5g-mec">SKT</a>
+				</p>
 			</td>
 			<td>
 				In Progress
