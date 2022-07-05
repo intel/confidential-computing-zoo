@@ -402,8 +402,25 @@ Cluster PPML</strong></span></a> <br />
 		</tr>
 		<tr>
 			<td>
-				<span style="color:#333333;font-family:Arial;">Secure BigDL <br />
-Recommend System</span> 
+				<span class="md-plain"><a href="https://bigdl.readthedocs.io/en/latest/doc/PPML/Overview/ppml.html" target="_blank"><span style="font-family:Arial;"><strong>BigDL PPML</strong></span> 
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
 			</td>
 			<td>
 				-
@@ -424,25 +441,7 @@ Recommend System</span>
 				-
 			</td>
 			<td>
-				-
-			</td>
-			<td>
-				-
-			</td>
-			<td>
-				-
-			</td>
-			<td>
-				-
-			</td>
-			<td>
-				-
-			</td>
-			<td>
-				-
-			</td>
-			<td>
-				Not Start
+				In Progress
 			</td>
 		</tr>
 		<tr>
