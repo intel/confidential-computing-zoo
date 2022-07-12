@@ -19,7 +19,7 @@ by Alibaba Cloud. It builds security-enhanced instance families [g7t, c7t, r7t](
 based on Intel® SGX technology to provide a trusted and confidential environment
 with a higher security level.
 
-The configuration of the ECS instance as blow:
+The configuration of the ECS instance as below:
 
 <table border="1" cellpadding="1" cellspacing="1" style="width:500px">
   <tbody>
@@ -99,7 +99,7 @@ The configuration of the ECS instance as blow:
 Tencent Cloud Virtual Machine (CVM) provide one instance named [M6ce](https://cloud.tencent.com/document/product/213/11518#M6ce),
 which supports Intel® SGX encrypted computing technology.
 
-The configuration of the M6ce instance as blow:
+The configuration of the M6ce instance as below:
 
 <table border="1" cellpadding="1" cellspacing="1" style="width:500px">
   <tbody>
@@ -179,7 +179,7 @@ ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
 which supports Intel® SGX encrypted computing technology. Now ByteDance Cloud only
 provides SGX instance based on bare metal for customers in whitelist.
 
-The configuration of the M6ce instance as blow:
+The configuration of the M6ce instance as below:
 
 <table border="1" cellpadding="1" cellspacing="1" style="width:500px;">
 	<tbody>
