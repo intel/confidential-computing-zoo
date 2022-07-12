@@ -185,19 +185,16 @@ The configuration of the M6ce instance as blow:
 	<tbody>
 		<tr>
 			<td colspan="2">
-				<span>&nbsp; &nbsp; Public Cloud </span> 
+				<strong>&nbsp; &nbsp; Public Cloud</strong> 
 			</td>
-			<td>
-				<span>ByteDance Cloud </span> 
+			<td><strong>ByteDance Cloud</strong>
 			</td>
 		</tr>
 		<tr>
-			<td rowspan="6" style="text-align:left;">
-				<p>
-					<span>&nbsp;</span> 
+			<td rowspan="6" style="text-align: left;">
+				<p>&nbsp;
 				</p>
-				<p>
-					<span>Instance&nbsp; </span> 
+				<p><strong>Instance&nbsp;</strong>
 				</p>
 			</td>
 			<td style="text-align:left;">
@@ -252,12 +249,12 @@ The configuration of the M6ce instance as blow:
 			</td>
 		</tr>
 		<tr>
-			<td colspan="2">
-				<span><br />
-<br />
-<br />
-Validated Solution&nbsp; </span> 
-			</td>
+		<td colspan="2">
+			<br />
+			<br />
+			<br />
+			<strong>Validated Solution&nbsp;</strong>
+		</td>
 			<td>
 				<ul>
 					<li>
@@ -291,19 +288,16 @@ The following is the configuration of the DCsv3-series instance used:
 	<tbody>
 		<tr>
 			<td colspan="2">
-				<span>&nbsp; &nbsp; Public Cloud </span>
+				<strong>&nbsp; &nbsp; Public Cloud</strong>
 			</td>
-			<td>
-				<span>Microsoft Azure </span>
+			<td><strong>Microsoft Azure</strong>
 			</td>
 		</tr>
 		<tr>
-			<td rowspan="6" style="text-align:left;">
-				<p>
-					<span>&nbsp;</span>
+			<td rowspan="5" style="text-align: left;">
+				<p>&nbsp;
 				</p>
-				<p>
-					<span>Instance&nbsp; </span>
+				<p><strong>Instance&nbsp;</strong>
 				</p>
 			</td>
 			<td style="text-align:left;">
@@ -349,12 +343,12 @@ The following is the configuration of the DCsv3-series instance used:
 				<span>16</span>
 			</td>
 		</tr>
-			<td colspan="2">
-				<span><br />
-<br />
-<br />
-Validated Solution&nbsp; </span>
-			</td>
+		<td colspan="2">
+			<br />
+			<br />
+			<br />
+			<strong>Validated Solution&nbsp;</strong>
+		</td>
 			<td>
 				<ul>
 					<li>
