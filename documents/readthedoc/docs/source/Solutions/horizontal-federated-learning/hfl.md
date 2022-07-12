@@ -69,6 +69,11 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 - container num: 3
 
 ### Build Docker image
+For deployments on Microsoft Azure:
+```shell
+AZURE=1 ./build_docker_image.sh
+```
+For other cloud deployments:
 ```shell
 ./build_docker_image.sh
 ```
@@ -89,7 +94,7 @@ If running locally, please fill in the local PCCS server address in `<PCCS ip ad
 ./start_aesm_service.sh
 ```
 
-If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
+If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
 
 ### Run the training scripts
 Run the script for the corresponding job in each container.
@@ -119,7 +124,7 @@ Cloud. It builds security-enhanced instance families [g7t, c7t, r7t](https://hel
 based on Intel® SGX technology to provide a trusted and confidential environment
 with a higher security level.
 
-The configuration of the ECS instance as blow:
+The configuration of the ECS instance as below:
 
 - Instance Type  : [g7t](https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k).
 - Instance Kernel: 4.19.91-24
@@ -135,7 +140,7 @@ The configuration of the ECS instance as blow:
 Tencent Cloud Virtual Machine (CVM) provide one instance named [M6ce](https://cloud.tencent.com/document/product/213/11518#M6ce),
 which supports Intel® SGX encrypted computing technology.
 
-The configuration of the M6ce instance as blow:
+The configuration of the M6ce instance as below:
 
 - Instance Type  : [M6ce.4XLARGE128](https://cloud.tencent.com/document/product/213/11518#M6ce)
 - Instance Kernel: 5.4.119-19-0009.1
@@ -146,17 +151,13 @@ The configuration of the M6ce instance as blow:
 
 ***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
 
-<div id="refer-anchor-1"></div>
-
-- [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
-
 
 ### 3. ByteDance Cloud
 
 ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
 which supports Intel® SGX encrypted computing technology.
 
-The configuration of the ebmg2t instance as blow:
+The configuration of the ebmg2t instance as below:
 
 - Instance Type  : `ecs.ebmg2t.32xlarge`.
 - Instance Kernel: kernel-5.15
@@ -164,3 +165,21 @@ The configuration of the ebmg2t instance as blow:
 - Instance Encrypted Memory: 256G
 - Instance vCPU  : 16
 - Instance SGX PCCS Server: `sgx-dcap-server.bytedance.com`.
+
+### 4. Microsoft Azure
+
+Microsoft Azure [DCsv3-series](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series) instances support Intel® SGX encrypted computing technology.
+
+The following is the configuration of the DCsv3-series instance used:
+
+- Instance Type  : Standard_DC16s_v3
+- Instance Kernel: 5.13.0-1031-azure
+- Instance OS    : Ubuntu Server 20.04 LTS - Gen2
+- Instance Encrypted Memory: 64G
+- Instance vCPU  : 16
+
+***Notice***: Microsoft Azure uses the Azure DCAP Client instead of the default SGX quote provider library, so `sgx_default_qcnl.conf` is not used.
+
+<div id="refer-anchor-1"></div>
+
+- [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)

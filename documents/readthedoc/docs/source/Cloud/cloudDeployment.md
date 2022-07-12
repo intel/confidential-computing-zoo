@@ -277,3 +277,91 @@ Validated Solution&nbsp; </span>
 		</tr>
 	</tbody>
 </table>
+
+
+---
+
+## Microsoft Azure
+
+Microsoft Azure [DCsv3-series](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series) instances support Intel® SGX encrypted computing technology.
+
+The following is the configuration of the DCsv3-series instance used:
+
+<table border="1" cellpadding="1" cellspacing="1" style="width:500px;">
+	<tbody>
+		<tr>
+			<td colspan="2">
+				<span>&nbsp; &nbsp; Public Cloud </span>
+			</td>
+			<td>
+				<span>Microsoft Azure </span>
+			</td>
+		</tr>
+		<tr>
+			<td rowspan="6" style="text-align:left;">
+				<p>
+					<span>&nbsp;</span>
+				</p>
+				<p>
+					<span>Instance&nbsp; </span>
+				</p>
+			</td>
+			<td style="text-align:left;">
+				<span>Type</span>
+			</td>
+			<td>
+				<div>
+					<span>Standard_DC16s_v3</span>
+				</div>
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				<span>Kernel</span>
+			</td>
+			<td>
+				<div>
+					<span>5.13.0-1031-azure</span>
+				</div>
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				<span>OS</span>
+			</td>
+			<td>
+				<span>Ubuntu Server 20.04 LTS - Gen2</span>
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				<span>Memory</span>
+			</td>
+			<td>
+				<span>128G (64G EPC Memory)</span>
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				<span>vCPU</span>
+			</td>
+			<td>
+				<span>16</span>
+			</td>
+		</tr>
+			<td colspan="2">
+				<span><br />
+<br />
+<br />
+Validated Solution&nbsp; </span>
+			</td>
+			<td>
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html"><span>Horizontal Federated Learning&nbsp;</span></a>
+					</li>
+				</ul>
+			</td>
+		</tr>
+	</tbody>
+</table>

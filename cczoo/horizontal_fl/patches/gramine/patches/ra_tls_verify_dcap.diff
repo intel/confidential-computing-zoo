@@ -70,7 +70,7 @@ index 8ce518da..4c854410 100644
                                /*p_qve_report_info=*/NULL, supplemental_data_size,
                                supplemental_data);
      if (ret) {
-+        printf("sgx_qv_verify_quote failed");
++        printf("sgx_qv_verify_quote failed: 0x%04x ", ret);
          ret = MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;
          goto out;
      }
