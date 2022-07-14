@@ -17,6 +17,9 @@
 
 FROM ubuntu:18.04
 
+# Optional build argument to select a build for Azure
+ARG AZURE
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV INSTALL_PREFIX=/usr/local
 ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
@@ -48,7 +51,29 @@ RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_rep
 RUN apt-get install -y libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-quote-ex-dev libsgx-qe3-logic sgx-aesm-service
 
 # Install SGX-DCAP
-RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-default-qpl libsgx-dcap-quote-verify-dev libsgx-dcap-default-qpl-dev
+RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev
+
+# Install SGX-DCAP quote provider library
+RUN if [ -z "$AZURE" ]; then \
+        # Not a build for Azure, so install the default quote provider library \
+        apt-get install -y libsgx-dcap-default-qpl libsgx-dcap-default-qpl-dev; \
+    else \
+        # Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
+        AZUREDIR=/azure \
+        && apt-get install -y libssl-dev libcurl4-openssl-dev pkg-config software-properties-common \
+        && add-apt-repository ppa:team-xbmc/ppa -y \
+        && apt-get update \
+        && apt-get install -y nlohmann-json3-dev \
+        && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
+        && cd ${AZUREDIR} \
+        && git checkout 1.10.0 \
+        && git submodule update --recursive --init \
+        && cd src/Linux \
+        && ./configure \
+        && make DEBUG=1 \
+        && make install \
+        && cp libdcap_quoteprov.so /usr/lib/x86_64-linux-gnu/; \
+    fi
 
 # Gramine
 ENV GRAMINEDIR=/gramine
