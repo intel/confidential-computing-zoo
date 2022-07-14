@@ -173,3 +173,107 @@ The configuration of the M6ce instance as blow:
 
 ---
 
+## ByteDance Cloud
+
+ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
+which supports Intel® SGX encrypted computing technology. Now ByteDance Cloud only
+provides SGX instance based on bare metal for customers in whitelist.
+
+The configuration of the M6ce instance as blow:
+
+<table border="1" cellpadding="1" cellspacing="1" style="width:500px;">
+	<tbody>
+		<tr>
+			<td colspan="2">
+				<span>&nbsp; &nbsp; Public Cloud </span> 
+			</td>
+			<td>
+				<span>ByteDance Cloud </span> 
+			</td>
+		</tr>
+		<tr>
+			<td rowspan="6" style="text-align:left;">
+				<p>
+					<span>&nbsp;</span> 
+				</p>
+				<p>
+					<span>Instance&nbsp; </span> 
+				</p>
+			</td>
+			<td style="text-align:left;">
+				<span>Type</span> 
+			</td>
+			<td>
+				<div>
+					<span>ebmg2t.32xlarge (Bare Metal)</span> 
+				</div>
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				<span>Kernel</span> 
+			</td>
+			<td>
+				<div>
+					<span>kernel-5.15</span> 
+				</div>
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				<span>OS</span> 
+			</td>
+			<td>
+				<span>Ubuntu20.04</span> 
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				<span>Memory</span> 
+			</td>
+			<td>
+				<span>512G(256G EPC Memory)</span> 
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				<span>vCPU</span> 
+			</td>
+			<td>
+				<span>16</span> 
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				<span>PCCS Server</span> 
+			</td>
+			<td>
+				<span><span>sgx-dcap-server.bytedance.com </span></span> 
+			</td>
+		</tr>
+		<tr>
+			<td colspan="2">
+				<span><br />
+<br />
+<br />
+Validated Solution&nbsp; </span> 
+			</td>
+			<td>
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html"><span>TensorFlow Serving Cluster PPML&nbsp;</span></a> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html"><span>Horizontal Federated Learning&nbsp;</span></a> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><span>RA-TLS Enhanced gRPC</span></a> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a> 
+					</li>
+				</ul>
+			</td>
+		</tr>
+	</tbody>
+</table>

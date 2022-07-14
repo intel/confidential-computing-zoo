@@ -1,0 +1,61 @@
+loader.preload = "file:{{ gramine.libos }}"  # for compatibility with v1.0
+
+loader.entrypoint = "file:{{ gramine.libos }}"
+libos.entrypoint = "{{ entrypoint }}"
+
+loader.log_level = "error"
+
+loader.insecure__use_cmdline_argv = true
+
+loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}"
+
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+  { path = "/usr", uri = "file:/usr" },
+  { path = "/etc", uri = "file:/etc" },
+#  { path = "/encryption", uri = "file:/home/ubuntu/encryption", type = "encrypted" },
+#  { path = "/plain", uri = "file:/home/ubuntu/plain" },
+#  { path = "/readonly", uri = "file:/home/ubuntu/readonly" },
+]
+
+# If using 64G or greater enclave sizes, the JVM flag `-Xmx8G` can be omitted in gramine-sgx.
+sgx.enclave_size = "8G"
+
+# SGX needs minimum 64 threads for loading OpenJDK runtime.
+sgx.thread_num = 64
+# sgx.debug = true
+sgx.remote_attestation = true
+sgx.ra_client_spid = ""
+sgx.ra_client_linkable = false
+
+sgx.trusted_files = [
+  "file:{{ gramine.libos }}",
+  "file:{{ entrypoint }}",
+  "file:{{ gramine.runtimedir() }}/",
+  "file:{{ arch_libdir }}/",
+  "file:/usr/{{ arch_libdir }}/",
+  "file:/usr/lib/jvm/java-11-openjdk-amd64/lib/",
+  "file:/usr/lib/jvm/java-11-openjdk-amd64/conf/security/java.security",
+  "file:/usr/share/java/java-atk-wrapper.jar",
+  "file:clf_test.class",
+  "file:test",
+  "file:GramineJni/gramine_jni.class",
+  "file:GramineJni/gramine_xx.class",
+  "file:/usr/lib/libgramine_jni.so",
+  "file:certs/ca_cert.crt",
+#  "file:/home/ubuntu/readonly/",
+]
+
+sgx.allowed_files = [
+  "file:/etc/nsswitch.conf",
+  "file:/etc/ethers",
+  "file:/etc/host.conf",
+  "file:/etc/hosts",
+  "file:/etc/group",
+  "file:/etc/passwd",
+  "file:/etc/gai.conf",
+  "file:/etc/resolv.conf",
+#  "file:/home/ubuntu/plain",
+]
+
