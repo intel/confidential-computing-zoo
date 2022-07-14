@@ -55,27 +55,110 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 
 ## Horizontal federated training execution
 
+RS and Image classification.
+
 ### Requirements
 
 - a machine that supports Intel SGX and FLC/DCAP
-- EPC size: 64GB
+- EPC size: 256GB
 - Docker
-
-### Configuration
-
 - framework: TensorFlow 2.4.2
+
+### Recommendation system
+#### Configuration
+
+- model: dlrm
+- dataset: click-through record in Kaggle Cretio Ad dataset
+- ps num: 1
+- worker num: 4
+- container num: 5
+
+#### Download dataset
+
+The dataset is saved in [GoogleDrive](https://docs.google.com/uc?export=download&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr), you can download it by:
+
+```shell
+wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr" -O train.tar && rm -rf /tmp/cookies.txt
+```
+
+Or [BaiduNetdisk](https://pan.baidu.com/s/1BkMBDMghvJXp0wK9EQHtMg?pwd=c7cf).
+The dataset should be placed in the `/scripts/dataset` folder.
+
+#### Build Docker image
+
+```shell
+cd recommendation_system
+./build_docker_image.sh
+```
+
+#### Start containers and aesm services
+Start five containers (ps0, worker0, worker1, worker2, worker3) and aesm services.
+If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`.
+```shell
+./start_container.sh ps0 <PCCS ip addr>
+./start_aesm_service.sh
+```
+```shell
+./start_container.sh worker0 <PCCS ip addr>
+./start_aesm_service.sh
+```
+```shell
+./start_container.sh worker1 <PCCS ip addr>
+./start_aesm_service.sh
+```
+```shell
+./start_container.sh worker2 <PCCS ip addr>
+./start_aesm_service.sh
+```
+```shell
+./start_container.sh worker3 <PCCS ip addr>
+./start_aesm_service.sh
+```
+If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
+
+#### Run the training scripts
+Run the script for the corresponding job in each container.
+```shell
+cd scripts
+test-sgx.sh ps0
+```
+```shell
+cd scripts
+test-sgx.sh worker0
+```
+```shell
+cd scripts
+test-sgx.sh worker1
+```
+```shell
+cd scripts
+test-sgx.sh worker2
+```
+```shell
+cd scripts
+test-sgx.sh worker3
+```
+
+We can see the training process in the workers' terminal.
+
+### Image classification
+
+#### Configuration
+
 - model: ResNet-50
 - dataset: Cifar-10
 - ps num: 1
 - worker num: 2
 - container num: 3
 
-### Build Docker image
+#### Build Docker image
+
 ```shell
+cd image_classification
 ./build_docker_image.sh
 ```
 
-### Start containers and aesm services
+#### Start containers and aesm services
 Start three containers (ps0, worker0, worker1) and aesm services.
 If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`.
 ```shell
@@ -93,22 +176,24 @@ If running locally, please fill in the local PCCS server address in `<PCCS ip ad
 
 If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
 
-### Run the training scripts
+#### Run the training scripts
 Run the script for the corresponding job in each container.
 ```shell
-cd hfl-tensorflow
+cd scripts
 test-sgx.sh ps0
 ```
 ```shell
-cd hfl-tensorflow
+cd scripts
 test-sgx.sh worker0
 ```
 ```shell
-cd hfl-tensorflow
+cd scripts
 test-sgx.sh worker1
 ```
 
 You can see the training log information from the workers' terminals to confirm that the training is running normally. The model files generated during training will be saved in the `model` folder. In this example, the information related to variable values is stored in `model/model.ckpt-data` of `ps0`, and the information related to the computational graph structure is stored in `model/model.ckpt-meta` of `worker0`.
+
+
 
 ---
 ## Cloud Deployment
