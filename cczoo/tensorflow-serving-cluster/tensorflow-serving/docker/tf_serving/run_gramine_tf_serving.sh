@@ -92,7 +92,7 @@ while getopts "h?r:i:p:m:s:a:e:" OPT; do
 done
 
 docker run \
-    -it \
+    -itd \
     --device /dev/sgx_enclave:/dev/sgx/enclave \
     --device /dev/sgx_provision:/dev/sgx/provision \
     --add-host=${attestation_hosts} \

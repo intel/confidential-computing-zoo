@@ -15,6 +15,9 @@
 
 FROM ubuntu:18.04
 
+# Optional build argument to select a build for Azure
+ARG AZURE
+
 ENV GRAMINEDIR=/gramine
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV SGX_SIGNER_KEY=${GRAMINEDIR}/Pal/src/host/Linux-SGX/signer/enclave-key.pem
@@ -59,6 +62,25 @@ RUN apt-get update \
         curl \
     && apt-get install -y --no-install-recommends apt-utils
 
+# Install SGX-DCAP quote provider library
+RUN if [ ! -z "$AZURE" ]; then \
+        # Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
+        AZUREDIR=/azure \
+        && apt-get install -y libssl-dev libcurl4-openssl-dev pkg-config software-properties-common \
+        && add-apt-repository ppa:team-xbmc/ppa -y \
+        && apt-get update \
+        && apt-get install -y nlohmann-json3-dev \
+        && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
+        && cd ${AZUREDIR} \
+        && git checkout 1.10.0 \
+        && git submodule update --recursive --init \
+        && cd src/Linux \
+        && ./configure \
+        && make DEBUG=1 \
+        && make install \
+        && cp libdcap_quoteprov.so /usr/lib/x86_64-linux-gnu/; \
+    fi
+
 RUN ln -sf /usr/bin/python3.7 /usr/bin/python3
 RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55'
 
@@ -68,7 +90,8 @@ RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_rep
 RUN apt-get update
 
 # Add TensorFlow Serving distribution URI as a package source
-RUN echo "deb [trusted=yes arch=amd64] http://storage.googleapis.com/tensorflow-serving-apt stable tensorflow-model-server tensorflow-model-server-universal" | tee /etc/apt/sources.list.d/tensorflow-serving.list \
+# Specify 2.8.0 which is the latest version compatible with the glibc version in Ubuntu 18.04
+RUN echo "deb [trusted=yes arch=amd64] http://storage.googleapis.com/tensorflow-serving-apt testing tensorflow-model-server-2.8.0" | tee /etc/apt/sources.list.d/tensorflow-serving.list \
     && curl https://storage.googleapis.com/tensorflow-serving-apt/tensorflow-serving.release.pub.gpg | apt-key add -
 
 RUN apt-get update
@@ -77,7 +100,13 @@ RUN apt-get update
 RUN apt-get install -y libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-qe3-logic sgx-aesm-service
 
 # Install DCAP
-RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-default-qpl libsgx-dcap-quote-verify-dev
+RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev
+
+# Install SGX-DCAP quote provider library
+RUN if [ -z "$AZURE" ]; then \
+        # Not a build for Azure, so install the default quote provider library \
+        apt-get install -y libsgx-dcap-default-qpl; \
+    fi
 
 # Clone Gramine and Init submodules
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
