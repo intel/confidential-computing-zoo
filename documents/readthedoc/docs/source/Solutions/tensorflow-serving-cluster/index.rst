@@ -368,7 +368,7 @@ For more syntax used in the manifest template, please refer to `Gramine Manifest
 Run the TensorFlow Serving container::
 
     cd <tensorflow_serving dir>/docker/tf_serving
-    cp ssl_configure/ssl.cfg 
+    cp ssl_configure/ssl.cfg .
     ./run_gramine_tf_serving.sh -i gramine_tf_serving:latest -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
    
 *Note*:
