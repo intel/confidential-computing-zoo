@@ -99,15 +99,21 @@ RUN cd ${GRAMINEDIR} && pwd && meson setup build/ --buildtype=debug -Dsgx=enable
 
 
 # Install the latest tensorflow-model-server
-RUN apt-cache madison "tensorflow-model-server"
-RUN apt-get install -y tensorflow-model-server
+# RUN apt-cache madison "tensorflow-model-server"
+# RUN apt-get install -y tensorflow-model-server
+
+ARG TF_SERVING_PKGNAME=tensorflow-model-server
+ARG TF_SERVING_VERSION=2.6.2
+RUN curl -LO https://storage.googleapis.com/tensorflow-serving-apt/pool/${TF_SERVING_PKGNAME}-${TF_SERVING_VERSION}/t/${TF_SERVING_PKGNAME}/${TF_SERVING_PKGNAME}_${TF_SERVING_VERSION}_all.deb \
+    && apt-get install -y ./${TF_SERVING_PKGNAME}_${TF_SERVING_VERSION}_all.deb
+
 
 # Clean apt cache
 RUN apt-get clean all
 
 # Build Secret Provision
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
-    && make dcap 
+    && make dcap
 
 WORKDIR ${WORK_BASE_PATH}
 
