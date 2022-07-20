@@ -73,19 +73,19 @@ RUN if [ -z "$AZURE" ]; then \
         apt-get install -y libsgx-dcap-default-qpl; \
     else \
         # Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
-        AZUREDIR=/azure; \
-        && apt-get install -y libssl-dev libcurl4-openssl-dev pkg-config software-properties-common; \
-        && add-apt-repository ppa:team-xbmc/ppa -y; \
-        && apt-get update; \
-        && apt-get install -y nlohmann-json3-dev; \
-        && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR}; \
-        && cd ${AZUREDIR}; \
-        && git checkout 1.10.0; \
-        && git submodule update --recursive --init; \
-        && cd src/Linux; \
-        && ./configure; \
-        && make DEBUG=1; \
-        && make install; \
+        AZUREDIR=/azure \
+        && apt-get install -y libssl-dev libcurl4-openssl-dev pkg-config software-properties-common \
+        && add-apt-repository ppa:team-xbmc/ppa -y \
+        && apt-get update \
+        && apt-get install -y nlohmann-json3-dev \
+        && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
+        && cd ${AZUREDIR} \
+        && git checkout 1.10.0 \
+        && git submodule update --recursive --init \
+        && cd src/Linux \
+        && ./configure \
+        && make DEBUG=1 \
+        && make install \
         && cp libdcap_quoteprov.so /usr/lib/x86_64-linux-gnu/; \
     fi
 
