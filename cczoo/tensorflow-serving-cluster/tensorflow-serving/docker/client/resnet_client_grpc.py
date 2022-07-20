@@ -18,7 +18,7 @@
 from __future__ import print_function
 
 import numpy as np
-import requests, argparse, time, grpc, cv2, asyncio, functools
+import requests, argparse, time, grpc, asyncio, functools
 
 import tensorflow as tf
 from tensorflow_serving.apis import predict_pb2
@@ -78,7 +78,7 @@ class benchmark_engine(object):
         response_list = []
 
         # create channel
-        if self.root_cert == None:
+        if self.root_cert == None and self.certificate_chain == None:
             async with grpc.aio.insecure_channel(self.url) as channel:
                 stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
                 if loop_num != 0:
@@ -101,9 +101,11 @@ class benchmark_engine(object):
                         tps = self.batch_size / latency
                         print(format_string.format('insecure', task_idx, self.batch_size, 1000*latency, tps))
         else:
-            creds = grpc.ssl_channel_credentials(root_certificates =self.root_cert,
+            root_cert = self.root_cert if self.root_cert else self.certificate_chain
+            cert_chain = self.certificate_chain if self.root_cert else None
+            creds = grpc.ssl_channel_credentials(root_certificates=root_cert,
                                                  private_key=self.private_key,
-                                                 certificate_chain=self.certificate_chain)
+                                                 certificate_chain=cert_chain)
             async with grpc.aio.secure_channel(self.url, creds) as channel:
                 stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
                 if loop_num != 0:
