@@ -23,6 +23,12 @@ else
     tag=$1
 fi
 
+if  [ -z "$AZURE" ] ; then
+    azure=
+else
+    azure=1
+fi
+
 # You can remove build-arg http_proxy and https_proxy if your network doesn't need it
 proxy_server=""
 
@@ -30,4 +36,5 @@ DOCKER_BUILDKIT=0 docker build \
     -f gramine_tf_serving.dockerfile . \
     -t gramine_tf_serving:${tag} \
     --build-arg http_proxy=${proxy_server} \
-    --build-arg https_proxy=${proxy_server} 
+    --build-arg https_proxy=${proxy_server} \
+    --build-arg AZURE=${azure}
