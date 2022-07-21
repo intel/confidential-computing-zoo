@@ -1,0 +1,3 @@
+Invalid application path specified (python.manifest.sgx does not exist).
+The path should point to application configuration files, so that they can be
+found after appending corresponding extensions.
