@@ -16,6 +16,9 @@
 
 FROM ubuntu:18.04
 
+# Optional build argument to select a build for Azure
+ARG AZURE
+
 ENV GRAMINEDIR=/gramine
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV WORK_BASE_PATH=${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov
@@ -61,8 +64,30 @@ RUN apt-get update
 # Install SGX PSW
 RUN apt-get install -y libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-qe3-logic sgx-aesm-service
 
-# Install DCAP
-RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-default-qpl libsgx-dcap-quote-verify-dev
+# Install SGX DCAP
+RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev
+
+# Install SGX-DCAP quote provider library
+RUN if [ -z "$AZURE" ]; then \
+        # Not a build for Azure, so install the default quote provider library \
+        apt-get install -y libsgx-dcap-default-qpl; \
+    else \
+        # Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
+        AZUREDIR=/azure \
+        && apt-get install -y libssl-dev libcurl4-openssl-dev pkg-config software-properties-common \
+        && add-apt-repository ppa:team-xbmc/ppa -y \
+        && apt-get update \
+        && apt-get install -y nlohmann-json3-dev \
+        && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
+        && cd ${AZUREDIR} \
+        && git checkout 1.10.0 \
+        && git submodule update --recursive --init \
+        && cd src/Linux \
+        && ./configure \
+        && make DEBUG=1 \
+        && make install \
+        && cp libdcap_quoteprov.so /usr/lib/x86_64-linux-gnu/; \
+    fi
 
 # Clone Gramine and Init submodules
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \

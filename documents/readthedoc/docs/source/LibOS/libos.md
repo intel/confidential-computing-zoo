@@ -64,7 +64,7 @@ Below are quick links to some of the most important pages:
 ### What is Occlum
 Occlum is a *memory-safe*, *multi-process* library OS (LibOS) for [Intel SGX](https://software.intel.com/en-us/sgx).
 As a LibOS, it enables *legacy* applications to run on SGX with *little or even no modifications*
-of source code, thus protecting the confidentiality and integrity of user workloads
+to the application source code, thus protecting the confidentiality and integrity of user workloads
 transparently.
 
 ![](occlum.png)
@@ -93,7 +93,7 @@ Occlum has the following salient features:
 
 ### Occlum official link
 The official Occlum can be found at https://occlum.io/.
-Occlum opensource GitHub can be found at https://github.com/gramineproject/gramine.
+Occlum opensource GitHub can be found at https://github.com/occlum/occlum.
 
 
 
