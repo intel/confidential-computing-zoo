@@ -42,10 +42,11 @@ docker run -it \
     --device=/dev/sgx_provision:/dev/sgx/provision \
     --name=${name} \
     -v /var/run/aesmd/aesm:/var/run/aesmd/aesm \
+	-v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
     -v /home:/home/host-home \
 	--net=host \
     --add-host=pa.com:127.0.0.1 \
     --add-host=pb.com:127.0.0.1 \
     --add-host=pccs.service.com:${ip_addr} \
-    horizontal_fl:${tag} \
+    image_classification:${tag} \
     bash

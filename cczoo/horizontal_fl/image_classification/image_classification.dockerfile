@@ -156,16 +156,16 @@ COPY patches/sgx_default_qcnl.conf /etc
 COPY patches/start_aesm_service.sh /
 
 # download and exact cifar-10 dataset
-RUN mkdir /hfl-tensorflow
-COPY hfl-tensorflow /hfl-tensorflow
-RUN cd /hfl-tensorflow && wget https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz
+RUN mkdir /scripts
+COPY scripts /scripts
+RUN cd /scripts && wget https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz
 
 # disable apport
 RUN echo "enabled=0" > /etc/default/apport
 RUN echo "exit 0" > /usr/sbin/policy-rc.d
 
 # make project
-RUN cd /hfl-tensorflow && test-sgx.sh make
+RUN cd /scripts && test-sgx.sh make
 
 # Clean tmp files
 RUN apt-get clean all \
