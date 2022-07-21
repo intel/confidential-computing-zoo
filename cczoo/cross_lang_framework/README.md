@@ -46,9 +46,10 @@ The responsibility of this framework is to provide an easy and safe way for non-
 
 ## Build and installation
 
-- Clone Gramine repo to local
-```bash
-git clone https://github.com/gramineproject/gramine.git
+- Clone Gramine repo to local, you need to build gramine from source code instead of install gramine directly, you can refer to the guidance of the link (https://gramine.readthedocs.io/en/stable/devel/building.html) . Make sure your OS and kernel version meets the requirements.
+- Run the following command on Ubuntu LTS to install dependencies:
+ ```bash
+sudo apt-get install openjdk-11-jdk-headless libatk-wrapper-java
 ```
 - Clone this repo to local
 ```bash
@@ -74,6 +75,12 @@ e.g.
 cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_client/java
 GRAMINEDIR=/home/ubuntu/gramine make
 ```
+- Generate the private key suitable for signing SGX enclaves. SGX requires RSA 3072 keys with public exponent equal to 3.The default path which is usually $HOME/.config/gramine/enclave-key.pem. If you want to learn more about this command, you can refer to link 
+(https://gramine.readthedocs.io/en/stable/manpages/gramine-sgx-gen-private-key.html)
+```bash
+gramine-sgx-gen-private-key
+```
+
 - Build sample app
   Switch to sample app folder and make
 ```bash
@@ -82,21 +89,28 @@ GRAMINEDIR=%gramine_repo_local_path% SGX_SIGNER_KEY=%sgx_signer_key_path% make S
 e.g.
 ```bash
 cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_client/app
-GRAMINEDIR=/home/ubuntu/gramine SGX_SIGNER_KEY=/home/ubuntu/gramine/Pal/src/host/Linux-SGX/signer/enclave-key.pem make SGX=1
+
+GRAMINEDIR=/home/ubuntu/gramine SGX_SIGNER_KEY=/home/ubuntu/.config/gramine/enclave-key.pem make SGX=1
 ```
 
 ## Run the framework and sample code
-- Launch the server
+- Users should identify the value of MRSIGNER at first.
+- Launch the server in one terminal.
 ```bash
 cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server
 
 RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 \
 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 \
-./clf_server &
+./clf_server 
 ```
-- Launch the sample app (client)
+- Launch the sample app (client) in another terminal
 ```bash
 cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_client/app
 gramine-sgx java -Xmx8G clf_test
 ```
-
+- From the server terminal users can see the value of MRSigner/MRSIGNER/ISV_PROD_ID/ISV_SVN, then replace the original value in the clf_server.conf accordingly.
+- Rerun the example, example should success now.
+- If you want to run the C sample
+```bash
+gramine-sgx test
+```

@@ -9,7 +9,7 @@ How to ensure the privacy of participants in the distributed training process of
 The commonly used encryption method in federated learning is Homomorphic Encryption(HE). In addition to HE, trusted execution environment (TEE) technology uses plaintext for calculation and uses a trusted computing base to ensure security. Intel SGX technology is a concrete realization of TEE technology. In this horizontal federated learning solution, we adopted a privacy protection computing solution based on Intel SGX technology.
 
 ### Encrypted runtime environment
- Intel SGX technology offers hardware-based memory encryption that isolates specific application code and data in memory. Intel SGX allows user-level code to allocate private regions of memory, called enclaves, which are designed to be protected from processes running at higher privilege levels.
+Intel SGX technology offers hardware-based memory encryption that isolates specific application code and data in memory. Intel SGX allows user-level code to allocate private regions of memory, called enclaves, which are designed to be protected from processes running at higher privilege levels.
 
 Intel SGX also helps protect against SW attacks even if OS/drivers/BIOS/VMM/SMM are compromised and helps increase protections for secrets even when attacker has full control of platform.
 
@@ -75,18 +75,21 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 
 ### Start containers and aesm services
 Start three containers (ps0, worker0, worker1) and aesm services.
+If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`.
 ```shell
-./start_container.sh <attestation ip addr> ps0
-/start_aesm_service.sh
+./start_container.sh ps0 <PCCS ip addr>
+./start_aesm_service.sh
 ```
 ```shell
-./start_container.sh <attestation ip addr> worker0
-/start_aesm_service.sh
+./start_container.sh worker0 <PCCS ip addr>
+./start_aesm_service.sh
 ```
 ```shell
-./start_container.sh <attestation ip addr> worker1
-/start_aesm_service.sh
+./start_container.sh worker1 <PCCS ip addr>
+./start_aesm_service.sh
 ```
+
+If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
 
 ### Run the training scripts
 Run the script for the corresponding job in each container.
@@ -103,6 +106,61 @@ cd hfl-tensorflow
 test-sgx.sh worker1
 ```
 
+You can see the training log information from the workers' terminals to confirm that the training is running normally. The model files generated during training will be saved in the `model` folder. In this example, the information related to variable values is stored in `model/model.ckpt-data` of `ps0`, and the information related to the computational graph structure is stored in `model/model.ckpt-meta` of `worker0`.
+
+---
+## Cloud Deployment
+
+### 1. Aliyun ECS
+
+[Aliyun ECS](https://help.aliyun.com/product/25365.html) (Elastic Compute Service) is
+an IaaS (Infrastructure as a Service) level cloud computing service provided by Alibaba
+Cloud. It builds security-enhanced instance families [g7t, c7t, r7t](https://help.aliyun.com/document_detail/207734.html)
+based on Intel® SGX technology to provide a trusted and confidential environment
+with a higher security level.
+
+The configuration of the ECS instance as blow:
+
+- Instance Type  : [g7t](https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k).
+- Instance Kernel: 4.19.91-24
+- Instance OS    : Alibaba Cloud Linux 2.1903
+- Instance Encrypted Memory: 32G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server Addr: [sgx-dcap-server.cn-hangzhou.aliyuncs.com](https://help.aliyun.com/document_detail/208095.html)
+
+***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Aliyun PCCS server address.
+
+### 2. Tencent Cloud
+
+Tencent Cloud Virtual Machine (CVM) provide one instance named [M6ce](https://cloud.tencent.com/document/product/213/11518#M6ce),
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the M6ce instance as blow:
+
+- Instance Type  : [M6ce.4XLARGE128](https://cloud.tencent.com/document/product/213/11518#M6ce)
+- Instance Kernel: 5.4.119-19-0009.1
+- Instance OS    : TencentOS Server 3.1
+- Instance Encrypted Memory: 64G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: [sgx-dcap-server-tc.sh.tencent.cn](https://cloud.tencent.com/document/product/213/63353)
+
+***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
+
 <div id="refer-anchor-1"></div>
 
 - [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
+
+
+### 3. ByteDance Cloud
+
+ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the ebmg2t instance as blow:
+
+- Instance Type  : `ecs.ebmg2t.32xlarge`.
+- Instance Kernel: kernel-5.15
+- Instance OS    : ubuntu-20.04
+- Instance Encrypted Memory: 256G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: `sgx-dcap-server.bytedance.com`.

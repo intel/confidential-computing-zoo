@@ -1,0 +1,8 @@
+argparse
+aiohttp>=3.7.0
+grpcio>=1.34.0
+opencv-python>=4.4.0
+tensorflow==2.6.2
+tensorflow-serving-api==2.6.2
+protobuf>=3.19.2
+
