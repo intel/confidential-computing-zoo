@@ -99,23 +99,18 @@ Start five containers (ps0, worker0, worker1, worker2, worker3) and aesm service
 If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`.
 ```shell
 ./start_container.sh ps0 <PCCS ip addr>
-./start_aesm_service.sh
 ```
 ```shell
 ./start_container.sh worker0 <PCCS ip addr>
-./start_aesm_service.sh
 ```
 ```shell
 ./start_container.sh worker1 <PCCS ip addr>
-./start_aesm_service.sh
 ```
 ```shell
 ./start_container.sh worker2 <PCCS ip addr>
-./start_aesm_service.sh
 ```
 ```shell
 ./start_container.sh worker3 <PCCS ip addr>
-./start_aesm_service.sh
 ```
 If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
 
@@ -169,15 +164,12 @@ Start three containers (ps0, worker0, worker1) and aesm services.
 If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`.
 ```shell
 ./start_container.sh ps0 <PCCS ip addr>
-./start_aesm_service.sh
 ```
 ```shell
 ./start_container.sh worker0 <PCCS ip addr>
-./start_aesm_service.sh
 ```
 ```shell
 ./start_container.sh worker1 <PCCS ip addr>
-./start_aesm_service.sh
 ```
 
 If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
