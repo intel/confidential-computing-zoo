@@ -402,7 +402,7 @@ Cluster PPML</strong></span></a> <br />
 		</tr>
 		<tr>
 			<td>
-				<span class="md-plain"><a href="https://bigdl.readthedocs.io/en/latest/doc/PPML/Overview/ppml.html" target="_blank"><span style="font-family:Arial;"><strong>BigDL PPML</strong></span> 
+				<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/bigdl-ppml/index.html" target="_blank"><span style="font-family:Arial;"><strong>BigDL PPML</strong></span>
 			</td>
 			<td>
 				Yes
