@@ -48,5 +48,5 @@ docker run -it \
     --add-host=pa.com:127.0.0.1 \
     --add-host=pb.com:127.0.0.1 \
     --add-host=pccs.service.com:${ip_addr} \
-    image_classification:${tag} \
+    horizontal_fl:${tag} \
     bash
