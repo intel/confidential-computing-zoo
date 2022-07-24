@@ -55,7 +55,7 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 
 ## Horizontal federated training execution
 
-RS and Image classification.
+Recommendation System and Image classification.
 
 ### Requirements
 
@@ -82,17 +82,16 @@ wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download
 ```
 
 Or [BaiduNetdisk](https://pan.baidu.com/s/1BkMBDMghvJXp0wK9EQHtMg?pwd=c7cf).
-The dataset should be placed in the `/scripts/dataset` folder.
+The dataset should be placed in the `recommendation_system/dataset` folder.
 
 #### Build Docker image
 For deployments on Microsoft Azure:
 ```shell
-AZURE=1 ./build_docker_image.sh
+AZURE=1 ./build_docker_image.sh recommendation_system
 ```
 For other cloud deployments:
 ```shell
-cd recommendation_system
-./build_docker_image.sh
+./build_docker_image.sh recommendation_system
 ```
 
 #### Start containers and aesm services
@@ -123,23 +122,23 @@ If running in the cloud (except for Microsoft Azure), please modify the `PCCS se
 #### Run the training scripts
 Run the script for the corresponding job in each container.
 ```shell
-cd scripts
+cd recommendation_system
 test-sgx.sh ps0
 ```
 ```shell
-cd scripts
+cd recommendation_system
 test-sgx.sh worker0
 ```
 ```shell
-cd scripts
+cd recommendation_system
 test-sgx.sh worker1
 ```
 ```shell
-cd scripts
+cd recommendation_system
 test-sgx.sh worker2
 ```
 ```shell
-cd scripts
+cd recommendation_system
 test-sgx.sh worker3
 ```
 
@@ -156,10 +155,13 @@ We can see the training process in the workers' terminal.
 - container num: 3
 
 #### Build Docker image
-
+For deployments on Microsoft Azure:
 ```shell
-cd image_classification
-./build_docker_image.sh
+AZURE=1 ./build_docker_image.sh image_classification
+```
+For other cloud deployments:
+```shell
+./build_docker_image.sh image_classification
 ```
 
 #### Start containers and aesm services
@@ -183,15 +185,15 @@ If running in the cloud, please modify the `PCCS server address` in the `sgx_def
 #### Run the training scripts
 Run the script for the corresponding job in each container.
 ```shell
-cd scripts
+cd image_classification
 test-sgx.sh ps0
 ```
 ```shell
-cd scripts
+cd image_classification
 test-sgx.sh worker0
 ```
 ```shell
-cd scripts
+cd image_classification
 test-sgx.sh worker1
 ```
 

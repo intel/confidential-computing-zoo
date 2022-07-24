@@ -131,7 +131,7 @@ RUN wget "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}
  && dpkg -i bazel_*.deb
 
 # deps 
-RUN pip3 install numpy keras_preprocessing 
+RUN pip3 install numpy keras_preprocessing pandas sklearn matplotlib
 
 # config and download TensorFlow
 ENV TF_VERSION=v2.4.2
@@ -155,17 +155,27 @@ RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_pack
 COPY patches/sgx_default_qcnl.conf /etc
 COPY patches/start_aesm_service.sh /
 
-# download and exact cifar-10 dataset
-RUN mkdir /scripts
-COPY scripts /scripts
-RUN cd /scripts && wget https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz
-
 # disable apport
 RUN echo "enabled=0" > /etc/default/apport
 RUN echo "exit 0" > /usr/sbin/policy-rc.d
 
-# make project
-RUN cd /scripts && test-sgx.sh make
+# Build argument to select a workload
+ARG WORKLOAD
+
+COPY image_classification /image_classification
+COPY recommendation_system /recommendation_system
+
+RUN if [ "$WORKLOAD" = "image_classification" ]; then \
+    # prepare cifar-10 dataset and make image classification project \
+	cd /image_classification && wget https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz \
+	&& test-sgx.sh make; \
+    elif [ "$WORKLOAD" = "recommendation_system" ]; then \
+    # prepare dataset and make recommendation system project \
+	cd /recommendation_system/dataset && tar -zxvf train.tar && cd .. && test-sgx.sh make; \
+    else \
+    echo "Please choose correct workload: image_classification or recommendation_system." \
+	&& exit 1; \
+    fi
 
 # Clean tmp files
 RUN apt-get clean all \
