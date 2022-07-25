@@ -67,11 +67,11 @@ Recommendation System and Image classification.
 ### Recommendation system
 #### Configuration
 
-- model: dlrm
-- dataset: click-through record in Kaggle Cretio Ad dataset
-- ps num: 1
-- worker num: 4
-- container num: 5
+- Model: dlrm
+- Dataset: click-through record in Kaggle Cretio Ad dataset
+- Number of container for ps: 1
+- Number of containers for workers: 4
+- CPU cores: 60
 
 #### Download dataset
 
@@ -94,45 +94,33 @@ For other cloud deployments:
 ./build_docker_image.sh recommendation_system
 ```
 
-#### Start containers and aesm services
-Start five containers (ps0, worker0, worker1, worker2, worker3) and aesm services.
-If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`.
+#### Start containers and run the training scripts
+Start five containers (ps0, worker0, worker1, worker2, worker3) and run the script for the corresponding job in each container.
+
+If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
+
 ```shell
 ./start_container.sh ps0 <PCCS ip addr>
-```
-```shell
-./start_container.sh worker0 <PCCS ip addr>
-```
-```shell
-./start_container.sh worker1 <PCCS ip addr>
-```
-```shell
-./start_container.sh worker2 <PCCS ip addr>
-```
-```shell
-./start_container.sh worker3 <PCCS ip addr>
-```
-If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
-
-#### Run the training scripts
-Run the script for the corresponding job in each container.
-```shell
 cd recommendation_system
 test-sgx.sh ps0
 ```
 ```shell
+./start_container.sh worker0 <PCCS ip addr>
 cd recommendation_system
 test-sgx.sh worker0
 ```
 ```shell
+./start_container.sh worker1 <PCCS ip addr>
 cd recommendation_system
 test-sgx.sh worker1
 ```
 ```shell
+./start_container.sh worker2 <PCCS ip addr>
 cd recommendation_system
 test-sgx.sh worker2
 ```
 ```shell
+./start_container.sh worker3 <PCCS ip addr>
 cd recommendation_system
 test-sgx.sh worker3
 ```
@@ -143,11 +131,11 @@ We can see the training process in the workers' terminal.
 
 #### Configuration
 
-- model: ResNet-50
-- dataset: Cifar-10
-- ps num: 1
-- worker num: 2
-- container num: 3
+- Model: ResNet-50
+- Dataset: Cifar-10
+- Number of container for ps: 1
+- Number of containers for workers: 2
+- CPU cores: 6
 
 #### Build Docker image
 For deployments on Microsoft Azure:
@@ -159,32 +147,22 @@ For other cloud deployments:
 ./build_docker_image.sh image_classification
 ```
 
-#### Start containers and aesm services
-Start three containers (ps0, worker0, worker1) and aesm services.
-If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`.
+#### Start containers and run the training scripts
+Start three containers (ps0, worker0, worker1) and run the script for the corresponding job in each container.
+
+If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
 ```shell
 ./start_container.sh ps0 <PCCS ip addr>
-```
-```shell
-./start_container.sh worker0 <PCCS ip addr>
-```
-```shell
-./start_container.sh worker1 <PCCS ip addr>
-```
-
-If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
-
-#### Run the training scripts
-Run the script for the corresponding job in each container.
-```shell
 cd image_classification
 test-sgx.sh ps0
 ```
 ```shell
+./start_container.sh worker0 <PCCS ip addr>
 cd image_classification
 test-sgx.sh worker0
 ```
 ```shell
+./start_container.sh worker1 <PCCS ip addr>
 cd image_classification
 test-sgx.sh worker1
 ```
