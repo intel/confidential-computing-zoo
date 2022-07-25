@@ -125,7 +125,7 @@ cd recommendation_system
 test-sgx.sh worker3
 ```
 
-We can see the training process in the workers' terminal.
+You can see the training process in the workers' terminal.
 
 ### Image classification
 
