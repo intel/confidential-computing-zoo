@@ -33,7 +33,9 @@ To solve the problem of how to verify the untrusted application integrity, we us
 ## Workflow
 In the training process, each worker uses local data in its enclave to complete a round of training, and then sends the gradient information in the backpropagation process to the parameter server through the RA-TLS technology, and then the parameter server completes the gradient aggregation and update network parameters, and then send the updated parameters to each worker. The workflow is as follows:
 
-![](images/HFL.svg)
+<div align=center>
+<img src=images/HFL.svg>
+</div>
 
 The training phase can be divided into the following steps:
 
@@ -53,65 +55,121 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 
 ## Horizontal federated training execution
 
+Recommendation System and Image classification.
+
 ### Requirements
 
 - a machine that supports Intel SGX and FLC/DCAP
-- EPC size: 64GB
+- EPC size: 256GB
 - Docker
-
-### Configuration
-
 - framework: TensorFlow 2.4.2
-- model: ResNet-50
-- dataset: Cifar-10
-- ps num: 1
-- worker num: 2
-- container num: 3
 
-### Build Docker image
+### Recommendation system
+#### Configuration
+
+- Model: dlrm
+- Dataset: click-through record in Kaggle Cretio Ad dataset
+- Number of container for ps: 1
+- Number of containers for workers: 4
+- CPU cores: 60
+
+#### Download dataset
+
+The dataset is saved in [GoogleDrive](https://docs.google.com/uc?export=download&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr), you can download it by:
+
+```shell
+wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr" -O train.tar && rm -rf /tmp/cookies.txt
+```
+
+Or [BaiduNetdisk](https://pan.baidu.com/s/1BkMBDMghvJXp0wK9EQHtMg?pwd=c7cf).
+The dataset should be placed in the `recommendation_system/dataset` folder.
+
+#### Build Docker image
 For deployments on Microsoft Azure:
 ```shell
-AZURE=1 ./build_docker_image.sh
+AZURE=1 ./build_docker_image.sh recommendation_system
 ```
 For other cloud deployments:
 ```shell
-./build_docker_image.sh
+./build_docker_image.sh recommendation_system
 ```
 
-### Start containers and aesm services
-Start three containers (ps0, worker0, worker1) and aesm services.
-If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`.
+#### Start containers and run the training scripts
+Start five containers (ps0, worker0, worker1, worker2, worker3) and run the script for the corresponding job in each container.
+
+If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
+
 ```shell
 ./start_container.sh ps0 <PCCS ip addr>
-./start_aesm_service.sh
-```
-```shell
-./start_container.sh worker0 <PCCS ip addr>
-./start_aesm_service.sh
-```
-```shell
-./start_container.sh worker1 <PCCS ip addr>
-./start_aesm_service.sh
-```
-
-If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
-
-### Run the training scripts
-Run the script for the corresponding job in each container.
-```shell
-cd hfl-tensorflow
+cd recommendation_system
 test-sgx.sh ps0
 ```
 ```shell
-cd hfl-tensorflow
+./start_container.sh worker0 <PCCS ip addr>
+cd recommendation_system
 test-sgx.sh worker0
 ```
 ```shell
-cd hfl-tensorflow
+./start_container.sh worker1 <PCCS ip addr>
+cd recommendation_system
+test-sgx.sh worker1
+```
+```shell
+./start_container.sh worker2 <PCCS ip addr>
+cd recommendation_system
+test-sgx.sh worker2
+```
+```shell
+./start_container.sh worker3 <PCCS ip addr>
+cd recommendation_system
+test-sgx.sh worker3
+```
+
+You can see the training process in the workers' terminal.
+
+### Image classification
+
+#### Configuration
+
+- Model: ResNet-50
+- Dataset: Cifar-10
+- Number of container for ps: 1
+- Number of containers for workers: 2
+- CPU cores: 6
+
+#### Build Docker image
+For deployments on Microsoft Azure:
+```shell
+AZURE=1 ./build_docker_image.sh image_classification
+```
+For other cloud deployments:
+```shell
+./build_docker_image.sh image_classification
+```
+
+#### Start containers and run the training scripts
+Start three containers (ps0, worker0, worker1) and run the script for the corresponding job in each container.
+
+If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
+```shell
+./start_container.sh ps0 <PCCS ip addr>
+cd image_classification
+test-sgx.sh ps0
+```
+```shell
+./start_container.sh worker0 <PCCS ip addr>
+cd image_classification
+test-sgx.sh worker0
+```
+```shell
+./start_container.sh worker1 <PCCS ip addr>
+cd image_classification
 test-sgx.sh worker1
 ```
 
 You can see the training log information from the workers' terminals to confirm that the training is running normally. The model files generated during training will be saved in the `model` folder. In this example, the information related to variable values is stored in `model/model.ckpt-data` of `ps0`, and the information related to the computational graph structure is stored in `model/model.ckpt-meta` of `worker0`.
+
+
 
 ---
 ## Cloud Deployment
@@ -151,7 +209,6 @@ The configuration of the M6ce instance as below:
 
 ***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
 
-
 ### 3. ByteDance Cloud
 
 ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
@@ -180,4 +237,4 @@ The following is the configuration of the DCsv3-series instance used:
 
 <div id="refer-anchor-1"></div>
 
-[1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
+- [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
