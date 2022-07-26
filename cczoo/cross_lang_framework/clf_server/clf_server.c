@@ -107,12 +107,9 @@ int main(int argc, char** argv) {
 	read_config_short(conf, "isv_svn", (int16_t*)&g_isv_svn);
 	printf("isv_svn=%d\n", g_isv_svn);
 
-	/*TODO: load secret from user specified file or HSM */
-	//uint8_t ptr[16] = {0};
-	time_t t;
-	srand((unsigned) time(&t));
-	for (size_t i = 0; i < 16; i++)
-		sprintf(&g_secret_pf_key_hex[i * 2], "%02x", rand()%0xff);
+	read_config(conf, "secret", szVal, WRAP_KEY_SIZE, &len);
+	printf("secret=%s\n", szVal);
+	strcpy(g_secret_pf_key_hex, szVal);
 
 	puts("Starting server on port 4433.");
 	/*TODO: make port/certification configurable */

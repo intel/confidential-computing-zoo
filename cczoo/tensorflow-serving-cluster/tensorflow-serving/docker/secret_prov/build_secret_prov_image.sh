@@ -23,9 +23,13 @@ else
     tag=$1
 fi
 
+if  [ -z "$AZURE" ] ; then
+    azure=
+else
+    azure=1
+fi
 
 DOCKER_BUILDKIT=0 docker build \
     -f secret_prov.dockerfile . \
-    -t secret_prov_server:${tag}
-
-
+    -t secret_prov_server:${tag} \
+    --build-arg AZURE=${azure}
