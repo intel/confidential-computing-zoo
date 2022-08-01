@@ -151,9 +151,7 @@ RUN cd ${TF_BUILD_PATH} && ./build.sh
 RUN cd ${TF_BUILD_PATH} && bazel build -c opt //tensorflow/tools/pip_package:build_pip_package
 RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} && pip install ${TF_BUILD_OUTPUT}/tensorflow-*-cp36-cp36m-linux_x86_64.whl
 
-# aesm service
 COPY patches/sgx_default_qcnl.conf /etc
-COPY patches/start_aesm_service.sh /
 
 # disable apport
 RUN echo "enabled=0" > /etc/default/apport
