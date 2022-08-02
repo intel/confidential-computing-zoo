@@ -22,10 +22,9 @@ int64_t fileread(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 	if(!f || !buf)
 		return STATUS_BAD_PARAM;
 
-	/*TODO: Gramine bug, allowed filesystem, open() will change the buffer of f*/
 	fd = open((const char*)f, O_RDONLY);
 	if (fd < 0) {
-		fprintf(stderr, "[error] cannot open '%s'\n", f);
+		log_error("[error] cannot open '%s'\n", f);
 		goto out;
 	}
 
@@ -45,7 +44,7 @@ int64_t fileread(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 		} else if (errno == EAGAIN || errno == EINTR) {
 			continue;
 		} else {
-			fprintf(stderr, "[error] cannot read '%s'\n", f);
+			log_error("[error] cannot read '%s'\n", f);
 			goto out;
 		}
 	}
@@ -54,7 +53,7 @@ out:
 	if(fd>0) {
 		ret = close(fd);
 		if (ret < 0) {
-			fprintf(stderr, "[error] cannot close '%s'\n", f);
+			log_error("[error] cannot close '%s'\n", f);
 		}
 	}
 	return bytes_read;
@@ -81,7 +80,7 @@ int64_t filewrite(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 
 	int fd = open((char*)f, O_RDWR | O_CREAT, 0666);
 	if (fd < 0) {
-		fprintf(stderr, "[error] cannot open '%s'\n", f);
+		log_error("[error] cannot open '%s'\n", f);
 		return 0;
 	}
 
@@ -101,7 +100,7 @@ int64_t filewrite(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 		} else if (errno == EAGAIN || errno == EINTR) {
 			continue;
 		} else {
-			fprintf(stderr, "[error] cannot write '%s'\n", f);
+			log_error("[error] cannot write '%s'\n", f);
 			goto out;
 		}
 	}
@@ -109,7 +108,7 @@ int64_t filewrite(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 out:
 	ret = close(fd);
 	if (ret < 0) {
-		fprintf(stderr, "[error] cannot close '%s'\n", f);
+		log_error("[error] cannot close '%s'\n", f);
 	}
 	return written;
 }
