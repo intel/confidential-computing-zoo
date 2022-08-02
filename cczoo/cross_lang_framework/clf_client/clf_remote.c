@@ -98,14 +98,14 @@ int remote_get_file_size(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t*
 	strncpy((char*)req.get_size.fname, fname, MAX_FNAME_LEN-1);
 	bytes = secret_provision_write(&ctx, (uint8_t*)&req, sizeof(msg_req_t));
 	if (bytes < 0) {
-		fprintf(stderr, "[error] secret_provision_write() returned %d\n", bytes);
+		log_error("[error] secret_provision_write() returned %d\n", bytes);
 		goto out;
 	}
 
 	/* get size from source  */
 	bytes = secret_provision_read(&ctx, (uint8_t*)&resp, sizeof(msg_resp_t));
 	if (bytes != sizeof(msg_resp_t) || STATUS_SUCCESS != resp.status) {
-		fprintf(stderr, "[error] secret_provision_read() returned %d (expected %lu) resp.status=%X\n",
+		log_error("[error] secret_provision_read() returned %d (expected %lu) resp.status=%X\n",
 			bytes, sizeof(msg_resp_t), resp.status);
 		goto out;
 	}
@@ -144,14 +144,14 @@ int remote_get_file_2_buff(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_
 	strncpy((char*)req.get_data.fname, fname, MAX_FNAME_LEN-1);
 	bytes = secret_provision_write(&ctx, (uint8_t*)&req, sizeof(msg_req_t));
 	if (bytes < 0) {
-		fprintf(stderr, "[error] secret_provision_write() returned %d\n", bytes);
+		log_error("[error] secret_provision_write() returned %d\n", bytes);
 		goto out;
 	}
 
 	/* get data from source  */
 	bytes = secret_provision_read(&ctx, (uint8_t*)&resp, sizeof(msg_resp_t));
 	if (bytes != sizeof(msg_resp_t) || STATUS_SUCCESS != resp.status) {
-		fprintf(stderr, "[error] secret_provision_read() returned %d (expected %lu) resp.status=%X\n",
+		log_error("[error] secret_provision_read() returned %d (expected %lu) resp.status=%X\n",
 			bytes, sizeof(msg_resp_t), resp.status);
 		goto out;
 	}
@@ -159,7 +159,7 @@ int remote_get_file_2_buff(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_
 	uint64_t data_len = len < resp.get_data.data_len ? len : resp.get_data.data_len;
 	bytes = secret_provision_read(&ctx, (uint8_t*)data, data_len);
 	if (bytes != data_len) {
-		fprintf(stderr, "[error] secret_provision_read() returned %d (expected %lu)\n",
+		log_error("[error] secret_provision_read() returned %d (expected %lu)\n",
 			bytes, data_len);
 		goto out;
 	}
@@ -199,20 +199,20 @@ int remote_put_result(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t off
 	strncpy((char*)req.put_res.fname, fname, MAX_FNAME_LEN-1);
 	bytes = secret_provision_write(&ctx, (uint8_t*)&req, sizeof(msg_req_t));
 	if (bytes < 0) {
-		fprintf(stderr, "[error] secret_provision_write() returned %d\n", bytes);
+		log_error("[error] secret_provision_write() returned %d\n", bytes);
 		goto out;
 	}
 
 	bytes = secret_provision_write(&ctx, (uint8_t*)data, len);
 	if (bytes != len) {
-		fprintf(stderr, "[error] secret_provision_write() returned %d, expect %d\n", bytes, len);
+		log_error("[error] secret_provision_write() returned %d, expect %d\n", bytes, len);
 		goto out;
 	}
 
 	/* get response */
 	bytes = secret_provision_read(&ctx, (uint8_t*)&resp, sizeof(msg_resp_t));
 	if (bytes != sizeof(msg_resp_t) || STATUS_SUCCESS != resp.status) {
-		fprintf(stderr, "[error] secret_provision_read() returned %d (expected %lu) resp.status=%X\n",
+		log_error("[error] secret_provision_read() returned %d (expected %lu) resp.status=%X\n",
 			bytes, sizeof(msg_resp_t), resp.status);
 		goto out;
 	}
