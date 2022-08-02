@@ -27,7 +27,7 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	msg_resp_t resp = {0};
 	int8_t* buf = 0;
 
-	printf("Get Request: MSG_GET_DATA\n");
+	log_debug("Request: MSG_GET_DATA\n");
 
 	if(!ctx || !req)
 		return STATUS_FAIL;
@@ -49,7 +49,7 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	/* send control struct */
 	int bytes = secret_provision_write(ctx, (uint8_t*)&resp, sizeof(resp));
 	if (bytes < 0) {
-		fprintf(stderr, "[error] secret_provision_write(resp) returned %d\n", bytes);
+		log_error("[error] secret_provision_write(resp) returned %d\n", bytes);
 		ret = STATUS_NET_SEND_FAIL;
 		goto out;
 	}
@@ -81,7 +81,7 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 			}
 			bytes = secret_provision_write(ctx, (uint8_t*)buf, len);
 			if (bytes < 0) {
-				fprintf(stderr, "[error] secret_provision_write(data) returned %d\n", bytes);
+				log_error("[error] secret_provision_write(data) returned %d\n", bytes);
 				ret = STATUS_NET_SEND_FAIL;
 				goto out;
 			}
@@ -104,7 +104,7 @@ int send_size(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	int ret = STATUS_FAIL;
 	msg_resp_t resp = {0};
 
-	printf("Get Request: MSG_GET_DATA_SIZE\n");
+	log_debug("Request: MSG_GET_DATA_SIZE\n");
 
 	if(!ctx || !req)
 		return STATUS_FAIL;
@@ -122,7 +122,7 @@ int send_size(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	/* send control struct */
 	int bytes = secret_provision_write(ctx, (uint8_t*)&resp, sizeof(resp));
 	if (bytes < 0) {
-		fprintf(stderr, "[error] secret_provision_write(resp) returned %d\n", bytes);
+		log_error("[error] secret_provision_write(resp) returned %d\n", bytes);
 		ret = STATUS_NET_SEND_FAIL;
 		goto out;
 	}
@@ -142,7 +142,7 @@ int put_result(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	int8_t* buf = 0;
 	int64_t bytes = 0;
 
-	printf("Get Request: MSG_PUT_RESULT\n");
+	log_debug("Request: MSG_PUT_RESULT\n");
 
 	if(!ctx || !req)
 		return STATUS_FAIL;
@@ -178,7 +178,7 @@ int put_result(struct ra_tls_ctx* ctx, msg_req_t *req) {
 				goto resp_result;
 			}
 
-			fprintf(stderr, "[error] secret_provision_read() returned %ld\n", bytes);
+			log_error("[error] secret_provision_read() returned %ld\n", bytes);
 			resp.status = STATUS_FAIL;
 			goto resp_result;
 		}
@@ -200,7 +200,7 @@ resp_result:
 	resp.put_res.received_len = received;
 	bytes = secret_provision_write(ctx, (uint8_t*)&resp, sizeof(resp));
 	if (bytes < 0) {
-		fprintf(stderr, "[error] secret_provision_write(resp) returned %ld\n", bytes);
+		log_error("[error] secret_provision_write(resp) returned %ld\n", bytes);
 		ret = STATUS_NET_SEND_FAIL;
 		goto out;
 	}
@@ -225,46 +225,43 @@ int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
 	msg_req_t req = {0};
 	int bytes;
 
-	fprintf(stderr, "communicate_with_client_callback IN. socket_cnt=%d\n", ++socket_cnt);
-	/* if we reached this callback, the first secret was sent successfully */
-	//printf("--- Sent secret1 = '%s' ---\n", g_secret_pf_key_hex);
+	log_info("total_req_cnt=%d\n", ++socket_cnt);
 
 	while (1) {
 		bytes = secret_provision_read(ctx, (uint8_t *)&req, sizeof(msg_req_t));
 		if (bytes < 0) {
 			if (bytes == -ECONNRESET) {
-				printf("Connection closed\n");
+				//printf("Connection closed\n");
 				ret = STATUS_SUCCESS;
 				goto out;
 			}
 
-			fprintf(stderr, "[error] secret_provision_read() returned %d\n", bytes);
+			log_error("[error] secret_provision_read() returned %d\n", bytes);
 			ret = STATUS_FAIL;
 			goto out;
 		}
 
 		switch (req.msg_type) {
 		case MSG_GET_DATA:
-			fprintf(stderr, "get_data_req_cnt=%d\n", ++get_data_req_cnt);
+			log_info("get_data_req_cnt=%d\n", ++get_data_req_cnt);
 			ret = send_data(ctx, &req);
 			break;
 		case MSG_GET_DATA_SIZE:
-			fprintf(stderr, "get_size_req_cnt=%d\n", ++get_size_req_cnt);
+			log_info("get_size_req_cnt=%d\n", ++get_size_req_cnt);
 			ret = send_size(ctx, &req);
 			break;
 		case MSG_PUT_RESULT:
-			fprintf(stderr, "put_result_req_cnt=%d\n", ++put_result_req_cnt);
+			log_info("put_result_req_cnt=%d\n", ++put_result_req_cnt);
 			ret = put_result(ctx, &req);
 			break;
 		default:
-			fprintf(stderr, "invalid_req_cnt=%d\n", ++invalid_req_cnt);
+			log_error("invalid_req_cnt=%d\n", ++invalid_req_cnt);
 			break;
 		}
 	}
 
 	ret = 0;
 out:
-	//fprintf(stderr, "communicate_with_client_callback OUT\n");
 	secret_provision_close(ctx);
 	return ret;
 }

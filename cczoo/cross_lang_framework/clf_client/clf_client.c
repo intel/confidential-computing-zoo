@@ -14,6 +14,8 @@
 #include "cross_comm.h"
 #include "clf_client.h"
 
+log_level_t g_log_level = LOG_LEVEL_INFO;
+
 static bool is_local(int8_t* ip_port) {
 	if(strcmp((char*)ip_port, LOCAL_FS)) {
 		return false;

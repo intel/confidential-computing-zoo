@@ -65,14 +65,27 @@ typedef struct _msg_resp_t {
 	uint8_t data[0];
 } msg_resp_t;
 
+typedef enum {
+	LOG_LEVEL_DEBUG = 1,
+	LOG_LEVEL_INFO = 2,
+	LOG_LEVEL_ERROR = 3
+} log_level_t;
+
+extern log_level_t g_log_level;
+
 #define log_error(fmt, ...)                      \
     do {                                         \
-            fprintf(stderr, fmt, ##__VA_ARGS__); \
+        if(g_log_level<=LOG_LEVEL_ERROR)fprintf(stderr, fmt, ##__VA_ARGS__); \
+    } while (0)
+
+#define log_info(fmt, ...)                       \
+    do {                                         \
+        if(g_log_level<=LOG_LEVEL_INFO)fprintf(stderr, fmt, ##__VA_ARGS__); \
     } while (0)
 
 #define log_debug(fmt, ...)                      \
     do {                                         \
-            fprintf(stderr, fmt, ##__VA_ARGS__); \
+        if(g_log_level<=LOG_LEVEL_DEBUG)fprintf(stderr, fmt, ##__VA_ARGS__); \
     } while (0)
 
 void log_errcode(status_t c);
