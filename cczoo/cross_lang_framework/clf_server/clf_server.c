@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
 		return ret;
 
 	int len = 0;
-	int16_t tmp16 = 0;
+	int tmp = 0;
 	char szVal[PATH_MAX] = {0};
 	const char conf[] = "clf_server.conf";
 	read_config(conf, "MRSigner", szVal, MRSIGNER_LEN, &len);
@@ -119,9 +119,9 @@ int main(int argc, char** argv) {
 	printf("conf.secret=%s\n", szVal);
 	strcpy(g_secret_pf_key_hex, szVal);
 
-	read_config_short(conf, "port", (int16_t*)&tmp16);
-	if(tmp16 != 0)
-		g_port = tmp16;
+	read_config_int(conf, "port", &tmp);
+	if(0<tmp && tmp<65535)
+		g_port = tmp;
 	printf("conf.port=%d\n", g_port);
 
 	read_config(conf, "server_cert_path", szVal, PATH_MAX, &len);
