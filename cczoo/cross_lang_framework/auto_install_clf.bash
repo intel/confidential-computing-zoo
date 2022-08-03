@@ -111,7 +111,7 @@ sudo apt-get install -y nodejs
 sudo apt-get install -y libcrack2    
 echo "begin to download SGX PCCS,you may need to give some input"            
 sudo apt-get install sgx-dcap-pccs 
-echo "you should configure PCCS by yourself, just go to /etc/sgx_default_qcnl.conf and revise the pccs_url"
+echo "you may need to configure PCCS by yourself,  go to /etc/sgx_default_qcnl.conf and revise the pccs_url. If you build PCCS by yourself and use self-signed certs, you also need to set USE_SECURE_CERT=FALSE"
 # test SGX DCAP function
 git clone https://github.com/intel/SGXDataCenterAttestationPrimitives
 cd  SGXDataCenterAttestationPrimitives/SampleCode/QuoteGenerationSample/
