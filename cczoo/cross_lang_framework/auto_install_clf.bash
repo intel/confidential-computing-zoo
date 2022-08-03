@@ -1,3 +1,4 @@
+#!/bin/bash
 function version_lt() { test "$(echo "$@" | tr " " "\n" | sort -rV | head -n 1)" != "$1"; }
 function month()
 {
@@ -52,22 +53,33 @@ apt-get install -y autoconf gawk bison
 apt-get install -y libprotobuf-c-dev protobuf-c-compiler
 apt-get install -y python3-protobuf
 apt-get install -y unzip
-if [[ -d "/opt/intesl/sgxsdk/" ]]; then
+if [[ -d "/opt/intel/sgxsdk/" ]]; then
   echo "SGX SDK has been installed"
 elif [[   $os_version == *"20.04"* ]]; then
   echo "begin to download SGX SDK"
-  wget https://download.01.org/intel-sgx/latest/dcap-latest/linux/distro/ubuntu20.04-server/sgx_linux_x64_sdk_2.17.100.3.bin
+  sgx_sdk_url=https://download.01.org/intel-sgx/latest/dcap-latest/linux/distro/ubuntu20.04-server/
+  res=`wget https://download.01.orwget -qO - ${sgx_sdk_url} | grep sdk|cut -d\" -f2|while read x; do wget ${sgx_sdk_url}${x}; break; done 2>&1`
+  if [[ res == *"error"* ]]; then
+  echo "there may be some error,you can download SGX SDK by yourself"
+  exit 1
+  fi
   echo 'deb [arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main' | sudo tee /etc/apt/sources.list.d/intel-sgx.list
   wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | sudo apt-key add -
   echo "SGX SDK has been downloaded"
 elif [[  $os_version == *"18.04"* ]]; then
   echo "begin to download SGX SDK"
-  wget https://download.01.org/intel-sgx/latest/dcap-latest/linux/distro/ubuntu18.04-server/sgx_linux_x64_sdk_2.17.100.3.bin
+  sgx_sdk_url=https://download.01.org/intel-sgx/latest/dcap-latest/linux/distro/ubuntu18.04-server/
+  res=`wget https://download.01.orwget -qO - ${sgx_sdk_url} | grep sdk|cut -d\" -f2|while read x; do wget ${sgx_sdk_url}${x}; break; done 2>&1`
+  if [[ res == *"error"* ]]; then
+  echo "there may be some error,you can download SGX SDK by yourself"
+  exit 1
+  fi
   echo 'deb [arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main' | sudo tee /etc/apt/sources.list.d/intel-sgx.list
   wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | sudo apt-key add -
   echo "SGX SDK has been downloaded"
 else
   echo " No suitable SGX SDK version for this Ubuntu version"
+  exit 1
 fi
 echo "begin to install SGX SDK"
 chmod +x *sdk*.bin
@@ -75,19 +87,31 @@ chmod +x *sdk*.bin
 no
 /opt/intel/
 EOF
+source /opt/intel/sgxsdk/environment
 echo " SGX SDK has been installed "
 # install SGX PSW
 echo "begin to download SGX PSW"
 sudo apt-get update
 sudo apt-get install -y libsgx-urts libsgx-dcap-ql libsgx-dcap-default-qpl
 sudo apt-get install -y libsgx-dcap-ql-dev libsgx-quote-ex-dev libsgx-dcap-quote-verify-dev
+#verify whether SGX SDK and PSW has been installed successfully
+cd /opt/intel/sgxsdk/SampleCode/SampleEnclave
+sudo make
+res=`echo '\n'|sudo ./app 2>&1`
+if [[ $res == *"successfully"* ]]; then
+echo "SGX SDK and PSW has been successfully installed"
+else
+echo "there may be some error with SGX SDK or PSW"
+exit 1
+fi
+cd
 # install SGX PCCS
 curl -sL https://deb.nodesource.com/setup_14.x | sudo -E bash -
 sudo apt-get install -y nodejs
 sudo apt-get install -y libcrack2    
 echo "begin to download SGX PCCS,you may need to give some input"            
 sudo apt-get install sgx-dcap-pccs 
-echo "you should configure PCCS by yourself"
+echo "you should configure PCCS by yourself, just go to /etc/sgx_default_qcnl.conf and revise the pccs_url"
 # test SGX DCAP function
 git clone https://github.com/intel/SGXDataCenterAttestationPrimitives
 cd  SGXDataCenterAttestationPrimitives/SampleCode/QuoteGenerationSample/
