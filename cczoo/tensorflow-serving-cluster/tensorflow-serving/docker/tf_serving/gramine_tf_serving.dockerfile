@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 # Optional build argument to select a build for Azure
 ARG AZURE
@@ -81,10 +81,10 @@ RUN if [ ! -z "$AZURE" ]; then \
         && cp libdcap_quoteprov.so /usr/lib/x86_64-linux-gnu/; \
     fi
 
-RUN ln -sf /usr/bin/python3.7 /usr/bin/python3
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55'
 
-RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list \
+RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list \
     && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -
 
 RUN apt-get update
