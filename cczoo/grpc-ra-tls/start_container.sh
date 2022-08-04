@@ -25,12 +25,12 @@ fi
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=grpc-gramine-sgx-dev:ubuntu-18.04-latest
+    image_tag=grpc-ratls-sgx-dev:v1.2-ubuntu18.04-latest
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"
-# proxy_server="" # your http proxy server
+proxy_server="" # your http proxy server
 
 docker run -it \
     --restart=unless-stopped \

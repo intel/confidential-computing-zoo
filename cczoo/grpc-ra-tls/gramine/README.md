@@ -1,4 +1,4 @@
-# GRPC-Gramine-SGX-Dev Image
+# GRPC-RATLS-SGX-Dev Docker Image
 
 ## How to Build
 
@@ -8,17 +8,17 @@
 
     - cczoo/common/docker/gramine/README.md
 
-2. Build grpc-gramine-sgx-dev docker image
+2. Build grpc-ratls-sgx-dev docker image
 
     Execute the following command to build this docker image
 
     ```
-    base_image=gramine-sgx-dev:ubuntu-18.04-latest
-    image_tag=grpc-gramine-sgx-dev:ubuntu-18.04-latest
+    base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
+    image_tag=grpc-ratls-sgx-dev:graminev1.2-ubuntu20.04-latest
     ./build_docker_image.sh ${base_image} ${image_tag}
     ```
 
-    `gramine-sgx-dev:ubuntu-18.04-latest` and `gramine-sgx-dev:ubuntu-20.04-latest` 
+    `gramine-sgx-dev:v1.2-ubuntu18.04-latest` and `gramine-sgx-dev:v1.2-ubuntu20.04-latest` 
     could be selected as base_image.
 
 ## How to run gRPC examples

@@ -15,7 +15,7 @@
 
 # https://github.com/oscarlab/graphene/blob/master/Tools/gsc/images/graphene_aks.latest.dockerfile
 
-ARG base_image=occlum/occlum:0.26.3
+ARG base_image=occlum/occlum:0.26.3-ubuntu18.04
 FROM ${base_image}
 
 ENV DEBIAN_FRONTEND=noninteractive

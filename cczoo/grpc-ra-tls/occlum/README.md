@@ -1,4 +1,4 @@
-# GRPC-Occlum-SGX-Dev Image
+# GRPC-RATLS-SGX-Dev Docker Image
 
 ## How to Build
 
@@ -8,7 +8,7 @@
 
     - cczoo/common/docker/occlum/README.md
 
-2. Build grpc-occlum-sgx-dev docker image
+2. Build grpc-ratls-sgx-dev docker image
 
     Execute the following command to build this docker image
 

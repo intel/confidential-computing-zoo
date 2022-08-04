@@ -29,7 +29,9 @@ function get_env() {
 
 function prepare_runtime() {
     rm -rf  ${RUNTIME_PATH} || true
-    make clean && GRAPHENE_ENTRYPOINT=$1 make | logfilter && cp -r `pwd -P` ${RUNTIME_TMP_PATH}/$1
+    make clean
+    ENTRYPOINT=./$1 make | logfilter
+    cp -r `pwd -P` ${RUNTIME_TMP_PATH}/$1
 }
 
 function generate_json() {
@@ -43,7 +45,7 @@ if [ -z ${BUILD_TYPE} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
+    export SGX_RA_TLS_BACKEND=GRAMINE
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then

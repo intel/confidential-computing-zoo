@@ -28,7 +28,7 @@ jobs:
     - name: Build the gRPC-TLS Docker image
       run: |
         cd cczoo/grpc-ra-tls/docker/gramine
-        docker build -f grpc-gramine-sgx-dev.dockerfile . -t grpc-tls:latest
+        docker build -f grpc-ratls-sgx-dev.dockerfile . -t grpc-tls:latest
         docker images
         docker rmi grpc-tls:latest
       

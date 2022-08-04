@@ -80,7 +80,7 @@ images for developing the gRPC RA-TLS application.
         cd cczoo/common/docker/gramine
 
         base_image=ubuntu:18.04
-        image_tag=gramine-sgx-dev:ubuntu-18.04-latest
+        image_tag=gramine-sgx-dev:v1.2-ubuntu18.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
@@ -107,12 +107,12 @@ images for developing the gRPC RA-TLS application.
         ```bash
         cd cczoo/grpc-ra-tls/gramine
 
-        base_image=gramine-sgx-dev:ubuntu-18.04-latest
-        image_tag=grpc-gramine-sgx-dev:ubuntu-18.04-latest
+        base_image=gramine-sgx-dev:v1.2-ubuntu18.04-latest
+        image_tag=grpc-ratls-sgx-dev:v1.2-ubuntu18.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
-        `gramine-sgx-dev:ubuntu-18.04-latest` and `gramine-sgx-dev:ubuntu-20.04-latest`
+        `gramine-sgx-dev:v1.2-ubuntu18.04-latest` and `gramine-sgx-dev:v1.2-ubuntu-20.04-latest`
         could be selected as base_image.
 
    - On Occlum
