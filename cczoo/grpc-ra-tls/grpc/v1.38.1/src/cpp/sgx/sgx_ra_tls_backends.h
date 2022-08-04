@@ -42,11 +42,13 @@ int dummy_generate_quote(uint8_t **quote_buf, uint32_t &quote_size, uint8_t *has
 
 std::vector<std::string> dummy_generate_key_cert();
 
+void dummy_verify_init();
+
 int dummy_verify_cert(const char *der_crt, size_t len);
 
 ra_tls_measurement dummy_parse_measurement(const char *der_crt, size_t len);
 
-#ifdef SGX_RA_TLS_GRAMINE_BACKEND
+#if defined(SGX_RA_TLS_GRAMINE_BACKEND)
 
 std::vector<std::string> gramine_generate_key_cert();
 
@@ -56,7 +58,7 @@ int gramine_verify_cert(const char *der_crt, size_t len);
 
 ra_tls_measurement gramine_parse_measurement(const char *der_crt, size_t len);
 
-#elif SGX_RA_TLS_OCCLUM_BACKEND
+#elif defined(SGX_RA_TLS_OCCLUM_BACKEND)
 
 std::vector<std::string> occlum_generate_key_cert();
 

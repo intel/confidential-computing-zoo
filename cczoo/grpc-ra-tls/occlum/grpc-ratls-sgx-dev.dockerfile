@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE=occlum-sgx-dev:latest
+ARG BASE_IMAGE=occlum-sgx-dev:0.26.3-ubuntu18.04-latest
 FROM ${BASE_IMAGE}
 
 RUN mkdir -p ${INSTALL_PREFIX} \
@@ -26,11 +26,11 @@ ENV GRPC_PATH=${GRPC_ROOT}/src
 ENV SGX_RA_TLS_BACKEND=OCCLUM
 ENV BUILD_TYPE=Release
 
-ARG GRPC_V138_VERSION=v1.38.1
-ARG GRPC_V138_PATH=${GRPC_ROOT}/${GRPC_V138_VERSION}
-RUN git clone --recurse-submodules -b ${GRPC_V138_VERSION} https://github.com/grpc/grpc ${GRPC_V138_PATH}
+ARG GRPC_VERSION=v1.38.1
+ARG GRPC_VERSION_PATH=${GRPC_ROOT}/${GRPC_VERSION}
+RUN git clone --recurse-submodules -b ${GRPC_VERSION} https://github.com/grpc/grpc ${GRPC_VERSION_PATH}
 
-RUN ln -s ${GRPC_V138_PATH} ${GRPC_PATH}
+RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
@@ -45,6 +45,10 @@ RUN apt-get clean all \
     && rm -rf ~/.cache/* \
     && rm -rf /tmp/*
 
-COPY grpc/common ${GRPC_V138_PATH}
-COPY grpc/v1.38.1 ${GRPC_V138_PATH}
+COPY grpc/common ${GRPC_VERSION_PATH}
+COPY grpc/${GRPC_VERSION} ${GRPC_VERSION_PATH}
 COPY occlum/demos /root/demos
+
+# Workspace
+ENV WORK_SPACE_PATH=/root/demos/ra_tls
+WORKDIR ${WORK_SPACE_PATH}

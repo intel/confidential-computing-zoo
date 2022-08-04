@@ -19,7 +19,6 @@
 // #ifdef SGX_RA_TLS_DUMMY_BACKEND
 
 #include "sgx_ra_tls_impl.h"
-#include "sgx_ra_tls_backends.h"
 
 namespace grpc {
 namespace sgx {
@@ -43,7 +42,7 @@ void dummy_verify_init() {
     config.verify_mr_signer = false;
     config.verify_isv_prod_id = false;
     config.verify_isv_svn = false;
-    ra_tls_parse_config(config);
+    _ctx_.cfg = config;
 };
 
 int dummy_parse_quote(X509 *x509, uint8_t **quote, uint32_t &quote_size) {
