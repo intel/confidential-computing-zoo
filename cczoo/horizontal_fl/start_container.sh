@@ -17,15 +17,15 @@
 set -e
 
 if  [ -n "$1" ] ; then
-    ip_addr=$1
+    name=$1
 else
-    ip_addr=127.0.0.1
+    name=ps0
 fi
 
 if  [ -n "$2" ] ; then
-    name=$2
+    ip_addr=$2
 else
-    name=ps0
+    ip_addr=127.0.0.1
 fi
 
 if  [ ! -n "$3" ] ; then
@@ -46,6 +46,6 @@ docker run -it \
 	--net=host \
     --add-host=pa.com:127.0.0.1 \
     --add-host=pb.com:127.0.0.1 \
-    --add-host=attestation.service.com:${ip_addr} \
+    --add-host=pccs.service.com:${ip_addr} \
     horizontal_fl:${tag} \
     bash
