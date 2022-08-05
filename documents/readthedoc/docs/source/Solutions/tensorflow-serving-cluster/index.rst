@@ -167,7 +167,7 @@ generate the directory ``models/resnet50-v15-fp32`` in current directory::
 The model file will be downloaded to ``models/resnet50-v15-fp32``. 
 Then use ``model_graph_to_saved_model.py`` to convert the pre-trained model to SavedModel::
 
-   pip3 install tensorflow==2.4.0
+   pip3 install -r requirements.txt
    python3 ./model_graph_to_saved_model.py --import_path `pwd -P`/models/resnet50-v15-fp32/resnet50-v15-fp32.pb --export_dir  `pwd -P`/models/resnet50-v15-fp32 --model_version 1 --inputs input --outputs  predict
 
 ``Note:`` ``model_graph_to_saved_model.py`` has dependencies on tensorflow, please
