@@ -79,8 +79,8 @@ images for developing the gRPC RA-TLS application.
         ```
         cd cczoo/common/docker/gramine
 
-        base_image=ubuntu:18.04
-        image_tag=gramine-sgx-dev:v1.2-ubuntu18.04-latest
+        base_image=ubuntu:20.04
+        image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
@@ -91,12 +91,12 @@ images for developing the gRPC RA-TLS application.
         Occlum provides the docker image in docker registry, no need to build it by self.
 
         ```bash
-        docker pull occlum/occlum:0.26.3-ubuntu18.04
+        docker pull occlum/occlum:0.26.3-ubuntu20.04
 
         cd cczoo/common/docker/occlum
 
-        base_image=occlum/occlum:0.26.3
-        image_tag=occlum-sgx-dev:latest
+        base_image=occlum/occlum:0.26.3-ubuntu20.04
+        image_tag=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
@@ -107,20 +107,25 @@ images for developing the gRPC RA-TLS application.
         ```bash
         cd cczoo/grpc-ra-tls/gramine
 
-        base_image=gramine-sgx-dev:v1.2-ubuntu18.04-latest
-        image_tag=grpc-ratls-sgx-dev:v1.2-ubuntu18.04-latest
+        base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
+        image_tag=grpc-ratls-sgx-dev:v1.2-ubuntu20.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
-        `gramine-sgx-dev:v1.2-ubuntu18.04-latest` and `gramine-sgx-dev:v1.2-ubuntu-20.04-latest`
+        `gramine-sgx-dev:v1.2-ubuntu20.04-latest` and `gramine-sgx-dev:v1.2-ubuntu-20.04-latest`
         could be selected as base_image.
 
    - On Occlum
 
         ```bash
         cd cczoo/grpc-ra-tls/occlum
-        ./build_docker_image.sh
+
+        base_image=occlum/occlum:0.26.3-ubuntu20.04
+        image_tag=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
         ```
+
+        `occlum/occlum:0.26.3-ubuntu18.04` and `occlum/occlum:0.26.3-ubuntu20.04` could be selected as base_image.
 
 ## Config the remote attestation
 
@@ -351,3 +356,19 @@ The configuration of the M6ce instance as blow:
 - Instance SGX PCCS Server: [sgx-dcap-server-tc.sh.tencent.cn](https://cloud.tencent.com/document/product/213/63353)
 
 ***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
+
+### 3. ByteDance Cloud
+
+ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the ebmg2t instance as blow:
+
+- Instance Type  : `ecs.ebmg2t.32xlarge`.
+- Instance Kernel: kernel-5.15
+- Instance OS    : ubuntu-20.04
+- Instance Encrypted Memory: 256G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: `sgx-dcap-server.bytedance.com`.
+
+***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with ByteDance PCCS server address.

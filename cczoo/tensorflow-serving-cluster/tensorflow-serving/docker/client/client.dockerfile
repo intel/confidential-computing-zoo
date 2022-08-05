@@ -1,7 +1,10 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
+
+# Enable it to disable debconf warning
+RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
 
 # Add steps here to set up dependencies
 RUN apt-get update \
