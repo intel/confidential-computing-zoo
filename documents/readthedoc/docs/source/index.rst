@@ -34,7 +34,7 @@ Table of Contents
    Solutions/cross_language_framework_based_gramine/Readme.md
    Solutions/attestation-secret-provision/index.md
    Solutions/bigdl-ppml/index.md
-
+   Solutions/phe_homo_lr/phe_homo_lr.md
 
 .. toctree::
    :maxdepth: 1
