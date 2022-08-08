@@ -52,31 +52,31 @@ if [ "$ROLE" == "make" ]; then
     make clean && make | make_logfilter
 elif [ "$ROLE" == "ps0" ]; then
     make_custom_env
-    taskset -c 0-11 stdbuf -o0 gramine-sgx python -u ps0.py 2>&1 | runtime_logfilter | tee -a ps0.log &
+    taskset -c 0-8 stdbuf -o0 gramine-sgx python -u ps0.py 2>&1 | runtime_logfilter | tee -a ps0.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 elif [ "$ROLE" == "worker0" ]; then
     make_custom_env
-    taskset -c 12-23 stdbuf -o0 gramine-sgx python -u worker0.py 2>&1 | runtime_logfilter | tee -a worker0.log &
+    taskset -c 9-17 stdbuf -o0 gramine-sgx python -u worker0.py 2>&1 | runtime_logfilter | tee -a worker0.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 elif [ "$ROLE" == "worker1" ]; then
     make_custom_env
-    taskset -c 24-35 stdbuf -o0 gramine-sgx python -u worker1.py 2>&1 | runtime_logfilter | tee -a worker1.log &
+    taskset -c 18-26 stdbuf -o0 gramine-sgx python -u worker1.py 2>&1 | runtime_logfilter | tee -a worker1.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 elif [ "$ROLE" == "worker2" ]; then
     make_custom_env
-    taskset -c 36-47 stdbuf -o0 gramine-sgx python -u worker2.py 2>&1 | runtime_logfilter | tee -a worker2.log &
+    taskset -c 27-35 stdbuf -o0 gramine-sgx python -u worker2.py 2>&1 | runtime_logfilter | tee -a worker2.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 elif [ "$ROLE" == "worker3" ]; then
     make_custom_env
-    taskset -c 48-59 stdbuf -o0 gramine-sgx python -u worker3.py 2>&1 | runtime_logfilter | tee -a worker3.log &
+    taskset -c 36-44 stdbuf -o0 gramine-sgx python -u worker3.py 2>&1 | runtime_logfilter | tee -a worker3.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
