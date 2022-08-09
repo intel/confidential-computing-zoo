@@ -84,8 +84,8 @@ sgx.trusted_files = [
   "file:data_provider1.py",
   "file:data_provider2.py",
   "file:data_provider3.py",
-  "file:ratls_pb2.py",
-  "file:ratls_pb2_grpc.py",
+  "file:psi_pb2.py",
+  "file:psi_pb2_grpc.py",
 ]
 
 sgx.allowed_files = [
