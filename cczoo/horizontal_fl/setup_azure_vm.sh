@@ -4,7 +4,7 @@
 set -e
 
 # Install general dependencies
-sudo apt-get install -y libcurl4-openssl-dev libssl-dev pkg-config
+sudo apt-get install -y libcurl4-openssl-dev libssl-dev pkg-config make g++
 sudo add-apt-repository ppa:team-xbmc/ppa -y
 sudo apt-get update
 sudo apt-get install nlohmann-json3-dev
