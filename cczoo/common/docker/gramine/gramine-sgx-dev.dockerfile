@@ -41,6 +41,7 @@ RUN apt-get update \
         vim \
         jq
 
+ARG base_image=ubuntu:18.04
 RUN if [ "${base_image}" = "ubuntu:18.04" ] ; \
     then \
         echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
