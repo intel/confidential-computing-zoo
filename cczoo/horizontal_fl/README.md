@@ -55,14 +55,47 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 
 ## Horizontal federated training execution
 
-Recommendation System and Image classification.
+Recommendation System and Image Classification.
 
-### Requirements
+### Prerequisites
 
-- a machine that supports Intel SGX and FLC/DCAP
-- EPC size: 256GB
-- Docker
-- framework: TensorFlow 2.4.2
+- Ubuntu 18.04. This solution should work on other Linux distributions as well,
+  but for simplicity we provide the steps for Ubuntu 18.04 only.
+
+- Docker Engine. Docker Engine is an open source containerization technology for
+  building and containerizing your applications.
+  Please follow [this guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script)
+  to install Docker engine.
+
+- TensorFlow 2.4.2.
+
+- Horizontal Federated Learning source package:
+
+```shell
+   git clone https://github.com/intel/confidential-computing-zoo.git
+```
+
+- Intel SGX Driver and SDK/PSW. You need a machine that supports Intel SGX and
+  FLC/DCAP. Please follow [this guide](https://download.01.org/intel-sgx/latest/linux-latest/docs/Intel_SGX_SW_Installation_Guide_for_Linux.pdf)
+  to install the Intel SGX driver and SDK/PSW on the machine/VM. Make sure to install the driver
+  with ECDSA/DCAP attestation.
+  For deployments on Microsoft Azure, a script is provided to install general dependencies, Intel SGX DCAP dependencies, and the Azure DCAP Client. To run this script:
+
+```shell
+   cd <horizontal_fl dir>
+   sudo ./setup_azure_vm.sh
+```
+
+  After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Manager is active (running)::
+  
+```shell
+   sudo systemctl status aesmd
+```
+  
+- EPC size: 64GB for image classification solution, 256GB for recommendation system solution
+
+- Gramine. Follow [Quick Start](https://gramine.readthedocs.io/en/latest/quickstart.html)
+  to learn more about it.
 
 ### Recommendation system
 #### Configuration
@@ -71,7 +104,7 @@ Recommendation System and Image classification.
 - Dataset: click-through record in Kaggle Cretio Ad dataset
 - Number of container for ps: 1
 - Number of containers for workers: 4
-- CPU cores: 60
+- CPU cores: 45
 
 #### Download dataset
 
@@ -82,9 +115,12 @@ wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download
 ```
 
 Or [BaiduNetdisk](https://pan.baidu.com/s/1BkMBDMghvJXp0wK9EQHtMg?pwd=c7cf).
-The dataset should be placed in the `recommendation_system/dataset` folder.
+The dataset should be placed in the `<horizontal_fl dir>/recommendation_system/dataset` folder.
 
 #### Build Docker image
+```shell
+cd <horizontal_fl dir>
+```
 For deployments on Microsoft Azure:
 ```shell
 AZURE=1 ./build_docker_image.sh recommendation_system
@@ -138,6 +174,9 @@ You can see the training process in the workers' terminal.
 - CPU cores: 6
 
 #### Build Docker image
+```shell
+cd <horizontal_fl dir>
+```
 For deployments on Microsoft Azure:
 ```shell
 AZURE=1 ./build_docker_image.sh image_classification
@@ -150,7 +189,7 @@ For other cloud deployments:
 #### Start containers and run the training scripts
 Start three containers (ps0, worker0, worker1) and run the script for the corresponding job in each container.
 
-If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
+If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
 ```shell
 ./start_container.sh ps0 <PCCS ip addr>
 cd image_classification
@@ -227,14 +266,22 @@ The configuration of the ebmg2t instance as below:
 
 Microsoft Azure [DCsv3-series](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series) instances support Intel® SGX encrypted computing technology.
 
-The following is the configuration of the DCsv3-series instance used:
+DCsv3-series instance used for the recommendation system solution:
+
+- Instance Type  : Standard_DC48s_v3
+- Instance Kernel: 5.15.0-1014-azure
+- Instance OS    : Ubuntu Server 20.04 LTS - Gen2
+- Instance Encrypted Memory: 256G
+- Instance vCPU  : 48
+
+DCsv3-series instance used for the image classification solution:
 
 - Instance Type  : Standard_DC16s_v3
-- Instance Kernel: 5.13.0-1031-azure
+- Instance Kernel: 5.15.0-1014-azure
 - Instance OS    : Ubuntu Server 20.04 LTS - Gen2
 - Instance Encrypted Memory: 64G
 - Instance vCPU  : 16
 
 <div id="refer-anchor-1"></div>
 
-- [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
+[1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
