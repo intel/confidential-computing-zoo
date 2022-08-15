@@ -16,9 +16,8 @@
 ################################# CONSTANTS ###################################
 
 GRAMINEDIR ?= ../..
-SGX_SIGNER_KEY ?= $(GRAMINEDIR)/Pal/src/host/Linux-SGX/signer/enclave-key.pem
-
-include $(GRAMINEDIR)/Scripts/Makefile.configs
+GRAMINE_PKGLIBDIR ?= /usr/lib/x86_64-linux-gnu/gramine
+ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
 
 ifeq ($(DEBUG),1)
 GRAPHENE_LOG_LEVEL = debug
@@ -43,7 +42,6 @@ python.manifest: python.manifest.template
 
 python.manifest.sgx: python.manifest
 	gramine-sgx-sign \
-		--key $(SGX_SIGNER_KEY) \
 		--manifest $< \
 		--output $@
 
