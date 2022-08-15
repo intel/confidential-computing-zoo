@@ -13,7 +13,7 @@ parties via network transmission. Weights from each worker are aggregated and up
 parameter server before sent back to workers. Although the parameter server has the private key of PHE, 
 it has no chance to speculate workers' private data from weights. Moreover, this solution only requests the 
 parameter server supporting Intel SGX technology so that even mobile devices can participate in training as a worker role.
-### Intel Paillier library
+### Intel Paillier Cryptosystem Library
 Homomorphic encryption is a form of encryption that permits users to perform computations on its encrypted 
 data without first decrypting it. These resulting computations are left in an encrypted form which, when 
 decrypted, result in an identical output to that produced had the operations been performed on the unencrypted data.  
@@ -21,8 +21,8 @@ decrypted, result in an identical output to that produced had the operations bee
 Paillier Homomorphic Encryption scheme supporting ciphertext addition is one of partially homomorphic encryption algorithms, 
 which is suitable for the scenario of secure weights aggregation in this solution.   
   
-Intel Paillier library is a library of the Paillier Homomorphic Encryption scheme by utilizing Intel IPP-Crypto 
-technologies to achieve better performance on Intel architectures.
+[Intel Paillier Cryptosystem Library](https://github.com/intel/pailliercryptolib) is an open-source library which provides accelerated performance of a partial homomorphic encryption (HE), named Paillier cryptosystem, by utilizing Intel® Integrated Performance Primitives Cryptography technologies on Intel CPUs supporting the AVX512IFMA instructions. The library is written in modern standard C++ and provides the essential API for the Paillier cryptosystem scheme. Intel Paillier Cryptosystem Library is certified for ISO compliance. [Intel Paillier Cryptosystem Library - Python](https://github.com/intel/pailliercryptolib_python) is a Python extension package intended for Python based privacy preserving machine learning solutions which utilizes the partial HE scheme for increased data and model protection.
+
 ### Intel SGX
 Intel SGX technology offers hardware-based memory encryption that isolates specific application code and data in memory. 
 Intel SGX allows user-level code to allocate private regions of memory, called enclaves, which are designed to be 
