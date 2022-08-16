@@ -39,6 +39,7 @@ docker run -it \
     --device=/dev/sgx_enclave:/dev/sgx/enclave \
     --device=/dev/sgx_provision:/dev/sgx/provision \
     --add-host=attestation.service.com:${ip_addr} \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
     -e no_proxy=${no_proxy} \
     -e http_proxy=${proxy_server} \
     -e https_proxy=${proxy_server} \
