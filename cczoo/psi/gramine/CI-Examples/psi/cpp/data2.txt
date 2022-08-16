@@ -1,3 +1,5 @@
-'car'
-'train'
-'bicycle'
+train
+car
+e-car
+cat
+computer

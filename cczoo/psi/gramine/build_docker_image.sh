@@ -23,7 +23,7 @@ else
 fi
 
 if  [ ! -n "$2" ] ; then
-    image_tag=psi_test2
+    image_tag=psi_test
 else
     image_tag=$2
 fi
@@ -39,6 +39,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     --build-arg BASE_IMAGE=${base_image} \
+    --net=host \
     -f psi-gramine-sgx-dev.dockerfile \
     -t ${image_tag} \
     ..

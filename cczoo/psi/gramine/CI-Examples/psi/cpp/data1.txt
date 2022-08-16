@@ -1,3 +1,5 @@
-'cat'
-'car'
-'train'
+car
+bicycle
+train
+cat
+dog

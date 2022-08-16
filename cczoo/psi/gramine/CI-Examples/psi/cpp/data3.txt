@@ -1,4 +1,6 @@
-'cat'
-'car'
-'train'
-'house'
+car
+bicycle
+train
+cat
+dog
+computer

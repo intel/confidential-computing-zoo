@@ -47,6 +47,7 @@ function prepare_runtime() {
 function config_json() {
     rm -f ${RUNTIME_TMP_PATH}/$1/dynamic_config_*.json
     mv dynamic_config_$1.json ${RUNTIME_TMP_PATH}/$1/dynamic_config.json
+    sed -i '7,12d' ${RUNTIME_TMP_PATH}/$1/dynamic_config.json
 }
 
 if [ -z ${BUILD_TYPE} ]; then
