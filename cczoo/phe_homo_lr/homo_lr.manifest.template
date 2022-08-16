@@ -67,13 +67,7 @@ sgx.trusted_files = [
   "file:homo_lr_pb2.py",
   "file:homo_lr_pb2_grpc.py",
   "file:breast_homo_test.csv",
-  "file:/homo_lr/glade-phe/python/ipp_paillier.py",
-  "file:/homo_lr/glade-phe/build/python/fixedpoint.py",
-  "file:/homo_lr/glade-phe/build/python/py_ipp_paillier.cpython-38-x86_64-linux-gnu.so",
-  "file:/homo_lr/glade-phe/build/paillier/libipp_paillier.so",
-  "file:/homo_lr/glade-phe/build/paillier/libbignum.so",
-  "file:/homo_lr/glade-phe/build/ext_ipp-crypto/lib/intel64/libippcp.so.11",
-  "file:/homo_lr/glade-phe/build/ext_ipp-crypto/lib/intel64/libcrypto_mb.so.11",
+  "file:/homo_lr/ipcl-python/",
 ]
 
 sgx.allowed_files = [

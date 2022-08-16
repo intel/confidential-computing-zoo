@@ -20,7 +20,6 @@ import grpc
 import numpy as np
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor as Executor
-import ipp_paillier as iphe
 import homo_lr_pb2
 import homo_lr_pb2_grpc
 
@@ -48,8 +47,13 @@ class HomoLRWorker(object):
     m = x.shape[0]
     x = np.concatenate((np.ones((m,1)),x), axis = 1)
     n = x.shape[1]
-    self.w = np.ones((n,1))
-    y = y.reshape(-1,1)
+    x = x.T
+    if self.secure:
+      enc_one = self.pub_key.encrypt(1)
+      self.w = np.array([enc_one] * n)
+    else:
+      self.w = np.ones((n,))
+    y = y.reshape(1,-1)
     for i in range(self.epochs):
       self.iter_n = i
       grad = self.compute_gradient(x, y)
@@ -60,20 +64,20 @@ class HomoLRWorker(object):
         print('iter: {}  acc: {:.3f}  loss: {:.3f}'.format(i, acc, loss))
 
   def compute_gradient(self, x, y):
-    m = x.shape[0]
+    m = x.shape[1]
     y_pred = None
 
     if self.secure:   # Use multi-process
       bs = m // PARTITIONS # batch size for a partition
-      futures = [self.pool.submit(np.dot, x[i*bs:(i+1)*bs, :], self.w) for i in range(PARTITIONS)]
-      futures.append(self.pool.submit(np.dot, x[PARTITIONS*bs:, :], self.w))
+      futures = [self.pool.submit(np.dot, self.w, x[:, i*bs:(i+1)*bs]) for i in range(PARTITIONS)]
+      futures.append(self.pool.submit(np.dot, self.w, x[:, PARTITIONS*bs:]))
       result = futures[0].result()
       for i in range(1, len(futures)):
         result = np.concatenate((result, futures[i].result()), axis=0)
       y_pred = self.sigmoid_taylor_expand(result)
     else:
-      y_pred = self.sigmoid(np.dot(x, self.w))
-    grad = np.dot(x.T, (y_pred - y)) / m
+      y_pred = self.sigmoid(np.dot(self.w, x))
+    grad = np.dot((y_pred - y), x.T) / m
     return grad
 
   def sigmoid(self, x):
@@ -100,25 +104,7 @@ class HomoLRWorker(object):
       key = pickle.loads(response.key)
       return key
 
-  def encrypt(self, values):
-    values = values.flatten()
-    if isinstance(values, np.ndarray):
-      w_ct = np.array([])
-      v_len = len(values)
-      i_end = (v_len // 8) * 8
-      for i in range(0, i_end, 8):
-        w_ct = np.append(w_ct, self.pub_key.encrypt(values[i : i + 8]))
-      w_ct = np.append(w_ct, self.pub_key.encrypt(values[i_end:]))
-      return w_ct
-    elif isinstance(values, (int, float)):
-      return self.pub_key.encrypt(values)
-    else:
-      print("Encryption error: data type is not supported.")
-      exit(1)
-
   def aggregate_model(self):
-    if self.secure and not isinstance(self.w[0][0], iphe.PaillierEncryptedNumber):
-        self.w = self.encrypt(self.w)
     with grpc.insecure_channel(self.grpc_channel) as channel:
       stub = homo_lr_pb2_grpc.HostStub(channel)
       weights_pb = pickle.dumps(self.w)
