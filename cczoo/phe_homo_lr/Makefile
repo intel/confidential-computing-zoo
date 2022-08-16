@@ -1,6 +1,5 @@
 ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
-
-SGX_SIGNER_KEY ?= ../../Pal/src/host/Linux-SGX/signer/enclave-key.pem
+GRAMINE_PKGLIBDIR ?= /usr/lib/x86_64-linux-gnu/gramine
 
 ifeq ($(DEBUG),1)
 GRAMINE_LOG_LEVEL = debug
@@ -22,10 +21,7 @@ homo_lr.manifest: homo_lr.manifest.template
 		$< >$@
 
 homo_lr.manifest.sgx: homo_lr.manifest
-	@test -s $(SGX_SIGNER_KEY) || \
-	    { echo "SGX signer private key was not found, please specify SGX_SIGNER_KEY!"; exit 1; }
 	gramine-sgx-sign \
-		--key $(SGX_SIGNER_KEY) \
 		--manifest $< \
 		--output $@
 

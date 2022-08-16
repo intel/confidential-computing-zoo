@@ -1,0 +1,26 @@
+From 7e000dc490fd13b09aa806fade0e5a09136b925e Mon Sep 17 00:00:00 2001
+From: "Huang, Xiaojun" <xiaojun.huang@intel.com>
+Date: Tue, 16 Aug 2022 07:38:57 +0000
+Subject: [PATCH] disable openmp
+
+Signed-off-by: Huang, Xiaojun <xiaojun.huang@intel.com>
+---
+ setup.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/setup.py b/setup.py
+index 89447bd..e0d142a 100644
+--- a/setup.py
++++ b/setup.py
+@@ -47,7 +47,7 @@ class CMakeBuild(build_ext):
+         cmake_args = [
+             "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=" + extdir,
+             "-DPYTHON_EXECUTABLE=" + sys.executable,
+-            "-DIPCL_PYTHON_ENABLE_OMP=ON",
++            "-DIPCL_PYTHON_ENABLE_OMP=OFF",
+         ]
+ 
+         cfg = "Debug" if self.debug else "Release"
+-- 
+2.25.1
+

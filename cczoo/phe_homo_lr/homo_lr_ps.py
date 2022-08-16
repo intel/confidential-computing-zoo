@@ -19,7 +19,7 @@ import grpc
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor as Executor
-import ipp_paillier as iphe
+from ipcl_python import PaillierKeypair
 import homo_lr_pb2
 import homo_lr_pb2_grpc
 
@@ -35,7 +35,7 @@ class HomoLRHost(object):
       self.generate_key(key_length)
 
   def generate_key(self, key_length=1024):
-    self.pub_key, self.pri_key = iphe.PaillierKeypair.generate_keypair(key_length)
+    self.pub_key, self.pri_key = PaillierKeypair.generate_keypair(key_length)
 
   def get_pubkey(self):
     return self.pub_key
@@ -56,48 +56,25 @@ class HomoLRHost(object):
     return self.updated_weights
 
   def re_encrypt(self, values):
-    pt = self.decrypt(values)
-    return self.encrypt(pt)
-
-  def encrypt(self, values):
+    n = values.shape[1]
     values = values.flatten()
-    if isinstance(values, np.ndarray):
-      w_ct = np.array([])
-      v_len = len(values)
-      i_end = (v_len // 8) * 8
-      for i in range(0, i_end, 8):
-        w_ct = np.append(w_ct, self.pub_key.encrypt(values[i : i + 8]))
-      w_ct = np.append(w_ct, self.pub_key.encrypt(values[i_end:]))
-      return w_ct.reshape((-1,1))
-    elif isinstance(values, (int, float)):
-      return self.pub_key.encrypt(values)
-    else:
-      print("Encryption error: data type is not supported.")
-      exit(1)
-
-  def decrypt(self, values):
-    values = values.flatten()
-    if isinstance(values, np.ndarray):
-      w_ct = np.array([])
-      v_len = len(values)
-      i_end = (v_len // 8) * 8
-      for i in range(0, i_end, 8):
-        w_ct = np.append(w_ct, self.pri_key.decrypt(values[i : i + 8]))
-      w_ct = np.append(w_ct, self.pri_key.decrypt(values[i_end:]))
-      return w_ct
-    elif isinstance(values, iphe.PaillierEncryptedNumber):
-      return self.pri_key.decrypt(values)
-    else:
-      print("Decryption error: data type is not supported.")
-      exit(1)
+    ret = []
+    for i in range(n):
+      pt = self.pri_key.decrypt(values[i])
+      ret.append(self.pub_key.encrypt(pt))
+    return np.array(ret)
   
   def validate(self, x, y):
     w = None
     m = x.shape[0]
     x = np.concatenate((np.ones((m,1)),x), axis = 1)
+    n = x.shape[1]
     loss = np.nan
     if self.secure:
-      w = self.decrypt(self.updated_weights)
+      w = []
+      for i in range(n):
+        w.append(self.pri_key.decrypt(self.updated_weights[i]))
+      w = np.array(w)
     else:
       w = self.updated_weights.flatten()
     y_pred = self.sigmoid(np.dot(x, w))
