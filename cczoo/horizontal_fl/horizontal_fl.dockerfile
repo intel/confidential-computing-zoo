@@ -21,7 +21,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV INSTALL_PREFIX=/usr/local
 ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
 ENV PATH=${INSTALL_PREFIX}/bin:${LD_LIBRARY_PATH}:${PATH}
-
+ENV GRAMINE_PKGLIBDIR ?= /usr/lib/x86_64-linux-gnu/gramine
+ENV ARCH_LIBDIR ?= /lib/x86_64-linux-gnu
 # Add steps here to set up dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends apt-utils \

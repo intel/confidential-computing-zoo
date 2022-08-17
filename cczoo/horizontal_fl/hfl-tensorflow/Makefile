@@ -16,8 +16,6 @@
 ################################# CONSTANTS ###################################
 
 GRAMINEDIR ?= ../..
-GRAMINE_PKGLIBDIR ?= /usr/lib/x86_64-linux-gnu/gramine
-ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
 
 ifeq ($(DEBUG),1)
 GRAPHENE_LOG_LEVEL = debug
