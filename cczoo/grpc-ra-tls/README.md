@@ -82,6 +82,7 @@ images for developing the gRPC RA-TLS application.
 
         base_image=ubuntu:20.04
         image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
+
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
@@ -114,6 +115,7 @@ images for developing the gRPC RA-TLS application.
         ```
 
         `gramine-sgx-dev:v1.2-ubuntu20.04-latest` and `gramine-sgx-dev:v1.2-ubuntu-20.04-latest`
+
         could be selected as base_image.
 
    - On Occlum

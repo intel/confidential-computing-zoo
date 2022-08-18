@@ -20,21 +20,11 @@ if [ -z ${DEBUG} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD:cczoo/attestation-secret-provision/grpc_overlay/common/build_python.sh
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
-=======
->>>>>>> branch0.1/grpc-ra-tls
     export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then
     export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
-<<<<<<< HEAD
-=======
->>>>>>> branch0.1/grpc-ra-tls:cczoo/grpc-ra-tls/grpc/common/build_python.sh
->>>>>>> branch0.1/grpc-ra-tls
 fi
 
 # build grpc c / cpp library
@@ -49,8 +39,7 @@ cd -
 
 ldd ${GRPC_PATH}/python_build/lib.linux-x86_64-*/grpc/_cython/cygrpc.cpython-*-x86_64-linux-gnu.so
 
-# install grpc python wheel
-pip3 uninstall -y grpcio protobuf
+pip3 uninstall -y grpcio
 pip3 install ${GRPC_PATH}/dist/*.whl
 pip3 install grpcio-tools==1.38.1
 
