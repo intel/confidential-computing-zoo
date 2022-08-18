@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE=gramine-sgx-dev:latest
+ARG BASE_IMAGE=gramine-sgx-dev:ubuntu-18.04-latest
 FROM ${BASE_IMAGE}
 
 RUN mkdir -p ${INSTALL_PREFIX} \
