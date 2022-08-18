@@ -17,7 +17,7 @@
 set -e
 
 if  [ ! -n "$1" ] ; then
-    base_image=gramine-sgx-dev:latest
+    base_image=gramine-sgx-dev:ubuntu-18.04-latest
 else
     base_image=$1
 fi
@@ -39,7 +39,6 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     --build-arg BASE_IMAGE=${base_image} \
-    --net=host \
     -f psi-gramine-sgx-dev.dockerfile \
     -t ${image_tag} \
     ..
