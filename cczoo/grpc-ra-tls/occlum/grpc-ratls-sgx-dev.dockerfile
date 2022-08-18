@@ -47,8 +47,8 @@ RUN apt-get clean all \
 
 COPY grpc/common ${GRPC_VERSION_PATH}
 COPY grpc/${GRPC_VERSION} ${GRPC_VERSION_PATH}
-COPY occlum/demos /root/demos
+COPY occlum/demos ${OCCLUM_PATH}/demos
 
 # Workspace
-ENV WORK_SPACE_PATH=/root/demos/ra_tls
+ENV WORK_SPACE_PATH=${OCCLUM_PATH}/demos/ra_tls
 WORKDIR ${WORK_SPACE_PATH}
