@@ -20,11 +20,21 @@ if [ -z ${DEBUG} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD:cczoo/attestation-secret-provision/grpc_overlay/common/build_python.sh
+    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
+=======
+>>>>>>> branch0.1/grpc-ra-tls
     export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then
     export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
+<<<<<<< HEAD
+=======
+>>>>>>> branch0.1/grpc-ra-tls:cczoo/grpc-ra-tls/grpc/common/build_python.sh
+>>>>>>> branch0.1/grpc-ra-tls
 fi
 
 # build grpc c / cpp library
