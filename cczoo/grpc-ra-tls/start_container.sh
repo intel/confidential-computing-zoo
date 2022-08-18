@@ -25,7 +25,7 @@ fi
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=grpc-ratls-sgx-dev:v1.2-ubuntu18.04-latest
+    image_tag=grpc-ratls-sgx-dev:graminev1.2-ubuntu20.04-latest
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
@@ -38,7 +38,7 @@ docker run -it \
     --security-opt seccomp=unconfined \
     --device=/dev/sgx_enclave:/dev/sgx/enclave \
     --device=/dev/sgx_provision:/dev/sgx/provision \
-    --add-host=attestation.service.com:${ip_addr} \
+    --add-host=pccs.service.com:${ip_addr} \
     -e no_proxy=${no_proxy} \
     -e http_proxy=${proxy_server} \
     -e https_proxy=${proxy_server} \

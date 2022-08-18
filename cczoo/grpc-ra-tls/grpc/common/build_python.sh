@@ -50,7 +50,7 @@ cd -
 ldd ${GRPC_PATH}/python_build/lib.linux-x86_64-*/grpc/_cython/cygrpc.cpython-*-x86_64-linux-gnu.so
 
 # install grpc python wheel
-pip3 uninstall -y grpcio
+pip3 uninstall -y grpcio protobuf
 pip3 install ${GRPC_PATH}/dist/*.whl
 pip3 install grpcio-tools==1.38.1
 

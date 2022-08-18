@@ -108,7 +108,7 @@ images for developing the gRPC RA-TLS application.
         cd cczoo/grpc-ra-tls/gramine
 
         base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
-        image_tag=grpc-ratls-sgx-dev:v1.2-ubuntu20.04-latest
+        image_tag=grpc-ratls-sgx-dev:graminev1.2-ubuntu20.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
@@ -120,12 +120,12 @@ images for developing the gRPC RA-TLS application.
         ```bash
         cd cczoo/grpc-ra-tls/occlum
 
-        base_image=occlum/occlum:0.26.3-ubuntu20.04
-        image_tag=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
+        base_image=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
+        image_tag=grpc-ratls-sgx-dev:occlum0.26.3-ubuntu20.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
-        `occlum/occlum:0.26.3-ubuntu18.04` and `occlum/occlum:0.26.3-ubuntu20.04` could be selected as base_image.
+        `occlum-sgx-dev:0.26.3-ubuntu18.04` and `occlum-sgx-dev:0.26.3-ubuntu20.04` could be selected as base_image.
 
 ## Config the remote attestation
 
