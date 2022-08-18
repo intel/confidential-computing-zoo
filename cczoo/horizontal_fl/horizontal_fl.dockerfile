@@ -17,6 +17,9 @@
 
 FROM ubuntu:18.04
 
+# Optional build argument to select a build for Azure
+ARG AZURE
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV INSTALL_PREFIX=/usr/local
 ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
@@ -48,7 +51,29 @@ RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_rep
 RUN apt-get install -y libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-quote-ex-dev libsgx-qe3-logic sgx-aesm-service
 
 # Install SGX-DCAP
-RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-default-qpl libsgx-dcap-quote-verify-dev libsgx-dcap-default-qpl-dev
+RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev
+
+# Install SGX-DCAP quote provider library
+RUN if [ -z "$AZURE" ]; then \
+        # Not a build for Azure, so install the default quote provider library \
+        apt-get install -y libsgx-dcap-default-qpl libsgx-dcap-default-qpl-dev; \
+    else \
+        # Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
+        AZUREDIR=/azure \
+        && apt-get install -y libssl-dev libcurl4-openssl-dev pkg-config software-properties-common \
+        && add-apt-repository ppa:team-xbmc/ppa -y \
+        && apt-get update \
+        && apt-get install -y nlohmann-json3-dev \
+        && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
+        && cd ${AZUREDIR} \
+        && git checkout 1.10.0 \
+        && git submodule update --recursive --init \
+        && cd src/Linux \
+        && ./configure \
+        && make DEBUG=1 \
+        && make install \
+        && cp libdcap_quoteprov.so /usr/lib/x86_64-linux-gnu/; \
+    fi
 
 # Gramine
 ENV GRAMINEDIR=/gramine
@@ -106,7 +131,7 @@ RUN wget "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}
  && dpkg -i bazel_*.deb
 
 # deps 
-RUN pip3 install numpy keras_preprocessing 
+RUN pip3 install numpy keras_preprocessing pandas sklearn matplotlib
 
 # config and download TensorFlow
 ENV TF_VERSION=v2.4.2
@@ -126,21 +151,29 @@ RUN cd ${TF_BUILD_PATH} && ./build.sh
 RUN cd ${TF_BUILD_PATH} && bazel build -c opt //tensorflow/tools/pip_package:build_pip_package
 RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} && pip install ${TF_BUILD_OUTPUT}/tensorflow-*-cp36-cp36m-linux_x86_64.whl
 
-# aesm service
 COPY patches/sgx_default_qcnl.conf /etc
-COPY patches/start_aesm_service.sh /
-
-# download and exact cifar-10 dataset
-RUN mkdir /hfl-tensorflow
-COPY hfl-tensorflow /hfl-tensorflow
-RUN cd /hfl-tensorflow && wget https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz
 
 # disable apport
 RUN echo "enabled=0" > /etc/default/apport
 RUN echo "exit 0" > /usr/sbin/policy-rc.d
 
-# make project
-RUN cd /hfl-tensorflow && test-sgx.sh make
+# Build argument to select a workload
+ARG WORKLOAD
+
+COPY image_classification /image_classification
+COPY recommendation_system /recommendation_system
+
+RUN if [ "$WORKLOAD" = "image_classification" ]; then \
+    # prepare cifar-10 dataset and make image classification project \
+	cd /image_classification && wget https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz \
+	&& test-sgx.sh make; \
+    elif [ "$WORKLOAD" = "recommendation_system" ]; then \
+    # prepare dataset and make recommendation system project \
+	cd /recommendation_system/dataset && tar -zxvf train.tar && cd .. && test-sgx.sh make; \
+    else \
+    echo "Please choose correct workload: image_classification or recommendation_system." \
+	&& exit 1; \
+    fi
 
 # Clean tmp files
 RUN apt-get clean all \

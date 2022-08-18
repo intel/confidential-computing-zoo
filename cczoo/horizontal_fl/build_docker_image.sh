@@ -17,15 +17,26 @@
 set -e
 
 if  [ ! -n "$1" ] ; then
+    workload=image_classification
+else
+    workload=$1
+fi
+
+if  [ ! -n "$2" ] ; then
     tag=latest
 else
-    tag=$1
+    tag=$2
+fi
+
+if  [ -z "$AZURE" ] ; then
+    azure=
+else
+    azure=1
 fi
 
 # You can remove build-arg http_proxy and https_proxy if your network doesn't need it
 # no_proxy="localhost,127.0.0.0/1"
 # proxy_server="" # your http proxy server
-proxy_server=""
 
 DOCKER_BUILDKIT=0 docker build \
     -f horizontal_fl.dockerfile . \
@@ -33,4 +44,6 @@ DOCKER_BUILDKIT=0 docker build \
     --network=host \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
-    --build-arg no_proxy=${no_proxy}
+    --build-arg no_proxy=${no_proxy} \
+    --build-arg AZURE=${azure} \
+    --build-arg WORKLOAD=${workload} \

@@ -43,33 +43,41 @@ function make_custom_env() {
     export MR_SIGNER=`get_env mr_signer`
     export ISV_PROD_ID=`get_env isv_prod_id`
     export ISV_SVN=`get_env isv_svn`
-    # network proxy
     unset http_proxy https_proxy
 }
 
 ROLE=$1
-PS_HOSTS=$2
-WORKER_HOSTS=$3
 
 if [ "$ROLE" == "make" ]; then
     make clean && make | make_logfilter
 elif [ "$ROLE" == "ps0" ]; then
     make_custom_env
-    taskset -c 0-3 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=ps $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a ps0-gramine-python.log &
+    taskset -c 0-8 stdbuf -o0 gramine-sgx python -u ps0.py 2>&1 | runtime_logfilter | tee -a ps0.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 elif [ "$ROLE" == "worker0" ]; then
     make_custom_env
-    taskset -c 8-11 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a worker0-gramine-python.log &
+    taskset -c 9-17 stdbuf -o0 gramine-sgx python -u worker0.py 2>&1 | runtime_logfilter | tee -a worker0.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 elif [ "$ROLE" == "worker1" ]; then
     make_custom_env
-    taskset -c 11-15 stdbuf -o0 gramine-sgx python -u train.py --task_index=1 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a worker1-gramine-python.log &
+    taskset -c 18-26 stdbuf -o0 gramine-sgx python -u worker1.py 2>&1 | runtime_logfilter | tee -a worker1.log &
+    if [ "$DEBUG" != "0" ]; then
+        wait && kill -9 `pgrep -f gramine`
+    fi
+elif [ "$ROLE" == "worker2" ]; then
+    make_custom_env
+    taskset -c 27-35 stdbuf -o0 gramine-sgx python -u worker2.py 2>&1 | runtime_logfilter | tee -a worker2.log &
+    if [ "$DEBUG" != "0" ]; then
+        wait && kill -9 `pgrep -f gramine`
+    fi
+elif [ "$ROLE" == "worker3" ]; then
+    make_custom_env
+    taskset -c 36-44 stdbuf -o0 gramine-sgx python -u worker3.py 2>&1 | runtime_logfilter | tee -a worker3.log &
     if [ "$DEBUG" != "0" ]; then
         wait && kill -9 `pgrep -f gramine`
     fi
 fi
-
