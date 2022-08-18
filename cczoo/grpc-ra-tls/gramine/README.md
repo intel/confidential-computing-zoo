@@ -26,7 +26,7 @@
 1. start container
 
     ```
-    cczoo/grpc-ra-tls/start_container.sh ${pccs_service_ip}
+    cczoo/grpc-ra-tls/start_container.sh ${pccs_service_ip} ${image_tag}
     ```
 
 2. Start aesm service

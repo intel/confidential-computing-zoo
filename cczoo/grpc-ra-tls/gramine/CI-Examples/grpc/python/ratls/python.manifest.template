@@ -37,10 +37,11 @@ fs.mounts = [
   { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
   { path = "/etc", uri = "file:/etc" },
   { path = "/usr", uri = "file:/usr" },
+  { type = "tmpfs", path = "/var/tmp" },
   { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
   { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
-  { path = "/usr/local/lib/python3.6/dist-packages/", uri = "file:/usr/local/lib/python3.6/dist-packages/" }
-  { type = "tmpfs", path = "/var/tmp" },
+  #{ path = "/usr/local/lib/python3.6/dist-packages/", uri = "file:/usr/local/lib/python3.6/dist-packages/" }
+  { path = "/usr/local/lib/python3.8/dist-packages/", uri = "file:/usr/local/lib/python3.8/dist-packages/" }
 ]
 
 sgx.debug = false
@@ -62,7 +63,8 @@ sgx.trusted_files = [
   "file:/usr/{{ arch_libdir }}/",
   "file:{{ python.stdlib }}/",
   "file:{{ python.distlib }}/",
-  "file:/usr/local/lib/python3.6/dist-packages/",
+  #"file:/usr/local/lib/python3.6/dist-packages/",
+  "file:/usr/local/lib/python3.8/dist-packages/",
   "file:/etc/ssl/certs/ca-certificates.crt",
   "file:server.py",
   "file:client.py",
