@@ -40,7 +40,8 @@ fs.mounts = [
   { type = "tmpfs", path = "/var/tmp" },
   { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
   { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
-  { path = "/usr/local/lib/python3.8/dist-packages/", uri = "file:/usr/local/lib/python3.8/dist-packages/" }
+  #{ path = "/usr/local/lib/python3.6/dist-packages/", uri = "file:/usr/local/lib/python3.6/dist-packages/" } # for ubuntu:18.04
+  { path = "/usr/local/lib/python3.8/dist-packages/", uri = "file:/usr/local/lib/python3.8/dist-packages/" } # for ubuntu:20.04
 ]
 
 sgx.debug = false
@@ -62,8 +63,8 @@ sgx.trusted_files = [
   "file:/usr/{{ arch_libdir }}/",
   "file:{{ python.stdlib }}/",
   "file:{{ python.distlib }}/",
-  #"file:/usr/local/lib/python3.6/dist-packages/",
-  "file:/usr/local/lib/python3.8/dist-packages/",
+  #"file:/usr/local/lib/python3.6/dist-packages/", # for ubuntu:18.04
+  "file:/usr/local/lib/python3.8/dist-packages/", # for ubuntu:20.04
   "file:/etc/ssl/certs/ca-certificates.crt",
   "file:server.py",
   "file:client.py",
