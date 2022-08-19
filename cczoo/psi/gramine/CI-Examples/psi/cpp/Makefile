@@ -21,9 +21,9 @@ SGX_SIGNER_KEY ?= $(GRAMINEDIR)/Pal/src/host/Linux-SGX/signer/enclave-key.pem
 include $(GRAMINEDIR)/Scripts/Makefile.configs
 
 ifeq ($(DEBUG),1)
-GRAMINE_LOG_LEVEL = debug
+GRAPHENE_LOG_LEVEL = debug
 else
-GRAMINE_LOG_LEVEL = error
+GRAPHENE_LOG_LEVEL = error
 endif
 
 .PHONY: all
@@ -36,9 +36,9 @@ endif
 
 grpc.manifest: grpc.manifest.template
 	gramine-manifest \
-		-Dentrypoint=$(GRAMINE_ENTRYPOINT) \
+		-Dentrypoint=$(GRAPHENE_ENTRYPOINT) \
 		-Darch_libdir=$(ARCH_LIBDIR) \
-		-Dlog_level=$(GRAMINE_LOG_LEVEL) \
+		-Dlog_level=$(GRAPHENE_LOG_LEVEL) \
 		$< >$@
 
 grpc.manifest.sgx: grpc.manifest

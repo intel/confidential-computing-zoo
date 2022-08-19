@@ -25,7 +25,7 @@ fi
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=psi_test2
+    image_tag=psi_test
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
@@ -40,6 +40,7 @@ docker run -it \
     --device=/dev/sgx_provision:/dev/sgx/provision \
     --add-host=attestation.service.com:${ip_addr} \
     -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+    --net=host \
     -e no_proxy=${no_proxy} \
     -e http_proxy=${proxy_server} \
     -e https_proxy=${proxy_server} \
