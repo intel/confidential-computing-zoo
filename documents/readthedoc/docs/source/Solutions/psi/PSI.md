@@ -32,9 +32,7 @@ To solve the problem of how to verify the untrusted application integrity, we us
 ## Workflow
 Our solution is implemented in a trusted execution environment, and its architecture is as follows:
 
-<div align=center>
-<img src=images/psi.svg>
-</div>
+![](images/psi.svg)  
 
 The computing phase can be divided into the following steps:
 
