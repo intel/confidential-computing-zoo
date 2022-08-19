@@ -32,7 +32,10 @@ Intel SGX also helps protect against SW attacks even if OS/drivers/BIOS/VMM/SMM 
 increase protections for secrets even when attacker has full control of platform.
 
 ## Workflow 
-![](images/HLR.svg)  
+
+![](images/HLR.svg)
+
+
 The training process includes the following steps:
 
 &emsp;&ensp;① The parameter server runs in an enclave by Intel SGX technology.
