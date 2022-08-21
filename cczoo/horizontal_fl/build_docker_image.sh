@@ -16,17 +16,27 @@
 #!/bin/bash
 set -e
 
-if  [ ! -n "$1" ] ; then
+if  [ ! -n "$2" ] ; then
     tag=latest
 else
-    tag=$1
+    tag=$2
 fi
 
 # You can remove build-arg http_proxy and https_proxy if your network doesn't need it
 # no_proxy="localhost,127.0.0.0/1"
 # proxy_server="" # your http proxy server
-proxy_server=""
+proxy_server="http://child-prc.intel.com:913"
+OS_TYPE=$1
 
+if [ "$OS_TYPE" == "anolisos" ]; then
+DOCKER_BUILDKIT=0 docker build \
+    -f anolisos_horizontal_fl.dockerfile . \
+    -t anolisos_horizontal_fl:${tag} \
+    --network=host \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    --build-arg no_proxy=${no_proxy}
+elif [ "$OS_TYPE" == "ubuntu" ]; then
 DOCKER_BUILDKIT=0 docker build \
     -f horizontal_fl.dockerfile . \
     -t horizontal_fl:${tag} \
@@ -34,3 +44,4 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     --build-arg no_proxy=${no_proxy}
+fi

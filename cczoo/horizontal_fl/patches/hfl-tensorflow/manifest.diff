@@ -1,0 +1,16 @@
+diff --git a./python.manifest.template b./python.manifest.template
+index 0e30c02..e5336c6 100644
+--- a./python.manifest.template
++++ b./python.manifest.template
+@@ -81,9 +81,8 @@ sgx.trusted_files = [
+   "file:{{ arch_libdir }}/",
+   "file:/usr/{{ arch_libdir }}/",
+   "file:{{ python.stdlib }}/",
+-  "file:{{ python.distlib }}/",
+-  "file:/usr/local/lib/python3.6/dist-packages/",
+-  "file:/etc/ssl/certs/ca-certificates.crt",
++  "file:/usr/local/lib/python3.6/site-packages/",
++  "file:/etc/ssl/certs/ca-bundle.crt",
+   "file:/etc/default/apport",
+   "file:/etc/mime.types",
+   "file:train.py",
