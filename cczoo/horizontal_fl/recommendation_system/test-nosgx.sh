@@ -34,16 +34,20 @@ function make_custom_env() {
 }
 
 ROLE=$1
-PS_HOSTS=$2
-WORKER_HOSTS=$3
 if [ "$ROLE" == "ps0" ]; then
     make_custom_env
-    taskset -c 0-3 stdbuf -o0 python -u train.py --task_index=0 --job_name=ps 2>&1 $PS_HOSTS $WORKER_HOSTS | tee -a ps0-python.log &
+    taskset -c 0-8 stdbuf -o0 python -u ps0.py 2>&1 | tee -a ps0.log &
 elif [ "$ROLE" == "worker0" ]; then
     make_custom_env
-    taskset -c 8-11 stdbuf -o0 python -u train.py --task_index=0 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | tee -a worker0-python.log &
+    taskset -c 9-17 stdbuf -o0 python -u worker0.py 2>&1 | tee -a worker0.log &
 elif [ "$ROLE" == "worker1" ]; then
     make_custom_env
-    taskset -c 12-15 stdbuf -o0 python -u train.py --task_index=1 --job_name=worker $PS_HOSTS $WORKER_HOSTS 2>&1 | tee -a worker1-python.log &
+    taskset -c 18-26 stdbuf -o0 python -u worker1.py 2>&1 | tee -a worker1.log &
+elif [ "$ROLE" == "worker2" ]; then
+    make_custom_env
+    taskset -c 27-35 stdbuf -o0 python -u worker2.py 2>&1 | tee -a worker2.log &
+elif [ "$ROLE" == "worker3" ]; then
+    make_custom_env
+    taskset -c 36-44 stdbuf -o0 python -u worker3.py 2>&1 | tee -a worker3.log &
 fi
 

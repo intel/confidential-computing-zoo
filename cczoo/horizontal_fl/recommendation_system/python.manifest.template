@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,79 +13,58 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+loader.entrypoint = "file:{{ gramine.libos }}"
 libos.entrypoint = "{{ entrypoint }}"
-libos.check_invalid_pointers = false
 
-loader.preload = "file:{{ gramine.libos }}"
 loader.log_level = "{{ log_level }}"
 # loader.log_file = ""
 
-# loader.pal_internal_mem_size = "500M"
+loader.pal_internal_mem_size = "128M"
 
 loader.insecure__use_cmdline_argv = true 
 loader.insecure__use_host_env = true
 
 loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/local/lib:/usr/local/{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}"
-loader.env.SECRET_PROVISION_CONSTRUCTOR = "1"
-loader.env.SECRET_PROVISION_SET_PF_KEY = "1"
+loader.env.GRPC_VERBOSITY = "ERROR"
 
 sys.enable_sigterm_injection = true
 sys.stack.size = "8M"
 
-fs.mount.lib.type = "chroot"
-fs.mount.lib.path = "/lib"
-fs.mount.lib.uri = "file:{{ gramine.runtimedir() }}"
-
-fs.mount.lib2.type = "chroot"
-fs.mount.lib2.path = "{{ arch_libdir }}"
-fs.mount.lib2.uri = "file:{{ arch_libdir }}"
-
-fs.mount.usr.type = "chroot"
-fs.mount.usr.path = "/usr"
-fs.mount.usr.uri = "file:/usr"
-
-fs.mount.pyhome.type = "chroot"
-fs.mount.pyhome.path = "{{ python.stdlib }}"
-fs.mount.pyhome.uri = "file:{{ python.stdlib }}"
-
-fs.mount.pydisthome.type = "chroot"
-fs.mount.pydisthome.path = "{{ python.distlib }}"
-fs.mount.pydisthome.uri = "file:{{ python.distlib }}"
-
-fs.mount.tmp.type = "chroot"
-fs.mount.tmp.path = "/tmp"
-fs.mount.tmp.uri = "file:/tmp"
-
-fs.mount.etc.type = "chroot"
-fs.mount.etc.path = "/etc"
-fs.mount.etc.uri = "file:/etc"
-
-fs.mount.keras.type = "chroot"
-fs.mount.keras.path = "/root/.keras/keras.json"
-fs.mount.keras.uri = "file:/root/.keras/keras.json"
-
-# Note that Gramine also creates an internal
-# thread for handling inter-process communication (IPC), and potentially another
-# thread for asynchronous events. Therefore, the actual number of threads that
-# the application can create is (sgx.thread_num - 2).
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+  { path = "/etc", uri = "file:/etc" },
+  { path = "/usr", uri = "file:/usr" },
+  { type = "tmpfs", path = "/var/tmp" },
+  { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
+  { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
+  # { path = "/usr/local/lib/python3.6/dist-packages/", uri = "file:/usr/local/lib/python3.6/dist-packages/" }, # for ubuntu:18.04
+  { path = "/usr/local/lib/python3.8/dist-packages/", uri = "file:/usr/local/lib/python3.8/dist-packages/" }, # for ubuntu:20.04
+  { path = "/root/.keras/keras.json", uri = "file:/root/.keras/keras.json" },
+]
 
 sgx.debug = false
 sgx.nonpie_binary = true
 sgx.enclave_size = "32G"
 sgx.thread_num = 1024
 sgx.remote_attestation = true
+sgx.enable_stats = false
+
+# sgx.require_avx = true
+# sgx.require_avx512 = true
+# sgx.require_amx = true
 
 sgx.trusted_files = [
   "file:{{ entrypoint }}",
+  "file:{{ gramine.libos }}",
   "file:{{ gramine.runtimedir() }}/",
   "file:{{ arch_libdir }}/",
   "file:/usr/{{ arch_libdir }}/",
   "file:{{ python.stdlib }}/",
   "file:{{ python.distlib }}/",
-  "file:/usr/local/lib/python3.6/dist-packages/",
+  # "file:/usr/local/lib/python3.6/dist-packages/",  # for ubuntu:18.04
+  "file:/usr/local/lib/python3.8/dist-packages/",  # for ubuntu:20.04
   "file:/etc/ssl/certs/ca-certificates.crt",
-  "file:/etc/default/apport",
-  "file:/etc/mime.types",
   "file:ps0.py",
   "file:worker0.py",
   "file:worker1.py",
@@ -96,21 +75,15 @@ sgx.trusted_files = [
 
 sgx.allowed_files = [
   "file:/usr/lib/ssl/openssl.cnf",
-  "file:/usr/lib/gcc",
-  "file:/usr/bin/ld",
-  "file:/usr/bin/gcc",
-  "file:/usr/bin/objdump",
-  "file:/etc/ethers",
-  "file:/etc/hosts",
-  "file:/etc/group",
-  "file:/etc/passwd",
   "file:/etc/ld.so.conf",
   "file:/etc/gai.conf",
   "file:/etc/host.conf",
   "file:/etc/resolv.conf",
   "file:/etc/nsswitch.conf",
   "file:/etc/sgx_default_qcnl.conf",
-  "file:/etc/ssl/certs/ca-certificates.crt",
+  "file:/etc/hosts",
+  "file:/etc/group",
+  "file:/etc/passwd",
   "file:/proc/stat",
   "file:/tmp",
   "file:/root/.keras/keras.json",

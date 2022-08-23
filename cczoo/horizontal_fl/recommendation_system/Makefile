@@ -1,11 +1,11 @@
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,15 +15,13 @@
 
 ################################# CONSTANTS ###################################
 
-GRAMINEDIR ?= /home/yunge/gramine
-SGX_SIGNER_KEY ?= $(GRAMINEDIR)/Pal/src/host/Linux-SGX/signer/enclave-key.pem
-
-include $(GRAMINEDIR)/Scripts/Makefile.configs
+ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
+# ENTRYPOINT ?= $(realpath $(shell sh -c "command -v python3"))
 
 ifeq ($(DEBUG),1)
-GRAPHENE_LOG_LEVEL = debug
+GRAMINE_LOG_LEVEL = debug
 else
-GRAPHENE_LOG_LEVEL = error
+GRAMINE_LOG_LEVEL = error
 endif
 
 .PHONY: all
@@ -36,18 +34,19 @@ endif
 
 python.manifest: python.manifest.template
 	gramine-manifest \
+		-Dlog_level=$(GRAMINE_LOG_LEVEL) \
 		-Dentrypoint=$(realpath $(shell sh -c "command -v python3")) \
 		-Darch_libdir=$(ARCH_LIBDIR) \
-		-Dlog_level=$(GRAPHENE_LOG_LEVEL) \
 		$< >$@
 
-python.manifest.sgx: python.manifest
-	gramine-sgx-sign \
-		--key $(SGX_SIGNER_KEY) \
-		--manifest $< \
-		--output $@
+python.manifest.sgx python.sig: sgx_sign
+	@:
 
-python.sig: python.manifest.sgx
+.INTERMEDIATE: sgx_sign
+sgx_sign: python.manifest
+	gramine-sgx-sign \
+		--manifest $< \
+		--output $<.sgx
 
 python.token: python.sig
 	gramine-sgx-get-token --output $@ --sig $<
