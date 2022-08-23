@@ -59,8 +59,8 @@ Recommendation System and Image Classification.
 
 ### Prerequisites
 
-- Ubuntu 18.04. This solution should work on other Linux distributions as well,
-  but for simplicity we provide the steps for Ubuntu 18.04 only.
+- Ubuntu 18.04/Ubuntu 20.04. This solution should work on other Linux distributions as well,
+  but for simplicity we provide the steps for Ubuntu 18.04 / Ubuntu 20.04.
 
 - Docker Engine. Docker Engine is an open source containerization technology for
   building and containerizing your applications.
@@ -123,11 +123,11 @@ cd <horizontal_fl dir>
 ```
 For deployments on Microsoft Azure:
 ```shell
-AZURE=1 ./build_docker_image.sh recommendation_system
+AZURE=1 ./build_docker_image.sh recommendation_system <ubuntu:18.04/ubuntu:20.04>
 ```
 For other cloud deployments:
 ```shell
-./build_docker_image.sh recommendation_system
+./build_docker_image.sh recommendation_system <ubuntu:18.04/ubuntu:20.04>
 ```
 
 #### Start containers and run the training scripts
@@ -179,11 +179,11 @@ cd <horizontal_fl dir>
 ```
 For deployments on Microsoft Azure:
 ```shell
-AZURE=1 ./build_docker_image.sh image_classification
+AZURE=1 ./build_docker_image.sh image_classification <ubuntu:18.04/ubuntu:20.04>
 ```
 For other cloud deployments:
 ```shell
-./build_docker_image.sh image_classification
+./build_docker_image.sh image_classification <ubuntu:18.04/ubuntu:20.04>
 ```
 
 #### Start containers and run the training scripts

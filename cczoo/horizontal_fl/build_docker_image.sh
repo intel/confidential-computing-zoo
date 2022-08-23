@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,9 +23,15 @@ else
 fi
 
 if  [ ! -n "$2" ] ; then
+    base_image=ubuntu:20.04
+else
+    base_image=$2
+fi
+
+if  [ ! -n "$3" ] ; then
     tag=latest
 else
-    tag=$2
+    tag=$3
 fi
 
 if  [ -z "$AZURE" ] ; then
@@ -47,3 +53,4 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg AZURE=${azure} \
     --build-arg WORKLOAD=${workload} \
+    --build-arg BASE_IMAGE=${base_image} \
