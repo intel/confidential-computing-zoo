@@ -60,7 +60,7 @@ Recommendation System and Image Classification.
 ### Prerequisites
 
 - Ubuntu 18.04/Ubuntu 20.04. This solution should work on other Linux distributions as well,
-  but for simplicity we provide the steps for Ubuntu 18.04 / Ubuntu 20.04.
+  but for simplicity we provide the steps for Ubuntu 18.04/Ubuntu 20.04.
 
 - Docker Engine. Docker Engine is an open source containerization technology for
   building and containerizing your applications.
@@ -161,7 +161,7 @@ cd recommendation_system
 test-sgx.sh worker3
 ```
 
-You can see the training process in the workers' terminal.
+You can see the training log information from the workers' terminals to confirm that the training is running normally. The model files generated during training will be saved in the `model` folder. In this example, the information related to variable values is stored in `model/model.ckpt-data` of `ps0`, and the information related to the computational graph structure is stored in `model/model.ckpt-meta` of `worker0`.
 
 ### Image classification
 

@@ -34,7 +34,7 @@ To solve the problem of how to verify the untrusted application integrity, we us
 In the training process, each worker uses local data in its enclave to complete a round of training, and then sends the gradient information in the backpropagation process to the parameter server through the RA-TLS technology, and then the parameter server completes the gradient aggregation and update network parameters, and then send the updated parameters to each worker. The workflow is as follows:
 
 <div align=center>
-<img src=images/HFL.svg>
+<img src=../../documents/readthedoc/docs/source/Solutions/horizontal-federated-learning/images/HFL.svg>
 </div>
 
 The training phase can be divided into the following steps:
@@ -60,7 +60,7 @@ Recommendation System and Image Classification.
 ### Prerequisites
 
 - Ubuntu 18.04/Ubuntu 20.04. This solution should work on other Linux distributions as well,
-  but for simplicity we provide the steps for Ubuntu 18.04 / Ubuntu 20.04.
+  but for simplicity we provide the steps for Ubuntu 18.04/Ubuntu 20.04.
 
 - Docker Engine. Docker Engine is an open source containerization technology for
   building and containerizing your applications.
@@ -161,7 +161,7 @@ cd recommendation_system
 test-sgx.sh worker3
 ```
 
-You can see the training process in the workers' terminal.
+You can see the training log information from the workers' terminals to confirm that the training is running normally. The model files generated during training will be saved in the `model` folder. In this example, the information related to variable values is stored in `model/model.ckpt-data` of `ps0`, and the information related to the computational graph structure is stored in `model/model.ckpt-meta` of `worker0`.
 
 ### Image classification
 
