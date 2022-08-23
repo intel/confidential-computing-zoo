@@ -29,7 +29,6 @@ cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
 
 def criteo_dataprocessing_sample():
     columns = ['label', *(f'I{i}' for i in range(1, 14)), *(f'C{i}' for i in range(1, 27))]
-    # df = pd.read_csv('dataset/dac_sample.txt', sep='\t', names=columns).fillna(0)
     df = pd.read_csv('dataset/train.txt', sep='\t', names=columns).fillna(0)
     print(df)
 
@@ -215,18 +214,13 @@ def run():
 
             # Train
             out = model.call((input_dense, input_cat))
-
             global_step = tf.train.get_or_create_global_step()
             loss = tf.keras.losses.binary_crossentropy(input_label, out, from_logits=True)
             optimz = tf.train.AdagradOptimizer(learning_rate=0.1, ).minimize(loss, global_step=global_step)
 
-            # Test and validation
-
             # Accuracy calculation
             train_acc = tf.keras.metrics.categorical_accuracy(out, input_label)
-
             config = tf.ConfigProto(intra_op_parallelism_threads=12, inter_op_parallelism_threads=12)
-
             init_op = tf.global_variables_initializer()
 
         if len_train % BATCH_SIZE == 0:
@@ -252,13 +246,12 @@ def run():
                                                is_chief=(FLAGS.task_index == 0),
                                                checkpoint_dir="model",
                                                scaffold=scf,
-                                               save_checkpoint_steps=None,
+                                               save_checkpoint_steps=5000,
                                                config=config,
                                                ) as mon_sess:
 
             mon_sess.run([t_itr.initializer])
 
-            # Epochs
             for i in range(EPO):
                 loss_list = []
                 train_acc_list = []
@@ -266,7 +259,6 @@ def run():
                 itr_time = 0
                 itr_num = 0
                 try:
-                    # while True:
                     for j in range(batch_num):
                         beg = time.time()
                         ret, ret_loss, ret_label, ret_acc, ret_input_label, ret_step = mon_sess.run([optimz, loss, out, train_acc, input_label, global_step])
@@ -292,8 +284,6 @@ def run():
 
         with open("plts/worker3_loss.pkl", "wb") as pkf:
             pickle.dump(print_loss_dict, pkf)
-        print(print_loss_batch_num)
-        print(print_loss_list)
         plt.plot(print_loss_batch_num, print_loss_list)
         plt.savefig('plts/plt_worker3.png')
 
@@ -304,5 +294,4 @@ if __name__ == "__main__":
 
     seed_tensorflow()
     run()
-
-    print("Dlrm tf v1")
+    print("DLRM training finished.")

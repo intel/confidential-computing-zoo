@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,8 @@
 
 # https://github.com/oscarlab/graphene/blob/master/Tools/gsc/images/graphene_aks.latest.dockerfile
 
-FROM ubuntu:18.04
+ARG BASE_IMAGE=ubuntu:20.04
+FROM ${BASE_IMAGE}
 
 # Optional build argument to select a build for Azure
 ARG AZURE
@@ -24,6 +25,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV INSTALL_PREFIX=/usr/local
 ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
 ENV PATH=${INSTALL_PREFIX}/bin:${LD_LIBRARY_PATH}:${PATH}
+ENV LC_ALL=C.UTF-8 LANG=C.UTF-8
 
 # Add steps here to set up dependencies
 RUN apt-get update \
@@ -42,9 +44,19 @@ RUN apt-get update \
 	    vim \
         jq
 
+ARG BASE_IMAGE=ubuntu:20.04
+RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ] ; then \
+        echo "use ubuntu:18.04 as base image" ; \
+        echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
+    elif [ "${BASE_IMAGE}" = "ubuntu:20.04" ] ; then \
+        echo "use ubuntu:20.04 as base image" ; \
+        echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
+    else \
+        echo "wrong base image!" ;\
+    fi
+
 # Intel SGX
-RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list \
-    && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add - \
+RUN wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add - \
     && apt-get update
 
 # Install SGX-PSW
@@ -78,20 +90,18 @@ RUN if [ -z "$AZURE" ]; then \
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-ENV GRAMINE_VERSION=c662f63bba76736e6d5122a866da762efd1978c1
+ENV GRAMINE_VERSION=v1.2
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
-ENV SGX_SIGNER_KEY=${GRAMINEDIR}/Pal/src/host/Linux-SGX/signer/enclave-key.pem
-ENV LC_ALL=C.UTF-8 LANG=C.UTF-8
 ENV WERROR=1
 ENV SGX=1
 
-RUN apt-get install -y gawk bison python3-click python3-jinja2 golang ninja-build
-RUN apt-get install -y libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler
-RUN apt-get install -y libgmp-dev libmpfr-dev libmpc-dev libisl-dev
+RUN apt-get install -y gawk bison python3-click python3-jinja2 golang ninja-build \ 
+    libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler \ 
+    libgmp-dev libmpfr-dev libmpc-dev libisl-dev nasm
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
     && pip3 install --upgrade pip \
-    && pip3 install toml meson
+    && pip3 install toml meson cryptography
 
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
@@ -101,20 +111,18 @@ RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${
     && cd ${ISGX_DRIVER_PATH} \
     && git checkout ${SGX_DCAP_VERSION}
 
-COPY patches/gramine/patches ${GRAMINEDIR}
-RUN cd ${GRAMINEDIR} \
-    && git apply *.diff
-
-RUN openssl genrsa -3 -out ${SGX_SIGNER_KEY} 3072
 RUN cd ${GRAMINEDIR} \
     && LD_LIBRARY_PATH="" meson setup build/ --buildtype=debug -Dprefix=${INSTALL_PREFIX} -Ddirect=enabled -Dsgx=enabled -Ddcap=enabled -Dsgx_driver=dcap1.10 -Dsgx_driver_include_path=${ISGX_DRIVER_PATH}/driver/linux/include \
     && LD_LIBRARY_PATH="" ninja -C build/ \
     && LD_LIBRARY_PATH="" ninja -C build/ install
 
+RUN gramine-sgx-gen-private-key
+
 # Install mbedtls
 RUN cd ${GRAMINEDIR}/build/subprojects/mbedtls-mbedtls* \
-    && cp -r `find . -name "*_gramine.a"` ${INSTALL_PREFIX}/lib \
-    && cp -r ${GRAMINEDIR}/subprojects/mbedtls-mbedtls*/include ${INSTALL_PREFIX}
+    && cp -r *_gramine.a ${INSTALL_PREFIX}/lib \
+    && cd ${GRAMINEDIR}/subprojects/mbedtls-mbedtls*/mbedtls-mbedtls* \
+    && cp -r include/mbedtls ${INSTALL_PREFIX}/include
 
 # Install cJSON
 RUN cd ${GRAMINEDIR}/subprojects/cJSON* \
@@ -149,7 +157,7 @@ RUN cd ${TF_BUILD_PATH} && git apply tf2_4.diff
 # build and install TensorFlow
 RUN cd ${TF_BUILD_PATH} && ./build.sh
 RUN cd ${TF_BUILD_PATH} && bazel build -c opt //tensorflow/tools/pip_package:build_pip_package
-RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} && pip install ${TF_BUILD_OUTPUT}/tensorflow-*-cp36-cp36m-linux_x86_64.whl
+RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} && pip install ${TF_BUILD_OUTPUT}/tensorflow-*.whl
 
 COPY patches/sgx_default_qcnl.conf /etc
 
@@ -162,6 +170,24 @@ ARG WORKLOAD
 
 COPY image_classification /image_classification
 COPY recommendation_system /recommendation_system
+
+RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ]; then \
+    cd /image_classification && \
+    sed -i "41s/# //" python.manifest.template && \
+    sed -i "42s/^/#/" python.manifest.template && \
+    sed -i "65s/# //" python.manifest.template && \
+    sed -i "66s/^/#/" python.manifest.template && \
+    cd ../recommendation_system && \
+    sed -i "41s/# //" python.manifest.template && \
+    sed -i "42s/^/#/" python.manifest.template && \
+    sed -i "65s/# //" python.manifest.template && \
+    sed -i "66s/^/#/" python.manifest.template; \
+    fi
+
+ARG BASE_IMAGE=ubuntu:20.04
+RUN if [ "${BASE_IMAGE}" = "ubuntu:20.04" ] ; then \
+    python -m pip install markupsafe==2.0.1 && pip install numpy --upgrade; \
+    fi
 
 RUN if [ "$WORKLOAD" = "image_classification" ]; then \
     # prepare cifar-10 dataset and make image classification project \
@@ -180,5 +206,3 @@ RUN apt-get clean all \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf ~/.cache/pip/* \
     && rm -rf /tmp/*
-
-EXPOSE 6006 50051 50052
