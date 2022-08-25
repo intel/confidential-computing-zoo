@@ -34,7 +34,7 @@ To solve the problem of how to verify the untrusted application integrity, we us
 In the training process, each worker uses local data in its enclave to complete a round of training, and then sends the gradient information in the backpropagation process to the parameter server through the RA-TLS technology, and then the parameter server completes the gradient aggregation and update network parameters, and then send the updated parameters to each worker. The workflow is as follows:
 
 <div align=center>
-<img src=../../documents/readthedoc/docs/source/Solutions/horizontal-federated-learning/images/HFL.svg>
+<img src=images/HFL.svg>
 </div>
 
 The training phase can be divided into the following steps:
