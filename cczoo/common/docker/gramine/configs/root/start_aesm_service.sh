@@ -13,8 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# PCCS server address
-PCCS_URL=https://pccs.service.com:8081/sgx/certification/v3/
+#!/bin/bash
 
-# To accept insecure HTTPS cert, set this option to FALSE
-USE_SECURE_CERT=FALSE
+unset http_proxy https_proxy
+
+# Start AESM service required by Intel SGX SDK if it is not running
+if ! pgrep "aesm_service" > /dev/null ; then
+    mkdir -p /var/run/aesmd
+    LD_LIBRARY_PATH="/opt/intel/sgx-aesm-service/aesm:$LD_LIBRARY_PATH" /opt/intel/sgx-aesm-service/aesm/aesm_service
+fi

@@ -15,7 +15,7 @@
 
 # https://github.com/oscarlab/graphene/blob/master/Tools/gsc/images/graphene_aks.latest.dockerfile
 
-ARG base_image=ubuntu:18.04
+ARG base_image=ubuntu:20.04
 FROM ${base_image}
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -41,12 +41,15 @@ RUN apt-get update \
         vim \
         jq
 
-ARG base_image=ubuntu:18.04
-RUN if [ "${base_image}" = "ubuntu:18.04" ] ; \
-    then \
+ARG BASE_IMAGE=ubuntu:20.04
+RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ] ; then \
+        echo "use ubuntu:18.04 as base image" ; \
         echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
-    else \
+    elif [ "${BASE_IMAGE}" = "ubuntu:20.04" ] ; then \
+        echo "use ubuntu:20.04 as base image" ; \
         echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
+    else \
+        echo "wrong base image!" ;\
     fi
 
 RUN wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add - \
@@ -61,18 +64,19 @@ RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-default-qpl libsgx-dcap-qu
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-ENV GRAMINE_VERSION=c662f63bba76736e6d5122a866da762efd1978c1
+# ENV GRAMINE_VERSION=c662f63bba76736e6d5122a866da762efd1978c1
+ENV GRAMINE_VERSION=v1.2
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
-ENV SGX_SIGNER_KEY=${GRAMINEDIR}/Pal/src/host/Linux-SGX/signer/enclave-key.pem
+# ENV SGX_SIGNER_KEY=${GRAMINEDIR}/Pal/src/host/Linux-SGX/signer/enclave-key.pem
 ENV WERROR=1
 ENV SGX=1
 
-RUN apt-get install -y gawk bison python3-click python3-jinja2 ninja-build pkg-config \
+RUN apt-get install -y bison gawk nasm python3-click python3-jinja2 ninja-build pkg-config \
     libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler \
     libgmp-dev libmpfr-dev libmpc-dev libisl-dev
 
 RUN pip3 install --upgrade pip \
-    && pip3 install toml meson
+    && pip3 install toml meson cryptography
 
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
@@ -82,11 +86,11 @@ RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${
     && cd ${ISGX_DRIVER_PATH} \
     && git checkout ${SGX_DCAP_VERSION}
 
-COPY gramine/patches ${GRAMINEDIR}
-RUN cd ${GRAMINEDIR} \
-    && git apply *.diff
+# COPY gramine/patches ${GRAMINEDIR}
+# RUN cd ${GRAMINEDIR} \
+#     && git apply *.diff
 
-RUN openssl genrsa -3 -out ${SGX_SIGNER_KEY} 3072
+# RUN openssl genrsa -3 -out ${SGX_SIGNER_KEY} 3072
 RUN cd ${GRAMINEDIR} \
     && LD_LIBRARY_PATH="" meson setup build/ --buildtype=debug -Dprefix=${INSTALL_PREFIX} -Ddirect=enabled -Dsgx=enabled -Ddcap=enabled -Dsgx_driver=dcap1.10 -Dsgx_driver_include_path=${ISGX_DRIVER_PATH}/driver/linux/include \
     && LD_LIBRARY_PATH="" ninja -C build/ \
@@ -94,8 +98,9 @@ RUN cd ${GRAMINEDIR} \
 
 # Install mbedtls
 RUN cd ${GRAMINEDIR}/build/subprojects/mbedtls-mbedtls* \
-    && cp -r `find . -name "*_gramine.a"` ${INSTALL_PREFIX}/lib \
-    && cp -r ${GRAMINEDIR}/subprojects/mbedtls-mbedtls*/include ${INSTALL_PREFIX}
+    && cp -r *_gramine.a ${INSTALL_PREFIX}/lib \
+    && cd ${GRAMINEDIR}/subprojects/mbedtls-mbedtls*/mbedtls-mbedtls* \
+    && cp -r include/mbedtls ${INSTALL_PREFIX}/include
 
 # Install cJSON
 RUN cd ${GRAMINEDIR}/subprojects/cJSON* \
@@ -103,8 +108,6 @@ RUN cd ${GRAMINEDIR}/subprojects/cJSON* \
     && cp -r *.a ${INSTALL_PREFIX}/lib \
     && mkdir -p ${INSTALL_PREFIX}/include/cjson \
     && cp -r *.h ${INSTALL_PREFIX}/include/cjson
-
-COPY configs /
 
 RUN echo "enabled=0" > /etc/default/apport
 RUN echo "exit 0" > /usr/sbin/policy-rc.d
@@ -114,6 +117,10 @@ RUN apt-get clean all \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf ~/.cache/* \
     && rm -rf /tmp/*
+
+RUN gramine-sgx-gen-private-key
+
+COPY configs /
 
 # Use it to ignore packages authenticate in apt-get
 # ENV apt_arg="-o Acquire::AllowInsecureRepositories=true \
