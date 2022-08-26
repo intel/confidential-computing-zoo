@@ -38,7 +38,7 @@ docker run -it \
     --security-opt seccomp=unconfined \
     --device=/dev/sgx_enclave:/dev/sgx/enclave \
     --device=/dev/sgx_provision:/dev/sgx/provision \
-    --add-host=attestation.service.com:${ip_addr} \
+    --add-host=pccs.service.com:${ip_addr} \
     -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
     --net=host \
     -e no_proxy=${no_proxy} \
