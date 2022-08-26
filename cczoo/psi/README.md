@@ -55,8 +55,8 @@ images for developing the gRPC RA-TLS application.
 
 ### Prerequisites
 
-- Ubuntu 18.04. This solution should work on other Linux distributions as well,
-  but for simplicity we provide the steps for Ubuntu 18.04 only.
+- Ubuntu 20.04. This solution should work on other Linux distributions as well,
+  but for simplicity we provide the steps for Ubuntu 20.04 only.
 
 - Docker Engine. Docker Engine is an open source containerization technology for
   building and containerizing your applications.

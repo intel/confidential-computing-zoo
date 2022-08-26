@@ -25,7 +25,7 @@ fi
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=psi_test
+    image_tag=psi
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
