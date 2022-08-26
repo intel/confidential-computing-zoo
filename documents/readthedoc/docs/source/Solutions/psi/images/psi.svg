@@ -88,7 +88,7 @@
 				<v:userDefs>
 					<v:ud v:nameU="visVersion" v:val="VT0(15):26"/>
 				</v:userDefs>
-				<path d="M0 267.45 A31.8898 7.41125 0 1 1 63.78 267.45 A31.8898 7.41125 0 0 1 0 267.45 Z" class="st6"/>
+				<path d="M0 267.45 A31.8898 7.41125 0 0 1 63.78 267.45 A31.8898 7.41125 0 0 1 0 267.45 Z" class="st6"/>
 			</g>
 			<g id="shape6-16" v:mID="6" v:groupContext="shape" transform="translate(0,-7.41125)">
 				<title>Rectangle.1116</title>
@@ -105,7 +105,7 @@
 				<v:userDefs>
 					<v:ud v:nameU="visVersion" v:val="VT0(15):26"/>
 				</v:userDefs>
-				<path d="M0 267.45 A31.8898 7.41125 0 1 1 63.78 267.45 A31.8898 7.41125 0 0 1 0 267.45 Z" class="st9"/>
+				<path d="M0 267.45 A31.8898 7.41125 0 0 1 63.78 267.45 A31.8898 7.41125 0 0 1 0 267.45 Z" class="st9"/>
 			</g>
 			<g id="shape8-21" v:mID="8" v:groupContext="shape" transform="translate(274.865,248.261) rotate(90)">
 				<title>Sheet.8</title>
@@ -123,9 +123,9 @@
 			<v:textRect cx="27.9176" cy="268.865" width="55.84" height="12"/>
 			<rect x="0" y="262.865" width="55.8352" height="12" class="st2"/>
 			<text x="17.48" y="271.26" class="st3" v:langID="2052"><v:paragraph v:horizAlign="1"/><v:tabList/>Server</text>		</g>
-		<g id="shape11-30" v:mID="11" v:groupContext="shape" transform="translate(483.942,138.912) rotate(90.3084)">
+		<g id="shape11-30" v:mID="11" v:groupContext="shape" transform="translate(332.059,-99.5803) rotate(43.1716)">
 			<title>Sheet.11</title>
-			<path d="M5.8 274.87 L6.16 274.87 L18.22 274.87" class="st11"/>
+			<path d="M5.8 274.87 L6.16 274.87 L82.9 274.87" class="st11"/>
 		</g>
 		<g id="shape12-39" v:mID="12" v:groupContext="shape" transform="translate(484.871,295.24) rotate(135)">
 			<title>Sheet.12</title>
@@ -238,7 +238,7 @@
 					<v:userDefs>
 						<v:ud v:nameU="visVersion" v:val="VT0(15):26"/>
 					</v:userDefs>
-					<path d="M0 268.03 A11.9324 6.83263 0 0 1 23.86 268.03 A11.9324 6.83263 0 1 1 0 268.03 Z" class="st6"/>
+					<path d="M0 268.03 A11.9324 6.83263 0 1 1 23.86 268.03 A11.9324 6.83263 0 1 1 0 268.03 Z" class="st6"/>
 				</g>
 				<g id="shape32-105" v:mID="32" v:groupContext="shape" transform="translate(-21.108,-6.83263)">
 					<title>Rectangle.1116</title>
@@ -255,7 +255,7 @@
 					<v:userDefs>
 						<v:ud v:nameU="visVersion" v:val="VT0(15):26"/>
 					</v:userDefs>
-					<path d="M0 268.03 A11.9324 6.83263 0 0 1 23.86 268.03 A11.9324 6.83263 0 1 1 0 268.03 Z" class="st9"/>
+					<path d="M0 268.03 A11.9324 6.83263 0 1 1 23.86 268.03 A11.9324 6.83263 0 1 1 0 268.03 Z" class="st9"/>
 				</g>
 				<g id="shape34-110" v:mID="34" v:groupContext="shape" transform="translate(274.865,250.338) rotate(90)">
 					<title>Sheet.34</title>
@@ -337,7 +337,7 @@
 					<v:userDefs>
 						<v:ud v:nameU="visVersion" v:val="VT0(15):26"/>
 					</v:userDefs>
-					<path d="M0 268.03 A11.9324 6.83263 0 0 1 23.86 268.03 A11.9324 6.83263 0 1 1 0 268.03 Z" class="st6"/>
+					<path d="M0 268.03 A11.9324 6.83263 0 1 1 23.86 268.03 A11.9324 6.83263 0 1 1 0 268.03 Z" class="st6"/>
 				</g>
 				<g id="shape49-146" v:mID="49" v:groupContext="shape" transform="translate(-21.108,-6.83263)">
 					<title>Rectangle.1116</title>
@@ -354,7 +354,7 @@
 					<v:userDefs>
 						<v:ud v:nameU="visVersion" v:val="VT0(15):26"/>
 					</v:userDefs>
-					<path d="M0 268.03 A11.9324 6.83263 0 0 1 23.86 268.03 A11.9324 6.83263 0 1 1 0 268.03 Z" class="st9"/>
+					<path d="M0 268.03 A11.9324 6.83263 0 1 1 23.86 268.03 A11.9324 6.83263 0 1 1 0 268.03 Z" class="st9"/>
 				</g>
 				<g id="shape51-151" v:mID="51" v:groupContext="shape" transform="translate(274.865,250.338) rotate(90)">
 					<title>Sheet.51</title>
