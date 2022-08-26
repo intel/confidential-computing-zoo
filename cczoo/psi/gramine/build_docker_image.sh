@@ -17,13 +17,13 @@
 set -e
 
 if  [ ! -n "$1" ] ; then
-    base_image=gramine-sgx-dev:ubuntu-18.04-latest
+    base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
 else
     base_image=$1
 fi
 
 if  [ ! -n "$2" ] ; then
-    image_tag=psi_test
+    image_tag=psi
 else
     image_tag=$2
 fi
