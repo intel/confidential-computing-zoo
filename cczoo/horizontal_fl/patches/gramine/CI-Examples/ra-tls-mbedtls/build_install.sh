@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -54,8 +54,6 @@ whereis libsgx_util libsgx_dcap_quoteverify libdcap_quoteprov.so.*
 whereis libra_tls_attest libra_tls_verify_dcap libra_tls_verify_epid libra_tls_verify_dcap_graphene
 
 ls -l /usr/lib/x86_64-linux-gnu/libsgx_dcap_quoteverify.so*
-ls -l /usr/lib/x86_64-linux-gnu/libdcap_quoteprov.so*
-ls -l /usr/lib/x86_64-linux-gnu/libsgx_default_qcnl_wrapper.so*
 
 env
 
