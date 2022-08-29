@@ -114,6 +114,11 @@ Prerequisites
 - TensorFlow Serving. `TensorFlow Serving <https://www.TensorFlow.org/tfx/guide/serving>`__
   is a flexible, high-performance serving system for machine learning models,
 
+- TensorFlow Serving cluster scripts package. You can download the source package
+  ``tensorflow-serving-cluster``::
+
+   git clone https://github.com/intel/confidential-computing-zoo.git
+   
 - Kubernetes. `Kubernetes <https://kubernetes.io/docs/concepts/overview/what-is-kubernetes/>`__
   is an open-source system for automating deployment, scaling, and management of
   containerized applications. In this tutorial, we will provide a script (``install_kubernetes.sh``)
@@ -134,11 +139,6 @@ Prerequisites
       
 - Gramine. Follow `Quick Start <https://gramine.readthedocs.io/en/latest/quickstart.html>`__
   to learn more about it.
-
-- TensorFlow Serving cluster scripts package. You can download the source package
-  ``tensorflow-serving-cluster``::
-
-   git clone https://github.com/intel/confidential-computing-zoo.git
 
 We will start with the TensorFlow Serving service running in a container without the use of Kubernetes.
 The TensorFlow Serving service provides confidentiality of the model file using encryption (handled by Gramine) and remote attestation from a secret provisioning server (run from a separate container).
@@ -167,7 +167,7 @@ generate the directory ``models/resnet50-v15-fp32`` in current directory::
 The model file will be downloaded to ``models/resnet50-v15-fp32``. 
 Then use ``model_graph_to_saved_model.py`` to convert the pre-trained model to SavedModel::
 
-   pip3 install tensorflow==2.4.0
+   pip3 install -r requirements.txt
    python3 ./model_graph_to_saved_model.py --import_path `pwd -P`/models/resnet50-v15-fp32/resnet50-v15-fp32.pb --export_dir  `pwd -P`/models/resnet50-v15-fp32 --model_version 1 --inputs input --outputs  predict
 
 ``Note:`` ``model_graph_to_saved_model.py`` has dependencies on tensorflow, please
@@ -458,7 +458,7 @@ Create the control plane / master node and allow pods to be scheduled onto this 
    swapoff -a && free -m
    sudo rm /etc/containerd/config.toml
    sudo systemctl restart containerd
-   kubeadm init --v=5 --node-name=master-node --pod-network-cidr=10.244.0.0/16
+   sudo kubeadm init --v=5 --node-name=master-node --pod-network-cidr=10.244.0.0/16
 
    mkdir -p $HOME/.kube
    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
@@ -489,7 +489,7 @@ Please refer to the Introduction part for more information about Nginx.
 
 Deploy the Nginx service::
 
-   kubectl apply ingress-nginx/deploy.yaml
+   kubectl apply -f ingress-nginx/deploy-nodeport.yaml
 
 
 1.4 Config Kubernetes cluster DNS
@@ -561,8 +561,9 @@ Use the default domain name, or use a custom domain name::
 
 Apply the two yaml files::
 
-    kubectl apply -f gramine-tf-serving/deploy.yaml
-    kubectl apply -f gramine-tf-serving/ingress.yaml
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/kubernetes
+    kubectl apply -f deploy.yaml
+    kubectl apply -f ingress.yaml
 
 1.7 Verify TensorFlow Serving Deployment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -571,7 +572,7 @@ Verify one pod of the TensorFlow Serving container is running and that the servi
     $ kubectl get pods -n gramine-tf-serving
     NAME                                             READY   STATUS    RESTARTS   AGE                         
     gramine-tf-serving-deployment-548f95f46d-rx4w2   1/1     Running   0          5m1s
-    $ kubectl log -n gramine-tf-serving gramine-tf-serving-deployment-548f95f46d-rx4w2
+    $ kubectl logs -n gramine-tf-serving gramine-tf-serving-deployment-548f95f46d-rx4w2
 
 Check pod info if the pod is not running::
 
@@ -595,7 +596,7 @@ Verify that two pods are now running. Also verify that the second pod of the Ten
     NAME                                             READY   STATUS    RESTARTS   AGE
     gramine-tf-serving-deployment-548f95f46d-q4bcg   1/1     Running   0          2m28s
     gramine-tf-serving-deployment-548f95f46d-rx4w2   1/1     Running   0          4m10s
-    $ kubectl log -n gramine-tf-serving gramine-tf-serving-deployment-548f95f46d-q4bcg
+    $ kubectl logs -n gramine-tf-serving gramine-tf-serving-deployment-548f95f46d-q4bcg
 
 These TensorFlow Serving containers perform remote attestation with the Secret Provisioning service to get the secret key. With the secret key, 
 the TensorFlow Serving containers can decrypted the model file.
@@ -632,7 +633,7 @@ The inference result is printed in the terminal window.
 
 To stop the TensorFlow Serving deployment::
 
-   $ cd <tensorflow-serving-cluster dir>/<tensorflow-serving>/docker/tf_serving/kubernetes
+   $ cd <tensorflow-serving-cluster dir>/tensorflow-serving/kubernetes
    $ kubectl delete -f deploy.yaml
 
 

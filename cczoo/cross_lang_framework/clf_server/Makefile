@@ -21,7 +21,7 @@ LDFLAGS += -pie
 all: clf_server
 
 
-CFLAGS += -Wall -std=c11 -I$(GRAMINEDIR)/pal/src/host/linux-sgx/tools/ra-tls \
+CFLAGS += -Wall -std=c11 -I$(GRAMINEDIR)/tools/sgx/ra-tls \
 			-I ../inc \
           $(shell pkg-config --cflags mbedtls_gramine)
 LDFLAGS += $(shell pkg-config --libs mbedtls_gramine)

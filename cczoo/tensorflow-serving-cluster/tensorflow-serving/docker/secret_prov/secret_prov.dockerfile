@@ -14,7 +14,7 @@
 # limitations under the License.
 
 
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 # Optional build argument to select a build for Azure
 ARG AZURE
@@ -55,7 +55,7 @@ RUN apt-get update \
         init \
     && apt-get install -y --no-install-recommends apt-utils
 
-RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list \
+RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list \
     && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -
 
 
@@ -125,4 +125,3 @@ COPY sgx_default_qcnl.conf /etc/
 COPY entrypoint_secret_prov_server.sh /usr/bin/
 RUN chmod +x /usr/bin/entrypoint_secret_prov_server.sh
 ENTRYPOINT ["/usr/bin/entrypoint_secret_prov_server.sh"]
-

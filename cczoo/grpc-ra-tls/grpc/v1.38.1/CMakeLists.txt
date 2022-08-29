@@ -49,6 +49,7 @@ option(gRPC_BUILD_CODEGEN "Build codegen" ON)
 option(gRPC_BUILD_CSHARP_EXT "Build C# extensions" ON)
 option(gRPC_BACKWARDS_COMPATIBILITY_MODE "Build libraries that are binary compatible across a larger number of OS and libc versions" OFF)
 
+# RA-TLS
 option(SGX_RA_TLS_BACKEND "Default SGX RA-TLS Backend" "GRAMINE")
 
 if(SGX_RA_TLS_BACKEND STREQUAL "GRAMINE")
@@ -2088,61 +2089,22 @@ target_include_directories(grpc
     ${_gRPC_ZLIB_INCLUDE_DIR}
 )
 
-if(SGX_RA_TLS_BACKEND STREQUAL "GRAMINE")
-  target_link_libraries(grpc
-    ${_gRPC_BASELIB_LIBRARIES}
-    ${_gRPC_ZLIB_LIBRARIES}
-    ${_gRPC_CARES_LIBRARIES}
-    ${_gRPC_ADDRESS_SORTING_LIBRARIES}
-    ${_gRPC_RE2_LIBRARIES}
-    ${_gRPC_UPB_LIBRARIES}
-    ${_gRPC_ALLTARGETS_LIBRARIES}
-    absl::flat_hash_map
-    absl::inlined_vector
-    absl::bind_front
-    absl::statusor
-    gpr
-    ${_gRPC_SSL_LIBRARIES}
-    address_sorting
-    libmbedx509_gramine.a
-    libmbedcrypto_gramine.a
-  )
-elseif(SGX_RA_TLS_BACKEND STREQUAL "OCCLUM")
-  target_link_libraries(grpc
-    ${_gRPC_BASELIB_LIBRARIES}
-    ${_gRPC_ZLIB_LIBRARIES}
-    ${_gRPC_CARES_LIBRARIES}
-    ${_gRPC_ADDRESS_SORTING_LIBRARIES}
-    ${_gRPC_RE2_LIBRARIES}
-    ${_gRPC_UPB_LIBRARIES}
-    ${_gRPC_ALLTARGETS_LIBRARIES}
-    absl::flat_hash_map
-    absl::inlined_vector
-    absl::bind_front
-    absl::statusor
-    gpr
-    ${_gRPC_SSL_LIBRARIES}
-    address_sorting
-    libdcap_quote.a
-  )
-elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
-  target_link_libraries(grpc
-    ${_gRPC_BASELIB_LIBRARIES}
-    ${_gRPC_ZLIB_LIBRARIES}
-    ${_gRPC_CARES_LIBRARIES}
-    ${_gRPC_ADDRESS_SORTING_LIBRARIES}
-    ${_gRPC_RE2_LIBRARIES}
-    ${_gRPC_UPB_LIBRARIES}
-    ${_gRPC_ALLTARGETS_LIBRARIES}
-    absl::flat_hash_map
-    absl::inlined_vector
-    absl::bind_front
-    absl::statusor
-    gpr
-    ${_gRPC_SSL_LIBRARIES}
-    address_sorting
-  )
-endif()
+target_link_libraries(grpc
+  ${_gRPC_BASELIB_LIBRARIES}
+  ${_gRPC_ZLIB_LIBRARIES}
+  ${_gRPC_CARES_LIBRARIES}
+  ${_gRPC_ADDRESS_SORTING_LIBRARIES}
+  ${_gRPC_RE2_LIBRARIES}
+  ${_gRPC_UPB_LIBRARIES}
+  ${_gRPC_ALLTARGETS_LIBRARIES}
+  absl::flat_hash_map
+  absl::inlined_vector
+  absl::bind_front
+  absl::statusor
+  gpr
+  ${_gRPC_SSL_LIBRARIES}
+  address_sorting
+)
 
 if(_gRPC_PLATFORM_IOS OR _gRPC_PLATFORM_MAC)
   target_link_libraries(grpc "-framework CoreFoundation")
@@ -2886,6 +2848,20 @@ target_link_libraries(grpc++
   ${_gRPC_ALLTARGETS_LIBRARIES}
   grpc
 )
+if(SGX_RA_TLS_BACKEND STREQUAL "GRAMINE")
+  target_link_libraries(grpc++
+    libmbedx509_gramine.a
+    libmbedcrypto_gramine.a
+  )
+elseif(SGX_RA_TLS_BACKEND STREQUAL "OCCLUM")
+  target_link_libraries(grpc++
+    libdcap_quote.a
+  )
+elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
+  target_link_libraries(grpc++
+    ""
+  )
+endif()
 
 foreach(_hdr
   include/grpc++/alarm.h
@@ -3045,6 +3021,7 @@ foreach(_hdr
   include/grpcpp/security/credentials.h
   include/grpcpp/security/server_credentials.h
   include/grpcpp/security/tls_certificate_provider.h
+  include/grpcpp/security/tls_credentials_options.h
   include/grpcpp/security/sgx/cJSON.h
   include/grpcpp/security/sgx/sgx_ra_tls.h
   include/grpcpp/security/sgx/sgx_ra_tls_utils.h
