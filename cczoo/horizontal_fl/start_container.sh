@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2022 Intel Corporation
+# Copyright (c) 2021 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,24 +16,25 @@
 #!/bin/bash
 set -e
 
-if  [ -n "$1" ] ; then
-    name=$1
+if  [ -n "$2" ] ; then
+    name=$2
 else
     name=ps0
 fi
 
-if  [ -n "$2" ] ; then
-    ip_addr=$2
+if  [ -n "$3" ] ; then
+    ip_addr=$3
 else
     ip_addr=127.0.0.1
 fi
 
-if  [ ! -n "$3" ] ; then
+if  [ ! -n "$4" ] ; then
     tag=latest
 else
-    tag=$3
+    tag=$4
 fi
 
+if [ "$1" == "ubuntu" ]; then
 docker run -it \
     --restart=always \
     --cap-add=SYS_PTRACE \
@@ -43,7 +44,22 @@ docker run -it \
     --name=${name} \
     -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
     -v /home:/home/host-home \
-    --net=host \
+	--net=host \
     --add-host=pccs.service.com:${ip_addr} \
     horizontal_fl:${tag} \
     bash
+elif [ "$1" == "anolisos" ]; then
+docker run -it \
+    --restart=always \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --device=/dev/sgx_enclave:/dev/sgx/enclave \
+    --device=/dev/sgx_provision:/dev/sgx/provision \
+    --name=${name} \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+    -v /home:/home/host-home \
+	--net=host \
+    --add-host=pccs.service.com:${ip_addr} \
+    anolisos_horizontal_fl:${tag} \
+    bash
+fi   

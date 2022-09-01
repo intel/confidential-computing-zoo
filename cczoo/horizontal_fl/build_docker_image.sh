@@ -16,22 +16,22 @@
 #!/bin/bash
 set -e
 
-if  [ ! -n "$1" ] ; then
+if  [ ! -n "$2" ] ; then
     workload=image_classification
 else
-    workload=$1
-fi
-
-if  [ ! -n "$2" ] ; then
-    base_image=ubuntu:20.04
-else
-    base_image=$2
+    workload=$2
 fi
 
 if  [ ! -n "$3" ] ; then
+    base_image=ubuntu:20.04
+else
+    base_image=$3
+fi
+
+if  [ ! -n "$4" ] ; then
     tag=latest
 else
-    tag=$3
+    tag=$4
 fi
 
 if  [ -z "$AZURE" ] ; then
@@ -43,8 +43,10 @@ fi
 # You can remove build-arg http_proxy and https_proxy if your network doesn't need it
 # no_proxy="localhost,127.0.0.0/1"
 # proxy_server="" # your http proxy server
+OS_TYPE=$1
 
-DOCKER_BUILDKIT=0 docker build \
+if [ "$OS_TYPE" = "ubuntu" ]; then
+    DOCKER_BUILDKIT=0 docker build \
     -f horizontal_fl.dockerfile . \
     -t horizontal_fl:${tag} \
     --network=host \
@@ -54,3 +56,14 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg AZURE=${azure} \
     --build-arg WORKLOAD=${workload} \
     --build-arg BASE_IMAGE=${base_image} \
+elif [ "$OS_TYPE" == "anolisos" ]; then
+    DOCKER_BUILDKIT=0 docker build \
+    -f anolisos_horizontal_fl.dockerfile . \
+    -t anolisos_horizontal_fl:${tag} \
+    --network=host \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    --build-arg no_proxy=${no_proxy} \
+    --build-arg AZURE=${azure} \
+    --build-arg WORKLOAD=${workload} 
+fi

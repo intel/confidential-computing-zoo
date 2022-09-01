@@ -1,0 +1,33 @@
+diff --git a./python.manifest.template b./python.manifest.template
+index e9deb9a..cdf97c3 100644
+--- a./python.manifest.template
++++ b./python.manifest.template
+@@ -37,9 +37,10 @@ fs.mounts = [
+   { path = "/usr", uri = "file:/usr" },
+   { type = "tmpfs", path = "/var/tmp" },
+   { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
+-  { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
++  #{ path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
+   # { path = "/usr/local/lib/python3.6/dist-packages/", uri = "file:/usr/local/lib/python3.6/dist-packages/" }, # for ubuntu:18.04
+-  { path = "/usr/local/lib/python3.8/dist-packages/", uri = "file:/usr/local/lib/python3.8/dist-packages/" }, # for ubuntu:20.04
++  #{ path = "/usr/local/lib/python3.8/dist-packages/", uri = "file:/usr/local/lib/python3.8/dist-packages/" }, # for ubuntu:20.04
++  { path = "/usr/local/lib64/python3.6/site-packages/", uri = "file:/usr/local/lib/python3.8/site-packages/" },
+   { path = "/root/.keras/keras.json", uri = "file:/root/.keras/keras.json" },
+ ]
+ 
+@@ -61,10 +62,12 @@ sgx.trusted_files = [
+   "file:{{ arch_libdir }}/",
+   "file:/usr/{{ arch_libdir }}/",
+   "file:{{ python.stdlib }}/",
+-  "file:{{ python.distlib }}/",
++  #"file:{{ python.distlib }}/",
+   # "file:/usr/local/lib/python3.6/dist-packages/",  # for ubuntu:18.04
+-  "file:/usr/local/lib/python3.8/dist-packages/",  # for ubuntu:20.04
+-  "file:/etc/ssl/certs/ca-certificates.crt",
++  #"file:/usr/local/lib/python3.8/dist-packages/",  # for ubuntu:20.04
++  "file:/usr/local/lib64/python3.6/site-packages/",
++  "file:/usr/local/lib/python3.6/site-packages/",
++  "file:/etc/ssl/certs/ca-bundle.crt",
+   "file:ps0.py",
+   "file:worker0.py",
+   "file:worker1.py",
