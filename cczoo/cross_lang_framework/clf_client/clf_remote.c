@@ -85,6 +85,8 @@ int get_key(int8_t* ip_port, int8_t* ca_cert, int8_t* key, int32_t key_len) {
 	ret = STATUS_SUCCESS;
 out:
 	log_errcode(ret);
+	if(secret)
+		free(secret);
 	clean_secret_prov();
 	return ret;
 }
@@ -94,7 +96,7 @@ out:
  */
 int remote_get_file_size(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t* ret_len) {
 	int ret = STATUS_FAIL;
-	int bytes;
+	int r;
 	struct ra_tls_ctx* ctx = NULL;
 	msg_req_t req = {0};
 	msg_resp_t resp = {0};
@@ -110,17 +112,17 @@ int remote_get_file_size(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t*
 	req.msg_type = MSG_GET_DATA_SIZE;
 	req.data_len = 0;
 	strncpy((char*)req.get_size.fname, fname, MAX_FNAME_LEN-1);
-	bytes = secret_provision_write(ctx, (uint8_t*)&req, sizeof(msg_req_t));
-	if (bytes < 0) {
-		log_error("[error] secret_provision_write() returned %d\n", bytes);
+	r = secret_provision_write(ctx, (uint8_t*)&req, sizeof(msg_req_t));
+	if (r < 0) {
+		log_error("[error] secret_provision_write() returned %d\n", r);
 		goto out;
 	}
 
 	/* get size from source  */
-	bytes = secret_provision_read(ctx, (uint8_t*)&resp, sizeof(msg_resp_t));
-	if (bytes != sizeof(msg_resp_t) || STATUS_SUCCESS != resp.status) {
-		log_error("[error] secret_provision_read() returned %d (expected %lu) resp.status=%X\n",
-			bytes, sizeof(msg_resp_t), resp.status);
+	r = secret_provision_read(ctx, (uint8_t*)&resp, sizeof(msg_resp_t));
+	if (r < 0 || STATUS_SUCCESS != resp.status) {
+		log_error("[error] secret_provision_read() returned %d resp.status=%X\n",
+			r, resp.status);
 		goto out;
 	}
 
@@ -138,7 +140,7 @@ out:
  */
 int remote_get_file_2_buff(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t offset, int8_t* data, int32_t len, int32_t* ret_len) {
 	int ret = STATUS_FAIL;
-	int bytes;
+	int r;
 	struct ra_tls_ctx* ctx = NULL;
 	msg_req_t req = {0};
 	msg_resp_t resp = {0};
@@ -156,25 +158,25 @@ int remote_get_file_2_buff(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_
 	req.get_data.offset = offset;
 	req.get_data.len = len;
 	strncpy((char*)req.get_data.fname, fname, MAX_FNAME_LEN-1);
-	bytes = secret_provision_write(ctx, (uint8_t*)&req, sizeof(msg_req_t));
-	if (bytes < 0) {
-		log_error("[error] secret_provision_write() returned %d\n", bytes);
+	r = secret_provision_write(ctx, (uint8_t*)&req, sizeof(msg_req_t));
+	if (r < 0) {
+		log_error("[error] secret_provision_write() returned %d\n", r);
 		goto out;
 	}
 
 	/* get data from source  */
-	bytes = secret_provision_read(ctx, (uint8_t*)&resp, sizeof(msg_resp_t));
-	if (bytes != sizeof(msg_resp_t) || STATUS_SUCCESS != resp.status) {
-		log_error("[error] secret_provision_read() returned %d (expected %lu) resp.status=%X\n",
-			bytes, sizeof(msg_resp_t), resp.status);
+	r = secret_provision_read(ctx, (uint8_t*)&resp, sizeof(msg_resp_t));
+	if (r < 0 || STATUS_SUCCESS != resp.status) {
+		log_error("[error] secret_provision_read() returned %d resp.status=%X\n",
+			r, resp.status);
 		goto out;
 	}
 
 	uint64_t data_len = len < resp.get_data.data_len ? len : resp.get_data.data_len;
-	bytes = secret_provision_read(ctx, (uint8_t*)data, data_len);
-	if (bytes != data_len) {
-		log_error("[error] secret_provision_read() returned %d (expected %lu)\n",
-			bytes, data_len);
+	r = secret_provision_read(ctx, (uint8_t*)data, data_len);
+	if (r < 0) {
+		log_error("[error] secret_provision_read() returned %d\n",
+			r);
 		goto out;
 	}
 
@@ -193,7 +195,7 @@ out:
  */
 int remote_put_result(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t offset, int8_t* data, int32_t len, int32_t* ret_len) {
 	int ret = STATUS_FAIL;
-	int bytes;
+	int r;
 	struct ra_tls_ctx* ctx = NULL;
 	msg_req_t req = {0};
 	msg_resp_t resp = {0};
@@ -211,23 +213,23 @@ int remote_put_result(int8_t* ip_port, int8_t* ca_cert, char* fname, int64_t off
 	req.put_res.offset = offset;
 	req.put_res.len = len;
 	strncpy((char*)req.put_res.fname, fname, MAX_FNAME_LEN-1);
-	bytes = secret_provision_write(ctx, (uint8_t*)&req, sizeof(msg_req_t));
-	if (bytes < 0) {
-		log_error("[error] secret_provision_write() returned %d\n", bytes);
+	r = secret_provision_write(ctx, (uint8_t*)&req, sizeof(msg_req_t));
+	if (r < 0) {
+		log_error("[error] secret_provision_write() returned %d\n", r);
 		goto out;
 	}
 
-	bytes = secret_provision_write(ctx, (uint8_t*)data, len);
-	if (bytes != len) {
-		log_error("[error] secret_provision_write() returned %d, expect %d\n", bytes, len);
+	r = secret_provision_write(ctx, (uint8_t*)data, len);
+	if (r < 0) {
+		log_error("[error] secret_provision_write() returned %d\n", r);
 		goto out;
 	}
 
 	/* get response */
-	bytes = secret_provision_read(ctx, (uint8_t*)&resp, sizeof(msg_resp_t));
-	if (bytes != sizeof(msg_resp_t) || STATUS_SUCCESS != resp.status) {
-		log_error("[error] secret_provision_read() returned %d (expected %lu) resp.status=%X\n",
-			bytes, sizeof(msg_resp_t), resp.status);
+	r = secret_provision_read(ctx, (uint8_t*)&resp, sizeof(msg_resp_t));
+	if (r < 0 || STATUS_SUCCESS != resp.status) {
+		log_error("[error] secret_provision_read() returned %d resp.status=%X\n",
+			r, resp.status);
 		goto out;
 	}
 

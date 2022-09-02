@@ -26,7 +26,7 @@ int test_secret_prov_connect();
 
 int get_data_push_result_test()
 {
-	for(int i=0; i<1000; i++) {
+	for(int i=0; i<2; i++) {
 		printf("--------- test IN. i=%d---------\n", i);
 		signed char ip_port[] = "localhost:4433";
 		signed char ca_cert[] = "certs/ca_cert.crt";
@@ -37,7 +37,7 @@ int get_data_push_result_test()
 		char *fname = "README.md";
 		int64_t len = 0;
 		get_file_size(ip_port, ca_cert, fname, &len);
-		printf("len=%lu\n", len);
+		printf("file size=%lu\n", len);
 
 		int8_t* data = (int8_t*)malloc(len);
 		if(!data) {
@@ -94,8 +94,9 @@ int loop_test() {
 
 int main()
 {
-	test_localfs();
+//	test_localfs();
 	//loop_test();
+	get_data_push_result_test();
 	getchar();
 }
 
