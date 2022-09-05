@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,25 +16,25 @@
 #!/bin/bash
 set -e
 
-if  [ -n "$2" ] ; then
-    name=$2
+if  [ -n "$1" ] ; then
+    name=$1
 else
     name=ps0
 fi
 
-if  [ -n "$3" ] ; then
-    ip_addr=$3
+if  [ -n "$2" ] ; then
+    ip_addr=$2
 else
     ip_addr=127.0.0.1
 fi
 
-if  [ ! -n "$4" ] ; then
+if  [ ! -n "$3" ] ; then
     tag=latest
 else
-    tag=$4
+    tag=$3
 fi
 
-if [ "$1" == "ubuntu" ]; then
+if [ "$4" == "ubuntu" ] || [ -n "$4" ]; then
 docker run -it \
     --restart=always \
     --cap-add=SYS_PTRACE \
@@ -48,7 +48,7 @@ docker run -it \
     --add-host=pccs.service.com:${ip_addr} \
     horizontal_fl:${tag} \
     bash
-elif [ "$1" == "anolisos" ]; then
+elif [ "$4" == "anolisos" ]; then
 docker run -it \
     --restart=always \
     --cap-add=SYS_PTRACE \
