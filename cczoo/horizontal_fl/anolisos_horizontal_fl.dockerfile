@@ -39,18 +39,6 @@ RUN yum groupinstall -y 'Development Tools'
 
 # COPY patches/libsgx_dcap_quoteverify.so  /usr/lib64/
 RUN yum install -y --nogpgcheck sgx-dcap-pccs libsgx-dcap-default-qpl
-RUN     AZUREDIR=/azure \
-        && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
-        && cd ${AZUREDIR} \
-        && git checkout 1.10.0 \
-        && git submodule update --recursive --init \
-        && cd src/Linux \
-        && ./configure \
-        && make DEBUG=1 \
-        && make install \
-        && cp libdcap_quoteprov.so /usr/lib64 \
-        && cp libdcap_quoteprov.so /usr/local/lib64 \ 
-        && cp libdcap_quoteprov.so /usr/lib
 
 # Gramine
 ENV GRAMINEDIR=/gramine
