@@ -34,6 +34,21 @@ else
     tag=$3
 fi
 
+if [ "$4" == "ubuntu" ] || [ -n "$4" ]; then
+docker run -it \
+    --restart=always \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --device=/dev/sgx_enclave:/dev/sgx/enclave \
+    --device=/dev/sgx_provision:/dev/sgx/provision \
+    --name=${name} \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+    -v /home:/home/host-home \
+	--net=host \
+    --add-host=pccs.service.com:${ip_addr} \
+    horizontal_fl:${tag} \
+    bash
+elif [ "$4" == "anolisos" ]; then
 docker run -it \
     --restart=always \
     --cap-add=SYS_PTRACE \
@@ -45,5 +60,6 @@ docker run -it \
     -v /home:/home/host-home \
     --net=host \
     --add-host=pccs.service.com:${ip_addr} \
-    horizontal_fl:${tag} \
+    anolisos_horizontal_fl:${tag} \
     bash
+fi   
