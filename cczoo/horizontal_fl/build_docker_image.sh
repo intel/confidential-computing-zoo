@@ -44,6 +44,7 @@ fi
 # no_proxy="localhost,127.0.0.0/1"
 # proxy_server="" # your http proxy server
 
+if [ ${base_image} != "anolisos" ]; then
 DOCKER_BUILDKIT=0 docker build \
     -f horizontal_fl.dockerfile . \
     -t horizontal_fl:${tag} \
@@ -53,4 +54,14 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg AZURE=${azure} \
     --build-arg WORKLOAD=${workload} \
-    --build-arg BASE_IMAGE=${base_image} \
+    --build-arg BASE_IMAGE=${base_image} 
+else
+DOCKER_BUILDKIT=0 docker build \
+    -f anolisos_horizontal_fl.dockerfile . \
+    -t anolisos_horizontal_fl:${tag} \
+    --network=host \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    --build-arg no_proxy=${no_proxy} \
+    --build-arg WORKLOAD=${workload} 
+fi   
