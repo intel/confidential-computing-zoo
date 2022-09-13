@@ -5,7 +5,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,7 +25,7 @@ fi
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=gramine-sgx-dev:master-ubuntu20.04-latest
+    image_tag=clf-client:graminemaster-ubuntu20.04-latest
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
@@ -40,8 +40,8 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg https_proxy=${proxy_server} \
     --build-arg base_image=${base_image} \
     --build-arg BASE_IMAGE=${base_image} \
-    -f gramine-sgx-dev.dockerfile \
+    -f clf_client.dockerfile \
     -t ${image_tag} \
-    .
+    ..
 
 cd -
