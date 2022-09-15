@@ -132,7 +132,7 @@ RUN if [ "$WORKLOAD" = "image_classification" ]; then \
 	&& test-sgx.sh make; \
     elif [ "$WORKLOAD" = "recommendation_system" ]; then \
     # prepare dataset and make recommendation system project \
-	cd /recommendation_system/dataset && git apply anolisos.diff && tar -zxvf train.tar && cd .. && test-sgx.sh make; \
+	cd /recommendation_system/ && git apply anolisos.diff && cd dataset && tar -zxvf train.tar && cd .. && test-sgx.sh make; \
     else \
     echo "Please choose correct workload: image_classification or recommendation_system." \
 	&& exit 1; \
