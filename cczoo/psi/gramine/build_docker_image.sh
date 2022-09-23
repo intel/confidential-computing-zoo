@@ -34,6 +34,16 @@ no_proxy="localhost,127.0.0.1"
 
 cd `dirname $0`
 
+if [ ${base_image} == "anolisos" ] ; then
+DOCKER_BUILDKIT=0 docker build \
+    --build-arg no_proxy=${no_proxy} \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    --build-arg BASE_IMAGE=gramine-sgx-dev:v1.2-anolisos\
+    -f anolisos-psi-gramine-sgx-dev.dockerfile \
+    -t anolisos_${image_tag} \
+    ..
+else
 DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg http_proxy=${proxy_server} \
@@ -42,5 +52,5 @@ DOCKER_BUILDKIT=0 docker build \
     -f psi-gramine-sgx-dev.dockerfile \
     -t ${image_tag} \
     ..
-
+fi
 cd -

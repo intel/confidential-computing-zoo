@@ -34,6 +34,17 @@ proxy_server="" # your http proxy server
 
 cd `dirname $0`
 
+if [ ${base_image} == "anolisos" ] ; then
+DOCKER_BUILDKIT=0 docker build \
+    --build-arg no_proxy=${no_proxy} \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    --build-arg base_image=${base_image} \
+    --build-arg BASE_IMAGE=${base_image} \
+    -f anolisos-gramine-sgx-dev.dockerfile \
+    -t gramine-sgx-dev:v1.2-anolisos \
+    .
+else
 DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg http_proxy=${proxy_server} \
@@ -43,5 +54,5 @@ DOCKER_BUILDKIT=0 docker build \
     -f gramine-sgx-dev.dockerfile \
     -t ${image_tag} \
     .
-
+fi
 cd -
