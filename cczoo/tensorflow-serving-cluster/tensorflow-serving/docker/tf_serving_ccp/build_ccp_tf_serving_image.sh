@@ -24,31 +24,16 @@ else
 fi
 
 if  [ ! -n "$2" ] ; then
-    docker_file=tf_serving.dockerfile
+    app_name=tensorflow_model_server
 else
-    docker_file=$2
+    app_name=$2
 fi
 
 if  [ ! -n "$3" ] ; then
-    app_name=tensorflow_model_server
-else
-    app_name=$3
-fi
-
-if  [ ! -n "$4" ] ; then
     tmpl_file=tensorflow_model_server.toml
 else
-    tmpl_file=$4
+    tmpl_file=$3
 fi
-
-# You can remove build-arg http_proxy and https_proxy if your network doesn't need it
-proxy_server=""
-
-DOCKER_BUILDKIT=0 docker build \
-    -f ${docker_file} . \
-    -t ${image_tag} \
-    --build-arg http_proxy=${proxy_server} \
-    --build-arg https_proxy=${proxy_server} \
 
 cp ${tmpl_file} /opt/ccp/template/${app_name}.toml
 
@@ -68,9 +53,9 @@ ccp-cli pack \
                --tensorflow_inter_op_parallelism=2 \
                --file_system_poll_wait_seconds=5" \
     --tmpl=${app_name} \
-    --secret-id=$5 \
-    --secret-key=$6 \
-    --capp-id=$7 \
+    --secret-id=$4 \
+    --secret-key=$5 \
+    --capp-id=$6 \
     --app-image=${image_tag} \
     --app-type=image \
     --force
