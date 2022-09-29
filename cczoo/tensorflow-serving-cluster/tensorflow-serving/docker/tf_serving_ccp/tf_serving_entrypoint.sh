@@ -21,14 +21,16 @@ unset http_proxy && unset https_proxy
 
 cd ${WORK_BASE_PATH}
 
-# Bind Core 0-3
-
-
 model_name=resnet50-v15-fp32
 enable_batching=false
-ssl_config_file=ssl.cfg
+ssl_config_file=/ssl.cfg
+ssl_new_config_file=/tmp/ssl_configure/ssl.cfg
 rest_api_num_threads=64
 file_system_poll_wait_seconds=5
+
+if [ -f "${ssl_new_config_file}" ]; then
+    cp ${ssl_new_config_file} ${ssl_config_file}
+fi
 
 taskset -c 0-3 tensorflow_model_server \
     --model_name=${model_name} \
@@ -44,4 +46,3 @@ taskset -c 0-3 tensorflow_model_server \
     --tensorflow_intra_op_parallelism=2 \
     --tensorflow_inter_op_parallelism=2 \
     --file_system_poll_wait_seconds=${file_system_poll_wait_seconds}
-
