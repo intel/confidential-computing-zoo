@@ -41,7 +41,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg https_proxy=${proxy_server} \
     --build-arg base_image=${base_image} \
     --build-arg BASE_IMAGE=${base_image} \
-    -f anolisos-gramine-sgx-dev.dockerfile \
+    -f gramine-sgx-dev:v1.2-anolisos.dockerfile \
     -t gramine-sgx-dev:v1.2-anolisos \
     .
 else

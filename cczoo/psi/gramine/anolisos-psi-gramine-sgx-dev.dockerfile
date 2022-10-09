@@ -36,13 +36,10 @@ RUN update-alternatives --install /usr/bin/unversioned-python python /usr/bin/py
 RUN pip3 install --upgrade pip \
     && pip3 install -r ${GRPC_PATH}/requirements.txt
 
-RUN yum update -y \
-    && yum install -y redhat-lsb golang strace gdb ctags curl zip sshpass jq
+RUN yum -y update \
+    && yum -y install redhat-lsb golang strace gdb ctags curl zip sshpass jq
 
-RUN yum clean all \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf ~/.cache/* \
-    && rm -rf /tmp/*
+RUN RUN yum -y clean all && rm -rf /var/cache
 
 COPY grpc/common ${GRPC_V138_PATH}
 COPY grpc/v1.38.1 ${GRPC_V138_PATH}

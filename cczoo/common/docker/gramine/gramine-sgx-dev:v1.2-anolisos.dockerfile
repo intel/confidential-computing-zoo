@@ -20,7 +20,7 @@ ENV INSTALL_PREFIX=/usr/local
 ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib64:${LD_LIBRARY_PATH}
 ENV PATH=${INSTALL_PREFIX}/bin:${LD_LIBRARY_PATH}:${PATH}
 # Add steps here to set up dependencies
-RUN yum install -y \
+RUN yum -y install \
     openssl-devel \
     libcurl-devel \
     protobuf-devel \
@@ -30,15 +30,15 @@ RUN yum install -y \
 
 # Intel SGX
 RUN mkdir /opt/intel && cd /opt/intel \
-    && wget https://mirrors.openanolis.cn/inclavare-containers/bin/anolis8.4/sgx-2.15.1/sgx_rpm_local_repo.tar.gz 
-RUN cd /opt/intel && sha256sum sgx_rpm_local_repo.tar.gz \
+    && wget https://mirrors.openanolis.cn/inclavare-containers/bin/anolis8.4/sgx-2.15.1/sgx_rpm_local_repo.tar.gz \
+    && sha256sum sgx_rpm_local_repo.tar.gz \
     && tar xvf sgx_rpm_local_repo.tar.gz \
     && yum-config-manager --add-repo file:///opt/intel/sgx_rpm_local_repo \
-    && yum --nogpgcheck install -y libsgx-urts libsgx-launch libsgx-epid libsgx-quote-ex libsgx-dcap-ql libsgx-uae-service libsgx-dcap-quote-verify-devel 
-RUN yum groupinstall -y 'Development Tools'
+    && yum -y --nogpgcheck install libsgx-urts libsgx-launch libsgx-epid libsgx-quote-ex libsgx-dcap-ql libsgx-uae-service libsgx-dcap-quote-verify-devel 
+    && yum -y groupinstall 'Development Tools'
 
 # COPY patches/libsgx_dcap_quoteverify.so  /usr/lib64/
-RUN yum install -y --nogpgcheck sgx-dcap-pccs libsgx-dcap-default-qpl
+RUN yum -y install --nogpgcheck sgx-dcap-pccs libsgx-dcap-default-qpl
 
 # Gramine
 ENV GRAMINEDIR=/gramine
@@ -52,15 +52,14 @@ ENV SGX=1
 ENV GRAMINE_PKGLIBDIR=/usr/local/lib64/gramine
 ENV ARCH_LIBDIR=/lib64
 
-RUN yum install -y gawk bison python3-click python3-jinja2 golang ninja-build 
-RUN yum install -y openssl-devel protobuf-c-devel python3-protobuf protobuf-c-compiler
-RUN yum install -y gmp-devel mpfr-devel libmpc-devel isl-devel nasm python3-devel mailcap
-
+RUN yum -y install gawk bison python3-click python3-jinja2 golang ninja-build 
+RUN yum -y install openssl-devel protobuf-c-devel python3-protobuf protobuf-c-compiler
+RUN yum -y install gmp-devel mpfr-devel libmpc-devel isl-devel nasm python3-devel mailcap
+#install gramine
 RUN ln -s /usr/bin/python3 /usr/bin/python \
-    && pip3 install --upgrade pip \
-    && pip3 install toml meson wheel cryptography paramiko
-
-RUN rm -rf ${GRAMINEDIR} && git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
+    && python3 -m pip install --upgrade pip \
+    && python3 -m pip install toml meson wheel cryptography paramiko \
+    && git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
     && git checkout ${GRAMINE_VERSION}
 
@@ -91,6 +90,9 @@ RUN cd ${GRAMINEDIR}/subprojects/cJSON*/ \
 
 RUN echo "enabled=0" > /etc/default/apport
 RUN echo "exit 0" > /usr/sbin/policy-rc.d
+
+# Clean tmp files
+RUN yum -y clean all && rm -rf /var/cache
 
 COPY configs /
 
