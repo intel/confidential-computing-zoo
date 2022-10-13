@@ -20,12 +20,8 @@ fs.mounts = [
   { path = "/usr{{ arch_libdir }}", uri = "file:/usr{{ arch_libdir }}" },
   { path = "/etc", uri = "file:/etc" },
   { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
-  { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
   { path = "/models/resnet50-v15-fp32/1/saved_model.pb", uri = "file:models/resnet50-v15-fp32/1/saved_model.pb", type = "encrypted" },
 ]
-
-
-
 
 sgx.enclave_size = "4G"
 #
@@ -58,15 +54,16 @@ loader.env.SECRET_PROVISION_SERVERS = "attestation.service.com:4433"
 sgx.trusted_files = [
   "file:{{ gramine.libos }}",
   "file:{{ gramine.runtimedir() }}/",
-  "file:{{ python.distlib }}/",
+  "file:/usr/local/lib/python3.6/site-packages/",
+  "file:/usr/local/lib64/python3.6/site-packages/",
   "file:libstdc++.so.6",
   "file:libgcc_s.so.1",
-  "file:/usr/lib/x86_64-linux-gnu/",
-  "file:/lib/x86_64-linux-gnu/",
-  "file:/lib/x86_64-linux-gnu/libgcc_s.so.1",
-  "file:/lib/x86_64-linux-gnu/libz.so.1",
-  "file:/lib/x86_64-linux-gnu/libcom_err.so.2",
-  "file:/lib/x86_64-linux-gnu/libkeyutils.so.1",
+  "file:/usr/lib64/",
+  "file:/lib64/",
+  "file:/usr/lib64/libgcc_s.so.1",
+  "file:/usr/lib64/libz.so.1",
+  "file:/usr/lib64/libcom_err.so.2",
+  "file:/usr/lib64/libkeyutils.so.1",
   "file:libsecret_prov_attest.so",
   "file:ssl/ca.crt",
   "file:tensorflow_model_server"

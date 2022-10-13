@@ -36,19 +36,19 @@ all: tensorflow_model_server.manifest.sgx tensorflow_model_server.sig tensorflow
 endif
 
 libgcc:
-	cp /lib/x86_64-linux-gnu/libgcc_s.so.1 .
+	cp /usr/lib64/libgcc_s.so.1 .
 
 libstdc:
-	cp /usr/lib/x86_64-linux-gnu/libstdc++.so.6 .
+	cp /usr/lib64/libstdc++.so.6 .
 
 libcurl:
-	cp /usr/lib/x86_64-linux-gnu/libcurl.so.4 .
+	cp /usr/lib64/libcurl.so.4 .
 
 libz:
-	cp /lib/x86_64-linux-gnu/libz.so.1 .
+	cp /usr/lib64/libz.so.1 .
 
 libcom:
-	cp /lib/x86_64-linux-gnu/libcom_err.so.2 .
+	cp /usr/lib64/libcom_err.so.2 .
 
 tensorflow_model_server.manifest: tensorflow_model_server.manifest.template
 	gramine-manifest \
