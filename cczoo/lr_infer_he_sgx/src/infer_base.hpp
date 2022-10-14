@@ -12,15 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef UTILS_HPP_
-#define UTILS_HPP_
+#ifndef INFER_BASE_HPP_
+#define INFER_BASE_HPP_
 
 #include <vector>
 #include <string>
-#include <map>
 
-std::map<std::string, double> getEvalmetrics(
-    const std::vector<double>& expected, const std::vector<double>& predicted);
-void doCompare(std::vector<double>& expected, std::vector<double>& predicted);
+enum class CSVState { UnquotedField, QuotedField, QuotedQuote };
 
-#endif  // UTILS_HPP_
+class InferBase {
+public:
+  bool fileExists(const std::string& fn);
+  std::vector<std::string> readCSVRow(const std::string& row);
+  std::vector<std::vector<std::string>> readCSV(std::istream& in);
+  std::vector<std::vector<double>> transpose(
+    const std::vector<std::vector<double>>& data);
+};
+
+#endif  // INFER_BASE_HPP_

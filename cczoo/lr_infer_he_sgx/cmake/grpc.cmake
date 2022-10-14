@@ -12,20 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.15)
+message(STATUS "Using gRPC via add_subdirectory (FetchContent).")
+include(FetchContent)
+FetchContent_Declare(
+  grpc
+  GIT_REPOSITORY https://github.com/grpc/grpc.git
+  GIT_TAG        v1.49.1)
+FetchContent_MakeAvailable(grpc)
 
-project(lr_infer_he_sgx)
-
-option(ENABLE_INTEL_HEXL ON)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-include(cmake/seal.cmake)
-include(cmake/grpc.cmake)
-
-include_directories("${CMAKE_CURRENT_BINARY_DIR}")
-include_directories("${SEAL_INC_DIR}")
-
-add_subdirectory(src)
+# Since FetchContent uses add_subdirectory under the hood, we can use
+# the grpc targets directly from this build.
+set(PROTOBUF_LIBPROTOBUF libprotobuf)
+set(REFLECTION grpc++_reflection)
+set(PROTOBUF_PROTOC $<TARGET_FILE:protoc>)
+set(GRPC_GRPCPP grpc++)
+set(GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
