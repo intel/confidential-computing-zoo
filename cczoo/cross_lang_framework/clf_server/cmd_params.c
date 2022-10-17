@@ -88,20 +88,20 @@ int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 {
 	const static char* _sopts = "h:S::E::d::v::s::p::c::k::";
 	const static struct option _lopts[] = {{"help", no_argument, NULL, 'h'},
-									{"MRSigner", required_argument, NULL, 'S'},
-                  {"MREnclave", required_argument, NULL, 'E'},
-									{"isv_prod_id", required_argument, NULL, 'd'},
-									{"isv_svn", required_argument, NULL, 'v'},
-									{"secret", required_argument, NULL, 's'},  
-									{"port", required_argument, NULL, 'p'},
-									{"server_cert_path", required_argument, NULL, 'c'},
-									{"server_private_key_path", required_argument, NULL, 'k'},	  
-									{0, 0, 0, 0}};
+						{"MRSigner", required_argument, NULL, 'S'},
+                  				{"MREnclave", required_argument, NULL, 'E'},
+						{"isv_prod_id", required_argument, NULL, 'd'},
+						{"isv_svn", required_argument, NULL, 'v'},
+						{"secret", required_argument, NULL, 's'},  
+						{"port", required_argument, NULL, 'p'},
+						{"server_cert_path", required_argument, NULL, 'c'},
+						{"server_private_key_path", required_argument, NULL, 'k'},	  
+						{0, 0, 0, 0}};
 	int c;
 	if (params == NULL)
 		return 1;
 	memset(params->MRSigner, 0, sizeof(params->MRSigner));
-  memset(params->MREnclave, 0, sizeof(params->MREnclave));
+  	memset(params->MREnclave, 0, sizeof(params->MREnclave));
 	params->isv_prod_id = 65535;
 	params->isv_svn = 65535;
 	memset(params->secret, 0, sizeof(params->secret));
@@ -121,7 +121,7 @@ int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 			if (optarg == NULL || is_str_empty_or_too_long(optarg, 64)) {
 			  if ( access(conf, 0) >= 0 ) {
 					read_config(conf, "MRSigner", szVal, MRSIGNER_LEN, &len);
-          printf("conf.MRSigner=%s\n", szVal);
+          				printf("conf.MRSigner=%s\n", szVal);
 					hexstr2buff(szVal, params->MRSigner, MRSIGNER_LEN);
 					break;
 				}
@@ -130,11 +130,11 @@ int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 			}
 			hexstr2buff(optarg, params->MRSigner, MRSIGNER_LEN);
 			break;
-    case 'E':
+    		case 'E':
 			if (optarg == NULL || is_str_empty_or_too_long(optarg, 64)) {
 			  if ( access(conf, 0) >= 0 ) {
 					read_config(conf, "MREnclave", szVal, MRSIGNER_LEN, &len);
-          printf("conf.MREnclave=%s\n", szVal);
+          				printf("conf.MREnclave=%s\n", szVal);
 					hexstr2buff(szVal, params->MREnclave, MRSIGNER_LEN);
 					break;
 				}
@@ -191,10 +191,10 @@ int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 				return 1;
 			}
 			printf("conf.port=%s\n",optarg);
-      if (atoi(optarg) > 65535) {
-        printf("Error! port value is invalid!\n");
-        return 1;
-      }
+      			if (atoi(optarg) > 65535) {
+        			printf("Error! port value is invalid!\n");
+        			return 1;
+      			}
 			strcpy(params->port , optarg);
 			break;
 		case 'c':
