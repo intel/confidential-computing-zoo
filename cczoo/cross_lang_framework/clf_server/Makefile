@@ -27,7 +27,7 @@ CFLAGS += -Wall -std=c11 -I$(GRAMINEDIR)/tools/sgx/ra-tls \
 LDFLAGS += $(shell pkg-config --libs mbedtls_gramine)
 
 clf_cur_src := \
-	clf_server.c interact.c
+	clf_server.c interact.c cmd_params.c
 
 clf_cur_objs := $(clf_cur_src:%.c=%.o)
 
