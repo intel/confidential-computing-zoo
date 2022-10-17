@@ -12,11 +12,10 @@
 #include "cmd_params.h"
 #include "cross_comm.h"
 
-#define MAX_PARAM_LENGTH (64)
-#define WRAP_KEY_SIZE	64
-#define MRSIGNER_LEN	64
-#define MRENCLAVE_LEN	64
-#define PATH_MAX 100
+#define WRAP_KEY_SIZE	16
+#define MRSIGNER_LEN	32
+#define MRENCLAVE_LEN	32
+#define PATH_MAX   1024
 size_t strnlen_safe(const char *s, size_t maxlen)
 {
 	return !s ? 0 : strnlen(s, maxlen);
@@ -58,11 +57,11 @@ static int validate_params(struct cmd_params *params)
 		printf("Error: -S/--MRSigner parameter missing\n");
 		err = 1;
 	}
-	if (params->isv_prod_id[0] == 0) {
+	if (params->isv_prod_id == 65535) {
 		printf("Error: -d/--isv_prod_id parameter missing\n");
 		err = 1;
 	}
-	if (params->isv_svn[0] == 0) {
+	if (params->isv_svn == 65535) {
 		printf("Error: -v/--isv_svn parameter missing\n");
 		err = 1;
 	}
@@ -87,9 +86,10 @@ static int validate_params(struct cmd_params *params)
 
 int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 {
-	const static char* _sopts = "h:S::d::v::s::p::c::k::";
+	const static char* _sopts = "h:S::E::d::v::s::p::c::k::";
 	const static struct option _lopts[] = {{"help", no_argument, NULL, 'h'},
 									{"MRSigner", required_argument, NULL, 'S'},
+                  {"MREnclave", required_argument, NULL, 'E'},
 									{"isv_prod_id", required_argument, NULL, 'd'},
 									{"isv_svn", required_argument, NULL, 'v'},
 									{"secret", required_argument, NULL, 's'},  
@@ -101,8 +101,9 @@ int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 	if (params == NULL)
 		return 1;
 	memset(params->MRSigner, 0, sizeof(params->MRSigner));
-	memset(params->isv_prod_id, 0, sizeof(params->isv_prod_id));
-	memset(params->isv_svn, 0, sizeof(params->isv_svn));
+  memset(params->MREnclave, 0, sizeof(params->MREnclave));
+	params->isv_prod_id = 65535;
+	params->isv_svn = 65535;
 	memset(params->secret, 0, sizeof(params->secret));
 	memset(params->port, 0, sizeof(params->port));
 	memset(params->server_cert_path, 0, sizeof(params->server_cert_path));
@@ -120,22 +121,31 @@ int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 			if (optarg == NULL || is_str_empty_or_too_long(optarg, 64)) {
 			  if ( access(conf, 0) >= 0 ) {
 					read_config(conf, "MRSigner", szVal, MRSIGNER_LEN, &len);
-					strcpy(params->MRSigner , szVal);
-					printf("conf.MRSigner=%s\n", params->MRSigner);
+          printf("conf.MRSigner=%s\n", szVal);
+					hexstr2buff(szVal, params->MRSigner, MRSIGNER_LEN);
 					break;
 				}
 				printf("Error! MRSigner value invalid(empty or too long)!\n");
 				return 1;
 			}
-			strcpy(params->MRSigner , optarg);
-			printf("conf.MRSigner=%s\n", params->MRSigner);
+			hexstr2buff(optarg, params->MRSigner, MRSIGNER_LEN);
+			break;
+    case 'E':
+			if (optarg == NULL || is_str_empty_or_too_long(optarg, 64)) {
+			  if ( access(conf, 0) >= 0 ) {
+					read_config(conf, "MREnclave", szVal, MRSIGNER_LEN, &len);
+          printf("conf.MREnclave=%s\n", szVal);
+					hexstr2buff(szVal, params->MREnclave, MRSIGNER_LEN);
+					break;
+				}
+			}
+			hexstr2buff(optarg, params->MREnclave, MRSIGNER_LEN);
 			break;
 		case 'd':
-			 if (optarg == NULL || is_str_empty_or_too_long(optarg, 4)) {
+			 if (optarg == NULL || is_str_empty_or_too_long(optarg, 6)) {
 				if ( access(conf, 0) >= 0 ) {
-					read_config(conf, "isv_prod_id", szVal, 2, &len);
-					strcpy(params->isv_prod_id , szVal);
-					printf("conf.isv_prod_id=%s\n", params->isv_prod_id);
+					read_config_short(conf, "isv_prod_id", (int16_t*)&params->isv_prod_id);
+					printf("conf.isv_prod_id=%d\n", params->isv_prod_id);
 				break;
 				}
 				printf("Error! isv_prod_id value is invalid(empty)!\n");
@@ -144,11 +154,10 @@ int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 			strcpy(params->isv_prod_id , optarg);
 			break;
 		case 'v':
-		 if (optarg == NULL || is_str_empty_or_too_long(optarg, 4)) {
+		 if (optarg == NULL || is_str_empty_or_too_long(optarg, 6)) {
 				if ( access(conf, 0) >= 0  ) {
-					read_config(conf, "isv_svn", szVal, 2, &len);
-					strcpy(params->isv_svn , szVal);			  
-					printf("conf.isv_svn=%s\n", params->isv_svn);
+					read_config_short(conf, "isv_svn", (int16_t*)&params->isv_svn);	  
+					printf("conf.isv_svn=%d\n", params->isv_svn);
 					break;
 				}
 				printf("Error! isv_svn value is invalid(empty)!\n");
@@ -181,7 +190,7 @@ int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 				printf("Error! port value is invalid!\n");
 				return 1;
 			}
-			printf("%s\n",optarg);
+			printf("conf.port=%s\n",optarg);
       if (atoi(optarg) > 65535) {
         printf("Error! port value is invalid!\n");
         return 1;
@@ -189,7 +198,7 @@ int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 			strcpy(params->port , optarg);
 			break;
 		case 'c':
-			if (optarg == NULL || is_str_empty_or_too_long(optarg, 100)) {
+			if (optarg == NULL || is_str_empty_or_too_long(optarg, PATH_MAX)) {
 				if ( access(conf, 0) >= 0 ) {
 					read_config(conf, "server_cert_path", szVal, PATH_MAX, &len);
 					strcpy(params->server_cert_path , szVal);
@@ -202,7 +211,7 @@ int cmd_params_process(int argc, char **argv, struct cmd_params *params)
 			strcpy(params->server_cert_path , optarg);
 			break;
 		case 'k':
-			if (optarg == NULL || is_str_empty_or_too_long(optarg, 100)) {
+			if (optarg == NULL || is_str_empty_or_too_long(optarg, PATH_MAX)) {
 				if ( access(conf, 0) >= 0  ) {
 					read_config(conf, "server_private_key_path", szVal, PATH_MAX, &len);
 					strcpy(params->server_private_key_path , szVal);

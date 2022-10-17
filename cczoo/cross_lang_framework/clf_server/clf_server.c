@@ -127,14 +127,12 @@ int main(int argc, char** argv) {
   status = cmd_params_process(argc, argv, &params);
   if (status != 0)
      return status;
-	char szPort[16] = {0};
-  int port = atoi(params.port);
-	sprintf(szPort, "%d", port);
   strcpy(g_secret_pf_key_hex, params.secret);
+  printf("\n");
 	printf("Starting server\n\tport:\t\t%s\n\tcert_path:\t%s\n\tpri_key_path:\t%s\n",
-			szPort, params.server_cert_path, params.server_private_key_path);
+			params.port, params.server_cert_path, params.server_private_key_path);
 	ret = secret_provision_start_server((uint8_t*)g_secret_pf_key_hex, sizeof(g_secret_pf_key_hex),
-										szPort,
+										params.port,
 										params.server_cert_path, params.server_private_key_path,
 										verify_measurements_callback,
 										communicate_with_client_callback);
