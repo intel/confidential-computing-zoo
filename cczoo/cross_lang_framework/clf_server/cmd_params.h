@@ -1,7 +1,7 @@
+#include <linux/limits.h>
 #define WRAP_KEY_SIZE	16
 #define MRSIGNER_LEN	32
 #define MRENCLAVE_LEN	32
-#define PATH_MAX   1024
 struct cmd_params {
     const char MRSigner[MRSIGNER_LEN];
     const char MREnclave[MRENCLAVE_LEN];
