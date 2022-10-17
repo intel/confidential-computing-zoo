@@ -123,12 +123,12 @@ int main(int argc, char** argv) {
 	int tmp = 0;
 	char szVal[PATH_MAX] = {0};
 	struct cmd_params params;
-  int status = 1;
-  status = cmd_params_process(argc, argv, &params);
-  if (status != 0)
-     return status;
-  strcpy(g_secret_pf_key_hex, params.secret);
-  printf("\n");
+  	int status = 1;
+  	status = cmd_params_process(argc, argv, &params);
+  	if (status != 0)
+     		return status;
+  	strcpy(g_secret_pf_key_hex, params.secret);
+  	printf("\n");
 	printf("Starting server\n\tport:\t\t%s\n\tcert_path:\t%s\n\tpri_key_path:\t%s\n",
 			params.port, params.server_cert_path, params.server_private_key_path);
 	ret = secret_provision_start_server((uint8_t*)g_secret_pf_key_hex, sizeof(g_secret_pf_key_hex),
