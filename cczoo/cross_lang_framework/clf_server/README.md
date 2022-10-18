@@ -13,16 +13,17 @@ GRAMINEDIR=%gramine_repo_local_path% make
 kill %%
 ```
 -S means the value of MRSigner,
+-E means the value of MREnclave,
 -d means the value of isv_prod_id,
 -v means the value of isv_svn,
 -s means the key used to encrypt data,
 -p means the port used in data/key transmission,
--c maens the path of secret cert,
--k means the path of private key,
+-c means the path of secret cert,
+-k means the path of private key.
 
-If no parameter is given, the application will read the file "clf_server.conf" below this directory to get all these value.
+- If no parameter is given, the application will read the file "clf_server.conf" below this directory to get all these value.
 
-If users want to define these parameters values by themselves, they can use command like this
+- If users want to define these parameters values by themselves, they can use command like this
 ```bash
   RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 ./clf_server 
 -S0a85b393078ee06dafc58d6692a7a59bee27fdce2b70ae45730b501af6ae290a -d0 -v0 
