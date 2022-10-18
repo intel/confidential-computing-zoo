@@ -16,16 +16,10 @@
 #!/bin/bash
 set -e
 
-if  [ ! -n "$1" ] ; then
-    base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
-else
+if  [ "$1" == "anolisos" ] ; then
     base_image=$1
-fi
-
-if  [ ! -n "$2" ] ; then
-    image_tag=psi
 else
-    image_tag=$2
+    base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
@@ -41,7 +35,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg https_proxy=${proxy_server} \
     --build-arg BASE_IMAGE=gramine-sgx-dev:v1.2-anolisos\
     -f anolisos-psi-gramine-sgx-dev.dockerfile \
-    -t anolisos_${image_tag} \
+    -t anolisos_psi \
     ..
 else
 DOCKER_BUILDKIT=0 docker build \
@@ -50,7 +44,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg https_proxy=${proxy_server} \
     --build-arg BASE_IMAGE=${base_image} \
     -f psi-gramine-sgx-dev.dockerfile \
-    -t ${image_tag} \
+    -t psi \
     ..
 fi
 cd -
