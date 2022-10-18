@@ -1,5 +1,5 @@
 diff --git a./python.manifest.template b./python.manifest.template
-index 82fba08..568f7a7 100644
+index 82fba08..ebea650 100644
 --- a./python.manifest.template
 +++ b./python.manifest.template
 @@ -37,9 +37,10 @@ fs.mounts = [

@@ -42,7 +42,7 @@ fi
 
 # You can remove build-arg http_proxy and https_proxy if your network doesn't need it
 # no_proxy="localhost,127.0.0.0/1"
-# proxy_server="" # your http proxy server
+#proxy_server="" # your http proxy server
 
 if [ ${base_image} != "anolisos" ]; then
 DOCKER_BUILDKIT=0 docker build \
