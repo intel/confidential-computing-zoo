@@ -364,3 +364,12 @@ The configuration of the ECS instance as blow:
 - Instance vCPU  : 16
 - Instance SGX PCCS Server Addr: [sgx-dcap-server.cn-hangzhou.aliyuncs.com](https://help.aliyun.com/document_detail/208095.html)
 
+## Librats
+
+librats provides attestation and verification capability of SGX and TDX.
+It can support to get evidence in HW-TEE by API librats_collect_evidence and verify evidence
+by API librats_verify_evidence. This implementation simplifies and shields the underlying
+complex remote attestation flow of HW-TEE. Let user be easy to complete the attestation and verification
+leveraging both APIs in libats.
+The source code: [librats](https://github.com/inclavare-containers/librats)
+
