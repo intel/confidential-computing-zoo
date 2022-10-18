@@ -56,7 +56,6 @@ Once the verification and identity check pass, the communication channel between
 We encrypt models with cryptographic (wrap) key by using Protected-File mode in LibOS Gramine to guarantee the integrity of the model file by metadata checking method. Any changes of the model will have a different hash code, which will be denied by Gramine .
 
 
-
 ## Prerequisites
 
 - Ubuntu 18.04. This solution should work on other Linux distributions as well, but for simplicity we provide the steps for Ubuntu 18.04 only.
@@ -73,23 +72,30 @@ Here, we will demonstrate how to run leader and follower from two containers.
 
 ### 1. Download source code
 
+Download the [Fedlearner source code](https://github.com/bytedance/fedlearner/tree/fix_dev_sgx) which is a git submodule of CCZoo.
+
 ```
-git clone -b fix_dev_sgx https://github.com/bytedance/fedlearner.git
-cd fedlearner
 git submodule init
 git submodule update
+cd cczoo/vertical_fl
+./apply_overlay.sh
+cd vertical_fl
 ```
 
 ### 2. Build Docker image                                    
 
+`build_dev_docker_image.sh` provides the parameter `proxy_server` to specify the network proxy. `build_dev_docker_image.sh` also accepts an optional argument to specify the docker image tag.
+
+For deployments on Microsoft Azure:
 ```
-img_tag=Your_defined_tag
-./sgx/build_dev_docker_image.sh ${img_tag}   
+AZURE=1 ./sgx/build_dev_docker_image.sh
+```
+For other cloud deployments:
+```
+./sgx/build_dev_docker_image.sh
 ```
 
-*Note:* `build_dev_docker_image.sh` provides parameter `proxy_server` to help you set your network proxy. It can be removed from this script if it is not needed.
-
-You will get the built image:
+Example of built image:
 
 ```
 REPOSITORY             TAG         IMAGE ID            CREATED           SIZE
@@ -98,10 +104,10 @@ fedlearner-sgx-dev     latest      8c3c7a05f973        45 hours ago      15.2GB
 
 ### 3. Start Container
 
-In terminal 1, start container to run leader:
+Start the leader and follower containers:
 
 ```
-docker run -it \
+docker run -itd \
     --name=fedlearner_leader \
     --restart=unless-stopped \
     -p 50051:50051 \
@@ -109,13 +115,8 @@ docker run -it \
     --device=/dev/sgx_provision:/dev/sgx/provision \
     fedlearner-sgx-dev:latest  \
     bash
-```
-
-In terminal 2, start container to run follower:
-
-```
-docker run -it \
-    --name=fedlearner_follwer \
+docker run -itd \
+    --name=fedlearner_follower \
     --restart=unless-stopped \
     -p 50052:50052 \
     --device=/dev/sgx_enclave:/dev/sgx/enclave \
@@ -124,7 +125,28 @@ docker run -it \
     bash
 ```
 
+Take note of the container IP addresses for later steps:
+
+```
+docker inspect --format '{{ .NetworkSettings.IPAddress }}' fedlearner_leader
+docker inspect --format '{{ .NetworkSettings.IPAddress }}' fedlearner_follower
+```
+
+In terminal 1, enter the leader container shell:
+
+```
+docker exec -it fedlearner_leader bash
+```
+
+In terminal 2, enter the follower container shell:
+
+```
+docker exec -it fedlearner_follower bash
+```
+
 #### 3.1 Configure PCCS
+
+- For deployments on Microsoft Azure, skip this section, as configuring the PCCS is not necessary on Azure.
 
 - If you are using public cloud instance, please replace the PCCS url in `/etc/sgx_default_qcnl.conf` with the new pccs url provided by the cloud.
 
@@ -142,7 +164,7 @@ docker run -it \
 
 #### 3.2 Start aesm service
 
-Execute below script in both leader and follower container:
+Start the aesm service in both the leader and follower containers:
 
 ```
 /root/start_aesm_service.sh
@@ -150,7 +172,7 @@ Execute below script in both leader and follower container:
 
 #### 4. Prepare data
 
-Generate data in both leader and follower container:
+Generate data in both the leader and follower containers:
 
 ```
 cd /gramine/CI-Examples/wide_n_deep
@@ -159,14 +181,15 @@ cd /gramine/CI-Examples/wide_n_deep
 
 #### 5. Compile applications
 
-Compile applications in both leader and follower container:
+Compile applications in both the leader and follower containers:
 
 ```
 cd /gramine/CI-Examples/wide_n_deep
 ./test-ps-sgx.sh make
 ```
 
-Please find `mr_enclave`,`mr_signer` from the print log as below:
+Take note of the `mr_enclave` and `mr_signer` values from the resulting log from the leader container.
+The following is an example log:
 
 ```
 + make
@@ -179,7 +202,7 @@ Please find `mr_enclave`,`mr_signer` from the print log as below:
     isv_svn:     0
 ```
 
-Then, update the leader's `dynamic_config.json` under current folder with follower's  `mr_enclave`,`mr_signer`. Also, update follower's  `dynamic_config.json` with leader's `mr_enclave`,`mr_signer`.
+In both the leader and follower containers, in `dynamic_config.json`, confirm that `mr_enclave` and `mr_signer` are set to the values from the leader container's log. Use the actual values from the leader container's log, not the values from the example log above. 
 
 ```
 dynamic_config.json:
@@ -198,61 +221,139 @@ dynamic_config.json:
 
 ```
 
-#### 6. Config leader and follower's IP
+#### 6. Run the distributing training
 
-In leader's  `test-ps-sgx.sh`, for `--peer-addr` , please replace `localhost` with `follower_contianer_ip`
-
-```
-elif [ "$ROLE" == "leader" ]; then
-    make_custom_env
-    rm -rf model/leader
-    ......
-    taskset -c 4-7 stdbuf -o0 gramine-sgx python -u leader.py \
-    --local-addr=localhost:50051   \
-    --peer-addr=follower_contianer_ip:50052 
-```
-
-In follower's `test-ps-sgx.sh`, for `--peer-addr` , please replace `localhost` with `leader_contianer_ip`
-
-```
-elif [ "$ROLE" == "follower" ]; then
-    make_custom_env
-    rm -rf model/follower
-    ......
-    taskset -c 12-15 stdbuf -o0 gramine-sgx python -u follower.py \
-    --local-addr=localhost:50052   \
-    --peer-addr=leader_container_ip:50051      
-```
-
-*Note:* Get the container ip under your host: 
-
-```
-docker inspect --format '{{ .NetworkSettings.IPAddress }}' container_id
-```
-
-#### 7.Run the distributing training
-
-Under leader container:
+Start the training process in the follower container:
 
 ```
 cd /gramine/CI-Examples/wide_n_deep
-./test-ps-sgx.sh leader
+peer_ip=REPLACE_WITH_LEADER_IP_ADDR
+./test-ps-sgx.sh follower $peer_ip
 ```
 
-Under follower container:
+Wait until the follower training process is ready, when the following log is displayed:
+
+```
+2022-10-12 02:53:47,002 [INFO]: waiting master ready... (fl_logging.py:95)
+```
+
+Start the training process in the leader container:
 
 ```
 cd /gramine/CI-Examples/wide_n_deep
-./test-ps-sgx.sh follower
+peer_ip=REPLACE_WITH_FOLLOWER_IP_ADDR
+./test-ps-sgx.sh leader $peer_ip
 ```
 
-Finally, the model file will be placed at 
+The following logs occur on the leader when the leader and follower have established communication:
 
 ```
-./model/leader/id/save_model.pd
+2022-10-12 05:22:27,056 [INFO]: [Channel] state changed from CONNECTING_UNCONNECTED to CONNECTING_CONNECTED, event: PEER_CONNECTED (fl_logging.py:95)
+2022-10-12 05:22:27,067 [INFO]: [Channel] state changed from CONNECTING_CONNECTED to READY, event: CONNECTED (fl_logging.py:95)
+2022-10-12 05:22:27,068 [DEBUG]: [Bridge] stream transmit started (fl_logging.py:98)
+```
+
+The following logs on the leader are an example of a training iteration:
+
+```
+2022-10-12 05:23:52,356 [DEBUG]: [Bridge] send start iter_id: 123 (fl_logging.py:98)
+2022-10-12 05:23:52,483 [DEBUG]: [Bridge] receive peer commit iter_id: 122 (fl_logging.py:98)
+2022-10-12 05:23:52,484 [DEBUG]: [Bridge] received peer start iter_id: 123 (fl_logging.py:98)
+2022-10-12 05:23:52,736 [DEBUG]: [Bridge] received data iter_id: 123, name: act1_f (fl_logging.py:98)
+2022-10-12 05:23:52,737 [DEBUG]: [Bridge] Data: received iter_id: 123, name: act1_f after 0.117231 sec (fl_logging.py:98)
+2022-10-12 05:23:52,739 [DEBUG]: [Bridge] Data: send iter_id: 123, name: act1_f_grad (fl_logging.py:98)
+2022-10-12 05:23:52,817 [DEBUG]: [Bridge] receive peer commit iter_id: 123 (fl_logging.py:98)
+2022-10-12 05:23:52,818 [DEBUG]: [Bridge] received peer start iter_id: 124 (fl_logging.py:98)
+2022-10-12 05:23:53,070 [DEBUG]: [Bridge] received data iter_id: 124, name: act1_f (fl_logging.py:98)
+2022-10-12 05:23:53,168 [DEBUG]: [Bridge] send commit iter_id: 123 (fl_logging.py:98)
+2022-10-12 05:23:53,170 [DEBUG]: after session run. time: 0.814208 sec (fl_logging.py:98)
+```
+
+When the training processes are done, the leader will display these logs:
+
+
+```
+**************export model hook**************
+sess : <tensorflow.python.client.session.Session object at 0x7e8fb898>
+model:  <fedlearner.trainer.estimator.FLModel object at 0x8ee60f98>
+export_dir:  model/leader/saved_model/1665552233
+inputs:  {'examples': <tf.Tensor 'examples:0' shape=<unknown> dtype=string>, 'act1_f': <tf.Tensor 'act1_f:0' shape=<unknown> dtype=float32>}
+outpus:  {'output': <tf.Tensor 'MatMul_2:0' shape=(None, 2) dtype=float32>}
+*********************************************
+2022-10-12 05:24:07,675 [INFO]: export_model done (fl_logging.py:95)
+2022-10-12 05:24:07,676 [INFO]: Trainer Master status transfer, from WORKER_COMPLETED to COMPLETED (fl_logging.py:95)
+2022-10-12 05:24:09,017 [INFO]: master completed (fl_logging.py:95)
+```
+
+The updated model files are saved in these locations:
+
+```
+./model/leader/saved_model/<id>/saved_model.pb
 ```
 
 ```
-./model/follower/id/save_model.pd
+./model/follower/saved_model/<id>/saved_model.pb
 ```
 
+## Cloud Deployment
+
+### 1. Aliyun ECS
+
+[Aliyun ECS](https://help.aliyun.com/product/25365.html) (Elastic Compute Service) is
+an IaaS (Infrastructure as a Service) level cloud computing service provided by Alibaba
+Cloud. It builds security-enhanced instance families [g7t, c7t, r7t](https://help.aliyun.com/document_detail/207734.html)
+based on Intel® SGX technology to provide a trusted and confidential environment
+with a higher security level.
+
+The configuration of the ECS instance as below:
+
+- Instance Type  : [g7t](https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k).
+- Instance Kernel: 4.19.91-24
+- Instance OS    : Alibaba Cloud Linux 2.1903
+- Instance Encrypted Memory: 32G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server Addr: [sgx-dcap-server.cn-hangzhou.aliyuncs.com](https://help.aliyun.com/document_detail/208095.html)
+
+***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Aliyun PCCS server address.
+
+### 2. Tencent Cloud
+
+Tencent Cloud Virtual Machine (CVM) provide one instance named [M6ce](https://cloud.tencent.com/document/product/213/11518#M6ce),
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the M6ce instance as below:
+
+- Instance Type  : [M6ce.4XLARGE128](https://cloud.tencent.com/document/product/213/11518#M6ce)
+- Instance Kernel: 5.4.119-19-0009.1
+- Instance OS    : TencentOS Server 3.1
+- Instance Encrypted Memory: 64G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: [sgx-dcap-server-tc.sh.tencent.cn](https://cloud.tencent.com/document/product/213/63353)
+
+***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
+
+### 3. ByteDance Cloud
+
+ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the ebmg2t instance as below:
+
+- Instance Type  : `ecs.ebmg2t.32xlarge`.
+- Instance Kernel: kernel-5.15
+- Instance OS    : ubuntu-20.04
+- Instance Encrypted Memory: 256G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: `sgx-dcap-server.bytedance.com`.
+
+### 4. Microsoft Azure
+
+Microsoft Azure [DCsv3-series](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series) instances support Intel® SGX encrypted computing technology.
+
+DCsv3-series instance configuration:
+
+- Instance Type  : Standard_DC16s_v3
+- Instance Kernel: 5.15.0-1020-azure
+- Instance OS    : Ubuntu Server 20.04 LTS - Gen2
+- Instance Encrypted Memory: 64G
+- Instance vCPU  : 16
