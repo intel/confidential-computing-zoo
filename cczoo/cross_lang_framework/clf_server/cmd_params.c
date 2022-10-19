@@ -43,7 +43,6 @@ bool is_str_empty_or_too_long(const char *s, size_t maxlen)
 {
 	if (!s)
 		return true;
-
 	size_t n = strnlen_safe(s, maxlen + 1);
 	if (n < 1 || n > maxlen)
 		return true;
@@ -70,8 +69,7 @@ static int validate_params(struct cmd_params *params)
 	if (params == NULL)
 		return 1;
 
-	if (params->MRSigner[0] == 0 ) {
-    
+	if (params->MRSigner[0] == 0 ) {   
 		printf("Error: -S/--MRSigner parameter missing\n");
 		err = 1;
 	}

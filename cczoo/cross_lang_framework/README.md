@@ -89,7 +89,7 @@ GRAMINEDIR=/home/ubuntu/gramine SGX_SIGNER_KEY=/home/ubuntu/gramine/Pal/src/host
 ```bash
 cd ~/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server
 
- RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 \
+RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 \
 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 \
 ./clf_server -S -E -d -v  -s -p -c -k
 & 
@@ -107,7 +107,7 @@ RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 \
 
 - If users want to define these parameters values by themselves, they can use command like this
 ```bash
-  RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 ./clf_server 
+RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 ./clf_server 
 -S0a85b393078ee06dafc58d6692a7a59bee27fdce2b70ae45730b501af6ae290a -E -d0 -v0 
 -s58a7129dc07ba462ca8317d578a3d7cb -p4433 -ccerts/server_signed_cert.crt -kcerts/server_private_key.pem
 ```

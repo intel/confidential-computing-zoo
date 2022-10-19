@@ -7,7 +7,9 @@ GRAMINEDIR=%gramine_repo_local_path% make
 
 ## Run
 ```bash
- RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 ./clf_server -S -d -v  -s -p -c -k
+RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 \
+RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 \
+./clf_server -S -d -v  -s -p -c -k \
 &
 
 kill %%
@@ -25,7 +27,7 @@ kill %%
 
 - If users want to define these parameters values by themselves, they can use command like this
 ```bash
-  RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 ./clf_server 
+RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 ./clf_server 
 -S0a85b393078ee06dafc58d6692a7a59bee27fdce2b70ae45730b501af6ae290a -d0 -v0 
 -s58a7129dc07ba462ca8317d578a3d7cb -p4433 -ccerts/server_signed_cert.crt -kcerts/server_private_key.pem
 ```

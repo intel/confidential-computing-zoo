@@ -69,23 +69,16 @@ static void hexdump_mem(const void* data, size_t size) {
 static int verify_measurements_callback(const char* mrenclave, const char* mrsigner,
                                         const char* isv_prod_id, const char* isv_svn) {
 	int ret = -1;	//error must be a negative value
-
+ 
 	assert(mrenclave && mrsigner && isv_prod_id && isv_svn);
-
+ 
 	pthread_mutex_lock(&g_print_lock);
 	puts("\nReceived the following measurements from the client:");
- 
- 
- 
- 
- 
- 
 	printf("  - MRENCLAVE:   "); hexdump_mem(mrenclave, 32);
 	printf("  - MRSIGNER:    "); hexdump_mem(mrsigner, 32);
 	printf("  - ISV_PROD_ID: %hu\n", *((uint16_t*)isv_prod_id));
 	printf("  - ISV_SVN:     %hu\n", *((uint16_t*)isv_svn));
 	pthread_mutex_unlock(&g_print_lock);
-
 	char null_mrenclave[MRENCLAVE_LEN] = {0};
 	char null_mrsigner[MRSIGNER_LEN] = {0};
 	if(memcmp(g_mrenclave, null_mrenclave, MRENCLAVE_LEN)) {
@@ -108,17 +101,14 @@ static int verify_measurements_callback(const char* mrenclave, const char* mrsig
 		printf("isv_svn mismatch\n");
 		return ret;
 	}
-
 	return 0;
 }
 
 int main(int argc, char** argv) {
 	int ret;
-
 	ret = pthread_mutex_init(&g_print_lock, NULL);
 	if (ret < 0)
 		return ret;
-
 	int len = 0;
 	int tmp = 0;
 	char szVal[PATH_MAX] = {0};
@@ -140,7 +130,6 @@ int main(int argc, char** argv) {
 		log_error("[error] secret_provision_start_server() returned %d\n", ret);
 		return 1;
 	}
-
 	pthread_mutex_destroy(&g_print_lock);
 	return 0;
 }
