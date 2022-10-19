@@ -16,32 +16,17 @@
 #!/bin/bash
 set -e
 
-if  [ -n "$1" ] ; then
-    base_image=$1
-else
-    base_image=ubuntu:20.04
-fi
+#below is fake secret, you need to replace with your valid ones
+ccp-cli pack --app-entry="/usr/bin/java" \
+             --memsize=8192M --thread=64 \
+             --tmpl=clf_client \
+             --secret-id=AKID3vXswkIAl59vQebIjskMhlY5KJ1RbU6S \
+             --secret-key=6vTklUw83i6C1Zrra3GBpCI8gy9NTIr9 \
+             --capp-id=capp-ODdjZWZhOWYt \
+             --app-image=clf-client:gramine1.3-ubuntu20.04 \
+             --app-type=image \
+             --start=/clf/cczoo/cross_lang_framework/clf_client/app
 
-if  [ -n "$2" ] ; then
-    image_tag=$2
-else
-    image_tag=clf-client:graminemaster-ubuntu20.04-latest
-fi
+# just an example about how to run
+docker run -ti --device /dev/sgx_enclave --device /dev/sgx_provision --add-host=VM-0-3-ubuntu:10.206.0.3 sec_clf-client:gramine1.3-ubuntu20.04  -Xmx2G clf_test VM-0-3-ubuntu
 
-# You can remove no_proxy and proxy_server if your network doesn't need it
-no_proxy="localhost,127.0.0.1"
-proxy_server="" # your http proxy server
-
-cd `dirname $0`
-
-DOCKER_BUILDKIT=0 docker build \
-    --build-arg no_proxy=${no_proxy} \
-    --build-arg http_proxy=${proxy_server} \
-    --build-arg https_proxy=${proxy_server} \
-    --build-arg base_image=${base_image} \
-    --build-arg BASE_IMAGE=${base_image} \
-    -f clf_client.dockerfile \
-    -t ${image_tag} \
-    ..
-
-cd -
