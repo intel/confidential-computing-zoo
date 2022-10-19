@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -92,7 +92,7 @@ while getopts "h?r:i:p:m:s:a:e:" OPT; do
 done
 
 docker run \
-    -it \
+    -itd \
     --device /dev/sgx_enclave:/dev/sgx/enclave \
     --device /dev/sgx_provision:/dev/sgx/provision \
     --add-host=${attestation_hosts} \

@@ -1,3 +1,21 @@
+/*
+ *
+ * Copyright (c) 2022 Intel Corporation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
 #ifndef __CROSS_COMM_h__
 #define __CROSS_COMM_h__
 
@@ -65,14 +83,27 @@ typedef struct _msg_resp_t {
 	uint8_t data[0];
 } msg_resp_t;
 
+typedef enum {
+	LOG_LEVEL_DEBUG = 1,
+	LOG_LEVEL_INFO = 2,
+	LOG_LEVEL_ERROR = 3
+} log_level_t;
+
+extern log_level_t g_log_level;
+
 #define log_error(fmt, ...)                      \
     do {                                         \
-            fprintf(stderr, fmt, ##__VA_ARGS__); \
+        if(g_log_level<=LOG_LEVEL_ERROR)fprintf(stderr, fmt, ##__VA_ARGS__); \
+    } while (0)
+
+#define log_info(fmt, ...)                       \
+    do {                                         \
+        if(g_log_level<=LOG_LEVEL_INFO)fprintf(stderr, fmt, ##__VA_ARGS__); \
     } while (0)
 
 #define log_debug(fmt, ...)                      \
     do {                                         \
-            fprintf(stderr, fmt, ##__VA_ARGS__); \
+        if(g_log_level<=LOG_LEVEL_DEBUG)fprintf(stderr, fmt, ##__VA_ARGS__); \
     } while (0)
 
 void log_errcode(status_t c);

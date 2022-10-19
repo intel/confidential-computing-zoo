@@ -16,9 +16,9 @@ to do software development.
 
 Execute the following command to build this docker image:
 ```
-base_image=ubuntu:18.04
-image_tag=occlum-sgx-dev:latest
+base_image=occlum/occlum:0.26.3-ubuntu20.04
+image_tag=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
 ./build_docker_image.sh ${base_image} ${image_tag}
 ```
 
-`ubuntu:18.04` and `ubuntu:20.04` could be selected as base_image.
+`occlum/occlum:0.26.3-ubuntu18.04` and `occlum/occlum:0.26.3-ubuntu20.04` could be selected as base_image.

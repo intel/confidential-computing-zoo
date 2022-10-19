@@ -1,5 +1,20 @@
-/* SPDX-License-Identifier: LGPL-3.0-or-later */
-/* Copyright (C) 2020 Intel Labs */
+/*
+ *
+ * Copyright (c) 2022 Intel Corporation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
 
 #include <assert.h>
 #include <errno.h>
@@ -22,10 +37,9 @@ int64_t fileread(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 	if(!f || !buf)
 		return STATUS_BAD_PARAM;
 
-	/*TODO: Gramine bug, allowed filesystem, open() will change the buffer of f*/
 	fd = open((const char*)f, O_RDONLY);
 	if (fd < 0) {
-		fprintf(stderr, "[error] cannot open '%s'\n", f);
+		log_error("[error] cannot open '%s'\n", f);
 		goto out;
 	}
 
@@ -45,7 +59,7 @@ int64_t fileread(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 		} else if (errno == EAGAIN || errno == EINTR) {
 			continue;
 		} else {
-			fprintf(stderr, "[error] cannot read '%s'\n", f);
+			log_error("[error] cannot read '%s'\n", f);
 			goto out;
 		}
 	}
@@ -54,7 +68,7 @@ out:
 	if(fd>0) {
 		ret = close(fd);
 		if (ret < 0) {
-			fprintf(stderr, "[error] cannot close '%s'\n", f);
+			log_error("[error] cannot close '%s'\n", f);
 		}
 	}
 	return bytes_read;
@@ -81,7 +95,7 @@ int64_t filewrite(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 
 	int fd = open((char*)f, O_RDWR | O_CREAT, 0666);
 	if (fd < 0) {
-		fprintf(stderr, "[error] cannot open '%s'\n", f);
+		log_error("[error] cannot open '%s'\n", f);
 		return 0;
 	}
 
@@ -101,7 +115,7 @@ int64_t filewrite(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 		} else if (errno == EAGAIN || errno == EINTR) {
 			continue;
 		} else {
-			fprintf(stderr, "[error] cannot write '%s'\n", f);
+			log_error("[error] cannot write '%s'\n", f);
 			goto out;
 		}
 	}
@@ -109,7 +123,7 @@ int64_t filewrite(char* f, uint64_t offset, int8_t* buf, uint64_t len) {
 out:
 	ret = close(fd);
 	if (ret < 0) {
-		fprintf(stderr, "[error] cannot close '%s'\n", f);
+		log_error("[error] cannot close '%s'\n", f);
 	}
 	return written;
 }

@@ -64,4 +64,4 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg https_proxy=${proxy_server} \
     --build-arg no_proxy=${no_proxy} \
     --build-arg WORKLOAD=${workload} 
-fi   
+fi

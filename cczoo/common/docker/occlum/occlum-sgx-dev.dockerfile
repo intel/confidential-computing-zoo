@@ -15,7 +15,7 @@
 
 # https://github.com/oscarlab/graphene/blob/master/Tools/gsc/images/graphene_aks.latest.dockerfile
 
-ARG base_image=occlum/occlum:0.26.3
+ARG base_image=occlum/occlum:0.26.3-ubuntu20.04
 FROM ${base_image}
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -62,3 +62,7 @@ RUN apt-get clean all \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf ~/.cache/* \
     && rm -rf /tmp/*
+
+# Workspace
+ENV WORK_SPACE_PATH=${OCCLUM_PATH}
+WORKDIR ${WORK_SPACE_PATH}

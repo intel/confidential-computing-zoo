@@ -58,7 +58,7 @@ docker run -it \
     --name=${name} \
     -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
     -v /home:/home/host-home \
-	--net=host \
+    --net=host \
     --add-host=pccs.service.com:${ip_addr} \
     horizontal_fl:${tag} \
     bash

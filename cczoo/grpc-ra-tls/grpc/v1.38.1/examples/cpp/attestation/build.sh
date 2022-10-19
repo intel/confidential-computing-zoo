@@ -16,6 +16,7 @@
 set -ex
 
 export EXP_PATH=`dirname $0`
+export EXP_NAME=examples/cpp/attestation
 
 if [ -z ${BUILD_TYPE} ]; then
     export BUILD_TYPE=Debug
@@ -29,16 +30,23 @@ if [ -z ${SGX_RA_TLS_SDK} ]; then
     export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
 fi
 
+# build grpc package
 ${GRPC_PATH}/build_cpp.sh
 
 # build c++ example
 cd ${EXP_PATH}
+
 mkdir -p build
 cd build
-cmake -D CMAKE_PREFIX_PATH=${INSTALL_PREFIX} -D CMAKE_BUILD_TYPE=${BUILD_TYPE} ..
-make -j `nproc`
+
 ../generate_ssl.sh -s localhost -a my_ca
 cp ${GRPC_PATH}/dynamic_config.json .
 cp ../secret.json .
+
+cmake -D CMAKE_PREFIX_PATH=${INSTALL_PREFIX} \
+      -D CMAKE_BUILD_TYPE=${BUILD_TYPE} \
+      -D GRPC_AS_SUBMODULE=OFF \
+      -D GRPC_FETCHCONTENT=OFF ..
+make -j `nproc`
 
 cd -

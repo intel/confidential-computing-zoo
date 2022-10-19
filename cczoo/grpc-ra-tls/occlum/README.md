@@ -1,19 +1,21 @@
-# GRPC-Occlum-SGX-Dev Image
+# GRPC-RATLS-SGX-Dev Docker Image
 
 ## How to Build
 
-1. Get occlum docker image
+1. Build occlum-sgx-dev docker image
 
     Please review the following document
 
     - cczoo/common/docker/occlum/README.md
 
-2. Build grpc-occlum-sgx-dev docker image
+2. Build grpc-ratls-sgx-dev docker image
 
     Execute the following command to build this docker image
 
     ```
-    ./build_docker_image.sh
+    base_image=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
+    image_tag=grpc-ratls-sgx-dev:occlum0.26.3-ubuntu20.04-latest
+    ./build_docker_image.sh ${base_image} ${image_tag}
     ```
 
 ## How to run gRPC examples
@@ -38,8 +40,4 @@
 
     - c++
 
-        <!-- ${GRAMINEDIR}/CI-Examples/grpc/cpp/ratls/README.md -->
-
-    - python
-
-        <!-- ${GRAMINEDIR}/CI-Examples/grpc/python/ratls/README.md -->
+        ${OCCLUM_PATH}/demos/ratls/README.md

@@ -33,7 +33,9 @@ Table of Contents
    Solutions/rats-tls/index.md
    Solutions/cross_language_framework_based_gramine/Readme.md
    Solutions/attestation-secret-provision/index.md
-
+   Solutions/bigdl-ppml/index.md
+   Solutions/phe_homo_lr/phe_homo_lr.md
+   Solutions/psi/PSI.md
 
 .. toctree::
    :maxdepth: 1

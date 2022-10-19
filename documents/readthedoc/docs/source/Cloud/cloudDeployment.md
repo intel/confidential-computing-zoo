@@ -76,7 +76,7 @@ The configuration of the ECS instance as below:
         <br />
         <br />
         <br />
-        Validated Solution</strong>
+        Validated Solutions</strong>
       </td>
       <td>
         <ul>
@@ -155,7 +155,7 @@ The configuration of the M6ce instance as below:
         <br />
         <br />
         <br />
-        <strong>Validated Solution&nbsp;</strong>
+        <strong>Validated Solutions&nbsp;</strong>
       </td>
       <td>
         <ul>
