@@ -30,7 +30,7 @@ ENV LANG=C.UTF-8
 
 
 # Enable it to disable debconf warning
-# RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
 
 # Add steps here to set up dependencies
 RUN apt-get update \

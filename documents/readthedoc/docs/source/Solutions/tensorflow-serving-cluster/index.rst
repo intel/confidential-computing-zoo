@@ -119,11 +119,6 @@ Prerequisites
 
    git clone https://github.com/intel/confidential-computing-zoo.git
    
-- Kubernetes. `Kubernetes <https://kubernetes.io/docs/concepts/overview/what-is-kubernetes/>`__
-  is an open-source system for automating deployment, scaling, and management of
-  containerized applications. In this tutorial, we will provide a script (``install_kubernetes.sh``)
-  to install Kubernetes in your machine.
-
 - Intel SGX Driver and SDK/PSW. You need a machine that supports Intel SGX and
   FLC/DCAP. Please follow `this guide <https://download.01.org/intel-sgx/latest/linux-latest/docs/Intel_SGX_Installation_Guide_Linux_2.10_Open_Source.pdf>`__
   to install the Intel SGX driver and SDK/PSW on the machine/VM. Make sure to install the driver
@@ -137,8 +132,12 @@ Prerequisites
   
    sudo systemctl status aesmd
       
-- Gramine. Follow `Quick Start <https://gramine.readthedocs.io/en/latest/quickstart.html>`__
-  to learn more about it.
+- Gramine. Follow https://gramine.readthedocs.io for Gramine documentation.
+
+- Kubernetes. `Kubernetes <https://kubernetes.io/docs/concepts/overview/what-is-kubernetes/>`__
+  is an open-source system for automating deployment, scaling, and management of
+  containerized applications. In this tutorial, we will provide a script (``install_kubernetes.sh``)
+  to install Kubernetes in your machine.
 
 We will start with the TensorFlow Serving service running in a container without the use of Kubernetes.
 The TensorFlow Serving service provides confidentiality of the model file using encryption (handled by Gramine) and remote attestation from a secret provisioning server (run from a separate container).
@@ -284,13 +283,13 @@ For other cloud deployments::
 
 To check the secret provision service logs::
 
-   docker ps -a
-   docker logs <secret_prov_service_container_id>
+   sudo docker ps -a
+   sudo docker logs <secret_prov_service_container_id>
 
 Get the container's IP address, which will be used when starting the TensorFlow Serving Service in the next step::
 
-   docker ps -a
-   docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <secret_prov_service_container_id>
+   sudo docker ps -a
+   sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <secret_prov_service_container_id>
    
 
 2. Run TensorFlow Serving w/ Gramine in SGX-enabled machine
@@ -305,9 +304,9 @@ Recall that we've created encrypted model and TLS certificate in client machine,
 we need to copy them to this machine.
 For example::
 
-   cd <tensorflow_serving dir>/docker/tf_serving
-   scp -r client@client_ip:<tensorflow_serving dir>/docker/client/models.tar .
-   scp -r client@client_ip:<tensorflow_serving dir>/docker/client/ssl_configure.tar .
+   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
+   cp ../client/models.tar .
+   cp ../client/ssl_configure.tar .
    tar -xvf models.tar
    tar -xvf ssl_configure.tar
 
@@ -367,9 +366,9 @@ For more syntax used in the manifest template, please refer to `Gramine Manifest
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Run the TensorFlow Serving container::
 
-    cd <tensorflow_serving dir>/docker/tf_serving
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
     cp ssl_configure/ssl.cfg .
-    ./run_gramine_tf_serving.sh -i gramine_tf_serving:latest -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
+    sudo ./run_gramine_tf_serving.sh -i gramine_tf_serving:latest -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
    
 *Note*:
    1. ``8500-8501`` are the ports created on (bound to) the host, you can change them if you need.
@@ -377,8 +376,8 @@ Run the TensorFlow Serving container::
 
 Check the TensorFlow Serving container logs::
 
-   docker ps -a
-   docker logs <tf_serving_container_id>
+   sudo docker ps -a
+   sudo docker logs <tf_serving_container_id>
 
 Now, the TensorFlow Serving is running in SGX and waiting for remote requests.
 
@@ -389,8 +388,8 @@ Now, the TensorFlow Serving is running in SGX and waiting for remote requests.
 
 Get the container's IP address, which will be used when starting the Client container in the next step::
 
-   docker ps -a
-   docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <tf_serving_container_id>
+   sudo docker ps -a
+   sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <tf_serving_container_id>
 
 
 
@@ -402,8 +401,8 @@ In this section, the files in the `ssl_configure` directory will be reused.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Build the Client container::
 
-    cd <tensorflow_serving dir>/docker/client
-    docker build -f client.dockerfile . -t client:latest
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
+    sudo docker build -f client.dockerfile . -t client:latest
 
 Run the Client container::
 
@@ -450,21 +449,21 @@ Refer to ``https://kubernetes.io/docs/setup/production-environment/`` or
 use ``install_kubernetes.sh`` to install Kubernetes::
 
    cd <tensorflow-serving-cluster dir>/kubernetes
-   ./install_kubernetes.sh
+   sudo ./install_kubernetes.sh
 
 Create the control plane / master node and allow pods to be scheduled onto this node::
 
    unset http_proxy && unset https_proxy
    swapoff -a && free -m
    sudo rm /etc/containerd/config.toml
+   containerd config default | sudo tee /etc/containerd/config.toml
    sudo systemctl restart containerd
-   sudo kubeadm init --v=5 --node-name=master-node --pod-network-cidr=10.244.0.0/16
+   sudo kubeadm init --v=5 --node-name=master-node --pod-network-cidr=10.244.0.0/16 --kubernetes-version=v1.23.9 --cri-socket /run/containerd/containerd.sock
 
    mkdir -p $HOME/.kube
    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
    sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
-   kubectl taint nodes --all node-role.kubernetes.io/control-plane-
    kubectl taint nodes --all node-role.kubernetes.io/master-
 
 1.2 Setup Flannel in Kubernetes
@@ -491,16 +490,22 @@ Deploy the Nginx service::
 
    kubectl apply -f ingress-nginx/deploy-nodeport.yaml
 
+1.4 Verify Node Status
+^^^^^^^^^^^^^^^^^^^^^^
 
-1.4 Config Kubernetes cluster DNS
+Get node info to verify that the node status is Ready::
+
+   kubectl get node
+   
+1.5 Config Kubernetes cluster DNS
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-We need to configure the cluster DNS in Kubernetes so that all the TensorFlow
-Serving pods can communicate with secret provisioning server::
+Configure the cluster DNS in Kubernetes so that all the TensorFlow
+Serving pods can communicate with the secret provisioning server::
 
    kubectl edit configmap -n kube-system coredns
 
-A config file will pop up, and we need to add the below configuration into it::
+The config file will open in an editor. Add the following hosts section::
 
     # new added
     hosts {
@@ -515,7 +520,7 @@ A config file will pop up, and we need to add the below configuration into it::
 
 ``${secret_prov_service_container_ip_addr}`` is the IP address of the Secret Provisioning Service container.
 
-1.5 Setup Docker Registry
+1.6 Setup Docker Registry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Setup a local Docker registry to serve the TensorFlow Serving container image to the Kubernetes cluster::
 
@@ -524,7 +529,7 @@ Setup a local Docker registry to serve the TensorFlow Serving container image to
     sudo docker push localhost:5000/gramine_tf_serving
 
    
-1.6 Start TensorFlow Serving Deployment
+1.7 Start TensorFlow Serving Deployment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Let's take a look at the configuration for the elastic deployment of
 TensorFlow Serving under the directory::
@@ -565,7 +570,7 @@ Apply the two yaml files::
     kubectl apply -f deploy.yaml
     kubectl apply -f ingress.yaml
 
-1.7 Verify TensorFlow Serving Deployment
+1.8 Verify TensorFlow Serving Deployment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Verify one pod of the TensorFlow Serving container is running and that the service is ready (look for log "Entering the event loop")::
 
@@ -581,7 +586,7 @@ Check pod info if the pod is not running::
 Check the coredns setup if the TensorFlow Serving service is not ready. This can be caused when the TensorFlow Serving service is unable to obtain the wrap-key (used to decrypt the model file) from the secret provisioning container.
 
 
-1.8 Scale the TensorFlow Serving Service
+1.9 Scale the TensorFlow Serving Service
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Scale the TensorFlow Serving service to two replicas::
@@ -601,7 +606,7 @@ Verify that two pods are now running. Also verify that the second pod of the Ten
 These TensorFlow Serving containers perform remote attestation with the Secret Provisioning service to get the secret key. With the secret key, 
 the TensorFlow Serving containers can decrypted the model file.
 
-3.2 Send remote inference request
+1.10 Send remote inference request
 ^^^^^^^^^^^^^^^^^^^^^^^
 Send the remote inference request (with a dummy image) to demonstrate an elastic TensorFlow Serving deployment through Kubernetes.
 
@@ -620,7 +625,7 @@ For one-way SSL/TLS authentication::
     $ cd /client
     $ python3 ./resnet_client_grpc.py -batch 1 -cnum 1 -loop 50 -url grpc.tf-serving.service.com:8500 -crt `pwd -P`/ssl_configure/server/cert.pem
 
-For wo-way SSL/TLS authentication::
+For two-way SSL/TLS authentication::
 
     $ cd /client
     $ python3 ./resnet_client_grpc.py -batch 1 -cnum 1 -loop 50 -url grpc.tf-serving.service.com:8500 -ca `pwd -P`/ssl_configure/ca_cert.pem -crt `pwd -P`/ssl_configure/client/cert.pem -key `pwd -P`/ssl_configure/client/key.pem
@@ -705,7 +710,7 @@ Microsoft Azure `DCsv3-series <https://docs.microsoft.com/en-us/azure/virtual-ma
 The following is the configuration of the DCsv3-series instance used:
 
 - Instance Type  : Standard_DC16s_v3
-- Instance Kernel: 5.13.0-1031-azure
+- Instance Kernel: 5.15.0-1017-azure
 - Instance OS    : Ubuntu Server 20.04 LTS - Gen2
 - Instance Encrypted Memory: 64G
 - Instance vCPU  : 16
