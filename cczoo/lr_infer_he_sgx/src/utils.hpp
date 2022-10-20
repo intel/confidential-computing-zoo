@@ -21,6 +21,7 @@
 
 std::map<std::string, double> getEvalmetrics(
     const std::vector<double>& expected, const std::vector<double>& predicted);
+
 void doCompare(std::vector<double>& expected, std::vector<double>& predicted);
 
 #endif  // UTILS_HPP_

@@ -15,11 +15,11 @@
 #include "param.hpp"
 
 HEParam::HEParam(int poly_modulus_degree, int security_level,
-  std::string coeff_modulus, int batch_size, int scale) {
+  std::string& coeff_modulus, int batch_size, int scale) {
   scale_ = scale;
   if (poly_modulus_degree < 1024 || poly_modulus_degree > 32768 ||
       (poly_modulus_degree & (poly_modulus_degree - 1)) != 0)
-  throw std::invalid_argument(
+    throw std::invalid_argument(
       "poly_modulus_degree must be power of 2 and within [1024, 32768] "
       "range.");
   poly_modulus_degree_ = poly_modulus_degree;

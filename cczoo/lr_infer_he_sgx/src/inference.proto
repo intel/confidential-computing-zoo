@@ -29,7 +29,9 @@ service Inference {
 message InitCtxRequest {
   bytes params = 1;
   bytes pub_key = 2;
-  double scale = 3;
+  bytes relin_key = 3;
+  int32 security_level = 4;
+  double scale = 5;
 }
 
 message InitCtxReply {

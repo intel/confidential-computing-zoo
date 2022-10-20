@@ -50,6 +50,7 @@ target_include_directories(infer_client
   PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(infer_client
   infer_grpc_proto
+  libgflags
   ${SEAL_LIB}
   ${REFLECTION}
   ${GRPC_GRPCPP}
@@ -60,6 +61,7 @@ target_include_directories(infer_server
   PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(infer_server
   infer_grpc_proto
+  libgflags
   ${SEAL_LIB}
   ${REFLECTION}
   ${GRPC_GRPCPP}

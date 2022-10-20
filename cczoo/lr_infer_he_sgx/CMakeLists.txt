@@ -24,6 +24,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(cmake/seal.cmake)
 include(cmake/grpc.cmake)
+include(cmake/gflags.cmake)
 
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 include_directories("${SEAL_INC_DIR}")

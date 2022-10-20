@@ -38,7 +38,9 @@ const double sigmoid_coeff_3[] = {0.5, 0.15012, 0.0, -0.001593008};
 class InferServer : public InferBase {
 public:
 void initContext(std::stringstream& params_stream,
-  std::stringstream& pubkey_stream, double scale);
+  std::stringstream& pubkey_stream,
+  std::stringstream& relinkey_stream,
+  int security_level, double scale);
 void loadWeights(std::string& model_file);
 std::vector<seal::Ciphertext> inference(
   std::stringstream& input, int batches, int batch_size);

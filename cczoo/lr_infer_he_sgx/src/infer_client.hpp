@@ -37,7 +37,7 @@ public:
   void loadDataSet(std::string& file_name);
   void encodeEncryptData();
   bool initServerCtx();
-  std::vector<seal::Ciphertext> inferAgent();
+  std::vector<seal::Ciphertext> infer();
   std::vector<double> decryptDecodeResult(
     std::vector<seal::Ciphertext>& encrypted_result);
   std::vector<double> getEvalTarget() {
@@ -52,12 +52,13 @@ private:
   std::shared_ptr<seal::SEALContext> context_;
   seal::PublicKey public_key_;
   seal::SecretKey secret_key_;
-  // seal::RelinKeys relin_keys_;
+  seal::RelinKeys relin_keys_;
   // seal::GaloisKeys galois_keys_;
   std::shared_ptr<seal::Encryptor> encryptor_;
   std::shared_ptr<seal::Decryptor> decryptor_;
   std::shared_ptr<seal::CKKSEncoder> encoder_;
   size_t slot_count_;
+  seal::sec_level_type sec_level_;
   double scale_;
   std::vector<std::vector<double>> eval_data_;
   std::vector<double> eval_target_;

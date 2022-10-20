@@ -17,10 +17,31 @@
 #include <iostream>
 #include <iterator>
 #include <vector>
+#include "gflags/gflags.h"
 #include "seal/seal.h"
 #include "utils.hpp"
 #include "infer_client.hpp"
 #include "infer_server.hpp"
+
+DEFINE_string(
+    data, "lrtest_mid", "Dataset name to test.");
+
+DEFINE_int32(poly_modulus_degree, 8192,
+             "Set polynomial modulus for CKKS context. Determines the batch "
+             "size and security level, thus recommended size is 4096-16384. "
+             "Must be a power of 2, with the range of [1024, 32768]");
+
+DEFINE_int32(security_level, 0, "Security level. One of [0, 128, 192, 256].");
+
+DEFINE_string(coeff_modulus, "60,45,45,45,45,60",
+              "Coefficient modulus (list of primes). The bit-lengths of the "
+              "primes to be generated.");
+
+DEFINE_int32(batch_size, 0,
+             "Batch size. 0 = automatic (poly_modulus_degree / 2). Max = "
+             "poly_modulus_degree / 2.");
+
+DEFINE_int32(scale, 45, "Scaling parameter defining precision.");
 
 InferClient::InferClient(HEParam& param, std::shared_ptr<Channel> channel) 
 : stub_(Inference::NewStub(channel)) {
@@ -28,23 +49,17 @@ InferClient::InferClient(HEParam& param, std::shared_ptr<Channel> channel)
 }
 
 void InferClient::initContext(HEParam& param) {
-  // SEAL uses an additional 'special prime' coeff modulus for relinearization
-  // only. As such, encrypting with N coeff moduli yields a ciphertext with
-  // N-1 coeff moduli for computation. See section 2.2.1 in
-  // https://arxiv.org/pdf/1908.04172.pdf. So, we add an extra prime for fair
-  // comparison against other HE schemes.
   seal::EncryptionParameters seal_params(seal::scheme_type::ckks);
   seal_params.set_poly_modulus_degree(param.poly_modulus_degree_);
   seal_params.set_coeff_modulus(
     seal::CoeffModulus::Create(param.poly_modulus_degree_, param.coeff_modulus_));
-
+  sec_level_ = param.sec_level_;
   context_.reset(new seal::SEALContext(seal_params, true, param.sec_level_));
   enc_params_ = seal_params;
   auto keygen = std::make_shared<seal::KeyGenerator>(*context_);
   keygen->create_public_key(public_key_);
   secret_key_ = keygen->secret_key();
-  // keygen->create_relin_keys(relin_keys_);
-  // keygen->create_galois_keys(galois_keys_);
+  keygen->create_relin_keys(relin_keys_);
 
   encryptor_ = std::make_shared<seal::Encryptor>(*context_, public_key_);
   decryptor_ = std::make_shared<seal::Decryptor>(*context_, secret_key_);
@@ -69,6 +84,7 @@ void InferClient::loadDataSet(std::string& file_name) {
   auto n_sample = input_data.size();
   eval_data_.resize(n_sample);
   eval_target_.resize(n_sample);
+
   for (size_t i = 0; i < n_sample; i++) {
     eval_data_[i] = std::vector<double>(input_data[i].begin(), input_data[i].end() - 1);
     eval_target_[i] = *(input_data[i].end() - 1);
@@ -83,10 +99,10 @@ void InferClient::encodeEncryptData() {
       n_samples / slot_count_ + (n_samples % slot_count_ == 0 ? 0 : 1);
   size_t last_batch_size =
       n_samples % slot_count_ == 0 ? slot_count_ : n_samples % slot_count_;
+
   // Transpose Data
   std::vector<std::vector<std::vector<double>>> batched_data_T(total_batch);
 
-#pragma omp parallel for num_threads(OMPUtilitiesS::getThreadsAtLevel())
   for (size_t i = 0; i < total_batch; ++i) {
     size_t batchsize = i < total_batch - 1 ? slot_count_ : last_batch_size;
     auto first = eval_data_.begin() + i * slot_count_;
@@ -103,8 +119,6 @@ void InferClient::encodeEncryptData() {
     encrypted_data_[i].resize(n_features);
   }
 
-#pragma omp parallel for collapse(2) \
-    num_threads(OMPUtilitiesS::getThreadsAtLevel())
   for (size_t i = 0; i < total_batch; ++i)
     for (size_t j = 0; j < n_features; ++j)
       encrypted_data_[i][j] = encrypt(encode(
@@ -114,7 +128,7 @@ void InferClient::encodeEncryptData() {
 bool InferClient::initServerCtx() {
   std::stringstream params_stream;
   std::stringstream pubkey_stream;
-  // std::stringstream relinkey_stream;
+  std::stringstream relinkey_stream;
   InitCtxRequest request;
   InitCtxReply reply;
   size_t trans_size;
@@ -122,11 +136,12 @@ bool InferClient::initServerCtx() {
   std::cout << "EncryptionParameters: wrote " << trans_size << " bytes" << std::endl;
   trans_size = public_key_.save(pubkey_stream, seal::compr_mode_type::zstd);
   std::cout << "PublicKey: wrote " << trans_size << " bytes" << std::endl;
-  // trans_size = relin_keys_.save(relinkey_stream, seal::compr_mode_type::zstd);
-  // std::cout << "RelinKeys: wrote " << trans_size << " bytes" << std::endl;
+  trans_size = relin_keys_.save(relinkey_stream, seal::compr_mode_type::zstd);
+  std::cout << "RelinKeys: wrote " << trans_size << " bytes" << std::endl;
   request.set_params(params_stream.str());
   request.set_pub_key(pubkey_stream.str());
-  // request.set_relin_key(relinkey_stream.str());
+  request.set_relin_key(relinkey_stream.str());
+  request.set_security_level(static_cast<int>(sec_level_));
   request.set_scale(scale_);
   ClientContext context;
   auto status = stub_->InitCtx(&context, request, &reply);
@@ -138,7 +153,7 @@ bool InferClient::initServerCtx() {
   return true;
 }
 
-std::vector<seal::Ciphertext> InferClient::inferAgent() {
+std::vector<seal::Ciphertext> InferClient::infer() {
   std::stringstream data_stream;
   std::stringstream result_stream;
   auto batch_size = encrypted_data_[0].size();
@@ -177,7 +192,6 @@ std::vector<double> InferClient::decryptDecodeResult(
   size_t n_batches = encrypted_result.size();
   std::vector<double> ret(n_batches * slot_count_);
 
-#pragma omp parallel for num_tCODE_SRCShreads(OMPUtilitiesS::getThreadsAtLevel())
   for (size_t i = 0; i < n_batches; ++i) {
     seal::Plaintext pt_buf;
     decryptor_->decrypt(encrypted_result[i], pt_buf);
@@ -206,37 +220,25 @@ seal::Ciphertext InferClient::encrypt(const seal::Plaintext& v) {
 }
 
 int main(int argc, char** argv) {
-  std::string dataset(argv[1]);
-  auto param = HEParam();
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  HEParam param(FLAGS_poly_modulus_degree, FLAGS_security_level,
+                FLAGS_coeff_modulus, FLAGS_batch_size, FLAGS_scale);
   auto client = InferClient(param, grpc::CreateChannel(
       "localhost:50051", grpc::InsecureChannelCredentials()));
-  client.loadDataSet(dataset);
+  std::string fullpath(__FILE__);
+  std::string src_dir = fullpath.substr(0, fullpath.find_last_of("\\/"));
+  std::string datafile(src_dir + "/../datasets/" + FLAGS_data + "_eval.csv");
+  client.loadDataSet(datafile);
   client.encodeEncryptData();
-  
-  // auto server = InferServer();
-  // auto context = client.getContext();
-  // auto scale = client.getScale();
-  // auto relin_keys = client.getRelinKeys();
-  // auto pub_key = client.getPubKey();
 
   client.initServerCtx();
-  auto encrypted_result = client.inferAgent();
+  auto encrypted_result = client.infer();
 
-  // server.initContext(client.enc_params_, pub_key, relin_keys, scale);
-  // server.loadWeights(model_file);
-  // auto encrypted_data = client.getEncryptedData();
-
-  // auto encrypted_result = server.inference(encrypted_data);
   auto result = client.decryptDecodeResult(encrypted_result);
 
   std::transform(result.begin(), result.end(), result.begin(),
     [](const double& val) { return static_cast<int>(0.5 + val); });
-  // test
-  for (int i = 0; i < 20; i++) {
-    std::cout << result[i] << " ";
-  }
-  std::cout << std::endl;
-  // test
+
   auto eval_target = client.getEvalTarget();
   auto eval = getEvalmetrics(eval_target, result);
   std::cout << "HE inference result - accuracy: " << eval["acc"] << std::endl;

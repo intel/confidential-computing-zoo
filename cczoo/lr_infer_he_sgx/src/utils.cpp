@@ -17,6 +17,7 @@
 #include <numeric>
 #include <cmath>
 #include <stdexcept>
+#include <unistd.h>
 #include "utils.hpp"
 
 std::map<std::string, double> getEvalmetrics(

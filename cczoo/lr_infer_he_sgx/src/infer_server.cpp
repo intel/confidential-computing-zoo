@@ -18,19 +18,43 @@
 #include <iterator>
 #include <sstream>
 #include <vector>
+#include "gflags/gflags.h"
 #include "seal/seal.h"
 #include "utils.hpp"
 #include "infer_server.hpp"
 
+DEFINE_string(
+    model, "lrtest_mid", "Model name to load.");
+
 void InferServer::initContext(std::stringstream& params_stream,
-  std::stringstream& pubkey_stream, double scale) {
+  std::stringstream& pubkey_stream,
+  std::stringstream& relinkey_stream,
+  int security_level, double scale) {
   seal::EncryptionParameters params;
   params.load(params_stream);
-  seal::SEALContext context = seal::SEALContext(params, true, seal::sec_level_type::none);
+
+  seal::sec_level_type sec_level;
+  switch (security_level) {
+    case 0:
+      sec_level = seal::sec_level_type::none;
+      break;
+    case 128:
+      sec_level = seal::sec_level_type::tc128;
+      break;
+    case 192:
+      sec_level = seal::sec_level_type::tc192;
+      break;
+    case 256:
+      sec_level = seal::sec_level_type::tc256;
+      break;
+    default:
+      throw std::runtime_error("ERROR: Security level must be one of [0, 128, 192, 256].");
+  }
+
+  seal::SEALContext context = seal::SEALContext(params, true, sec_level);
   seal::PublicKey public_key;
   public_key.load(context, pubkey_stream);
-  auto keygen = seal::KeyGenerator(context);
-  keygen.create_relin_keys(relin_keys_);
+  relin_keys_.load(context, relinkey_stream);
 
   context_ = std::make_shared<seal::SEALContext>(context);
   encryptor_ = std::make_shared<seal::Encryptor>(context, public_key);
@@ -39,14 +63,13 @@ void InferServer::initContext(std::stringstream& params_stream,
   slot_count_ = encoder_->slot_count();
   scale_ = scale;
 
-  //tmp: load weights
-  std::string model_file("/home/data/lr_infer_he/cczoo/lr_infer_he_sgx/datasets/lrtest_mid_lrmodel.csv");
+  std::string fullpath(__FILE__);
+  std::string src_dir = fullpath.substr(0, fullpath.find_last_of("\\/"));
+  std::string model_file(src_dir + "/../datasets/" + FLAGS_model + "_lrmodel.csv");
   loadWeights(model_file);
-  //tmp
 }
 
 void InferServer::loadWeights(std::string& model_file) {
-  // Load Raw Weights
   if (!fileExists(model_file)) throw std::runtime_error(model_file + " not found");
   std::ifstream ifs(model_file);
 
@@ -64,7 +87,6 @@ void InferServer::loadWeights(std::string& model_file) {
   size_t n_features = weights.size();
   encoded_weights_.resize(n_features);
 
-  #pragma omp parallel for num_threads(OMPUtilitiesS::getThreadsAtLevel())
   for (size_t i = 0; i < n_features; ++i)
     encoded_weights_[i] = encode(gsl::span(
         std::vector<double>(slot_count_, weights[i]).data(), slot_count_));
@@ -131,14 +153,12 @@ seal::Ciphertext InferServer::vecMatProduct(
   size_t rows = A_T_extended.size();
   std::vector<seal::Ciphertext> retval(rows);
 
-#pragma omp parallel for num_threads(OMPUtilitiesS::getThreadsAtLevel())
   for (size_t r = 0; r < rows; ++r) {
     evaluator_->multiply_plain(B[r], A_T_extended[r], retval[r]);
   }
   // add all rows
   size_t step = 2;
   while ((step / 2) < rows) {
-#pragma omp parallel for num_threads(OMPUtilitiesS::getThreadsAtLevel())
     for (size_t i = 0; i < rows; i += step) {
       if ((i + step / 2) < rows)
         evaluator_->add_inplace(retval[i], retval[i + step / 2]);
@@ -230,10 +250,13 @@ Status InferServiceImpl::InitCtx(ServerContext* context,
   std::stringstream relinkey_stream;
   params_stream << request->params();
   pubkey_stream << request->pub_key();
+  relinkey_stream << request->relin_key();
+  int sec_level = request->security_level();
   double scale = request->scale();
-  server_.initContext(params_stream, pubkey_stream, scale);
+  server_.initContext(params_stream, pubkey_stream, relinkey_stream, sec_level, scale);
   return Status::OK;
 }
+
 Status InferServiceImpl::Infer(ServerContext* context,
   const InferRequest* request, InferReply* reply) {
   std::stringstream data_stream;
@@ -276,6 +299,7 @@ void RunServer() {
 }
 
 int main(int argc, char** argv) {
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
   RunServer();
   return 0;
 }
