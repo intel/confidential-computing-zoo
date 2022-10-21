@@ -42,6 +42,7 @@ ln -s libmbedtls.so.* libmbedtls.so
 cp ../mbedtls/install/lib/libmbedx509.so.* .
 ln -s libmbedx509.so.* libmbedx509.so
 
+if [ "$1" == "ubuntu" ]; then
 cp -r ${MBEDTLS_PATH}/mbedtls/install/include ${INSTALL_PREFIX}
 cp -r ${MBEDTLS_PATH}/mbedtls/install/lib/*.a ${INSTALL_PREFIX}/lib
 cp -r ${MBEDTLS_PATH}/libs/* /usr/lib/x86_64-linux-gnu
@@ -55,6 +56,17 @@ whereis libra_tls_attest libra_tls_verify_dcap libra_tls_verify_epid libra_tls_v
 
 ls -l /usr/lib/x86_64-linux-gnu/libsgx_dcap_quoteverify.so*
 
+elif [ "$1" == "anolisos" ]; then
+cp -r ${MBEDTLS_PATH}/mbedtls/install/include/mbedtls ${INSTALL_PREFIX}/include
+cp -r ${MBEDTLS_PATH}/mbedtls/install/lib/*.a ${INSTALL_PREFIX}/lib64
+cp -r ${MBEDTLS_PATH}/libs/* ${INSTALL_PREFIX}/lib64
+
+whereis libmbedcrypto libmbedtls libmbedx509 
+whereis libsgx_util libsgx_dcap_quoteverify libdcap_quoteprov.so.*
+whereis libra_tls_attest libra_tls_verify_dcap libra_tls_verify_epid libra_tls_verify_dcap_graphene
+fi
+
 env
 
  cd ${MBEDTLS_PATH}
+ 

@@ -25,7 +25,7 @@ fi
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=clf-client:graminemaster-ubuntu20.04-latest
+    image_tag=clf-server:gramine1.3-ubuntu20.04
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
