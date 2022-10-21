@@ -1,3 +1,4 @@
+#
 # Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,18 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-message(STATUS "Using gRPC via add_subdirectory (FetchContent).")
-include(FetchContent)
-FetchContent_Declare(
-  grpc
-  GIT_REPOSITORY https://github.com/grpc/grpc.git
-  GIT_TAG        v1.38.1)
-FetchContent_MakeAvailable(grpc)
+#!/bin/bash
+set -e
 
-# Since FetchContent uses add_subdirectory under the hood, we can use
-# the grpc targets directly from this build.
-set(PROTOBUF_LIBPROTOBUF libprotobuf)
-set(REFLECTION grpc++_reflection)
-set(PROTOBUF_PROTOC $<TARGET_FILE:protoc>)
-set(GRPC_GRPCPP grpc++)
-set(GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+# You can remove no_proxy and proxy_server if your network doesn't need it
+no_proxy="localhost,127.0.0.1"
+proxy_server="http://child-prc.intel.com:913" # your http proxy server
+
+cd `dirname $0`
+
+DOCKER_BUILDKIT=0 docker build \
+    --build-arg no_proxy=${no_proxy} \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    -f Dockerfile \
+    -t lr_he_sgx:latest \
+    .
