@@ -15,18 +15,25 @@
 
 #!/bin/bash
 set -e
+COLORLESS="\033[0m"
+RED="\033[31m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
 
 #below is fake secret, you need to replace with your valid ones
-ccp-cli pack --app-entry="/usr/bin/java" \
-             --memsize=8192M --thread=64 \
-             --tmpl=clf_client \
-             --secret-id=AKID3vXswkIAl59vQebIjskMhlY5KJ1RbU6S \
-             --secret-key=6vTklUw83i6C1Zrra3GBpCI8gy9NTIr9 \
-             --capp-id=capp-ODdjZWZhOWYt \
-             --app-image=clf-client:gramine1.3-ubuntu20.04 \
-             --app-type=image \
-             --start=/clf/cczoo/cross_lang_framework/clf_client/app
-
+echo -e "ccp-cli pack ${GREEN}--app-entry${COLORLESS}=\"/usr/bin/java\"" 
+echo -e "             ${GREEN}--memsize${COLORLESS}=8192M ${GREEN}--thread${COLORLESS}=64" 
+echo -e "             ${GREEN}--tmpl${COLORLESS}=clf_client"
+echo -e "             ${GREEN}--secret-id${COLORLESS}=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+echo -e "             ${GREEN}--secret-key${COLORLESS}=kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+echo -e "             ${GREEN}--capp-id${COLORLESS}=capp-ODdjZWZhOWYt"
+echo -e "             ${GREEN}--app-image${COLORLESS}=clf-client:gramine1.3-ubuntu20.04"
+echo -e "             ${GREEN}--app-type${COLORLESS}=image"
+echo -e "             ${GREEN}--start${COLORLESS}=/clf/cczoo/cross_lang_framework/clf_client/app"
+echo -e ""
 # just an example about how to run
-docker run -ti --device /dev/sgx_enclave --device /dev/sgx_provision --add-host=VM-0-3-ubuntu:10.206.0.3 sec_clf-client:gramine1.3-ubuntu20.04  -Xmx2G clf_test VM-0-3-ubuntu
+echo -e "docker run -ti ${GREEN}--device${COLORLESS} /dev/sgx_enclave ${GREEN}--device${COLORLESS} /dev/sgx_provision"
+echo -e "             ${GREEN}--add-host${COLORLESS}=VM-30-8-ubuntu:10.0.30.8 clf-client:gramine1.3-ubuntu20.04"
+echo -e "             -Xmx4G clf_test VM-30-8-ubuntu"
+echo -e ""
 

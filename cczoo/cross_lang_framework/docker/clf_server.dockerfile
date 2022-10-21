@@ -46,7 +46,7 @@ RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ] ; then \
         echo "use ubuntu:20.04 as base image" ; \
         echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
     else \
-        echo "wrong base image!" ;\
+        echo "wrong base image!, base image can only be ubuntu:18.04 or ubuntu:20.04 at present." ;\
     fi
 
 RUN wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add - \
@@ -150,8 +150,7 @@ RUN if [ ${PCCS_URL} != "default"  ]; then \
     fi
 
 #todo
-#RUN n=0; until [ $n -ge 100 ] ;  do echo $n; n=$(($n+1)); git clone https://github.com/intel/confidential-computing-zoo.git ${CLF_PATH} && break; sleep 1; done
-RUN n=0; until [ $n -ge 100 ] ;  do echo $n; n=$(($n+1)); git clone https://github.com/liangintel/confidential-computing-zoo.git ${CLF_PATH} && break; sleep 1; done
+RUN n=0; until [ $n -ge 100 ] ;  do echo $n; n=$(($n+1)); git clone https://github.com/intel/confidential-computing-zoo.git ${CLF_PATH} && break; sleep 1; done
 RUN cd ${CLF_PATH} \
     && git checkout ccp \
     && echo "---build clf_server---" \
