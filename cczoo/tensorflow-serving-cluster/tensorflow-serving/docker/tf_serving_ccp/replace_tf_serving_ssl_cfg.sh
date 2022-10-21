@@ -35,7 +35,7 @@ ssl_configure=$3
 proxy_server=""
 
 docker run -itd \
-    --name ${container_name}
+    --name ${container_name} \
     -v ${ssl_configure}:/tmp/ssl_configure \
     ${image_tag} \
     .
