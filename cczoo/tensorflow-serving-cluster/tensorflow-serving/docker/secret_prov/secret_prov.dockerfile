@@ -22,7 +22,6 @@ ARG AZURE
 ENV GRAMINEDIR=/gramine
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV WORK_BASE_PATH=${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov
-ENV SGX_SIGNER_KEY=${GRAMINEDIR}/Pal/src/host/Linux-SGX/signer/enclave-key.pem
 ENV WERROR=1
 ENV SGX=1
 ENV LC_ALL=C.UTF-8
@@ -53,6 +52,7 @@ RUN apt-get update \
         wget \
         curl \
         init \
+        nasm \
     && apt-get install -y --no-install-recommends apt-utils
 
 RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list \
@@ -92,7 +92,7 @@ RUN if [ -z "$AZURE" ]; then \
 # Clone Gramine and Init submodules
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
-    && git checkout c662f63bba76736e6d5122a866da762efd1978c1
+    && git checkout v1.2
 
 
 # Create SGX driver for header files
@@ -102,15 +102,13 @@ RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${
 
 RUN apt-get install -y gawk bison python3-click python3-jinja2 golang  ninja-build python3
 RUN apt-get install -y libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler
-RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55'
-
-RUN openssl genrsa -3 -out ${SGX_SIGNER_KEY} 3072
+RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55' cryptography
 
 # Build Gramine
 RUN cd ${GRAMINEDIR} && pwd && meson setup build/ --buildtype=debug -Dsgx=enabled -Ddcap=enabled -Dsgx_driver="dcap1.10" -Dsgx_driver_include_path="/gramine/driver/driver/linux/include" \
     && ninja -C build/ \
     && ninja -C build/ install
-
+RUN gramine-sgx-gen-private-key
 
 # Clean apt cache
 RUN apt-get clean all
@@ -119,7 +117,9 @@ RUN apt-get clean all
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
     && make app dcap
 
-COPY certs/server2-sha256.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/certs
+COPY certs/server.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
+COPY certs/server.key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
+COPY certs/ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 
 COPY sgx_default_qcnl.conf /etc/
 COPY entrypoint_secret_prov_server.sh /usr/bin/

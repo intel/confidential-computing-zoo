@@ -155,7 +155,7 @@ COPY patches/tf ${TF_BUILD_PATH}
 RUN cd ${TF_BUILD_PATH} && git apply tf2_4.diff
 
 # build and install TensorFlow
-RUN cd ${TF_BUILD_PATH} && ./build.sh
+RUN cd ${TF_BUILD_PATH} && ./build.sh ubuntu
 RUN cd ${TF_BUILD_PATH} && bazel build -c opt //tensorflow/tools/pip_package:build_pip_package
 RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} && pip install ${TF_BUILD_OUTPUT}/tensorflow-*.whl
 

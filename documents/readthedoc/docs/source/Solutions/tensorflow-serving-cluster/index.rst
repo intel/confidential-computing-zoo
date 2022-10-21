@@ -274,6 +274,12 @@ For other cloud deployments::
    ./build_secret_prov_image.sh
    ./run_secret_prov.sh -i secret_prov_server:latest -a pccs.service.com:ip_addr
 
+For Anolisos cloud deployments::
+
+   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
+   ./build_secret_prov_image.sh anolisos
+   ./run_secret_prov.sh -i anolisos_secret_prov_server:latest -a pccs.service.com:ip_addr
+
 *Note*:
    1. ``ip_addr`` is the host machine where your PCCS service is installed.
    2. ``secret provision service`` will start port ``4433`` and monitor request. Under public cloud instance, please make sure the port ``4433`` is enabled to access.
@@ -322,6 +328,11 @@ For other cloud deployments::
    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
    ./build_gramine_tf_serving_image.sh
 
+For Anolisos cloud deployments::
+
+   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
+   ./build_gramine_tf_serving_image.sh anolisos
+
 The dockerfile used is ``gramine_tf_serving.dockerfile``, which includes the following install items:
 
 - Install basic dependencies for source code build.
@@ -369,7 +380,13 @@ Run the TensorFlow Serving container::
     cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
     cp ssl_configure/ssl.cfg .
     sudo ./run_gramine_tf_serving.sh -i gramine_tf_serving:latest -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
-   
+
+Run the TensorFlow Serving container::
+
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
+    cp ssl_configure/ssl.cfg .
+    sudo ./run_gramine_tf_serving.sh -i anolisos_gramine_tf_serving:latest -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
+
 *Note*:
    1. ``8500-8501`` are the ports created on (bound to) the host, you can change them if you need.
    2. ``secret_prov_service_container_ip_addr`` is the ip address of the container running the secret provisioning service.
@@ -404,10 +421,18 @@ Build the Client container::
     cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
     sudo docker build -f client.dockerfile . -t client:latest
 
+Build the Client container in Anolisos::
+
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
+    sudo docker build -f anolisos_client.dockerfile . -t anolisos_client:latest
+
 Run the Client container::
 
     sudo docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" client:latest bash
 
+Run the Client container in Anolisos::
+
+    sudo docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" anolisos_client:latest bash
 
 3.2 Send remote inference request
 ^^^^^^^^^^^^^^^^^^^^^^^
