@@ -24,7 +24,7 @@
 #include "infer_server.hpp"
 
 DEFINE_string(
-    model, "lrtest_mid", "Model name to load.");
+    model, "lrtest_mid_lrmodel.csv", "Model file to load.");
 
 void InferServer::initContext(std::stringstream& params_stream,
   std::stringstream& pubkey_stream,
@@ -63,10 +63,10 @@ void InferServer::initContext(std::stringstream& params_stream,
   slot_count_ = encoder_->slot_count();
   scale_ = scale;
 
-  std::string fullpath(__FILE__);
-  std::string src_dir = fullpath.substr(0, fullpath.find_last_of("\\/"));
-  std::string model_file(src_dir + "/../datasets/" + FLAGS_model + "_lrmodel.csv");
-  loadWeights(model_file);
+  // std::string fullpath(__FILE__);
+  // std::string src_dir = fullpath.substr(0, fullpath.find_last_of("\\/"));
+  // std::string model_file(src_dir + "/../datasets/" + FLAGS_model + "_lrmodel.csv");
+  loadWeights(FLAGS_model);
 }
 
 void InferServer::loadWeights(std::string& model_file) {

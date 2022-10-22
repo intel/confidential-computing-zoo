@@ -24,7 +24,7 @@
 #include "infer_server.hpp"
 
 DEFINE_string(
-    data, "lrtest_mid", "Dataset name to test.");
+    data, "lrtest_mid_eval.csv", "Data file to test.");
 
 DEFINE_int32(poly_modulus_degree, 8192,
              "Set polynomial modulus for CKKS context. Determines the batch "
@@ -225,10 +225,10 @@ int main(int argc, char** argv) {
                 FLAGS_coeff_modulus, FLAGS_batch_size, FLAGS_scale);
   auto client = InferClient(param, grpc::CreateChannel(
       "localhost:50051", grpc::InsecureChannelCredentials()));
-  std::string fullpath(__FILE__);
-  std::string src_dir = fullpath.substr(0, fullpath.find_last_of("\\/"));
-  std::string datafile(src_dir + "/../datasets/" + FLAGS_data + "_eval.csv");
-  client.loadDataSet(datafile);
+  // std::string fullpath(__FILE__);
+  // std::string src_dir = fullpath.substr(0, fullpath.find_last_of("\\/"));
+  // std::string datafile(src_dir + "/../datasets/" + FLAGS_data + "_eval.csv");
+  client.loadDataSet(FLAGS_data);
   client.encodeEncryptData();
 
   client.initServerCtx();
