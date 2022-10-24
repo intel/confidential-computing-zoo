@@ -16,7 +16,7 @@ After passing the quote verification, the model provider deploys the AI workload
 The user generates a HE key pair locally and encrypts privacy data for inference with the public key. The encrypted data is transferred to the cloud server and do inference there. 
 After the inference is completed, the encrypted result is sent back to the user through gRPC. User decrypts it with the private key and obtains the plaintext of finial result.
 
-![image](https://user-images.githubusercontent.com/27326867/197309340-5cf8737f-de85-481a-809d-2ca2e853a834.png)
+![image](https://user-images.githubusercontent.com/27326867/197438740-9923ca2e-0911-40a0-bf5e-d0bcebc78609.png)
 
 ## Build and Run
 ### Prerequisite
