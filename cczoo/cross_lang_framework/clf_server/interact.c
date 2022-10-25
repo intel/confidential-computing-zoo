@@ -1,5 +1,20 @@
-/* SPDX-License-Identifier: LGPL-3.0-or-later */
-/* Copyright (C) 2020 Intel Labs */
+/*
+ *
+ * Copyright (c) 2022 Intel Corporation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
 
 #include <assert.h>
 #include <errno.h>
@@ -47,9 +62,9 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	}
 
 	/* send control struct */
-	int bytes = secret_provision_write(ctx, (uint8_t*)&resp, sizeof(resp));
-	if (bytes < 0) {
-		log_error("[error] secret_provision_write(resp) returned %d\n", bytes);
+	int r = secret_provision_write(ctx, (uint8_t*)&resp, sizeof(resp));
+	if (r < 0) {
+		log_error("[error] secret_provision_write(resp) returned %d\n", r);
 		ret = STATUS_NET_SEND_FAIL;
 		goto out;
 	}
@@ -79,9 +94,9 @@ int send_data(struct ra_tls_ctx* ctx, msg_req_t *req) {
 			if(0 == len) {
 				break;
 			}
-			bytes = secret_provision_write(ctx, (uint8_t*)buf, len);
-			if (bytes < 0) {
-				log_error("[error] secret_provision_write(data) returned %d\n", bytes);
+			r = secret_provision_write(ctx, (uint8_t*)buf, len);
+			if (r < 0) {
+				log_error("[error] secret_provision_write(data) returned %d\n", r);
 				ret = STATUS_NET_SEND_FAIL;
 				goto out;
 			}
@@ -120,9 +135,9 @@ int send_size(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	}
 
 	/* send control struct */
-	int bytes = secret_provision_write(ctx, (uint8_t*)&resp, sizeof(resp));
-	if (bytes < 0) {
-		log_error("[error] secret_provision_write(resp) returned %d\n", bytes);
+	int r = secret_provision_write(ctx, (uint8_t*)&resp, sizeof(resp));
+	if (r < 0) {
+		log_error("[error] secret_provision_write(resp) returned %d\n", r);
 		ret = STATUS_NET_SEND_FAIL;
 		goto out;
 	}
@@ -138,9 +153,9 @@ out:
  */
 int put_result(struct ra_tls_ctx* ctx, msg_req_t *req) {
 	int ret = STATUS_FAIL;
+	int r;
 	msg_resp_t resp = {0};
 	int8_t* buf = 0;
-	int64_t bytes = 0;
 
 	log_debug("Request: MSG_PUT_RESULT\n");
 
@@ -170,27 +185,27 @@ int put_result(struct ra_tls_ctx* ctx, msg_req_t *req) {
 		 * secret_provision_read guarantees all len bytes can be received, namely bytes == len,
 		 * otherwise it returns failure: -ECONNRESET
 		 */
-		bytes = secret_provision_read(ctx, (uint8_t *)buf, len);
-		if (bytes < 0) {
-			if (bytes == -ECONNRESET) {
+		r = secret_provision_read(ctx, (uint8_t *)buf, len);
+		if (r < 0) {
+			if (r == -ECONNRESET) {
 				printf("Connection closed\n");
 				resp.status = STATUS_FAIL;
 				goto resp_result;
 			}
 
-			log_error("[error] secret_provision_read() returned %ld\n", bytes);
+			log_error("[error] secret_provision_read() returned %d\n", r);
 			resp.status = STATUS_FAIL;
 			goto resp_result;
 		}
 
-		len = filewrite((char*)req->put_res.fname, req->put_res.offset + received, buf, len);
+		int64_t len_written = filewrite((char*)req->put_res.fname, req->put_res.offset + received, buf, len);
 		/* return failure if not all the bytes been written */
-		if(bytes != len) {
+		if(len_written != len) {
 			resp.status = STATUS_FAIL;;
 			goto resp_result;
 		}
 
-		received += bytes;
+		received += len;
 	}
 
 	resp.status = STATUS_SUCCESS;
@@ -198,9 +213,9 @@ int put_result(struct ra_tls_ctx* ctx, msg_req_t *req) {
 resp_result:
 	/* send resp struct */
 	resp.put_res.received_len = received;
-	bytes = secret_provision_write(ctx, (uint8_t*)&resp, sizeof(resp));
-	if (bytes < 0) {
-		log_error("[error] secret_provision_write(resp) returned %ld\n", bytes);
+	r = secret_provision_write(ctx, (uint8_t*)&resp, sizeof(resp));
+	if (r < 0) {
+		log_error("[error] secret_provision_write(resp) returned %d\n", r);
 		ret = STATUS_NET_SEND_FAIL;
 		goto out;
 	}
@@ -223,20 +238,20 @@ int invalid_req_cnt = 0;
 int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
 	int ret;
 	msg_req_t req = {0};
-	int bytes;
+	int r;
 
 	log_info("total_req_cnt=%d\n", ++socket_cnt);
 
 	while (1) {
-		bytes = secret_provision_read(ctx, (uint8_t *)&req, sizeof(msg_req_t));
-		if (bytes < 0) {
-			if (bytes == -ECONNRESET) {
-				//printf("Connection closed\n");
+		r = secret_provision_read(ctx, (uint8_t *)&req, sizeof(msg_req_t));
+		if (r < 0) {
+			if (r == -ECONNRESET) {
+				printf("Connection closed\n");
 				ret = STATUS_SUCCESS;
 				goto out;
 			}
 
-			log_error("[error] secret_provision_read() returned %d\n", bytes);
+			log_error("[error] secret_provision_read() returned %d\n", r);
 			ret = STATUS_FAIL;
 			goto out;
 		}
@@ -262,7 +277,6 @@ int communicate_with_client_callback(struct ra_tls_ctx* ctx) {
 
 	ret = 0;
 out:
-	secret_provision_close(ctx);
 	return ret;
 }
 

@@ -33,9 +33,7 @@ To solve the problem of how to verify the untrusted application integrity, we us
 ## Workflow
 In the training process, each worker uses local data in its enclave to complete a round of training, and then sends the gradient information in the backpropagation process to the parameter server through the RA-TLS technology, and then the parameter server completes the gradient aggregation and update network parameters, and then send the updated parameters to each worker. The workflow is as follows:
 
-<div align=center>
-<img src=images/HFL.svg>
-</div>
+![](images/HFL.svg)
 
 The training phase can be divided into the following steps:
 
@@ -129,34 +127,37 @@ For other cloud deployments:
 ```shell
 ./build_docker_image.sh recommendation_system <ubuntu:18.04/ubuntu:20.04>
 ```
-
+For deployments on Anolisos:
+```shell
+./build_docker_image.sh recommendation_system anolisos
+```
 #### Start containers and run the training scripts
 Start five containers (ps0, worker0, worker1, worker2, worker3) and run the script for the corresponding job in each container.
 
 If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
 
 ```shell
-./start_container.sh ps0 <PCCS ip addr>
+./start_container.sh ps0 <PCCS ip addr> <ubuntu/anolisos>
 cd recommendation_system
 test-sgx.sh ps0
 ```
 ```shell
-./start_container.sh worker0 <PCCS ip addr>
+./start_container.sh worker0 <PCCS ip addr> <ubuntu/anolisos>
 cd recommendation_system
 test-sgx.sh worker0
 ```
 ```shell
-./start_container.sh worker1 <PCCS ip addr>
+./start_container.sh worker1 <PCCS ip addr> <ubuntu/anolisos>
 cd recommendation_system
 test-sgx.sh worker1
 ```
 ```shell
-./start_container.sh worker2 <PCCS ip addr>
+./start_container.sh worker2 <PCCS ip addr> <ubuntu/anolisos>
 cd recommendation_system
 test-sgx.sh worker2
 ```
 ```shell
-./start_container.sh worker3 <PCCS ip addr>
+./start_container.sh worker3 <PCCS ip addr> <ubuntu/anolisos>
 cd recommendation_system
 test-sgx.sh worker3
 ```
@@ -185,23 +186,27 @@ For other cloud deployments:
 ```shell
 ./build_docker_image.sh image_classification <ubuntu:18.04/ubuntu:20.04>
 ```
+For deployments on Anolisos:
+```shell
+./build_docker_image.sh image_classification anolisos
+```
 
 #### Start containers and run the training scripts
 Start three containers (ps0, worker0, worker1) and run the script for the corresponding job in each container.
 
 If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
 ```shell
-./start_container.sh ps0 <PCCS ip addr>
+./start_container.sh ps0 <PCCS ip addr> <ubuntu/anolisos>
 cd image_classification
 test-sgx.sh ps0
 ```
 ```shell
-./start_container.sh worker0 <PCCS ip addr>
+./start_container.sh worker0 <PCCS ip addr> <ubuntu/anolisos>
 cd image_classification
 test-sgx.sh worker0
 ```
 ```shell
-./start_container.sh worker1 <PCCS ip addr>
+./start_container.sh worker1 <PCCS ip addr> <ubuntu/anolisos>
 cd image_classification
 test-sgx.sh worker1
 ```

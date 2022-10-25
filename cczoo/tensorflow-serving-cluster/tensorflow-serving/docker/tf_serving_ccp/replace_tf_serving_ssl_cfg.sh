@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2022 Intel Corporation
+# Copyright (c) 2021 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,11 +13,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+#!/usr/bin/env bash
+
 set -e
 
-export MBEDTLS_PATH=${GRAMINEDIR}/CI-Examples/ra-tls-mbedtls
-
-# Build ra-tls-mbedtls
-if [ ! -d "${MBEDTLS_PATH}/mbedtls" ]; then
-    ${MBEDTLS_PATH}/build_install.sh $1
+if  [ ! -n "$1" ] ; then
+    image_tag=tf_serving:latest
+else
+    image_tag=$1
 fi
+
+if  [ ! -n "$2" ] ; then
+    container_name="tf-serving"
+else
+    container_name=$2
+fi
+
+ssl_configure=$3
+
+# You can remove build-arg http_proxy and https_proxy if your network doesn't need it
+proxy_server=""
+
+docker run -itd \
+    --name ${container_name} \
+    -v ${ssl_configure}:/tmp/ssl_configure \
+    ${image_tag} \
+    .
+
+docker commit ${container_name} ${image_tag}
+
+docker rm -f ${container_name}
