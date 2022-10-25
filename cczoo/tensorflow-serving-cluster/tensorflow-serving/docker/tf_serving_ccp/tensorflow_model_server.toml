@@ -1,0 +1,65 @@
+# Basic template
+
+app.capi_target = "ccp.tencentcloudapi.com"
+app.kms_target = "kms.tencentcloudapi.com"
+
+##loader.preload = "file:{{ gramine.libos }}"
+loader.entrypoint = "file:{{ gramine.libos }}"
+loader.log_level = "error"
+
+# loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}:./"
+loader.env.LD_LIBRARY_PATH = "/usr/lib/python3.8/lib:/lib:/lib/x86_64-linux-gnu:/usr/lib:/usr/lib/x86_64-linux-gnu"
+#loader.env.PATH = "/usr/bin"
+
+loader.insecure__use_cmdline_argv = true
+##sys.enable_sigterm_injection = true
+
+fs.root.type = "chroot"
+fs.root.path = "/"
+fs.root.uri = "file:/"
+
+fs.mount.lib.type = "chroot"
+fs.mount.lib.path = "/lib"
+fs.mount.lib.uri = "file:{{ gramine.runtimedir() }}"
+
+loader.pal_internal_mem_size = "200M"
+
+sgx.nonpie_binary = true
+sgx.enclave_size = "4G"
+sgx.thread_num = 400
+sgx.remote_attestation = true
+sgx.ra_client_spid = ""
+
+loader.env.LD_PRELOAD = "libsecret_prov_attest.so"
+loader.env.SECRET_PROVISION_CONSTRUCTOR = "1"
+loader.env.SECRET_PROVISION_SET_PF_KEY = "1"
+loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "/certs/test-ca-sha256.crt"
+loader.env.SECRET_PROVISION_SERVERS = "attestation.service.com:4433"
+
+sgx.trusted_files = [
+  "file:{{ gramine.runtimedir() }}/",
+  "file:{{ python.distlib }}/",
+  "file:/usr/lib/x86_64-linux-gnu/",
+  "file:/lib/x86_64-linux-gnu/",
+  "file:/opt/ccp/bin/ccp-agent",
+  "file:/certs/test-ca-sha256.crt"
+]
+
+
+sgx.allowed_files = [
+  "file:/",
+  "file:/etc/nsswitch.conf",
+  "file:/etc/ethers",
+  "file:/etc/hosts",
+  "file:/etc/group",
+  "file:/etc/passwd",
+  "file:/etc/gai.conf",
+  "file:/etc/host.conf",
+  "file:/etc/resolv.conf",
+  "file:/ssl.cfg"
+]
+
+sgx.protected_files = [
+  "file:/models/resnet50-v15-fp32/1/saved_model.pb"
+]
+
