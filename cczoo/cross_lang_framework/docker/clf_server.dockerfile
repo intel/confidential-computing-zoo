@@ -152,7 +152,7 @@ RUN if [ ${PCCS_URL} != "default"  ]; then \
 #todo
 RUN n=0; until [ $n -ge 100 ] ;  do echo $n; n=$(($n+1)); git clone https://github.com/intel/confidential-computing-zoo.git ${CLF_PATH} && break; sleep 1; done
 RUN cd ${CLF_PATH} \
-    && git checkout ccp \
+    && git checkout branch-dev/cross_lang_framework \
     && echo "---build clf_server---" \
     && cd ${CLF_PATH}/cczoo/cross_lang_framework/clf_server \
     && GRAMINEDIR=/gramine make
