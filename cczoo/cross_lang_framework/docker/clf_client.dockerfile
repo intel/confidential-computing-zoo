@@ -145,15 +145,11 @@ ARG CLF_DIR=/clf
 ENV CLF_PATH=${CLF_DIR}
 RUN n=0; until [ $n -ge 100 ] ;  do echo $n; n=$(($n+1)); git clone https://github.com/intel/confidential-computing-zoo.git ${CLF_PATH} && break; sleep 1; done
 RUN cd ${CLF_PATH} \
-    && git checkout ccp \
+    && git checkout branch-dev/cross_lang_framework \
     && echo "---build clf_client library---" \
     && cd ${CLF_PATH}/cczoo/cross_lang_framework/clf_client/java \
     && sed -i -r 's/(.*)(sudo )(.*)/\1\3/' Makefile \
-    && GRAMINEDIR=/gramine make \
-    && echo "---build sample app---" \
-    && cd ${CLF_PATH}/cczoo/cross_lang_framework/clf_client/app \
-    && git diff clf_test.java \
-    && GRAMINEDIR=/gramine SGX_SIGNER_KEY=${HOME}/.config/gramine/enclave-key.pem make SGX=1
+    && GRAMINEDIR=/gramine make 
 
 # Workspace
 WORKDIR ${CLF_PATH}/cczoo/cross_lang_framework/clf_client/app

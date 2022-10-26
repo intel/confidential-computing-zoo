@@ -33,7 +33,7 @@ echo -e ""
 # just an example about how to run
 echo -e "docker run -it ${GREEN}-p${COLORLESS} 4433:4433 ${GREEN}--device${COLORLESS} /dev/sgx_enclave ${GREEN}--device${COLORLESS} /dev/sgx_provision"
 echo -e "             ${GREEN}--v${COLORLESS} /home/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server/certs:/clf/cczoo/cross_lang_framework/clf_server/certs"
-echo -e "             ${GREEN}--v${COLORLESS} /home/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server/clf_server.conf:/clf/cczoo/cross_lang_framework/clf_server/clf_server.conf"             
+echo -e "             ${GREEN}--v${COLORLESS} /home/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server/clf_server.conf:/clf/cczoo/cross_lang_framework/clf_server/clf_server.conf"
 echo -e "             ${GREEN}--add-host${COLORLESS}=VM-0-3-ubuntu:10.206.0.3 clf-server:gramine1.3-ubuntu20.04"
 echo -e ""
 
