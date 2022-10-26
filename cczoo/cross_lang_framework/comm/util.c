@@ -65,7 +65,6 @@ status_t read_config(const char* f, const char* key, char* val, int len, int *re
 			continue;
 		}
 
-		int len = strlen(line);
 		char *pos = strchr(line, '=');
 		if (pos == NULL)
 		{

@@ -5,7 +5,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,31 +17,31 @@
 set -e
 
 if  [ -n "$1" ] ; then
-    base_image=$1
+    ip_addr=$1
 else
-    base_image=ubuntu:20.04
+    ip_addr=127.0.0.1
 fi
 
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=gramine-sgx-dev:master-ubuntu20.04-latest
+    image_tag=clf-client:gramine1.3-ubuntu20.04
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"
 proxy_server="" # your http proxy server
 
-cd `dirname $0`
-
-DOCKER_BUILDKIT=0 docker build \
-    --build-arg no_proxy=${no_proxy} \
-    --build-arg http_proxy=${proxy_server} \
-    --build-arg https_proxy=${proxy_server} \
-    --build-arg base_image=${base_image} \
-    --build-arg BASE_IMAGE=${base_image} \
-    -f gramine-sgx-dev.dockerfile \
-    -t ${image_tag} \
-    .
-
-cd -
+docker run -it \
+    --restart=unless-stopped \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --device=/dev/sgx_enclave:/dev/sgx/enclave \
+    --device=/dev/sgx_provision:/dev/sgx/provision \
+    --add-host=pccs.service.com:${ip_addr} \
+    -e no_proxy=${no_proxy} \
+    -e http_proxy=${proxy_server} \
+    -e https_proxy=${proxy_server} \
+    -v /home:/home/host-home \
+    ${image_tag} \
+    bash

@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# https://github.com/oscarlab/graphene/blob/master/Tools/gsc/images/graphene_aks.latest.dockerfile
-
+#---------------------------------------------
+# Install SGX environment
+# (adjust based on gramine-sgx-dev.dockerfile)
+#---------------------------------------------
 ARG base_image=ubuntu:20.04
 FROM ${base_image}
 
@@ -24,22 +26,12 @@ ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib/x86_64-linux-gnu
 ENV PATH=${INSTALL_PREFIX}/bin:${LD_LIBRARY_PATH}:${PATH}
 ENV LC_ALL=C.UTF-8 LANG=C.UTF-8
 
-# Add steps here to set up dependencies
+# Add steps here to set up dependencies (check gramine dependence)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends apt-utils \
     && apt-get install -y \
-        ca-certificates \
-        build-essential \
-        autoconf \
-        libtool \
-        python3-pip \
-        python3-dev \
-        git \
-        zlib1g-dev \
-        wget \
-        unzip \
-        vim \
-        jq \
+        ca-certificates build-essential libtool python3-dev \
+        git zlib1g-dev unzip vim jq gdb musl-tools \
         autoconf bison gawk nasm ninja-build python3 python3-click \
         python3-jinja2 python3-pyelftools wget \
         libcurl4-openssl-dev \
@@ -54,7 +46,7 @@ RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ] ; then \
         echo "use ubuntu:20.04 as base image" ; \
         echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
     else \
-        echo "wrong base image!" ;\
+        echo "wrong base image!, base image can only be ubuntu:18.04 or ubuntu:20.04 at present." ;\
     fi
 
 RUN wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add - \
@@ -69,9 +61,9 @@ RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-default-qpl libsgx-dcap-qu
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-# ENV GRAMINE_VERSION=c662f63bba76736e6d5122a866da762efd1978c1
-# ENV GRAMINE_VERSION=v1.2
-ENV GRAMINE_VERSION=master
+# ENV GRAMINE_VERSION=b84f9de995422456fec02d48b0e02ef5938abc94
+ENV GRAMINE_VERSION=v1.3.1
+# ENV GRAMINE_VERSION=master
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 # ENV SGX_SIGNER_KEY=${GRAMINEDIR}/Pal/src/host/Linux-SGX/signer/enclave-key.pem
 ENV WERROR=1
@@ -84,26 +76,32 @@ RUN apt-get update && apt-get install -y bison gawk nasm python3-click python3-j
 RUN pip3 install --upgrade pip \
     && pip3 install 'meson>=0.56' 'toml>=0.10' cryptography
 
-#todo: use github gramine
-RUN mkdir -p ${GRAMINEDIR}
-COPY gramine_repo ${GRAMINEDIR}
-RUN cd ${GRAMINEDIR} && git checkout ${GRAMINE_VERSION}
-#RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
-#    && cd ${GRAMINEDIR} \
-#    && git checkout ${GRAMINE_VERSION}
+# for debug, just copy gramine from local in case failed to clone from github
+#RUN mkdir -p ${GRAMINEDIR}
+#COPY gramine_repo ${GRAMINEDIR}
+#RUN cd ${GRAMINEDIR} && git checkout ${GRAMINE_VERSION}
+RUN n=0; until [ $n -ge 100 ] ;  do echo $n; n=$(($n+1)); git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} && break; sleep 1; done \
+    && cd ${GRAMINEDIR} \
+    && git checkout ${GRAMINE_VERSION}
 
-#todo: use github
-RUN mkdir -p ${ISGX_DRIVER_PATH}
-COPY SGXDataCenterAttestationPrimitives ${ISGX_DRIVER_PATH}
-RUN cd ${ISGX_DRIVER_PATH} && git checkout ${SGX_DCAP_VERSION}
-#RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${ISGX_DRIVER_PATH} \
-#    && cd ${ISGX_DRIVER_PATH} \
-#    && git checkout ${SGX_DCAP_VERSION}
+#for debug purpose, copy from local
+#RUN mkdir -p ${ISGX_DRIVER_PATH}
+#COPY SGXDataCenterAttestationPrimitives ${ISGX_DRIVER_PATH}
+#RUN cd ${ISGX_DRIVER_PATH} && git checkout ${SGX_DCAP_VERSION}
+RUN n=0; until [ $n -ge 100 ] ;  do echo $n; n=$(($n+1)); git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${ISGX_DRIVER_PATH} && break; sleep 1; done \
+    && cd ${ISGX_DRIVER_PATH} \
+    && git checkout ${SGX_DCAP_VERSION}
+
+#todo, debug purpose, need to remove later
+#RUN cd ${GRAMINEDIR}/subprojects/packagefiles/mbedtls \
+#    && sed -i -r "s/(.*)-O2(.*)/\1 -O0 -g -ggdb3 \2/" compile-gramine.sh \
+#    && sed -i -r "s/(.*)-O2(.*)/\1 -O0 -g -ggdb3 \2/" compile-pal.sh
 
 # COPY gramine/patches ${GRAMINEDIR}
 # RUN cd ${GRAMINEDIR} \
 #     && git apply *.diff
 
+# Compile and install Gramine
 # RUN openssl genrsa -3 -out ${SGX_SIGNER_KEY} 3072
 RUN cd ${GRAMINEDIR} \
     && LD_LIBRARY_PATH="" meson setup build/ --buildtype=debug -Dprefix=${INSTALL_PREFIX} -Ddirect=enabled -Dsgx=enabled -Ddcap=enabled -Dsgx_driver=dcap1.10 -Dsgx_driver_include_path=${ISGX_DRIVER_PATH}/driver/linux/include \
@@ -135,12 +133,33 @@ RUN apt-get clean all \
 
 RUN gramine-sgx-gen-private-key
 
-COPY configs /
+COPY common/docker/gramine/configs /
 
-# Use it to ignore packages authenticate in apt-get
-# ENV apt_arg="-o Acquire::AllowInsecureRepositories=true \
-#              -o Acquire::AllowDowngradeToInsecureRepositories=true"
+#--------------------------------
+# Install CLF
+#--------------------------------
+RUN apt-get update \
+    && apt-get install -y openjdk-11-jdk openjdk-11-jdk-headless openjdk-11-jre openjdk-11-jre-headless
+
+ARG CLF_DIR=/clf
+ENV CLF_PATH=${CLF_DIR}
+
+ARG PCCS_URL=default
+RUN if [ ${PCCS_URL} != "default"  ]; then \
+      sed -i -r "s/(PCCS_URL=)(.*)/\1${PCCS_URL}/"  /etc/sgx_default_qcnl.conf ; \
+    fi
+
+#todo
+RUN n=0; until [ $n -ge 100 ] ;  do echo $n; n=$(($n+1)); git clone https://github.com/intel/confidential-computing-zoo.git ${CLF_PATH} && break; sleep 1; done
+RUN cd ${CLF_PATH} \
+    && git checkout ccp \
+    && echo "---build clf_server---" \
+    && cd ${CLF_PATH}/cczoo/cross_lang_framework/clf_server \
+    && GRAMINEDIR=/gramine make
 
 # Workspace
-ENV WORK_SPACE_PATH=${GRAMINEDIR}
-WORKDIR ${WORK_SPACE_PATH}
+WORKDIR ${CLF_PATH}/cczoo/cross_lang_framework/clf_server
+
+RUN echo "---CLF_PATH=$CLF_PATH---"
+
+CMD "${CLF_PATH}/cczoo/cross_lang_framework/clf_server/clf_server"
