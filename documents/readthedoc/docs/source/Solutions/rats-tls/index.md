@@ -347,7 +347,7 @@ Rats-TLS is mainly used in Enclave Attestation Architecture (EAA). EAA is a univ
 
 ## Cloud Deployment
 
-### 1. Azure Cloud
+### Azure Cloud
 
 [Azure confidential computing services](https://azure.microsoft.com/en-us/solutions/confidential-compute/) are
 available and provide access to VMs with Intel SGX enabled in [DCsv2](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv2-series) and [DCsv3](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series)
@@ -360,3 +360,120 @@ The configuration of the instance as blow:
 - Instance OS    : Ubuntu20.04
 - Instance Encrypted Memory: 128GB(64G EPC Memory)
 - Instance vCPU  : 16
+
+## Librats
+
+librats provides attestation and verification capability of SGX and TDX.
+It can support to get evidence in HW-TEE by API librats_collect_evidence and verify evidence
+by API librats_verify_evidence. This implementation simplifies and shields the underlying
+complex remote attestation flow of HW-TEE. Let user be easy to complete the attestation and verification
+leveraging both APIs in libats.
+The source code: [librats](https://github.com/inclavare-containers/librats)
+
+### Architecture Overview
+
+![librats.png](./img/librats.png)
+
+### Build Requirements
+
+- git
+- make
+- autoconf
+- libtool
+- libcurl
+- gcc
+- g++
+- openssl-devel / libssl-dev
+- cargo (only needed in host mode)
+- python, bzip2 (only needed in wasm mode)
+- SGX driver, Intel SGX SDK & PSW: Please refer to this [guide](https://download.01.org/intel-sgx/sgx-linux/2.14/docs/Intel_SGX_SW_Installation_Guide_for_Linux.pdf) to install.
+- [SGX DCAP](https://github.com/intel/SGXDataCenterAttestationPrimitives): please download and install the packages from this [page](https://download.01.org/intel-sgx/sgx-dcap/#version#linux/distro).
+  - ubuntu 18.04: `libsgx-dcap-quote-verify-dev`, `libsgx-dcap-ql-dev`, `libsgx-uae-service`
+- For TDX, please see the README in TDX MVP Stack. You need to download the packages and following TDX_E2E_attestation_software_stack_Installation_README-dcap-2021XXXX.txt to do step 2 & step 3 to setup build and dependence libraries.
+
+### Build and Install
+
+Please follow the command to build librats from the latested source code on your system.
+
+1. Download the latest source code of librats
+
+```shell
+mkdir -p "$WORKSPACE"
+cd "$WORKSPACE"
+git clone https://github.com/inclavare-containers/librats
+```
+
+2. Build and install librats
+
+If you want to build instances related to sgx(sgx\_ecdsa, sgx\_ecdsa\_qve, sgx\_la), please type the following command.
+
+```shell
+cmake -DRATS_BUILD_MODE="sgx"  -H. -Bbuild
+make -C build install
+```
+
+If you want to run instances on libos occlum, please type the following command.
+
+```shell
+cmake -DRATS_BUILD_MODE="occlum" -H. -Bbuild
+make -C build install
+```
+
+If you want to run TDX instances, please type the following command.
+```shell
+cmake -DRATS_BUILD_MODE="tdx"  -H. -Bbuild
+make -C build install
+```
+
+Note that [SGX LVI mitigation](https://software.intel.com/security-software-guidance/advisory-guidance/load-value-injection) is enabled by default. You can set macro `SGX_LVI_MITIGATION` to `0` to disable SGX LVI mitigation.
+
+3. Wasm support
+
+Librats provides support for [WebAssembly](https://webassembly.org), which enables it to run in the browser and [WAMR](https://github.com/bytecodealliance/wasm-micro-runtime).
+
+If you want to run it in browser, please type the following command.
+```shell
+source wasm/emscripten/pre_build.sh
+cmake -DRATS_BUILD_MODE="wasm"  -H. -Bbuild
+make -C build
+```
+
+When the compilation is finished, you can find the results in build/wasm.
+
+If you want to run it in WAMR, please type the following command.
+```shell
+# install librats in host mode first
+cmake -H. -Bbuild
+make -C build install
+
+# export librats APIs to wamr
+cd wasm/wamr
+cmake -H. -Bbuild
+make -C build
+
+# run the sample
+cd build
+./iwasm --native-lib=librats_wamr.so sample/test.wasm
+```
+
+#### RUN
+
+Right now, Librats supports the following instance types:
+
+| Priority   |     Attester instances     |     Verifier instances     |
+| ---------- | -------------------------- | -------------------------- |
+| 0          | nullattester               | nullverifier               |
+| 15         | sgx\_la                    | sgx\_la                    |
+| 42         | tdx\_ecdsa                 | tdx\_ecdsa                 |
+| 52         | sgx\_ecdsa                 | sgx\_ecdsa                 |
+| 53         | sgx\_ecdsa                 | sgx\_ecdsa\_qve            |
+
+For instance priority, the higher, the stronger. By default, Librats will select the **highest priority** instance to use.
+
+
+**Notice: special prerequisites for TDX remote attestation in bios configuration and hardware capability.**
+
+Check msr 0x503, return value must be 0:
+```
+sudo rdmsr 0x503s
+```
