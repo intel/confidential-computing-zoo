@@ -1,4 +1,4 @@
-# eHSM (SGX Enclave Based Hardware Security Module)
+# eHSM-KMS
 
 Cloud KMS (Key Management System) is a hardware-software combined system that provides customers with capabilities to create and manage cryptographic keys and control their use for their cloud services.
 

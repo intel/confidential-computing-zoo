@@ -2,7 +2,7 @@
 
 ## What is Gramine?
 
-Gramine (formerly called Graphene) is a lightweight library OS, designed to run a single application 
+[Gramine](https://github.com/gramineproject/gramine) (formerly called Graphene) is a lightweight library OS, designed to run a single application 
 with minimal host requirements. Gramine can run applications in an isolated environment with benefits
  comparable to running a complete OS in a virtual machine -- including guest customization, ease of 
  porting to different OSes, and process migration.
@@ -24,5 +24,9 @@ to do software development.
 
 Execute the following command to build this docker image:
 ```
-./build_docker_image.sh
+base_image=ubuntu:20.04
+image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
+./build_docker_image.sh ${base_image} ${image_tag}
 ```
+
+`ubuntu:18.04` and `ubuntu:20.04` could be selected as base_image.

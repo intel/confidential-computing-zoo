@@ -1,0 +1,23 @@
+name: gPRC-TLS Docker Image CI
+
+on:
+  pull_request:
+    branches: [ branch0.1/grpc-ra-tls ]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build the gRPC-TLS Docker image
+      run: |
+        cd cczoo/grpc-ra-tls/docker/gramine
+        docker build -f grpc-ratls-sgx-dev.dockerfile . -t grpc-tls:$(date +%s)
+        
+    - name: Check Docker image Status
+      run: docker images
+      

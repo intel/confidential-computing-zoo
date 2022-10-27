@@ -1,0 +1,23 @@
+{
+  "kms" : "none",
+  "app_list" : [
+      {
+          "id" : 1,
+          "mr_enclave" : "abc",
+          "secrets" : {
+              "master_key" : "123",
+              "secret1" : "",
+              "secret2" : ""
+          }
+      },
+      {
+          "id" : 2,
+          "mr_enclave" : "def",
+          "secrets" : {
+              "master_key" : "456",
+              "secret1" : "",
+              "secret2" : ""
+          }
+      }
+  ]
+}

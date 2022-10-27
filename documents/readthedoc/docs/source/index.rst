@@ -27,9 +27,16 @@ Table of Contents
 
    Solutions/tensorflow-serving-cluster/index.rst
    Solutions/horizontal-federated-learning/hfl.md
+   Solutions/vertical-federated-learning/vfl.md
    Solutions/grpc-ra-tls/index.md
    Solutions/ehsm-kms/index.md
    Solutions/rats-tls/index.md
+   Solutions/cross_language_framework_based_gramine/Readme.md
+   Solutions/attestation-secret-provision/index.md
+   Solutions/logistic-regression-inference-HE-SGX/index.md
+   Solutions/bigdl-ppml/index.md
+   Solutions/phe_homo_lr/phe_homo_lr.md
+   Solutions/psi/PSI.md
 
 .. toctree::
    :maxdepth: 1

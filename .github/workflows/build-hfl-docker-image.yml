@@ -1,0 +1,23 @@
+name: HFL-TensorFlow Docker Image CI
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build the HFL Docker image
+      run: |
+        cd cczoo/horizontal_fl
+        docker build -f horizontal_fl.dockerfile . -t hfl-sgx:$(date +%s)
+        
+    - name: Check Docker image Status
+      run: docker images
+      

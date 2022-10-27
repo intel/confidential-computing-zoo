@@ -55,7 +55,7 @@ document section that explains the corresponding details and then guides you to 
         </p>
       </td>
       <td colspan="1" rowspan="2" style="text-align:center;">
-        <p style="text-align: left;"><font face="Arial"><strong>Crypto</strong></font>
+        <p style="text-align:left;"><span><strong>Crypto</strong></span>
         </p>
       </td>
       <td colspan="1" rowspan="2">
@@ -68,17 +68,17 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td colspan="1"><strong>TDX</strong>
       </td>
-      <td dir="rtl" style="text-align:center;"><strong>Gramine</strong>
+      <td style="text-align:center;"><strong>Gramine</strong>
       </td>
       <td style="text-align:center;"><strong>Occlum</strong>
       </td>
       <td><strong><span style="font-size:22px">*</span><a href="https://cczoo.readthedocs.io/en/main/Solutions/rats-tls/index.html">RATS-TLS</a></strong>
       </td>
-      <td><strong><span style="font-size:22px">*</span></strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html"><font face="Arial"><strong>RA-g</strong></font><strong><span style="font-family:Arial">RPC</span></strong></a>
+      <td><strong><span style="font-size:22px">*</span></strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html"><span><strong>RA-TLS g</strong></span><strong><span style="font-family:Arial">RPC</span></strong></a>
       </td>
       <td style="text-align:center;"><strong>Vault</strong>
       </td>
-      <td style="text-align:center;"><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html"><strong>eHSM</strong></a>
+      <td style="text-align:center;"><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html"><strong>eHSM-KMS</strong></a>
       </td>
     </tr>
     <tr>
@@ -98,7 +98,7 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td>-
       </td>
-      <td><font color="#333333" face="Arial">-</font>
+      <td><span>-</span>
       </td>
       <td><span style="color:#333333; font-family:Arial">Yes
         <br />
@@ -117,18 +117,20 @@ document section that explains the corresponding details and then guides you to 
         (RA-gRPC)</span>
       </td>
       <td>
-        <p><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#aliyun-ecs"><font face="Arial">Alibaba Cloud</font></a>,
+        <p><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#aliyun-ecs"><span>Alibaba Cloud</span></a>,
           <br />
-          <a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#tencent-cloud">Tencent Cloud</a></span>
+          <a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#tencent-cloud">Tencent Cloud</a>,
+          <br />
+          <a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html" target="_blank"><span>ByteDance Cloud</span></a></span>
         </p>
       </td>
       <td><strong><span style="font-family:Arial">Published</span></strong>
       </td>
     </tr>
     <tr>
-      <td><span style="font-family:Arial">Vertical Federated
+      <td><span style="font-family:Arial"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank"><strong>Vertical Federated </strong>
         <br />
-        Learning</span><span class="md-plain">&nbsp;
+        <strong>Learning</strong></a></span><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">&nbsp;</a>
         <br />
         (</span><span style="color:#333333; font-family:Arial">TensorFlow</span><span class="md-plain">)</span>
       </td>
@@ -159,18 +161,20 @@ document section that explains the corresponding details and then guides you to 
         (RA-gRPC)</span>
       </td>
       <td>
-        <p><span class="md-plain"><font face="Arial">Alibaba Cloud</font>,
+        <p><span class="md-plain"><span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Alibaba Cloud</a></span>,
           <br />
-          Tencent Cloud</span>
+          <a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Tencent Cloud</a>,
+          <br />
+          <a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">ByteDance Cloud</a></span>
         </p>
       </td>
-      <td>Waiting For Publish
+      <td><strong><span style="font-family:Arial">Published</span></strong>
       </td>
     </tr>
     <tr>
-      <td>Private Set
+      <td><a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html">Private Set
         <br />
-        Intersection&nbsp;
+        Intersection&nbsp;</a>
       </td>
       <td><span style="font-family:Arial">Yes</span>
       </td>
@@ -192,19 +196,21 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td>-
       </td>
-      <td>-
+      <td><span style="font-family:Arial">Yes
+        <br />
+        (RA-gRPC)</span>
       </td>
-      <td>-
+      <td><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">ByteDance Cloud</a></span>
       </td>
-      <td>In Progress
+      <td><strong><span style="font-family:Arial">Published</span></strong>
       </td>
     </tr>
     <tr>
-      <td><span style="color:#444444; font-family:Arial">Secure Logistic
+      <td><a href="https://cczoo.readthedocs.io/en/latest/Solutions/phe_homo_lr/phe_homo_lr.html"><span style="color:#444444; font-family:Arial">Secure Logistic
         <br />
         Regression Training
         <br />
-        Base on TEE &amp;&nbsp;</span><span style="color:#444444; font-family:Arial">HE&nbsp;</span>
+        Based on TEE &amp;&nbsp;</span><span style="color:#444444; font-family:Arial">HE&nbsp;</span></a>
       </td>
       <td><span style="font-family:Arial">Yes</span>
       </td>
@@ -228,11 +234,11 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td>Yes
       </td>
-      <td><span class="md-plain"><font face="Arial">Alibaba Cloud</font>,
+      <td><span class="md-plain"><span>Alibaba Cloud</span>,
         <br />
         Tencent Cloud</span>
       </td>
-      <td>Waiting For Publish
+      <td><strong><span style="font-family:Arial">Published</span></strong>
       </td>
     </tr>
     <tr>
@@ -269,9 +275,11 @@ document section that explains the corresponding details and then guides you to 
       <td>Yes
       </td>
       <td>
-        <p><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#alibaba-cloud"><font face="Arial">Alibaba Cloud</font></a>,
+        <p><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#alibaba-cloud"><span>Alibaba Cloud</span></a>,
           <br />
-          <a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#tencent-cloud">Tencent Cloud</a></span>
+          <a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#tencent-cloud">Tencent Cloud</a>,
+          <br />
+          <a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#bytedance-cloud" target="_blank"><span>ByteDance Cloud</span></a></span>
         </p>
       </td>
       <td><span style="font-family:Arial">Published</span>
@@ -308,9 +316,19 @@ document section that explains the corresponding details and then guides you to 
       </td>
     </tr>
     <tr>
-      <td><span style="color:#333333; font-family:Arial">Secure BigDL
-        <br />
-        Recommend System</span>
+      <td><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/bigdl-ppml/index.html" target="_blank"><span style="font-family:Arial"><strong>BigDL PPML</strong></span> </a></span>
+      </td>
+      <td>Yes
+      </td>
+      <td>Yes
+      </td>
+      <td>Yes
+      </td>
+      <td>Yes
+      </td>
+      <td>-
+      </td>
+      <td>-
       </td>
       <td>-
       </td>
@@ -322,21 +340,13 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td>-
       </td>
-      <td>-
+      <td>
+        <p><span class="md-plain"><a href="https://www.intel.com/content/dam/www/central-libraries/us/en/documents/alibaba-ppml-ai-blog-pdf.pdf"><span>Ant Group</span></a>,
+          <br />
+          <a href="https://networkbuilders.intel.com/solutionslibrary/reference-architecture-for-confidential-computing-on-skt-5g-mec">SKT</a> </span>
+        </p>
       </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Not Start
+      <td>In Progress
       </td>
     </tr>
     <tr>
@@ -344,11 +354,11 @@ document section that explains the corresponding details and then guides you to 
       </td>
     </tr>
     <tr>
-      <td>Cross Language
+      <td><a href="https://cczoo.readthedocs.io/en/latest/Solutions/cross_language_framework_based_gramine/Readme.html" target="_blank"><strong>Cross Language </strong>
         <br />
-        framework Based
+        <strong>framework Based </strong>
         <br />
-        on Gramine
+        <strong>on Gramine</strong></a>
       </td>
       <td>Yes
       </td>
@@ -372,9 +382,9 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td>-
       </td>
-      <td>-
+      <td>Tencent Cloud
       </td>
-      <td>In Progress
+      <td><strong><span style="font-family:Arial">Published</span></strong>
       </td>
     </tr>
     <tr>
@@ -382,7 +392,7 @@ document section that explains the corresponding details and then guides you to 
       </td>
     </tr>
     <tr>
-      <td>Attestation Server
+      <td><strong><a href="https://cczoo.readthedocs.io/en/latest/Solutions/attestation-secret-provision/index.html" target="_blank">Attestation and Secret Provision Service</a></strong>
       </td>
       <td>Yes
       </td>
@@ -392,9 +402,13 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td>-
       </td>
-      <td>-
+      <td>Yes
+      </td>
+      <td>Yes
       </td>
       <td>-
+      </td>
+      <td>Yes
       </td>
       <td>-
       </td>
@@ -402,17 +416,13 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td>Yes
       </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
       <td>-
       </td>
-      <td>In Progress
+      <td><strong><span style="font-family:Arial">Published</span></strong>
       </td>
     </tr>
     <tr>
-      <td><strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html">eHSM</a></strong>
+      <td><strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html">eHSM-KMS</a></strong>
       </td>
       <td>Yes
       </td>
@@ -438,7 +448,7 @@ document section that explains the corresponding details and then guides you to 
       </td>
       <td>-
       </td>
-      <td>Published
+      <td><strong><span style="font-family:Arial">Published</span></strong>
       </td>
     </tr>
     <tr>
@@ -452,7 +462,7 @@ document section that explains the corresponding details and then guides you to 
         <br />
         Optimization
         <br />
-        on Xeon​
+        on Xeon
       </td>
       <td>-
       </td>
@@ -527,43 +537,59 @@ document section that explains the corresponding details and then guides you to 
 
 # Incubating Component Projects
 
-Besides solutions, CCZoo is also incubating component level projects with secure technologies, which can be standardized and versatile components, to be easily adopted in secure solutions. Incubating component  projects are now engaged in many solutions in CCZoo to validate  security and robustness.
+Besides reference solutions, CCZoo is also incubating new projects of key security
+components that are commonly used by multiple CCZoo reference solutions. Once any
+of them is proven useful enough and stable enough via a thorough validation with
+CCZoo reference solutions running on various public cloud services, it will graduate
+from CCZoo and evolve to a standalone project.
 
-<table border="1" bordercolor="#000000" cellpadding="2" cellspacing="0" style="width:100%">
-  <tbody>
-    <tr>
-      <td colspan="1" rowspan="1"><strong>Incubating Component Project <span style="font-size:22px">&#39;*&#39;</span></strong>
-      </td>
-      <td colspan="1" rowspan="1"><span style="color:#333333; font-family:Arial"><strong>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; Description</strong></span>
-      </td>
-      <td rowspan="1"><strong>Status</strong>
-      </td>
-      <td colspan="1" rowspan="1"><span style="color:#333333; font-family:Arial"><strong>Validated in Public Cloud</strong></span>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="1"><a href="https://cczoo.readthedocs.io/en/main/Solutions/rats-tls/index.html"><strong>RATS-TLS</strong></a>
-      </td>
-      <td>This project provides a proof-of-concept implementation on how to integrate Intel SGX remote attestation into the TLS connection setup. Conceptually, it extends the standard X.509 certificate&nbsp;with SGX-related information. It also provides three non-SGX clients (<a href="https://github.com/cloud-security-research/sgx-ra-tls/blob/master/deps/mbedtls/programs/ssl/ssl_client1.c">mbedtls</a>,&nbsp;<a href="https://github.com/cloud-security-research/sgx-ra-tls/blob/master/deps/wolfssl-examples/tls/client-tls.c">wolfSSL</a>,&nbsp;<a href="https://github.com/cloud-security-research/sgx-ra-tls/blob/master/openssl-client.c">OpenSSL</a>)&nbsp;to show how seamless remote attestation works with different TLS libraries.&nbsp;
-      </td>
-      <td>Published
-      </td>
-      <td><a href="https://cczoo.readthedocs.io/en/main/Cloud/cloudDeployment.html#azure-cloud"><font face="Arial">Azure Cloud</font></a>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="1"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><strong>gRPC Supporting Intel RA-TLS</strong></a>
-      </td>
-      <td>This project provides an enhanced&nbsp;<a href="https://grpc.io/">gRPC</a>&nbsp;(Remote Procedure Call) framework to guarantee security during transmission and runtime via two-way&nbsp;<a href="https://arxiv.org/pdf/1801.05863">RA-TLS</a>&nbsp;(Intel SGX Remote Attestation with Transport Layer Security) based on&nbsp;<a href="https://en.wikipedia.org/wiki/Trusted_execution_environment">TEE</a>&nbsp;(Trusted Execution Environment).
-      </td>
-      <td>Published
-      </td>
-      <td><span class="md-plain"><font face="Arial"><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#aliyun-ecs">Alibaba Cloud</a>,
-        <br />
-        <a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#tencent-cloud">Tencent Cloud</a></font></span>
-      </td>
-    </tr>
-  </tbody>
+<table border="1" bordercolor="#000000" cellpadding="2" cellspacing="0" style="width:100%;">
+	<tbody>
+		<tr>
+			<td colspan="1" rowspan="1">
+				<strong>Incubating Component Project <span style="font-size:22px;">'*'</span></strong> 
+			</td>
+			<td colspan="1" rowspan="1">
+				<span style="color:#333333;font-family:Arial;"><strong>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; Description</strong></span> 
+			</td>
+			<td rowspan="1">
+				<strong>Status</strong> 
+			</td>
+			<td colspan="1" rowspan="1">
+				<span style="color:#333333;font-family:Arial;"><strong>Validated in Public Cloud</strong></span> 
+			</td>
+		</tr>
+		<tr>
+			<td colspan="1">
+				<a href="https://cczoo.readthedocs.io/en/main/Solutions/rats-tls/index.html"><strong>RATS-TLS</strong></a> 
+			</td>
+			<td>
+				This project provides a proof-of-concept implementation on how to integrate Intel SGX and TDX remote attestation into the TLS connection setup. Conceptually, it extends the standard X.509 certificate&nbsp;with SGX and TDX related information. It also provides two non-SGX clients (Wolfssl and OpenSSL)&nbsp;to show how seamless remote attestation works with different TLS libraries.&nbsp;
+			</td>
+			<td>
+				Published
+			</td>
+			<td>
+				<span class="md-plain"><span><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#aliyun-ecs">Alibaba Cloud</a></span></span> 
+			</td>
+		</tr>
+		<tr>
+			<td colspan="1">
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><strong>RA-TLS Enhanced gRPC</strong></a> 
+			</td>
+			<td>
+				This project provides an enhanced&nbsp;<a href="https://grpc.io/">gRPC</a>&nbsp;(Remote Procedure Call) framework to guarantee security during transmission and runtime via two-way&nbsp;<a href="https://arxiv.org/pdf/1801.05863">RA-TLS</a>&nbsp;(Intel SGX Remote Attestation with Transport Layer Security) based on&nbsp;<a href="https://en.wikipedia.org/wiki/Trusted_execution_environment">TEE</a>&nbsp;(Trusted Execution Environment).
+			</td>
+			<td>
+				Published
+			</td>
+			<td>
+				<span class="md-plain"><span><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#aliyun-ecs">Alibaba Cloud</a>, <br />
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#tencent-cloud">Tencent Cloud</a>,<br />
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#bytedance-cloud" target="_blank">ByteDance Cloud</a></span></span> 
+			</td>
+		</tr>
+	</tbody>
 </table>
 
 
@@ -575,114 +601,218 @@ Solutions and incubating component projects in CCZoo are constantly extended to 
 
 Below table shows solutions and component projects validated in public clouds. And it will be updated continuously.
 
-
-<table border="1" cellpadding="1" cellspacing="1" style="width:500px">
-  <tbody>
-    <tr>
-      <td colspan="2"><strong>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;Public Cloud</strong>
-      </td>
-      <td><strong>Alibaba Cloud</strong>
-      </td>
-      <td><strong>Tencent Cloud</strong>
-      </td>
-      <td><strong>Azure Cloud</strong>
-      </td>
-    </tr>
-    <tr>
-      <td rowspan="6" style="text-align: left;"><strong>Instance&nbsp;</strong>
-      </td>
-      <td style="text-align: left;">Type
-      </td>
-      <td><a href="https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k">g7t</a>
-      </td>
-      <td><a href="https://cloud.tencent.com/document/product/213/11518#M6ce">M6ce.4XLARGE128&nbsp;</a>
-      </td>
-      <td><a href="https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series">Standard_DC16s_v3</a>
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: left;">Kernel
-      </td>
-      <td>4.19.91-24
-      </td>
-      <td>5.4.119-19-0009.1
-      </td>
-      <td>5.13
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: left;">OS
-      </td>
-      <td>Alibaba Cloud Linux 2.1903
-      </td>
-      <td>TencentOS Server 3.1
-      </td>
-      <td>Ubuntu20.04
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: left;">Memory
-      </td>
-      <td>64G(32G EPC memory)
-      </td>
-      <td>64G(32G EPC Memory)
-      </td>
-      <td>128GB(64G EPC Memory)
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: left;">vCPU
-      </td>
-      <td>16
-      </td>
-      <td>16
-      </td>
-      <td>16
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: left;">PCCS Server
-      </td>
-      <td><a href="https://help.aliyun.com/document_detail/208095.html">sgx-dcap-server.cn-hangzhou.aliyuncs.com</a>
-      </td>
-      <td><a href="https://cloud.tencent.com/document/product/213/63353">sgx-dcap-server-tc.sh.tencent.cn&nbsp;</a>
-      </td>
-      <td><a href="https://docs.microsoft.com/en-us/azure/confidential-computing/quick-create-portal#install-azure-dcap-client">Azure DCAP</a>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="2"><strong>Validated Solution&nbsp;</strong>
-      </td>
-      <td>
-        <ul>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML&nbsp;</a></li>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></li>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">gRPC supporting Intel RA-TLS</a></li>
-          <li>Secure logistic regression training base on TEE &amp; HE</li>
-        </ul>
-      </td>
-      <td>
-        <ul>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML&nbsp;</a></li>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></li>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">gRPC supporting Intel RA-TLS</a></li>
-          <li>Secure logistic regression training base on TEE &amp; HE</li>
-        </ul>
-      </td>
-      <td>
-        <ul>
-          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/ehsm-kms/index.html">eHSM</a>
-            <br />
-            <br />
-            <br />
-            <br />
-            &nbsp;</li>
-        </ul>
-      </td>
-    </tr>
-  </tbody>
+<table border="1" cellpadding="1" cellspacing="1" style="width:500px;">
+	<tbody>
+		<tr>
+			<td colspan="2">
+				<strong>&nbsp; &nbsp; &nbsp;Public Cloud</strong> 
+			</td>
+			<td>
+				<strong>Alibaba Cloud</strong> 
+			</td>
+			<td>
+				<strong>ByteDance</strong> <strong>Cloud</strong> 
+			</td>
+			<td>
+				<strong>Azure Cloud</strong>
+			</td>
+			<td>
+				<strong>Tencent Cloud</strong> 
+			</td>
+		</tr>
+		<tr>
+			<td rowspan="6" style="text-align:left;">
+				<strong>Instance&nbsp;</strong> 
+			</td>
+			<td style="text-align:left;">
+				Type
+			</td>
+			<td>
+				<a href="https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k">g7t</a> 
+			</td>
+			<td>
+				<div>
+					ecs.ebmg2t.32xlarge
+				</div>
+			</td>
+			<td>
+				Standard_DC16s_v3
+			</td>
+			<td>
+				<a href="https://cloud.tencent.com/document/product/213/11518#M6ce">M6ce.4XLARGE128&nbsp;</a> 
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				Kernel
+			</td>
+			<td>
+				4.19.91-24
+			</td>
+			<td>
+				<div>
+					kernel-5.15
+				</div>
+			</td>
+			<td>
+				5.13.0-1031-azure
+			</td>
+			<td>
+				<span>5.4.119-19-0009.1</span> 
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				OS
+			</td>
+			<td>
+				Alibaba Cloud Linux 2.1903
+			</td>
+			<td>
+				Ubuntu20.04
+			</td>
+			<td>
+				Ubuntu Server 20.04 LTS - Gen2
+			</td>
+			<td>
+				<span>TencentOS Server 3.1</span> 
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				Memory
+			</td>
+			<td>
+				64G(32G EPC memory)
+			</td>
+			<td>
+				<div>
+					512GB(<span>25</span><span>6GB&nbsp;</span>EPC memory)
+				</div>
+			</td>
+			<td>
+				128G (64G EPC Memory)
+			</td>
+			<td>
+				<span>64G(32G EPC <span>memory</span>)</span> 
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				vCPU
+			</td>
+			<td>
+				16
+			</td>
+			<td>
+				16
+			</td>
+			<td>
+				16
+			</td>
+			<td>
+				16
+			</td>
+		</tr>
+		<tr>
+			<td style="text-align:left;">
+				PCCS Server
+			</td>
+			<td>
+				<a href="https://help.aliyun.com/document_detail/208095.html">sgx-dcap-server.cn-hangzhou.aliyuncs.com</a> 
+			</td>
+			<td>
+				<div>
+					<a class="link rich-text-anchor __anchor-intercept-flag__" href="https://sgx-dcap-server.bytedance.com" target="_blank">sgx-dcap-server.bytedance.com</a> 
+				</div>
+			</td>
+			<td>
+				/
+			</td>
+			<td>
+				<a href="https://cloud.tencent.com/document/product/213/63353">sgx-dcap-server-tc.sh.tencent.cn&nbsp;</a> 
+			</td>
+		</tr>
+		<tr>
+			<td colspan="2">
+				<strong>Validated Solution&nbsp;</strong> 
+			</td>
+			<td style="vertical-align:top;">
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML</a> 
+					</li>
+				</ul>
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning</a> 
+					</li>
+				</ul>
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/phe_homo_lr/phe_homo_lr.html">Secure logistic regression training base on TEE &amp; HE</a> 
+					</li>
+				</ul>
+			</td>
+			<td style="vertical-align:top;">
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML</a> 
+					</li>
+				</ul>
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning</a> 
+					</li>
+				</ul>
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a> 
+					</li>
+				</ul>
+			</td>
+			<td style="vertical-align:top;">
+				<ul>
+					<li>
+						&nbsp;<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML</a> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning</a> 
+					</li>
+				</ul>
+				<p>
+					<br />
+				</p>
+			</td>
+			<td style="vertical-align:top;">
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML</a> 
+					</li>
+				</ul>
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning</a> 
+					</li>
+				</ul>
+				<ul>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/phe_homo_lr/phe_homo_lr.html">Secure logistic regression training base on TEE &amp; HE</a> 
+					</li>
+				</ul>
+			</td>
+		</tr>
+	</tbody>
 </table>
-
 
 ---
 

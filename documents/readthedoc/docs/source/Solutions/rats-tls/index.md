@@ -347,19 +347,22 @@ Rats-TLS is mainly used in Enclave Attestation Architecture (EAA). EAA is a univ
 
 ## Cloud Deployment
 
-### Azure Cloud
+### 1. Alibaba Cloud
 
-[Azure confidential computing services](https://azure.microsoft.com/en-us/solutions/confidential-compute/) are
-available and provide access to VMs with Intel SGX enabled in [DCsv2](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv2-series) and [DCsv3](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series)
-VM instances. 
+[Aliyun ECS](https://help.aliyun.com/product/25365.html) (Elastic Compute Service) is
+an IaaS (Infrastructure as a Service) level cloud computing service provided by Alibaba
+Cloud. It builds security-enhanced instance families [g7t, c7t, r7t](https://help.aliyun.com/document_detail/207734.html)
+based on Intel® SGX technology to provide a trusted and confidential environment
+with a higher security level.
 
-The configuration of the instance as blow:
+The configuration of the ECS instance as blow:
 
-- Instance Type  : [Standard_DC16s_v3](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series)
-- Instance Kernel: 5.13
-- Instance OS    : Ubuntu20.04
-- Instance Encrypted Memory: 128GB(64G EPC Memory)
+- Instance Type  : [g7t](https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k).
+- Instance Kernel: 4.19.91-24
+- Instance OS    : Alibaba Cloud Linux 2.1903
+- Instance Encrypted Memory: 32G
 - Instance vCPU  : 16
+
 
 ## Librats
 

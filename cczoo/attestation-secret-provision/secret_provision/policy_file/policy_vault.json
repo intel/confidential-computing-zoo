@@ -1,0 +1,28 @@
+{
+    "kms" : "vault",
+    "addr" : "http://127.0.0.1:8200",
+    "auth_method" : "token",
+    "root_key" : "hvs.B8UlrGNg2BcCoBiImLZxU7ix",
+    "app_list" : [
+        {
+            "id" : 1,
+            "mr_enclave" : "abc",
+            "app_token" : "hvs.CAESIPUxqLwlfNXnXBgBwgUaPZINxsbe0oDoY-Kb1_MHlqdSGh4KHGh2cy5PUUFGcElVOW9wM0dVTmpLeUlRQUE3Vko",
+            "secrets" : {
+                "master_key" : "occlum/1/image_key",
+                "secret1" : "occlum/1/rsa_pubkey",
+                "secret2" : "occlum/1/rsa_prikey"
+            }
+        },
+        {
+            "id" : 2,
+            "mr_enclave" : "def",
+            "app_token" : "hvs.CAESIK2larl_ykl8FyoDD1YNHXuaSw5uj1N3usB1UuINEn1RGh4KHGh2cy5FaUVobkN4ZExGVDZkVVJFZm51WGR5Y2M",
+            "secrets" : {
+                "master_key" : "occlum/2/master_key",
+                "secret1" : "occlum/2/secret1",
+                "secret2" : "occlum/2/secret2"
+            }
+        }
+    ]
+}
