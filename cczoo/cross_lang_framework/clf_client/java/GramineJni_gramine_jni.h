@@ -10,34 +10,34 @@ extern "C" {
 /*
  * Class:     GramineJni_gramine_jni
  * Method:    get_key
- * Signature: ([B[B[BI)I
+ * Signature: (Ljava/lang/String;Ljava/lang/String;[BI)I
  */
 JNIEXPORT jint JNICALL Java_GramineJni_gramine_1jni_get_1key
-  (JNIEnv *, jobject, jbyteArray, jbyteArray, jbyteArray, jint);
+  (JNIEnv *, jobject, jstring, jstring, jbyteArray, jint);
 
 /*
  * Class:     GramineJni_gramine_jni
  * Method:    get_file_2_buff
- * Signature: ([B[B[BJ[BI[I)I
+ * Signature: (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J[BI[I)I
  */
 JNIEXPORT jint JNICALL Java_GramineJni_gramine_1jni_get_1file_12_1buff
-  (JNIEnv *, jobject, jbyteArray, jbyteArray, jbyteArray, jlong, jbyteArray, jint, jintArray);
+  (JNIEnv *, jobject, jstring, jstring, jstring, jlong, jbyteArray, jint, jintArray);
 
 /*
  * Class:     GramineJni_gramine_jni
  * Method:    get_file_size
- * Signature: ([B[B[B[J)I
+ * Signature: (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[J)I
  */
 JNIEXPORT jint JNICALL Java_GramineJni_gramine_1jni_get_1file_1size
-  (JNIEnv *, jobject, jbyteArray, jbyteArray, jbyteArray, jlongArray);
+  (JNIEnv *, jobject, jstring, jstring, jstring, jlongArray);
 
 /*
  * Class:     GramineJni_gramine_jni
  * Method:    put_result
- * Signature: ([B[B[BJ[BI[I)I
+ * Signature: (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J[BI[I)I
  */
 JNIEXPORT jint JNICALL Java_GramineJni_gramine_1jni_put_1result
-  (JNIEnv *, jobject, jbyteArray, jbyteArray, jbyteArray, jlong, jbyteArray, jint, jintArray);
+  (JNIEnv *, jobject, jstring, jstring, jstring, jlong, jbyteArray, jint, jintArray);
 
 #ifdef __cplusplus
 }

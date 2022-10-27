@@ -14,7 +14,6 @@ THIS_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
 # Relative path to Gramine root and key for enclave signing
 GRAMINE_DIR ?= /gramine
-SGX_SIGNER_KEY ?= $(GRAMINE_DIR)/Pal/src/host/Linux-SGX/signer/enclave-key.pem
 
 TF-SERVING_DIR := /usr/bin
 MODEL_DIR := $(GRAMINE_DIR)/CI-Examples/tensorflow-serving-cluster/tensorflow-serving/models
@@ -60,7 +59,6 @@ tensorflow_model_server.manifest: tensorflow_model_server.manifest.template
 # and the token for enclave initialization.
 tensorflow_model_server.manifest.sgx: tensorflow_model_server.manifest
 	gramine-sgx-sign \
-                --key $(SGX_SIGNER_KEY) \
                 --manifest $< \
                 --output $@
 

@@ -15,15 +15,14 @@
 
 ################################# CONSTANTS ###################################
 
-GRAMINEDIR ?= ../../../..
-SGX_SIGNER_KEY ?= $(GRAMINEDIR)/Pal/src/host/Linux-SGX/signer/enclave-key.pem
-
-include $(GRAMINEDIR)/Scripts/Makefile.configs
+THIS_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
+ENTRYPOINT ?= ""
 
 ifeq ($(DEBUG),1)
-GRAPHENE_LOG_LEVEL = debug
+GRAMINE_LOG_LEVEL = debug
 else
-GRAPHENE_LOG_LEVEL = error
+GRAMINE_LOG_LEVEL = error
 endif
 
 .PHONY: all
@@ -36,14 +35,13 @@ endif
 
 grpc.manifest: grpc.manifest.template
 	gramine-manifest \
-		-Dentrypoint=$(GRAPHENE_ENTRYPOINT) \
+		-Dlog_level=$(GRAMINE_LOG_LEVEL) \
+		-Dentrypoint=$(ENTRYPOINT) \
 		-Darch_libdir=$(ARCH_LIBDIR) \
-		-Dlog_level=$(GRAPHENE_LOG_LEVEL) \
 		$< >$@
 
 grpc.manifest.sgx: grpc.manifest
 	gramine-sgx-sign \
-		--key $(SGX_SIGNER_KEY) \
 		--manifest $< \
 		--output $@
 

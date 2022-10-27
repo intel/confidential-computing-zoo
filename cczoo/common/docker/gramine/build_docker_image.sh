@@ -19,18 +19,18 @@ set -e
 if  [ -n "$1" ] ; then
     base_image=$1
 else
-    base_image=ubuntu:18.04
+    base_image=ubuntu:20.04
 fi
 
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=gramine-sgx-dev:ubuntu-18.04-latest
+    image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"
-# proxy_server="" # your http proxy server
+proxy_server="" # your http proxy server
 
 cd `dirname $0`
 
@@ -39,6 +39,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     --build-arg base_image=${base_image} \
+    --build-arg BASE_IMAGE=${base_image} \
     -f gramine-sgx-dev.dockerfile \
     -t ${image_tag} \
     .

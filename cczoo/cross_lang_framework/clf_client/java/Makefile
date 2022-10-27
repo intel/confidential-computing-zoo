@@ -25,7 +25,7 @@ all: libgramine_jni.so clf_client_java_lib
 #---------- libgramine_jni.so --------
 CFLAGS += -Wall -std=c11 \
           -I ../../inc \
-          -I$(GRAMINEDIR)/Pal/src/host/Linux-SGX/tools/ra-tls \
+          -I $(GRAMINEDIR)/tools/sgx/ra-tls \
           -I /usr/lib/jvm/java-11-openjdk-amd64/include/ \
           -I /usr/lib/jvm/java-11-openjdk-amd64/include/linux/ \
           $(shell pkg-config --cflags mbedtls_gramine)
