@@ -42,12 +42,15 @@ build_instance() {
 
     mkdir -p image/usr/share/grpc
     cp -rf ${INSTALL_PREFIX}/share/grpc/*  image/usr/share/grpc/
-    cp ${OCCLUM_GLIBC}/libdl.so.2 image/${OCCLUM_GLIBC}
-    cp ${OCCLUM_GLIBC}/librt.so.1 image/${OCCLUM_GLIBC}
-    cp ${OCCLUM_GLIBC}/libm.so.6 image/${OCCLUM_GLIBC}
-    cp /lib/x86_64-linux-gnu/libtinfo.so.5 image/${OCCLUM_GLIBC}
-    cp /lib/x86_64-linux-gnu/libnss*.so.2 image/${OCCLUM_GLIBC}
-    cp /lib/x86_64-linux-gnu/libresolv.so.2 image/${OCCLUM_GLIBC}
+    cp ${OCCLUM_GLIBC}/libdl.so* image/${OCCLUM_GLIBC}
+    cp ${OCCLUM_GLIBC}/librt.so* image/${OCCLUM_GLIBC}
+    cp ${OCCLUM_GLIBC}/libm.so* image/${OCCLUM_GLIBC}
+    cp /usr/lib/x86_64-linux-gnu/libtinfo.so* image/${OCCLUM_GLIBC}
+    cp /usr/lib/x86_64-linux-gnu/libnss*.so* image/${OCCLUM_GLIBC}
+    cp /usr/lib/x86_64-linux-gnu/libresolv.so* image/${OCCLUM_GLIBC}
+    # cp /lib/x86_64-linux-gnu/libtinfo.so* image/${OCCLUM_GLIBC}
+    # cp /lib/x86_64-linux-gnu/libnss*.so* image/${OCCLUM_GLIBC}
+    # cp /lib/x86_64-linux-gnu/libresolv.so* image/${OCCLUM_GLIBC}
     cp -rf /etc/hostname image/etc/
     cp -rf /etc/ssl image/etc/
     cp -rf /etc/passwd image/etc/

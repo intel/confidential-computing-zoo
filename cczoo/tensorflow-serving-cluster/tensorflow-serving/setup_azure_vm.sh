@@ -8,8 +8,6 @@ sudo apt-get install -y python3-pip libcurl4-openssl-dev libssl-dev pkg-config
 sudo add-apt-repository ppa:team-xbmc/ppa -y
 sudo apt-get update
 sudo apt-get install nlohmann-json3-dev
-pip3 install tensorflow==2.4.0
-pip3 install protobuf==3.20
 
 # Install Intel SGX DCAP dependencies
 echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | sudo tee /etc/apt/sources.list.d/intel-sgx.list

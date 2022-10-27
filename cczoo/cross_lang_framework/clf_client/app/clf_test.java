@@ -1,3 +1,21 @@
+/*
+ *
+ * Copyright (c) 2022 Intel Corporation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
 import java.io.*;
 import java.lang.*;
 import java.util.*;
@@ -7,7 +25,21 @@ import java.util.concurrent.TimeUnit;
 import GramineJni.*;
 
 public class clf_test {
+	public static String clf_server_hostname = "localhost";
+
 	public static void main(String[] args) throws InterruptedException {
+		if(args.length < 1) {
+			helper();
+			return;
+		}
+
+		for(int i = 0; i< args.length; i++) {
+			System.out.println(String.format("arg%d: %s", i, args[i]));
+			if(i==0) {
+				clf_server_hostname = args[i];
+			}
+		}
+
 		for(int i = 0; i<1; i++) {
 			//jni_local_test();
 			jni_remote_test();
@@ -62,9 +94,12 @@ public class clf_test {
 
 	public static void jni_remote_test()
 	{
-		String ip_port = "localhost:4433";
+		//String ip_port = "localhost:4433";
+		String ip_port = clf_server_hostname+":4433";
 		String ca_cert = "certs/ca_cert.crt";
 		gramine_jni jni_so = new gramine_jni(ip_port, ca_cert);
+
+		System.out.format("ip_port=%s, ca_cert=%s\n", ip_port, ca_cert);
 
 		// demonstrate get key from server
 		int key_len = 64;
@@ -118,6 +153,12 @@ public class clf_test {
 		}
 		System.out.format("\n");
 
+	}
+
+	public static void helper()
+	{
+		System.out.println("Command format: gramine-sgx java -Xmx2G clf_test <clf_server_hostname>");
+		System.out.println("          e.g.: gramine-sgx java -Xmx2G clf_test localhost");
 	}
 
 	private static void print_array(byte[] d, int len)

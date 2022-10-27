@@ -20,6 +20,13 @@ if  [ "$1" == "anolisos" ] ; then
     base_image=$1
 else
     base_image=ubuntu:20.04
+
+fi
+
+if  [ -n "$2" ] ; then
+    image_tag=$2
+else
+    image_tag=gramine-sgx-dev:master-ubuntu20.04-latest
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
