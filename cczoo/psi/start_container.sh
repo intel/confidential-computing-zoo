@@ -25,20 +25,36 @@ fi
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=psi_test
+    image_tag=psi
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"
 # proxy_server="" # your http proxy server
-
+if [ ${image_tag} == "anolisos" ] ; then
 docker run -it \
     --restart=unless-stopped \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
     --device=/dev/sgx_enclave:/dev/sgx/enclave \
     --device=/dev/sgx_provision:/dev/sgx/provision \
-    --add-host=attestation.service.com:${ip_addr} \
+    --add-host=pccs.service.com:${ip_addr} \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+    --net=host \
+    -e no_proxy=${no_proxy} \
+    -e http_proxy=${proxy_server} \
+    -e https_proxy=${proxy_server} \
+    -v /home:/home/host-home \
+    ${image_tag}_psi:latest \
+    bash
+else
+docker run -it \
+    --restart=unless-stopped \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --device=/dev/sgx_enclave:/dev/sgx/enclave \
+    --device=/dev/sgx_provision:/dev/sgx/provision \
+    --add-host=pccs.service.com:${ip_addr} \
     -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
     --net=host \
     -e no_proxy=${no_proxy} \
@@ -47,3 +63,4 @@ docker run -it \
     -v /home:/home/host-home \
     ${image_tag} \
     bash
+fi

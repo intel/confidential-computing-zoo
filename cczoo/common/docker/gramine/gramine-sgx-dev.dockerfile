@@ -77,11 +77,13 @@ ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV WERROR=1
 ENV SGX=1
 
+
 RUN apt-get update && apt-get install -y bison gawk nasm python3-click python3-jinja2 ninja-build pkg-config \
     libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler \
     libgmp-dev libmpfr-dev libmpc-dev libisl-dev
 
 RUN pip3 install --upgrade pip \
+
     && pip3 install 'meson>=0.56' 'toml>=0.10' cryptography
 
 #todo: use github gramine
@@ -132,6 +134,10 @@ RUN apt-get clean all \
     && rm -rf ~/.cache/* \
     && rm -rf /tmp/* \
     && rm -rf ${GRAMINEDIR}/build
+
+RUN gramine-sgx-gen-private-key
+
+COPY configs /
 
 RUN gramine-sgx-gen-private-key
 

@@ -83,7 +83,7 @@ After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Ma
    - Gramine
         ```bash
         cd cczoo/common/docker/gramine
-        ./build_docker_image.sh
+        ./build_docker_image.sh [ubuntu/anolisos]
         ```
 
 ### Setup develop environment of gRPC RA-TLS based on Intel SGX
@@ -92,7 +92,7 @@ After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Ma
         ```bash
         cd -
         cd cczoo/psi/gramine
-        ./build_docker_image.sh
+        ./build_docker_image.sh [ubuntu/anolisos]
         ```
 
 ## Run PSI examples

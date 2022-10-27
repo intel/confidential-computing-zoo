@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE=gramine-sgx-dev:v1.2-ubuntu20.04-latest
+ARG BASE_IMAGE=gramine-sgx-dev:v1.2-anolisos
 FROM ${BASE_IMAGE}
 
 RUN mkdir -p ${INSTALL_PREFIX} \
@@ -31,20 +31,18 @@ RUN git clone --recurse-submodules -b ${GRPC_V138_VERSION} https://github.com/gr
 
 RUN ln -s ${GRPC_V138_PATH} ${GRPC_PATH}
 
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+RUN update-alternatives --install /usr/bin/unversioned-python python /usr/bin/python3 1
 
 RUN pip3 install --upgrade pip \
-    && pip3 install -r ${GRPC_PATH}/requirements.txt \
-    && pip3 install --upgrade protobuf
+    && pip3 install -r ${GRPC_PATH}/requirements.txt
 
-RUN apt-get update \
-    && apt-get install -y lsb-release golang strace gdb ctags curl zip sshpass
+RUN yum -y update \
+    && yum -y install redhat-lsb golang strace gdb ctags curl zip sshpass jq
 
-RUN apt-get clean all \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf ~/.cache/* \
-    && rm -rf /tmp/*
+RUN RUN yum -y clean all && rm -rf /var/cache
 
 COPY grpc/common ${GRPC_V138_PATH}
 COPY grpc/v1.38.1 ${GRPC_V138_PATH}
 COPY gramine/CI-Examples ${GRAMINEDIR}/CI-Examples
+RUN cd ${GRAMINEDIR}/CI-Examples/psi/python && git apply *.diff \
+&& cd ${GRAMINEDIR}/CI-Examples/psi/cpp && git apply *.diff
