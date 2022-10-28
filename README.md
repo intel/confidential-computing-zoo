@@ -14,524 +14,686 @@ CCZoo maintains a live table, as below, to indicate the correlations between bus
 document section that explains the corresponding details and then guides you to the source codes. Enjoy!
 
 #  Solution List (Solution to Component Correlation)
-
-<table border="1" bordercolor="#000000" cellpadding="2" cellspacing="0" style="width:100%">
-  <tbody>
-    <tr>
-      <td rowspan="3"><strong>&nbsp; Solution</strong>
-      </td>
-      <td colspan="11" rowspan="1"><strong>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; Security Components</strong>
-      </td>
-      <td colspan="1" rowspan="3">
-        <p><strong><span style="color:#333333; font-family:Arial">Validated</span>
-          <br />
-          <span style="color:#333333; font-family:Arial">in Public Cloud</span></strong>
-        </p>
-      </td>
-      <td colspan="1" rowspan="3">
-        <p><strong>Status</strong>
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="2" rowspan="1">
-        <p><span style="color:#333333; font-family:Arial"><strong>&nbsp;&nbsp;TEE</strong></span>
-        </p>
-      </td>
-      <td colspan="2" rowspan="1">
-        <p><strong><span style="font-family:Arial">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;LibOS</span></strong>
-        </p>
-      </td>
-      <td colspan="2" rowspan="1">
-        <p><strong>Remote Attestation</strong>
-        </p>
-      </td>
-      <td colspan="2" rowspan="1">
-        <p>&nbsp; &nbsp;&nbsp;<strong>KMS</strong>
-        </p>
-      </td>
-      <td colspan="1" rowspan="2">
-        <p><strong>HE</strong>
-        </p>
-      </td>
-      <td colspan="1" rowspan="2" style="text-align:center;">
-        <p style="text-align:left;"><span><strong>Crypto</strong></span>
-        </p>
-      </td>
-      <td colspan="1" rowspan="2">
-        <p><strong><span style="font-family:Arial">TLS</span></strong>
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="1"><strong>SGX</strong>
-      </td>
-      <td colspan="1"><strong>TDX</strong>
-      </td>
-      <td style="text-align:center;"><strong>Gramine</strong>
-      </td>
-      <td style="text-align:center;"><strong>Occlum</strong>
-      </td>
-      <td><strong><span style="font-size:22px">*</span><a href="https://cczoo.readthedocs.io/en/main/Solutions/rats-tls/index.html">RATS-TLS</a></strong>
-      </td>
-      <td><strong><span style="font-size:22px">*</span></strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html"><span><strong>RA-TLS g</strong></span><strong><span style="font-family:Arial">RPC</span></strong></a>
-      </td>
-      <td style="text-align:center;"><strong>Vault</strong>
-      </td>
-      <td style="text-align:center;"><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html"><strong>eHSM-KMS</strong></a>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="14"><span style="font-size:20px"><em><strong>Multi-Party Compute / Federated Learning</strong></em></span>
-      </td>
-    </tr>
-    <tr>
-      <td><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html" target="_blank"><span style="font-family:Arial"><strong>Horizontal Federated Learning </strong></span></a>
-        <br />
-        (</span><span style="color:#333333; font-family:Arial">TensorFlow</span><span class="md-plain">)</span>
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td><span>-</span>
-      </td>
-      <td><span style="color:#333333; font-family:Arial">Yes
-        <br />
-        (2-way)</span>
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td><span style="font-family:Arial">-</span>
-      </td>
-      <td><span style="font-family:Arial">Yes</span>
-      </td>
-      <td><span style="font-family:Arial">Yes
-        <br />
-        (RA-gRPC)</span>
-      </td>
-      <td>
-        <p><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#aliyun-ecs"><span>Alibaba Cloud</span></a>,
-          <br />
-          <a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#tencent-cloud">Tencent Cloud</a>,
-          <br />
-          <a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html" target="_blank"><span>ByteDance Cloud</span></a></span>
-        </p>
-      </td>
-      <td><strong><span style="font-family:Arial">Published</span></strong>
-      </td>
-    </tr>
-    <tr>
-      <td><span style="font-family:Arial"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank"><strong>Vertical Federated </strong>
-        <br />
-        <strong>Learning</strong></a></span><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">&nbsp;</a>
-        <br />
-        (</span><span style="color:#333333; font-family:Arial">TensorFlow</span><span class="md-plain">)</span>
-      </td>
-      <td><span style="font-family:Arial">Yes</span>
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td><span style="color:#333333; font-family:Arial">Yes
-        <br />
-        (2-way)</span>
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td><span style="font-family:Arial">Yes</span>
-      </td>
-      <td><span style="font-family:Arial">Yes
-        <br />
-        (RA-gRPC)</span>
-      </td>
-      <td>
-        <p><span class="md-plain"><span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Alibaba Cloud</a></span>,
-          <br />
-          <a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Tencent Cloud</a>,
-          <br />
-          <a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">ByteDance Cloud</a></span>
-        </p>
-      </td>
-      <td><strong><span style="font-family:Arial">Published</span></strong>
-      </td>
-    </tr>
-    <tr>
-      <td><a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html">Private Set
-        <br />
-        Intersection&nbsp;</a>
-      </td>
-      <td><span style="font-family:Arial">Yes</span>
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td><span style="font-family:Arial">Yes
-        <br />
-        (RA-gRPC)</span>
-      </td>
-      <td><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">ByteDance Cloud</a></span>
-      </td>
-      <td><strong><span style="font-family:Arial">Published</span></strong>
-      </td>
-    </tr>
-    <tr>
-      <td><a href="https://cczoo.readthedocs.io/en/latest/Solutions/phe_homo_lr/phe_homo_lr.html"><span style="color:#444444; font-family:Arial">Secure Logistic
-        <br />
-        Regression Training
-        <br />
-        Based on TEE &amp;&nbsp;</span><span style="color:#444444; font-family:Arial">HE&nbsp;</span></a>
-      </td>
-      <td><span style="font-family:Arial">Yes</span>
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td><span class="md-plain"><span>Alibaba Cloud</span>,
-        <br />
-        Tencent Cloud</span>
-      </td>
-      <td><strong><span style="font-family:Arial">Published</span></strong>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="14"><em><strong><span style="font-size:20px">Secure AI Inference &amp; Training</span></strong></em>
-      </td>
-    </tr>
-    <tr>
-      <td><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html" target="_blank"><span style="font-family:Arial"><strong>TensorFlow Serving
-        <br />
-        Cluster PPML</strong></span></a>
-        <br />
-        (TensorFlow, K8S)</span>
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>
-        <p><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#alibaba-cloud"><span>Alibaba Cloud</span></a>,
-          <br />
-          <a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#tencent-cloud">Tencent Cloud</a>,
-          <br />
-          <a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#bytedance-cloud" target="_blank"><span>ByteDance Cloud</span></a></span>
-        </p>
-      </td>
-      <td><span style="font-family:Arial">Published</span>
-      </td>
-    </tr>
-    <tr>
-      <td><span style="color:#333333; font-family:Arial">Leveled HE Logical Regression Inference</span>
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>In Progress
-      </td>
-    </tr>
-    <tr>
-      <td><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/bigdl-ppml/index.html" target="_blank"><span style="font-family:Arial"><strong>BigDL PPML</strong></span> </a></span>
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>
-        <p><span class="md-plain"><a href="https://www.intel.com/content/dam/www/central-libraries/us/en/documents/alibaba-ppml-ai-blog-pdf.pdf"><span>Ant Group</span></a>,
-          <br />
-          <a href="https://networkbuilders.intel.com/solutionslibrary/reference-architecture-for-confidential-computing-on-skt-5g-mec">SKT</a> </span>
-        </p>
-      </td>
-      <td>In Progress
-      </td>
-    </tr>
-    <tr>
-      <td colspan="14"><span style="font-size:20px"><em><strong>Native Application Hosting</strong></em></span>
-      </td>
-    </tr>
-    <tr>
-      <td><a href="https://cczoo.readthedocs.io/en/latest/Solutions/cross_language_framework_based_gramine/Readme.html" target="_blank"><strong>Cross Language </strong>
-        <br />
-        <strong>framework Based </strong>
-        <br />
-        <strong>on Gramine</strong></a>
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Tencent Cloud
-      </td>
-      <td><strong><span style="font-family:Arial">Published</span></strong>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="14"><em><strong><span style="font-size:20px">Attestation Server &amp; Key Management Service</span></strong></em>
-      </td>
-    </tr>
-    <tr>
-      <td><strong><a href="https://cczoo.readthedocs.io/en/latest/Solutions/attestation-secret-provision/index.html" target="_blank">Attestation and Secret Provision Service</a></strong>
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td><strong><span style="font-family:Arial">Published</span></strong>
-      </td>
-    </tr>
-    <tr>
-      <td><strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html">eHSM-KMS</a></strong>
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td><strong><span style="font-family:Arial">Published</span></strong>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="14"><strong><em><span style="font-size:20px">Optimization on Secure Libs</span></em></strong>
-      </td>
-    </tr>
-    <tr>
-      <td>Private Set
-        <br />
-        intersection
-        <br />
-        Optimization
-        <br />
-        on Xeon
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Not Start
-      </td>
-    </tr>
-    <tr>
-      <td colspan="14"><span style="font-size:20px"><em><strong>Secure Database</strong></em></span>
-      </td>
-    </tr>
-    <tr>
-      <td>Secure Database
-        <br />
-        Querying Based
-        <br />
-        on HE
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Yes
-      </td>
-      <td>Yes
-      </td>
-      <td>-
-      </td>
-      <td>-
-      </td>
-      <td>Not Start
-      </td>
-    </tr>
-  </tbody>
+<table border="1" bordercolor="#000000" cellpadding="2" cellspacing="0" style="width:100%;">
+	<tbody>
+		<tr>
+			<td rowspan="3">
+				<strong>&nbsp; Solution</strong> 
+			</td>
+			<td colspan="11" rowspan="1">
+				<strong>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; Security Components</strong> 
+			</td>
+			<td colspan="1" rowspan="3">
+				<p>
+					<strong><span style="color:#333333;font-family:Arial;">Validated</span> <br />
+<span style="color:#333333;font-family:Arial;">in Public Cloud</span></strong> 
+				</p>
+			</td>
+			<td colspan="1" rowspan="3">
+				<p>
+					<strong>Status</strong> 
+				</p>
+			</td>
+		</tr>
+		<tr>
+			<td colspan="2" rowspan="1">
+				<p>
+					<span style="color:#333333;font-family:Arial;"><strong>&nbsp;&nbsp;TEE</strong></span> 
+				</p>
+			</td>
+			<td colspan="2" rowspan="1">
+				<p>
+					<strong><span style="font-family:Arial;">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;LibOS</span></strong> 
+				</p>
+			</td>
+			<td colspan="2" rowspan="1">
+				<p>
+					<strong>Remote Attestation</strong> 
+				</p>
+			</td>
+			<td colspan="2" rowspan="1">
+				<p>
+					&nbsp; &nbsp;&nbsp;<strong>KMS</strong> 
+				</p>
+			</td>
+			<td colspan="1" rowspan="2">
+				<p>
+					<strong>HE</strong> 
+				</p>
+			</td>
+			<td colspan="1" rowspan="2" style="text-align:center;">
+				<p style="text-align:left;">
+					<span><strong>Crypto</strong></span> 
+				</p>
+			</td>
+			<td colspan="1" rowspan="2">
+				<p>
+					<strong><span style="font-family:Arial;">TLS</span></strong> 
+				</p>
+			</td>
+		</tr>
+		<tr>
+			<td colspan="1">
+				<strong>SGX</strong> 
+			</td>
+			<td colspan="1">
+				<strong>TDX</strong> 
+			</td>
+			<td style="text-align:center;">
+				<strong>Gramine</strong> 
+			</td>
+			<td style="text-align:center;">
+				<strong>Occlum</strong> 
+			</td>
+			<td>
+				<strong><span style="font-size:22px;">*</span><a href="https://cczoo.readthedocs.io/en/main/Solutions/rats-tls/index.html">RATS-TLS</a></strong> 
+			</td>
+			<td>
+				<strong><span style="font-size:22px;">*</span></strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html"><span><strong>RA-TLS g</strong></span><strong><span style="font-family:Arial;">RPC</span></strong></a> 
+			</td>
+			<td style="text-align:center;">
+				<strong>Vault</strong> 
+			</td>
+			<td style="text-align:center;">
+				<a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html"><strong>eHSM-KMS</strong></a> 
+			</td>
+		</tr>
+		<tr>
+			<td colspan="14">
+				<span style="font-size:20px;"><em><strong>Multi-Party Compute / Federated Learning</strong></em></span> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html" target="_blank"><span style="font-family:Arial;"><strong>Horizontal Federated Learning </strong></span></a> <br />
+(</span><span style="color:#333333;font-family:Arial;">TensorFlow</span><span class="md-plain">)</span> 
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span>-</span> 
+			</td>
+			<td>
+				<span style="color:#333333;font-family:Arial;">Yes <br />
+(2-way)</span> 
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span style="font-family:Arial;">-</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">Yes</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">Yes <br />
+(RA-gRPC)</span> 
+			</td>
+			<td>
+				<p>
+					<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#aliyun-ecs"><span>Alibaba Cloud</span></a>, <br />
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#tencent-cloud">Tencent Cloud</a>, <br />
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html" target="_blank"><span>ByteDance Cloud</span></a></span> 
+				</p>
+			</td>
+			<td>
+				<strong><span style="font-family:Arial;">Published</span></strong> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<span style="font-family:Arial;"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank"><strong>Vertical Federated </strong> <br />
+<strong>Learning</strong></a></span><span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">&nbsp;</a> <br />
+(</span><span style="color:#333333;font-family:Arial;">TensorFlow</span><span class="md-plain">)</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">Yes</span> 
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span style="color:#333333;font-family:Arial;">Yes <br />
+(2-way)</span> 
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span style="font-family:Arial;">Yes</span> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">Yes <br />
+(RA-gRPC)</span> 
+			</td>
+			<td>
+				<p>
+					<span class="md-plain"><span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Alibaba Cloud</a></span>, <br />
+<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Tencent Cloud</a>, <br />
+<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">ByteDance Cloud</a></span> 
+				</p>
+			</td>
+			<td>
+				<strong><span style="font-family:Arial;">Published</span></strong> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html"><strong>Private Set </strong><br />
+<strong> Intersection&nbsp;</strong></a> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">Yes</span> 
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<span style="font-family:Arial;">Yes <br />
+(RA-gRPC)</span> 
+			</td>
+			<td>
+				<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">ByteDance Cloud</a></span> 
+			</td>
+			<td>
+				<strong><span style="font-family:Arial;">Published</span></strong> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/phe_homo_lr/phe_homo_lr.html"><span style="color:#444444;font-family:Arial;"><strong>Secure Logistic </strong><br />
+<strong> Regression Training </strong><br />
+<strong> Based on TEE &amp;&nbsp;</strong></span><span style="color:#444444;font-family:Arial;"><strong>HE&nbsp;</strong></span></a> 
+			</td>
+			<td>
+				<span style="font-family:Arial;">Yes</span> 
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				<span class="md-plain"><span>Alibaba Cloud</span>, <br />
+Tencent Cloud</span> 
+			</td>
+			<td>
+				<strong><span style="font-family:Arial;">Published</span></strong> 
+			</td>
+		</tr>
+		<tr>
+			<td colspan="14">
+				<em><strong><span style="font-size:20px;">Secure AI Inference &amp; Training</span></strong></em> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html" target="_blank"><span style="font-family:Arial;"><strong>TensorFlow Serving <br />
+Cluster PPML</strong></span></a> <br />
+(TensorFlow, K8S)</span> 
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				<p>
+					<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#alibaba-cloud"><span>Alibaba Cloud</span></a>, <br />
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#tencent-cloud">Tencent Cloud</a>, <br />
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#bytedance-cloud" target="_blank"><span>ByteDance Cloud</span></a></span> 
+				</p>
+			</td>
+			<td>
+				<span style="font-family:Arial;">Published</span> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<span style="color:#333333;font-family:Arial;"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank"><strong>Secure Logistic Logical Regression Inference with HE and SGX</strong></a></span>
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				In Progress
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/bigdl-ppml/index.html" target="_blank"><span style="font-family:Arial;"><strong>BigDL PPML</strong></span> </a></span> 
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<p>
+					<span class="md-plain"><a href="https://www.intel.com/content/dam/www/central-libraries/us/en/documents/alibaba-ppml-ai-blog-pdf.pdf"><span>Ant Group</span></a>, <br />
+<a href="https://networkbuilders.intel.com/solutionslibrary/reference-architecture-for-confidential-computing-on-skt-5g-mec">SKT</a> </span> 
+				</p>
+			</td>
+			<td>
+				In Progress
+			</td>
+		</tr>
+		<tr>
+			<td colspan="14">
+				<span style="font-size:20px;"><em><strong>Native Application Hosting</strong></em></span> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/cross_language_framework_based_gramine/Readme.html" target="_blank"><strong>Cross Language </strong> <br />
+<strong>framework Based </strong> <br />
+<strong>on Gramine</strong></a> 
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Tencent Cloud
+			</td>
+			<td>
+				<strong><span style="font-family:Arial;">Published</span></strong> 
+			</td>
+		</tr>
+		<tr>
+			<td colspan="14">
+				<em><strong><span style="font-size:20px;">Attestation Server &amp; Key Management Service</span></strong></em> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<strong><a href="https://cczoo.readthedocs.io/en/latest/Solutions/attestation-secret-provision/index.html" target="_blank">Attestation and Secret Provision Service</a></strong> 
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<strong><span style="font-family:Arial;">Published</span></strong> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<strong><a href="https://cczoo.readthedocs.io/en/main/Solutions/ehsm-kms/index.html">eHSM-KMS</a></strong> 
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				<strong><span style="font-family:Arial;">Published</span></strong> 
+			</td>
+		</tr>
+		<tr>
+			<td colspan="14">
+				<strong><em><span style="font-size:20px;">Optimization on Secure Libs</span></em></strong> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				Private Set <br />
+intersection <br />
+Optimization <br />
+on Xeon
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Not Start
+			</td>
+		</tr>
+		<tr>
+			<td colspan="14">
+				<span style="font-size:20px;"><em><strong>Secure Database</strong></em></span> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				Secure Database <br />
+Querying Based <br />
+on HE
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				Yes
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				-
+			</td>
+			<td>
+				Not Start
+			</td>
+		</tr>
+	</tbody>
 </table>
-
 
 ---
 
@@ -614,7 +776,7 @@ Below table shows solutions and component projects validated in public clouds. A
 				<strong>ByteDance</strong> <strong>Cloud</strong> 
 			</td>
 			<td>
-				<strong>Azure Cloud</strong>
+				<strong>Azure Cloud</strong> 
 			</td>
 			<td>
 				<strong>Tencent Cloud</strong> 
@@ -772,10 +934,19 @@ Below table shows solutions and component projects validated in public clouds. A
 					<li>
 						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a> 
 					</li>
+				</ul>
+				<ul>
 					<li>
 						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a> 
 					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">Private
+Set Intersection (PSI)</a><br />
+					</li>
 				</ul>
+				<p>
+					<br />
+				</p>
 			</td>
 			<td style="vertical-align:top;">
 				<ul>
@@ -803,12 +974,20 @@ Below table shows solutions and component projects validated in public clouds. A
 				</ul>
 				<ul>
 					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a> 
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a>
 					</li>
+				</ul>
+				<ul>
 					<li>
 						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/phe_homo_lr/phe_homo_lr.html">Secure logistic regression training base on TEE &amp; HE</a> 
 					</li>
+					<li>
+						<span></span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">Private Set Intersection (PSI)</a><br />
+					</li>
 				</ul>
+				<p>
+					<br />
+				</p>
 			</td>
 		</tr>
 	</tbody>
