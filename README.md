@@ -762,7 +762,6 @@ from CCZoo and evolve to a standalone project.
 Solutions and incubating component projects in CCZoo are constantly extended to be validated in public clouds to verify the versatility, stability, robustness. We will provide detialed configurations of each public clouds for reference, and notes of the diversity in each cloud for easy delopyment.
 
 Below table shows solutions and component projects validated in public clouds. And it will be updated continuously.
-
 <table border="1" cellpadding="1" cellspacing="1" style="width:500px;">
 	<tbody>
 		<tr>
@@ -902,7 +901,7 @@ Below table shows solutions and component projects validated in public clouds. A
 			<td style="vertical-align:top;">
 				<ul>
 					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML</a> 
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html"><span style="line-height:1;"></span>TensorFlow Serving Cluster PPML</a> 
 					</li>
 				</ul>
 				<ul>
@@ -922,7 +921,7 @@ Below table shows solutions and component projects validated in public clouds. A
 			<td style="vertical-align:top;">
 				<ul>
 					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML</a> 
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html"><span style="line-height:1;"></span>TensorFlow Serving Cluster PPML</a> 
 					</li>
 				</ul>
 				<ul>
@@ -951,7 +950,7 @@ Set Intersection (PSI)</a><br />
 			<td style="vertical-align:top;">
 				<ul>
 					<li>
-						&nbsp;<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML</a> 
+						<span style="line-height:1;"></span>&nbsp;<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML</a> 
 					</li>
 					<li>
 						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning</a> 
@@ -964,7 +963,7 @@ Set Intersection (PSI)</a><br />
 			<td style="vertical-align:top;">
 				<ul>
 					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML</a> 
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html"><span style="line-height:1;"></span>TensorFlow Serving Cluster PPML</a> 
 					</li>
 				</ul>
 				<ul>
@@ -974,7 +973,7 @@ Set Intersection (PSI)</a><br />
 				</ul>
 				<ul>
 					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a> 
 					</li>
 				</ul>
 				<ul>
