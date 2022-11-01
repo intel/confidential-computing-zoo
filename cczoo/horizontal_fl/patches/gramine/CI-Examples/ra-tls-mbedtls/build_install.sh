@@ -28,7 +28,7 @@ export MBEDTLS_PATH=${GRAMINEDIR}/CI-Examples/ra-tls-mbedtls
 cd ${MBEDTLS_PATH}
 
 make clean
-make app dcap
+make app dcap RA_TYPE=dcap
 
 mkdir -p ./mbedtls/install
 make -C mbedtls SHARED=1 DESTDIR=install install .
