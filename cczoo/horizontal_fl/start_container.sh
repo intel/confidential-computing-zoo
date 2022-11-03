@@ -34,7 +34,7 @@ else
     tag=$3
 fi
 
-if [ "$4" == "ubuntu" ] || [ -n "$4" ]; then
+if [ "$4" == "ubuntu" ] || [ ! -n "$4" ]; then
 docker run -it \
     --restart=always \
     --cap-add=SYS_PTRACE \
