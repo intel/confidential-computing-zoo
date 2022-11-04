@@ -28,13 +28,9 @@ else
     ip_addr=127.0.0.1
 fi
 
-if  [ ! -n "$3" ] ; then
-    tag=latest
-else
-    tag=$3
-fi
+tag=latest
 
-if [ "$4" == "ubuntu" ] || [ -n "$4" ]; then
+if [ "$3" == "ubuntu" ] || [ ! -n "$3" ]; then
 docker run -it \
     --restart=always \
     --cap-add=SYS_PTRACE \

@@ -47,7 +47,7 @@ sgx.debug = false
 sgx.nonpie_binary = true
 sgx.enclave_size = "8G"
 sgx.thread_num = 512
-sgx.remote_attestation = true
+sgx.remote_attestation = "{{ ra_type }}"
 sgx.enable_stats = false
 
 # sgx.require_avx = true
