@@ -18,7 +18,7 @@
 ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
 # ENTRYPOINT ?= $(realpath $(shell sh -c "command -v python3"))
 
-RA_TYPE ?= none
+RA_TYPE ?= dcap
 
 ifeq ($(DEBUG),1)
 GRAMINE_LOG_LEVEL = debug
