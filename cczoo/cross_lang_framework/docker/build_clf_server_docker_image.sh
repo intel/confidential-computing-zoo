@@ -16,35 +16,34 @@
 #!/bin/bash
 set -e
 
-if  [ "$1" == "anolisos" ] ; then
+if  [ -n "$1" ] ; then
     base_image=$1
 else
-    base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
+    base_image=ubuntu:20.04
+fi
+
+if  [ -n "$2" ] ; then
+    image_tag=$2
+else
+    image_tag=clf-server:gramine1.3-ubuntu20.04
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"
-# proxy_server="" # your http proxy server
+proxy_server="" # your http proxy server
+pccs_url="https:\/\/sgx-dcap-server-tc.gz.tencent.cn\/sgx\/certification\/v3\/"
 
 cd `dirname $0`
 
-if [ ${base_image} == "anolisos" ] ; then
 DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
-    --build-arg BASE_IMAGE=gramine-sgx-dev:v1.2-anolisos\
-    -f anolisos-psi-gramine-sgx-dev.dockerfile \
-    -t anolisos_psi \
-    ..
-else
-DOCKER_BUILDKIT=0 docker build \
-    --build-arg no_proxy=${no_proxy} \
-    --build-arg http_proxy=${proxy_server} \
-    --build-arg https_proxy=${proxy_server} \
+    --build-arg base_image=${base_image} \
     --build-arg BASE_IMAGE=${base_image} \
-    -f psi-gramine-sgx-dev.dockerfile \
-    -t psi \
-    ..
-fi
+    --build-arg PCCS_URL=${pccs_url} \
+    -f clf_server.dockerfile \
+    -t ${image_tag} \
+    ../..
+
 cd -
