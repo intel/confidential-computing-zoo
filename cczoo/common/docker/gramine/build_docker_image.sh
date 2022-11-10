@@ -25,7 +25,7 @@ fi
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=gramine-sgx-dev:master-ubuntu20.04-latest
+    image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
