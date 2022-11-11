@@ -147,7 +147,8 @@ document section that explains the corresponding details and then guides you to 
 				<p>
 					<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#aliyun-ecs"><span>Alibaba Cloud</span></a>, <br />
 <a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#tencent-cloud">Tencent Cloud</a>, <br />
-<a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html" target="_blank"><span>ByteDance Cloud</span></a></span> 
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html" target="_blank"><span>ByteDance Cloud</span></a>, <br />
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/horizontal-federated-learning/hfl.html#microsoft-azure">Microsoft Azure</a></span> 
 				</p>
 			</td>
 			<td>
@@ -199,7 +200,8 @@ document section that explains the corresponding details and then guides you to 
 				<p>
 					<span class="md-plain"><span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Alibaba Cloud</a></span>, <br />
 <a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Tencent Cloud</a>, <br />
-<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">ByteDance Cloud</a></span> 
+<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">ByteDance Cloud</a>, <br />
+<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Microsoft Azure</a></span> 
 				</p>
 			</td>
 			<td>
@@ -347,7 +349,8 @@ Cluster PPML</strong></span></a> <br />
 				<p>
 					<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#alibaba-cloud"><span>Alibaba Cloud</span></a>, <br />
 <a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#tencent-cloud">Tencent Cloud</a>, <br />
-<a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#bytedance-cloud" target="_blank"><span>ByteDance Cloud</span></a></span> 
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#bytedance-cloud" target="_blank"><span>ByteDance Cloud</span></a>, <br />
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/tensorflow-serving-cluster/index.html#microsoft-azure" target="_blank"><span>Microsoft Azure</span></a></span> 
 				</p>
 			</td>
 			<td>
@@ -359,7 +362,7 @@ Cluster PPML</strong></span></a> <br />
 				<span style="color:#333333;font-family:Arial;"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank"><strong>Secure Logistic Logical Regression Inference with HE and SGX</strong></a></span>
 			</td>
 			<td>
-				-
+				Yes
 			</td>
 			<td>
 				-
@@ -392,10 +395,15 @@ Cluster PPML</strong></span></a> <br />
 				-
 			</td>
 			<td>
-				-
+				<p>
+					<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html"><span>Alibaba Cloud</span></a>, <br />
+<a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html">Tencent Cloud</a>, <br />
+<a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank"><span>ByteDance Cloud</span></a>, <br />
+<a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank"><span>Microsoft Azure</span></a></span> 
+				</p>
 			</td>
 			<td>
-				In Progress
+				Published
 			</td>
 		</tr>
 		<tr>
@@ -911,6 +919,9 @@ Below table shows solutions and component projects validated in public clouds. A
 				</ul>
 				<ul>
 					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank">Secure Logistic Logical Regression Inference with HE and SGX</a>
+					</li>
+					<li>
 						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a> 
 					</li>
 					<li>
@@ -939,6 +950,9 @@ Below table shows solutions and component projects validated in public clouds. A
 						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a> 
 					</li>
 					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank">Secure Logistic Logical Regression Inference with HE and SGX</a>
+					</li>
+					<li>
 						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">Private
 Set Intersection (PSI)</a><br />
 					</li>
@@ -954,6 +968,12 @@ Set Intersection (PSI)</a><br />
 					</li>
 					<li>
 						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning</a> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank">Secure Logistic Logical Regression Inference with HE and SGX</a>
 					</li>
 				</ul>
 				<p>
@@ -982,6 +1002,9 @@ Set Intersection (PSI)</a><br />
 					</li>
 					<li>
 						<span></span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">Private Set Intersection (PSI)</a><br />
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank">Secure Logistic Logical Regression Inference with HE and SGX</a>
 					</li>
 				</ul>
 				<p>
