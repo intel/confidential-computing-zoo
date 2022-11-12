@@ -92,7 +92,7 @@ RUN if [ -z "$AZURE" ]; then \
 # Clone Gramine and Init submodules
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
-    && git checkout v1.2
+    && git checkout v1.3.1
 
 
 # Create SGX driver for header files
@@ -101,8 +101,8 @@ RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${
     && git checkout DCAP_1.11
 
 RUN apt-get install -y gawk bison python3-click python3-jinja2 golang  ninja-build python3
-RUN apt-get install -y libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler
-RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55' cryptography
+RUN apt-get install -y libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler
+RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55' cryptography pyelftools
 
 # Build Gramine
 RUN cd ${GRAMINEDIR} && pwd && meson setup build/ --buildtype=debug -Dsgx=enabled -Ddcap=enabled -Dsgx_driver="dcap1.10" -Dsgx_driver_include_path="/gramine/driver/driver/linux/include" \
@@ -115,11 +115,12 @@ RUN apt-get clean all
 
 # Build Secret Provision
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
-    && make app dcap
+    && make app dcap RA_TYPE=dcap
 
 COPY certs/server.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 COPY certs/server.key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 COPY certs/ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
+COPY certs/wrap_key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/secret_prov_pf
 
 COPY sgx_default_qcnl.conf /etc/
 COPY entrypoint_secret_prov_server.sh /usr/bin/
