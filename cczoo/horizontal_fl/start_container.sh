@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright (c) 2022 Intel Corporation
 #
@@ -13,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/bin/bash
 set -e
 
 if  [ -n "$1" ] ; then
@@ -35,7 +35,7 @@ else
 fi
 
 if [ "$4" == "anolisos" ]; then
-docker run -it \
+docker run -itd \
     --restart=always \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
@@ -49,7 +49,7 @@ docker run -it \
     anolisos_horizontal_fl:${tag} \
     bash
 else
-docker run -it \
+docker run -itd \
     --restart=always \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
