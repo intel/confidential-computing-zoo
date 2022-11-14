@@ -52,7 +52,7 @@ PS_HOSTS=$2
 WORKER_HOSTS=$3
 
 if [ "$ROLE" == "make" ]; then
-    make clean && make | make_logfilter
+    make clean && make RA_TYPE=dcap | make_logfilter
 elif [ "$ROLE" == "ps0" ]; then
     make_custom_env
     taskset -c 0-1 stdbuf -o0 gramine-sgx python -u train.py --task_index=0 --job_name=ps $PS_HOSTS $WORKER_HOSTS 2>&1 | runtime_logfilter | tee -a ps0-gramine-python.log &

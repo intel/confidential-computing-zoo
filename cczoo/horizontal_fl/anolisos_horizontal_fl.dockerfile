@@ -43,7 +43,7 @@ RUN yum install -y --nogpgcheck sgx-dcap-pccs libsgx-dcap-default-qpl
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-ENV GRAMINE_VERSION=v1.2
+ENV GRAMINE_VERSION=v1.3.1
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/
 ENV LC_ALL=C.UTF-8 LANG=C.UTF-8
@@ -58,7 +58,7 @@ RUN yum install -y gmp-devel mpfr-devel libmpc-devel isl-devel nasm python3-deve
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
     && pip3 install --upgrade pip \
-    && pip3 install toml meson wheel cryptography paramiko
+    && pip3 install toml meson wheel cryptography paramiko pyelftools
 
 RUN rm -rf ${GRAMINEDIR} && git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \

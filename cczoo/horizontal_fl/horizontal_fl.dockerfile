@@ -90,7 +90,7 @@ RUN if [ -z "$AZURE" ]; then \
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-ENV GRAMINE_VERSION=v1.2
+ENV GRAMINE_VERSION=v1.3.1
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV WERROR=1
 ENV SGX=1
@@ -101,7 +101,7 @@ RUN apt-get install -y gawk bison python3-click python3-jinja2 golang ninja-buil
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
     && pip3 install --upgrade pip \
-    && pip3 install toml meson cryptography
+    && pip3 install toml meson cryptography pyelftools
 
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \

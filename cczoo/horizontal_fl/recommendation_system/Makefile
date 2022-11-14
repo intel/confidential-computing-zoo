@@ -18,6 +18,8 @@
 ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
 # ENTRYPOINT ?= $(realpath $(shell sh -c "command -v python3"))
 
+RA_TYPE ?= dcap
+
 ifeq ($(DEBUG),1)
 GRAMINE_LOG_LEVEL = debug
 else
@@ -35,6 +37,7 @@ endif
 python.manifest: python.manifest.template
 	gramine-manifest \
 		-Dlog_level=$(GRAMINE_LOG_LEVEL) \
+		-Dra_type=$(RA_TYPE) \
 		-Dentrypoint=$(realpath $(shell sh -c "command -v python3")) \
 		-Darch_libdir=$(ARCH_LIBDIR) \
 		$< >$@
