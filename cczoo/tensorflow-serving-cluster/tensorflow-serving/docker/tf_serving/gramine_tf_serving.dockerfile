@@ -142,6 +142,7 @@ RUN apt-get clean all
 # Build Secret Provision
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
     && make app dcap RA_TYPE=dcap
+
 COPY ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 
 WORKDIR ${WORK_BASE_PATH}

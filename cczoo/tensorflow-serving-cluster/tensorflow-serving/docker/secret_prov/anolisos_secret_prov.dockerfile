@@ -29,6 +29,7 @@ RUN yum -y install --nogpgcheck sgx-dcap-pccs libsgx-dcap-default-qpl
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
+
 ENV GRAMINE_VERSION=v1.3.1
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/
@@ -71,6 +72,7 @@ COPY certs/server.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 COPY certs/server.key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 COPY certs/ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 COPY certs/wrap_key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/secret_prov_pf 
+
 
 COPY sgx_default_qcnl.conf /etc/
 COPY entrypoint_secret_prov_server.sh /usr/bin/

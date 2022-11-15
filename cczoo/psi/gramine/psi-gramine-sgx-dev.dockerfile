@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE=gramine-sgx-dev:ubuntu-18.04-latest
+ARG BASE_IMAGE=gramine-sgx-dev:v1.2-ubuntu20.04-latest
 FROM ${BASE_IMAGE}
 
 RUN mkdir -p ${INSTALL_PREFIX} \
@@ -34,7 +34,8 @@ RUN ln -s ${GRPC_V138_PATH} ${GRPC_PATH}
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
 RUN pip3 install --upgrade pip \
-    && pip3 install -r ${GRPC_PATH}/requirements.txt
+    && pip3 install -r ${GRPC_PATH}/requirements.txt \
+    && pip3 install --upgrade protobuf
 
 RUN apt-get update \
     && apt-get install -y lsb-release golang strace gdb ctags curl zip sshpass

@@ -289,71 +289,84 @@ The following is the configuration of the DCsv3-series instance used:
 	<tbody>
 		<tr>
 			<td colspan="2">
-				<strong>&nbsp; &nbsp; Public Cloud</strong>
+				<span>&nbsp; &nbsp; Public Cloud </span> 
 			</td>
-			<td><strong>Microsoft Azure</strong>
+			<td>
+				<span>Microsoft Azure </span> 
 			</td>
 		</tr>
 		<tr>
-			<td rowspan="5" style="text-align: left;">
-				<p>&nbsp;
+			<td rowspan="5" style="text-align:left;">
+				<p>
+					<span>&nbsp;</span> 
 				</p>
-				<p><strong>Instance&nbsp;</strong>
+				<p>
+					<span>Instance&nbsp; </span> 
 				</p>
 			</td>
 			<td style="text-align:left;">
-				<span>Type</span>
+				<span><span>Type</span> </span> 
 			</td>
 			<td>
 				<div>
-					<span>Standard_DC16s_v3</span>
+					<span><span>Standard_DC16s_v3</span> </span> 
 				</div>
 			</td>
 		</tr>
 		<tr>
 			<td style="text-align:left;">
-				<span>Kernel</span>
+				<span><span>Kernel</span> </span> 
 			</td>
 			<td>
 				<div>
-					<span>5.13.0-1031-azure</span>
+					<span><span>5.13.0-1031-azure</span> </span> 
 				</div>
 			</td>
 		</tr>
 		<tr>
 			<td style="text-align:left;">
-				<span>OS</span>
+				<span><span>OS</span> </span> 
 			</td>
 			<td>
-				<span>Ubuntu Server 20.04 LTS - Gen2</span>
+				<span><span>Ubuntu Server 20.04 LTS - Gen2</span> </span> 
 			</td>
 		</tr>
 		<tr>
 			<td style="text-align:left;">
-				<span>Memory</span>
+				<span><span>Memory</span> </span> 
 			</td>
 			<td>
-				<span>128G (64G EPC Memory)</span>
+				<span><span>128G (64G EPC Memory)</span> </span> 
 			</td>
 		</tr>
 		<tr>
 			<td style="text-align:left;">
-				<span>vCPU</span>
+				<span><span>vCPU</span> </span> 
 			</td>
 			<td>
-				<span>16</span>
+				<span><span>16</span> </span> 
 			</td>
 		</tr>
-		<td colspan="2">
-			<br />
-			<br />
-			<br />
-			<strong>Validated Solution&nbsp;</strong>
-		</td>
+		<tr>
+			<td colspan="2">
+				<span><br />
+<br />
+<br />
+Validated Solution&nbsp; </span> 
+			</td>
 			<td>
 				<ul>
 					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html"><span>Horizontal Federated Learning&nbsp;</span></a>
+						<span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html" target="_blank">TensorFlow Serving Cluster PPML</a></span> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank"><span>Vertical Federated Learning</span></a> 
+					</li>
+					<li>
+						<span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></span> 
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html" target="_blank">RA-TLS Enhanced gRPC</a>
 					</li>
 				</ul>
 			</td>

@@ -55,8 +55,8 @@ images for developing the gRPC RA-TLS application.
 
 ### Prerequisites
 
-- Ubuntu 18.04. This solution should work on other Linux distributions as well,
-  but for simplicity we provide the steps for Ubuntu 18.04 only.
+- Ubuntu 20.04. This solution should work on other Linux distributions as well,
+  but for simplicity we provide the steps for Ubuntu 20.04 only.
 
 - Docker Engine. Docker Engine is an open source containerization technology for
   building and containerizing your applications.
@@ -85,7 +85,7 @@ After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Ma
    - Gramine
         ```bash
         cd cczoo/common/docker/gramine
-        ./build_docker_image.sh
+        ./build_docker_image.sh [ubuntu/anolisos]
         ```
 
 ### Setup develop environment of gRPC RA-TLS based on Intel SGX
@@ -94,7 +94,7 @@ After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Ma
         ```bash
         cd -
         cd cczoo/psi/gramine
-        ./build_docker_image.sh
+        ./build_docker_image.sh [ubuntu/anolisos]
         ```
 
 ## Run PSI examples

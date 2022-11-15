@@ -20,10 +20,7 @@ if [ -z ${DEBUG} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-<<<<<<< HEAD:cczoo/attestation-secret-provision/grpc_overlay/common/build_python.sh
     export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
-=======
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then

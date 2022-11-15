@@ -122,6 +122,7 @@ COPY certs/server.key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 COPY certs/ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 COPY certs/wrap_key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/secret_prov_pf
 
+
 COPY sgx_default_qcnl.conf /etc/
 COPY entrypoint_secret_prov_server.sh /usr/bin/
 RUN chmod +x /usr/bin/entrypoint_secret_prov_server.sh
