@@ -17,15 +17,21 @@
 set -e
 
 if  [ -n "$1" ] ; then
-    ip_addr=$1
+    name=$1
+else
+    name=server
+fi
+
+if  [ -n "$2" ] ; then
+    ip_addr=$2
 else
     ip_addr=127.0.0.1
 fi
 
-if  [ -n "$2" ] ; then
-    image_tag=$2
+if  [ -n "$3" ] ; then
+    image_tag=$3
 else
-    image_tag=psi
+    image_tag=latest
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
@@ -55,12 +61,13 @@ docker run -it \
     --device=/dev/sgx_enclave:/dev/sgx/enclave \
     --device=/dev/sgx_provision:/dev/sgx/provision \
     --add-host=pccs.service.com:${ip_addr} \
+    --name=${name} \
     -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
     --net=host \
     -e no_proxy=${no_proxy} \
     -e http_proxy=${proxy_server} \
     -e https_proxy=${proxy_server} \
     -v /home:/home/host-home \
-    ${image_tag} \
+    psi:${image_tag} \
     bash
 fi

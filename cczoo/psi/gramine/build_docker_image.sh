@@ -16,15 +16,16 @@
 #!/bin/bash
 set -e
 
-if  [ "$1" == "anolisos" ] ; then
-    base_image=$1
+if  [ ! -n "$1" ] ; then
+    base_image=ubuntu:20.04
 else
-    base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
+    base_image=$1
 fi
+
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"
-# proxy_server="" # your http proxy server
+proxy_server="" # your http proxy server
 
 cd `dirname $0`
 
