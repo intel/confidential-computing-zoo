@@ -82,6 +82,7 @@ The configuration of the ECS instance as below:
         <ul>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML&nbsp;</a>(<strong>*<a href="https://help.aliyun.com/document_detail/342755.html">Alibaba Best Practice</a>*</strong>)</li>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></li>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a></li>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a></li>
           <li>Secure logistic regression training base on TEE &amp; HE</li>
         </ul>
@@ -161,6 +162,7 @@ The configuration of the M6ce instance as below:
         <ul>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html">TensorFlow Serving Cluster PPML&nbsp;</a></li>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></li>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a></li>
           <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a></li>
           <li>Secure logistic regression training base on TEE &amp; HE</li>
         </ul>
@@ -255,22 +257,14 @@ The configuration of the M6ce instance as below:
 				<br />
 <br />
 <br />
-				<strong>Validated Solution&nbsp;</strong> 
+				<strong>Validated Solutions&nbsp;</strong> 
 			</td>
 			<td>
 				<ul>
-					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html"><span>TensorFlow Serving Cluster PPML&nbsp;</span></a> 
-					</li>
-					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html"><span>Horizontal Federated Learning&nbsp;</span></a> 
-					</li>
-					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><span>RA-TLS Enhanced gRPC</span></a> 
-					</li>
-					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a> 
-					</li>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html"><span>TensorFlow Serving Cluster PPML&nbsp;</span></a></li>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html"><span>Horizontal Federated Learning&nbsp;</span></a></li>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a></li>
+          <li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><span>RA-TLS Enhanced gRPC</span></a></li>
 				</ul>
 			</td>
 		</tr>
@@ -278,7 +272,6 @@ The configuration of the M6ce instance as below:
 </table>
 
 ---
-
 
 ## Microsoft Azure
 
@@ -290,89 +283,75 @@ The following is the configuration of the DCsv3-series instance used:
 	<tbody>
 		<tr>
 			<td colspan="2">
-				<span>&nbsp; &nbsp; Public Cloud </span> 
+				<strong>&nbsp; &nbsp; Public Cloud</strong>
 			</td>
-			<td>
-				<span>Microsoft Azure </span> 
+			<td><strong>Microsoft Azure</strong>
 			</td>
 		</tr>
 		<tr>
-			<td rowspan="5" style="text-align:left;">
-				<p>
-					<span>&nbsp;</span> 
+			<td rowspan="5" style="text-align: left;">
+				<p>&nbsp;
 				</p>
-				<p>
-					<span>Instance&nbsp; </span> 
+				<p><strong>Instance&nbsp;</strong>
 				</p>
 			</td>
 			<td style="text-align:left;">
-				<span><span>Type</span> </span> 
+				<span>Type</span>
 			</td>
 			<td>
 				<div>
-					<span><span>Standard_DC16s_v3</span> </span> 
+					<span>Standard_DC16s_v3</span>
 				</div>
 			</td>
 		</tr>
 		<tr>
 			<td style="text-align:left;">
-				<span><span>Kernel</span> </span> 
+				<span>Kernel</span>
 			</td>
 			<td>
 				<div>
-					<span><span>5.15.0-1022-azure</span> </span> 
+					<span>5.15.0-1020-azure</span>
 				</div>
 			</td>
 		</tr>
 		<tr>
 			<td style="text-align:left;">
-				<span><span>OS</span> </span> 
+				<span>OS</span>
 			</td>
 			<td>
-				<span><span>Ubuntu Server 20.04 LTS - Gen2</span> </span> 
+				<span>Ubuntu Server 20.04 LTS - Gen2</span>
 			</td>
 		</tr>
 		<tr>
 			<td style="text-align:left;">
-				<span><span>Memory</span> </span> 
+				<span>Memory</span>
 			</td>
 			<td>
-				<span><span>128G (64G EPC Memory)</span> </span> 
+				<span>128G (64G EPC Memory)</span>
 			</td>
 		</tr>
 		<tr>
 			<td style="text-align:left;">
-				<span><span>vCPU</span> </span> 
+				<span>vCPU</span>
 			</td>
 			<td>
-				<span><span>16</span> </span> 
+				<span>16</span>
 			</td>
 		</tr>
-		<tr>
-			<td colspan="2">
-				<span><br />
-<br />
-<br />
-Validated Solution&nbsp; </span> 
-			</td>
+		<td colspan="2">
+			<br />
+			<br />
+			<br />
+			<strong>Validated Solutions&nbsp;</strong>
+		</td>
 			<td>
 				<ul>
-					<li>
-						<span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html" target="_blank">TensorFlow Serving Cluster PPML</a></span> 
-					</li>
-					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank"><span>Vertical Federated Learning</span></a> 
-					</li>
-					<li>
-						<span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></span> 
-					</li>
-					<li>
-						<span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html">Secure Logistic Regression Inference with HE and Intel SGX&nbsp;</a></span> 
-					</li>
-					<li>
-						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html" target="_blank">RA-TLS Enhanced gRPC</a>
-					</li>
-				</ul>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html"><span>TensorFlow Serving Cluster PPML&nbsp;</span></a></li>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html"><span>Horizontal Federated Learning&nbsp;</span></a></li>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html"><span>Secure Logistic Regression Inference with HE and Intel SGX&nbsp;</span></a></li>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><span>RA-TLS Enhanced gRPC&nbsp;</span></a></li>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a></li>
+        </ul>
 			</td>
 		</tr>
 	</tbody>
