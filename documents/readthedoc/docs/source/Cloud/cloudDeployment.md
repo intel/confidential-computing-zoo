@@ -279,6 +279,7 @@ The configuration of the M6ce instance as below:
 
 ---
 
+
 ## Microsoft Azure
 
 Microsoft Azure [DCsv3-series](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series) instances support Intel® SGX encrypted computing technology.
@@ -319,7 +320,7 @@ The following is the configuration of the DCsv3-series instance used:
 			</td>
 			<td>
 				<div>
-					<span><span>5.13.0-1031-azure</span> </span> 
+					<span><span>5.15.0-1022-azure</span> </span> 
 				</div>
 			</td>
 		</tr>
@@ -364,6 +365,9 @@ Validated Solution&nbsp; </span>
 					</li>
 					<li>
 						<span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html">Horizontal Federated Learning&nbsp;</a></span> 
+					</li>
+					<li>
+						<span><a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html">Secure Logistic Regression Inference with HE and Intel SGX&nbsp;</a></span> 
 					</li>
 					<li>
 						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html" target="_blank">RA-TLS Enhanced gRPC</a>

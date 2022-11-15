@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright (c) 2022 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
@@ -13,8 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/bin/bash
 set -e
+
+if  [ -z "$AZURE" ] ; then
+    azure=
+else
+    azure=1
+fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"
@@ -26,6 +32,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
+    --build-arg AZURE=${azure} \
     -f Dockerfile \
     -t lr_infer_he_sgx:latest \
     .
