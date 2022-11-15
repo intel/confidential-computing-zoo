@@ -23,8 +23,6 @@ import grpc
 import psi_pb2
 import psi_pb2_grpc
 
-import time
-
 from collections import Counter
 
 class PSI(psi_pb2_grpc.PSIServicer):
@@ -114,12 +112,7 @@ def serve(args):
     server.add_secure_port(args.host, credentials)
 
     server.start()
-
-    try:
-        while True:
-            time.sleep(3600)
-    except KeyboardInterrupt:
-        grpc_server.stop(0)
+    server.wait_for_termination()
 
 def command_arguments():
     parser = argparse.ArgumentParser(description='GRPC client.')
