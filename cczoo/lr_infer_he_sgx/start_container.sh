@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright (c) 2022 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
@@ -13,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/bin/bash
 set -e
 
 function Usage() {
@@ -61,7 +61,7 @@ elif [ $1 = "server" ]; then
         -e http_proxy=${proxy_server} \
         -e https_proxy=${proxy_server} \
         lr_infer_he_sgx:latest \
-        bash
+        /lr_infer_he_sgx/infer_server
 else
     Usage
     exit 1

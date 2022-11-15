@@ -21,11 +21,21 @@ After the inference is completed, the encrypted result is sent back to the user 
 ## Build and Run
 ### Prerequisite
 - A server with Intel SGX enabled
-- Docker
+- Docker Engine. Docker Engine is an open source containerization technology for
+  building and containerizing your applications.
+  Please follow [this guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script)
+  to install Docker engine.
 ### Build Docker Image
 ```
 git clone https://github.com/intel/confidential-computing-zoo
 cd confidential-computing-zoo/cczoo/lr_infer_he_sgx
+```
+For deployments on Microsoft Azure:
+```shell
+AZURE=1 ./build_docker_image.sh
+```
+For other cloud deployments:
+```shell
 ./build_docker_image.sh
 ```
 ### Execution
