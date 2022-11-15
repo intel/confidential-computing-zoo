@@ -17,9 +17,7 @@
 
 
 set -e
-cd ${WORK_BASE_PATH}
+cd ${WORK_BASE_PATH}/secret_prov_pf
 echo "Run Secret Porv Server!"
 
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libs stdbuf -o0 ./secret_prov_server_dcap 
-
-
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libs RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 ./server_dcap wrap_key
