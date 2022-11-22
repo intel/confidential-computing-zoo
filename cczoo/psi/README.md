@@ -79,149 +79,161 @@ After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Ma
 
 - Gramine. Follow [Quick Start](https://gramine.readthedocs.io/en/latest/quickstart.html)
   to learn more about it.
-  
-### Setup LibOS
 
-   - Gramine
-        ```bash
-        cd cczoo/common/docker/gramine
-        ./build_docker_image.sh [ubuntu/anolisos]
-        ```
+### Setup docker images
+- For Ubuntu:
 
-### Setup develop environment of gRPC RA-TLS based on Intel SGX
+```bash
+cd cczoo/psi/gramine
+./build_docker_image.sh ubuntu:20.04
+```
 
-   - Gramine
-        ```bash
-        cd -
-        cd cczoo/psi/gramine
-        ./build_docker_image.sh [ubuntu/anolisos]
-        ```
+- For Anolis OS:
+
+```bash
+cd cczoo/common/docker/gramine
+./build_docker_image.sh anolisos
+cd -
+cd cczoo/psi/gramine
+./build_docker_image.sh anolisos
+```
 
 ## Run PSI examples
 
 We use a two-way atttestation scheme. The client and server on both sides of the communication authenticate each other.
 
-This example only shows an example of deploying PSI locally. If you want to deploy the participants on different machines, please make sure that the correct measurements are filled in the `dynamic_config.json` file to ensure that the remote verification passes.
+This example only shows an example of deploying PSI locally. If you want to deploy the participants on different machines, please make sure that the correct measurements are filled in the `dynamic_config.json` file to ensure that the remote verification passes. For example:
+```bash
+{
+  "verify_mr_enclave" : "on",
+  "verify_mr_signer" : "on",
+  "verify_isv_prod_id" : "on",
+  "verify_isv_svn" : "on",
+  "sgx_mrs": [
+    {
+      "mr_enclave" : "1e4f3efafac6038dadaa94fdd248b93c82ae9f0a16642ff4bb07afe442aac56e",
+      "mr_signer" : "5add213ac35413033647621e2fab91edcc8b82f840426803feb8a603be2ce8d4",
+      "isv_prod_id" : "0",
+      "isv_svn" : "0"
+    }
+  ]
+}
+```
 
-- Gramine
+### Prepare the docker container
+Start three containers (server, client1, client2, client3).
+```bash
+cd cczoo/psi
+./start_container.sh <container name> <pccs_service_ip> <image_tag>
+```
 
-   	Prepare the docker container
+### Run the Python example
 
-   	```bash
-   	cd cczoo/psi
-   
-   	#start and enter the docker container
-   	./start_container.sh <pccs_service_ip> <image_tag>
-   	```
+Build Python example in each container.
 
-    ### Run the Python example
-	
-    Build Python example
+```bash
+cd CI-Examples/psi/python
+./build.sh
+```
 
-	```bash
-	cd CI-Examples/psi/python
-    ./build.sh
-	```
-	
-	Two-party:
+Run the script for the corresponding job in each container.
 
-    ```bash
-    # Run the server
-    gramine-sgx python -u server.py -host localhost:50051 -config dynamic_config.json &
+- Two-party:
+
+```bash
+# Run the server
+gramine-sgx python -u server.py -host localhost:50051 -config dynamic_config.json
+
+# Run the client1
+gramine-sgx python -u data_provider1.py -host localhost:50051 -config dynamic_config.json -is_chief True -data_dir "data1.txt" -client_num 2
+
+# Run the client2
+gramine-sgx python -u data_provider2.py -host localhost:50051 -config dynamic_config.json -is_chief False -data_dir "data2.txt" -client_num 2
+```
+
+Each client will get the intersection result:
+```shell
+['car', 'cat', 'train']
+```
+
+- Three-party:
+
+```bash
+# Run the server
+gramine-sgx python -u server.py -host localhost:50051 -config dynamic_config.json
+
+# Run the client1
+gramine-sgx python -u data_provider1.py -host localhost:50051 -config dynamic_config.json -is_chief True -data_dir "data1.txt" -client_num 3
+
+# Run the client2
+gramine-sgx python -u data_provider2.py -host localhost:50051 -config dynamic_config.json -is_chief False -data_dir "data2.txt" -client_num 3
+
+# Run the client3
+gramine-sgx python -u data_provider3.py -host localhost:50051 -config dynamic_config.json -is_chief False -data_dir "data3.txt" -client_num 3
+```
+
+Each client will get the intersection result:
+```shell
+['train', 'car', 'cat']
+```
+
+### Run the C++ example
     
-    # Run the client1
-	gramine-sgx python -u data_provider1.py -host localhost:50051 -config dynamic_config.json -is_chief True -data_dir "data1.txt" -client_num 2 &
-    
-    # Run the client2
-	gramine-sgx python -u data_provider2.py -host localhost:50051 -config dynamic_config.json -is_chief False -data_dir "data2.txt" -client_num 2 &
-    ```
+Build C++ example in each container.
 
-    Each client will get the intersection result:
-    ```shell
-    ['car', 'cat', 'train']
-    ```
+```bash
+cd CI-Examples/psi/cpp
+./build.sh
+```
 
-	Our solution supports the intersection of three and more parties. Examples of three-party intersection:
+Run the script for the corresponding job in each container.
 
-    ```bash
-    # Run the server
-    gramine-sgx python -u server.py -host localhost:50051 -config dynamic_config.json &
-    
-    # Run the client1
-	gramine-sgx python -u data_provider1.py -host localhost:50051 -config dynamic_config.json -is_chief True -data_dir "data1.txt" -client_num 3 &
-    
-    # Run the client2
-	gramine-sgx python -u data_provider2.py -host localhost:50051 -config dynamic_config.json -is_chief False -data_dir "data2.txt" -client_num 3 &
-    
-    # Run the client3
-	gramine-sgx python -u data_provider3.py -host localhost:50051 -config dynamic_config.json -is_chief False -data_dir "data3.txt" -client_num 3 &
-    ```
+- Two-party:
 
-    Each client will get the intersection result:
-    ```shell
-    ['train', 'car', 'cat']
-    ```
+```bash
+# Run the server
+cd runtime/server
+gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json
 
-    ### Run the C++ example
-    
-    Build C++ example
+# Run the client1
+cd runtime/data_provider1
+gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json -is_chief=true -client_num=2 data_dir="data1.txt" client_name="data_provider1"
 
-    ```bash
-	cd CI-Examples/psi/cpp
-    ./build.sh
-    ```
+# Run the client2
+cd runtime/data_provider2
+gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json -is_chief=false -client_num=2 data_dir="data2.txt" client_name="data_provider2"
+```
 
-	Two-party:
+Each client will get the intersection result:
+```shell
+car
+cat
+train
+```
 
-    ```bash
-    # Run the server
-    cd runtime/server
-    gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json &
-    
-    # Run the client1
-    cd -
-    cd runtime/data_provider1
-    gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json -is_chief=true -client_num=2 data_dir="data1.txt" client_name="data_provider1" &
-    
-    # Run the client2
-    cd -
-    cd runtime/data_provider2
-    gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json -is_chief=false -client_num=2 data_dir="data2.txt" client_name="data_provider2" &
-    ```
+- Three-party:
 
-    Each client will get the intersection result:
-    ```shell
-    car
-    cat
-    train
-    ```
+```bash
+# Run the server
+cd runtime/server
+gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json &
 
-    Three-party:
+# Run the client1
+cd runtime/data_provider1
+gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json -is_chief=true -client_num=3 data_dir="data1.txt" client_name="data_provider1"
 
-    ```bash
-    # Run the server
-    cd runtime/server
-    gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json &
-    
-    # Run the client1
-    cd -
-    cd runtime/data_provider1
-    gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json -is_chief=true -client_num=3 data_dir="data1.txt" client_name="data_provider1" &
-    
-    # Run the client2
-    cd -
-    cd runtime/data_provider2
-    gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json -is_chief=false -client_num=3 data_dir="data2.txt" client_name="data_provider2" &
-    
-    # Run the client3
-    cd -
-    cd runtime/data_provider3
-    gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json -is_chief=false -client_num=3 data_dir="data3.txt" client_name="data_provider3" &
-    ```
+# Run the client2
+cd runtime/data_provider2
+gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json -is_chief=false -client_num=3 data_dir="data2.txt" client_name="data_provider2"
 
-    Each client will get the intersection result:
-    ```shell
-    car
-    cat
-    train
-    ```
+# Run the client3
+cd runtime/data_provider3
+gramine-sgx grpc -host=localhost:50051 -config=dynamic_config.json -is_chief=false -client_num=3 data_dir="data3.txt" client_name="data_provider3"
+```
+
+Each client will get the intersection result:
+```shell
+car
+cat
+train
+```

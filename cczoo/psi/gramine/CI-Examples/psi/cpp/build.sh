@@ -36,7 +36,10 @@ function perpare_json() {
 }
 
 function prepare_runtime() {
-    make clean && GRAPHENE_ENTRYPOINT=$1 make | logfilter
+    # make clean && GRAPHENE_ENTRYPOINT=$1 make | logfilter
+    rm -rf  ${RUNTIME_PATH} || true
+    make clean
+    ENTRYPOINT=./$1 make | logfilter
     jq --argjson groupInfo '{"mr_enclave":''"'`get_env mr_enclave`'", "mr_signer": ''"'`get_env mr_signer`'", "isv_prod_id": "0", "isv_svn": "0"}' \
     '.sgx_mrs += [$groupInfo]' dynamic_config_$2.json > dynamic_config_$2_tmp.json
     mv dynamic_config_$2_tmp.json dynamic_config_$2.json
@@ -58,6 +61,10 @@ if [ -z ${SGX_RA_TLS_BACKEND} ]; then
     export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
+if [ -z ${SGX_RA_TLS_SDK} ]; then
+    export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
+fi
+
 # build examples
 ${GRPC_EXP_CPP_PATH}/psi/build.sh
 
@@ -72,7 +79,6 @@ rm -rf  ${RUNTIME_TMP_PATH} || true
 mkdir -p ${RUNTIME_TMP_PATH}
 
 # prepare runtime with gramine & generate config json for sgx
-rm -rf  ${RUNTIME_PATH} || true
 perpare_json server data_provider1 data_provider2 data_provider3
 prepare_runtime server data_provider1
 prepare_runtime server data_provider2
