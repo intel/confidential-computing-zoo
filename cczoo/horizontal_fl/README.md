@@ -67,9 +67,7 @@ Recommendation System and Image Classification.
   Please follow [this guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script)
   to install Docker engine.
 
-- TensorFlow 2.4.2.
-
-- Horizontal Federated Learning source package:
+- CCZoo Horizontal Federated Learning source package:
 
 ```shell
    git clone https://github.com/intel/confidential-computing-zoo.git
@@ -86,7 +84,7 @@ Recommendation System and Image Classification.
    ./setup_azure_vm.sh
 ```
 
-  After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Manager is active (running)::
+  After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Manager is active (running):
   
 ```shell
    systemctl status aesmd
@@ -94,8 +92,12 @@ Recommendation System and Image Classification.
   
 - EPC size: 64GB for image classification solution, 256GB for recommendation system solution
 
-- Gramine. Follow [Quick Start](https://gramine.readthedocs.io/en/latest/quickstart.html)
-  to learn more about it.
+ 
+### Solution Ingredients
+This solution uses the following ingredients, which are installed as part of the container build process.
+- TensorFlow 2.4.2
+- [Gramine](https://gramine.readthedocs.io)
+
 
 ### Recommendation system
 #### Configuration
