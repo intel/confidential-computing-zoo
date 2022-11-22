@@ -29,7 +29,8 @@ RUN yum -y install --nogpgcheck sgx-dcap-pccs libsgx-dcap-default-qpl
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-ENV GRAMINE_VERSION=v1.2
+ENV GRAMINE_VERSION=v1.3.1
+
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/
 ENV LC_ALL=C.UTF-8 LANG=C.UTF-8
@@ -39,12 +40,14 @@ ENV GRAMINE_PKGLIBDIR=/usr/local/lib64/gramine
 ENV ARCH_LIBDIR=/lib64
 
 RUN yum -y install gawk bison python3-click python3-jinja2 golang ninja-build 
-RUN yum -y install openssl-devel protobuf-c-devel python3-protobuf protobuf-c-compiler
+RUN yum -y install openssl-devel protobuf-c-devel python3-protobuf protobuf-c-compiler protobuf-compiler
+
 RUN yum -y install gmp-devel mpfr-devel libmpc-devel isl-devel nasm python3-devel mailcap
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
     && python3 -m pip install --upgrade pip \
-    && python3 -m pip install toml meson wheel cryptography paramiko numpy
+    && python3 -m pip install toml meson wheel cryptography paramiko numpy pyelftools
+
 
 RUN rm -rf ${GRAMINEDIR} && git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
@@ -68,12 +71,13 @@ RUN yum -y clean all && rm -rf /var/cache
 
 # Build Secret Provision
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
-    && make app dcap files/input.txt 
+    && make app dcap RA_TYPE=dcap
+
 COPY ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 
 WORKDIR ${WORK_BASE_PATH}
 
-RUN cp ${GRAMINEDIR}/build/Pal/src/host/Linux-SGX/tools/ra-tls/libsecret_prov_attest.so . \
+RUN cp ${GRAMINEDIR}/build/tools/sgx/ra-tls/libsecret_prov_attest.so . \
     && cp -R ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl . 
 
 COPY anolisos/Makefile .

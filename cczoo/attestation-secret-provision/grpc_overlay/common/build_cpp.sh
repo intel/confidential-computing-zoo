@@ -22,17 +22,13 @@ if [ -z ${BUILD_TYPE} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-<<<<<<< HEAD:cczoo/attestation-secret-provision/grpc_overlay/common/build_cpp.sh
     export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
-=======
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then
     export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
 elif [ "${SGX_RA_TLS_SDK}" == "LIBRATS" ]; then
     ${GRPC_PATH}/build_librats_sdk.sh
->>>>>>> branch0.1/grpc-ra-tls:cczoo/grpc-ra-tls/grpc/common/build_cpp.sh
 fi
 
 # build and install abseil library
@@ -62,10 +58,6 @@ cmake -DgRPC_INSTALL=ON \
       -DgRPC_BUILD_GRPC_RUBY_PLUGIN=OFF \
       -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
       -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
-<<<<<<< HEAD:cczoo/attestation-secret-provision/grpc_overlay/common/build_cpp.sh
-=======
-      -DSGX_RA_TLS_SDK=${SGX_RA_TLS_SDK} \
->>>>>>> branch0.1/grpc-ra-tls:cczoo/grpc-ra-tls/grpc/common/build_cpp.sh
       -DSGX_RA_TLS_BACKEND=${SGX_RA_TLS_BACKEND} \
       ..
 make -j `nproc`

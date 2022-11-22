@@ -14,6 +14,7 @@
 # limitations under the License.
 
 ARG BASE_IMAGE
+
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -72,7 +73,7 @@ RUN apt-get install -y bison gawk nasm python3-click python3-jinja2 ninja-build 
     libgmp-dev libmpfr-dev libmpc-dev libisl-dev
 
 RUN pip3 install --upgrade pip \
-    && pip3 install toml meson cryptography
+    && pip3 install toml meson
 
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \

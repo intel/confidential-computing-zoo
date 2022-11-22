@@ -16,12 +16,11 @@
 #!/bin/bash
 set -e
 
-if  [ ! -n "$1" ] ; then
-    base_image=ubuntu:20.04
-else
+if  [ "$1" == "anolisos" ] ; then
     base_image=$1
+else
+    base_image=ubuntu:20.04
 fi
-
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"

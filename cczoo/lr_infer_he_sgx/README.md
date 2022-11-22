@@ -21,11 +21,21 @@ After the inference is completed, the encrypted result is sent back to the user 
 ## Build and Run
 ### Prerequisite
 - A server with Intel SGX enabled
-- Docker
+- Docker Engine. Docker Engine is an open source containerization technology for
+  building and containerizing your applications.
+  Please follow [this guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script)
+  to install Docker engine.
 ### Build Docker Image
 ```
 git clone https://github.com/intel/confidential-computing-zoo
 cd confidential-computing-zoo/cczoo/lr_infer_he_sgx
+```
+For deployments on Microsoft Azure:
+```shell
+AZURE=1 ./build_docker_image.sh
+```
+For other cloud deployments:
+```shell
 ./build_docker_image.sh
 ```
 ### Execution
@@ -43,6 +53,11 @@ Open 2 terminals, one for the inference client that has data to be inferred and 
 PublicKey: wrote 709085 bytes  
 RelinKeys: wrote 3545129 bytes  
 HE inference result - accuracy: 0.944  
+
+
+
+## Acknowledgement
+Thanks [Intel HE Toolkit](https://github.com/intel/he-toolkit) project for contributing the code base of [logistic regression example](https://github.com/intel/he-toolkit/tree/main/he-samples/examples/logistic-regression).
 
 ## Reference
 Intel HE Toolkit: https://github.com/intel/he-toolkit  

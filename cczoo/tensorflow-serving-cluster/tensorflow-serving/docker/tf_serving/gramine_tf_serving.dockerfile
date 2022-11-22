@@ -45,6 +45,7 @@ RUN apt-get update \
         libcurl4-openssl-dev \
         libprotobuf-c-dev \
         protobuf-c-compiler \
+        protobuf-compiler \
         python3.7 \
         python3-protobuf \
         python3-pip \
@@ -82,7 +83,7 @@ RUN if [ ! -z "$AZURE" ]; then \
     fi
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
-RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55' cryptography
+RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55' cryptography pyelftools
 
 RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list \
     && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -
@@ -111,7 +112,7 @@ RUN if [ -z "$AZURE" ]; then \
 # Clone Gramine and Init submodules
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
-    && git checkout v1.2
+    && git checkout v1.3.1
 
 
 # Create SGX driver for header files
@@ -140,12 +141,13 @@ RUN apt-get clean all
 
 # Build Secret Provision
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
-    && make app dcap files/input.txt 
+    && make app dcap RA_TYPE=dcap
+
 COPY ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 
 WORKDIR ${WORK_BASE_PATH}
 
-RUN cp ${GRAMINEDIR}/build/Pal/src/host/Linux-SGX/tools/ra-tls/libsecret_prov_attest.so . \
+RUN cp ${GRAMINEDIR}/build/tools/sgx/ra-tls/libsecret_prov_attest.so . \
     && cp -R ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl . 
 
 COPY Makefile .
