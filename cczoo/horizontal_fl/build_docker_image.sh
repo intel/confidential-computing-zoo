@@ -58,7 +58,7 @@ DOCKER_BUILDKIT=0 docker build \
 else
 DOCKER_BUILDKIT=0 docker build \
     -f anolisos_horizontal_fl.dockerfile . \
-    -t horizontal_fl:${tag} \
+    -t anolisos_horizontal_fl:${tag} \
     --network=host \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \

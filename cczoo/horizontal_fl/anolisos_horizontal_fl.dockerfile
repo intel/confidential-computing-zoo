@@ -114,12 +114,6 @@ RUN pip install numpy
 
 # build and install TensorFlow
 RUN cd ${TF_BUILD_PATH} && ./build.sh anolisos
-
-ARG MBEDTLS_VERSION=2.26.0
-RUN wget https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v${MBEDTLS_VERSION}.tar.gz \
-    && tar -zxvf v${MBEDTLS_VERSION}.tar.gz \
-    && cp -r mbedtls-${MBEDTLS_VERSION}/include/mbedtls ${INSTALL_PREFIX}/include
-    
 RUN cd ${TF_BUILD_PATH} && bazel-3.7.2-linux-x86_64 build -c opt //tensorflow/tools/pip_package:build_pip_package
 RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} && pip install ${TF_BUILD_OUTPUT}/tensorflow-*-cp36-cp36m-linux_x86_64.whl
 
