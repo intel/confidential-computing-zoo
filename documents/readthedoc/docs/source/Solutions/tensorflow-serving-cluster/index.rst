@@ -111,10 +111,7 @@ Prerequisites
   Please follow `this guide <https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script>`__
   to install Docker engine.
 
-- TensorFlow Serving. `TensorFlow Serving <https://www.TensorFlow.org/tfx/guide/serving>`__
-  is a flexible, high-performance serving system for machine learning models,
-
-- TensorFlow Serving cluster scripts package. You can download the source package
+- CCZoo TensorFlow Serving cluster scripts package. You can download the source package
   ``tensorflow-serving-cluster``::
 
    git clone https://github.com/intel/confidential-computing-zoo.git
@@ -131,14 +128,19 @@ Prerequisites
   After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Manager is active (running)::
   
    sudo systemctl status aesmd
-      
-- Gramine. Follow https://gramine.readthedocs.io for Gramine documentation.
 
+Solution Ingredients
+-------------
+This solution uses the following ingredients, which are installed as described in the sections below.
+
+- TensorFlow Serving. `TensorFlow Serving <https://www.TensorFlow.org/tfx/guide/serving>`__
+  is a flexible, high-performance serving system for machine learning models
+- `Gramine <https://gramine.readthedocs.io>`__
 - Kubernetes. `Kubernetes <https://kubernetes.io/docs/concepts/overview/what-is-kubernetes/>`__
   is an open-source system for automating deployment, scaling, and management of
   containerized applications. In this tutorial, we will provide a script (``install_kubernetes.sh``)
   to install Kubernetes in your machine.
-
+  
 We will start with the TensorFlow Serving service running in a container without the use of Kubernetes.
 The TensorFlow Serving service provides confidentiality of the model file using encryption (handled by Gramine) and remote attestation from a secret provisioning server (run from a separate container).
 
