@@ -47,7 +47,7 @@ sgx.debug = false
 sgx.nonpie_binary = true
 sgx.enclave_size = "32G"
 sgx.thread_num = 1024
-sgx.remote_attestation = "{{ ra_type }}"
+sgx.remote_attestation = true
 sgx.enable_stats = false
 
 # sgx.require_avx = true
@@ -87,6 +87,7 @@ sgx.allowed_files = [
   "file:/proc/stat",
   "file:/tmp",
   "file:/root/.keras/keras.json",
+  "file:dynamic_config.json",
   "file:model/",
   "file:plts/"
 ]

@@ -19,7 +19,7 @@ libos.entrypoint = "{{ entrypoint }}"
 loader.log_level = "{{ log_level }}"
 # loader.log_file = ""
 
-loader.pal_internal_mem_size = "500M"
+loader.pal_internal_mem_size = "128M"
 
 loader.insecure__use_cmdline_argv = true 
 loader.insecure__use_host_env = true
@@ -28,7 +28,7 @@ loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/us
 loader.env.GRPC_VERBOSITY = "ERROR"
 
 sys.enable_sigterm_injection = true
-sys.stack.size = "16M"
+sys.stack.size = "8M"
 
 fs.mounts = [
   { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
@@ -37,17 +37,17 @@ fs.mounts = [
   { path = "/usr", uri = "file:/usr" },
   { type = "tmpfs", path = "/var/tmp" },
   { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
-  { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
   # { path = "/usr/local/lib/python3.6/dist-packages/", uri = "file:/usr/local/lib/python3.6/dist-packages/" }, # for ubuntu:18.04
-  { path = "/usr/local/lib/python3.8/dist-packages/", uri = "file:/usr/local/lib/python3.8/dist-packages/" }, # for ubuntu:20.04
+  { path = "/usr/local/lib64/python3.6/site-packages/", uri = "file:/usr/local/lib64/python3.8/site-packages/" },
+  { path = "/usr/local/lib/python3.6/site-packages/", uri = "file:/usr/local/lib/python3.8/site-packages/" },
   { path = "/root/.keras/keras.json", uri = "file:/root/.keras/keras.json" },
 ]
 
 sgx.debug = false
 sgx.nonpie_binary = true
-sgx.enclave_size = "8G"
-sgx.thread_num = 512
-sgx.remote_attestation = true
+sgx.enclave_size = "32G"
+sgx.thread_num = 1024
+sgx.remote_attestation = "{{ ra_type }}"
 sgx.enable_stats = false
 
 # sgx.require_avx = true
@@ -61,14 +61,16 @@ sgx.trusted_files = [
   "file:{{ arch_libdir }}/",
   "file:/usr/{{ arch_libdir }}/",
   "file:{{ python.stdlib }}/",
-  "file:{{ python.distlib }}/",
   # "file:/usr/local/lib/python3.6/dist-packages/",  # for ubuntu:18.04
-  "file:/usr/local/lib/python3.8/dist-packages/",  # for ubuntu:20.04
-  "file:/etc/ssl/certs/ca-certificates.crt",
-  "file:train.py",
-  "file:cifar10_input.py",
-  "file:resnet_model.py",
-  "file:cifar-10-batches-bin/",
+  "file:/usr/local/lib64/python3.6/site-packages/",
+  "file:/usr/local/lib/python3.6/site-packages/",
+  "file:/etc/ssl/certs/ca-bundle.crt",
+  "file:ps0.py",
+  "file:worker0.py",
+  "file:worker1.py",
+  "file:worker2.py",
+  "file:worker3.py",
+  "file:dataset/",
 ]
 
 sgx.allowed_files = [
@@ -84,8 +86,8 @@ sgx.allowed_files = [
   "file:/etc/passwd",
   "file:/proc/stat",
   "file:/tmp",
-  "file:data/",
-  "file:model/",
   "file:/root/.keras/keras.json",
   "file:dynamic_config.json",
+  "file:model/",
+  "file:plts/"
 ]

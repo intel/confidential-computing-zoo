@@ -43,7 +43,7 @@ RUN yum install -y --nogpgcheck sgx-dcap-pccs libsgx-dcap-default-qpl
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-ENV GRAMINE_VERSION=v1.3.1
+ENV GRAMINE_VERSION=v1.2
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/
 ENV LC_ALL=C.UTF-8 LANG=C.UTF-8
@@ -58,7 +58,7 @@ RUN yum install -y gmp-devel mpfr-devel libmpc-devel isl-devel nasm python3-deve
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
     && pip3 install --upgrade pip \
-    && pip3 install toml meson wheel cryptography paramiko pyelftools
+    && pip3 install toml meson wheel cryptography paramiko
 
 RUN rm -rf ${GRAMINEDIR} && git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
@@ -90,27 +90,37 @@ RUN cd ${GRAMINEDIR}/subprojects/cJSON*/ \
     && cp -r *.h ${INSTALL_PREFIX}/include/cjson
 
 # bazel
-RUN cd /usr/bin && curl -fLO https://releases.bazel.build/3.1.0/release/bazel-3.1.0-linux-x86_64 && chmod +x bazel-3.1.0-linux-x86_64 
+RUN cd /usr/bin && curl -fLO https://releases.bazel.build/3.7.2/release/bazel-3.7.2-linux-x86_64 && chmod +x bazel-3.7.2-linux-x86_64 
 
 # deps 
 RUN python3 -m pip install numpy keras_preprocessing cryptography pyelftools && pip3 install --upgrade pip setuptools==44.1.1
 
 # config and download TensorFlow
-ENV TF_VERSION=v2.4.2
+ENV TF_VERSION=v2.6.0
 ENV TF_BUILD_PATH=/tf/src
 ENV TF_BUILD_OUTPUT=/tf/output
 RUN git clone  --recurse-submodules -b ${TF_VERSION} https://github.com/tensorflow/tensorflow ${TF_BUILD_PATH}
 
 # Prepare build source code
 COPY patches/gramine ${GRAMINEDIR}
+COPY patches/tf ${TF_BUILD_PATH}
 
 # git apply diff
-COPY patches/tf ${TF_BUILD_PATH}
-RUN cd ${TF_BUILD_PATH} && git apply tf2_4.diff
+COPY tf_v2.6.0.patch ${TF_BUILD_PATH}
+COPY grpc_ratls.patch ${TF_BUILD_PATH}/third_party/grpc/
+RUN cd ${TF_BUILD_PATH} && git apply tf_v2.6.0.patch
+
+RUN pip install numpy
 
 # build and install TensorFlow
 RUN cd ${TF_BUILD_PATH} && ./build.sh anolisos
-RUN cd ${TF_BUILD_PATH} && bazel-3.1.0-linux-x86_64 build -c opt //tensorflow/tools/pip_package:build_pip_package
+
+ARG MBEDTLS_VERSION=2.26.0
+RUN wget https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v${MBEDTLS_VERSION}.tar.gz \
+    && tar -zxvf v${MBEDTLS_VERSION}.tar.gz \
+    && cp -r mbedtls-${MBEDTLS_VERSION}/include/mbedtls ${INSTALL_PREFIX}/include
+    
+RUN cd ${TF_BUILD_PATH} && bazel-3.7.2-linux-x86_64 build -c opt //tensorflow/tools/pip_package:build_pip_package
 RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} && pip install ${TF_BUILD_OUTPUT}/tensorflow-*-cp36-cp36m-linux_x86_64.whl
 
 # aesm service
@@ -132,10 +142,13 @@ RUN if [ "$WORKLOAD" = "image_classification" ]; then \
 	&& test-sgx.sh make; \
     elif [ "$WORKLOAD" = "recommendation_system" ]; then \
     # prepare dataset and make recommendation system project \
+    pip install pandas scikit-learn matplotlib; \
 	cd /recommendation_system/ && git apply anolisos.diff && cd dataset && tar -zxvf train.tar && cd .. && test-sgx.sh make; \
     else \
     echo "Please choose correct workload: image_classification or recommendation_system." \
 	&& exit 1; \
     fi
+
+RUN pip install numpy --upgrade && python -m pip install markupsafe==2.0.1 && pip install --upgrade keras==2.6.0
 
 EXPOSE 6006 50051 50052
