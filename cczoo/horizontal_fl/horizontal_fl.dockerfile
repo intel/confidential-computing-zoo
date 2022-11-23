@@ -90,18 +90,18 @@ RUN if [ -z "$AZURE" ]; then \
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-ENV GRAMINE_VERSION=v1.3.1
+ENV GRAMINE_VERSION=v1.2
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV WERROR=1
 ENV SGX=1
 
 RUN apt-get install -y gawk bison python3-click python3-jinja2 golang ninja-build \ 
     libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler \ 
-    libgmp-dev libmpfr-dev libmpc-dev libisl-dev nasm
+    libgmp-dev libmpfr-dev libmpc-dev libisl-dev nasm protobuf-compiler
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
     && pip3 install --upgrade pip \
-    && pip3 install toml meson cryptography pyelftools
+    && pip3 install toml meson cryptography
 
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
@@ -134,7 +134,7 @@ RUN cd ${GRAMINEDIR}/subprojects/cJSON* \
 RUN pip3 install --upgrade pip setuptools==44.1.1
 
 # bazel
-ENV BAZEL_VERSION=3.1.0
+ENV BAZEL_VERSION=3.7.2
 RUN wget "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel_${BAZEL_VERSION}-linux-x86_64.deb" \
  && dpkg -i bazel_*.deb
 
@@ -142,7 +142,7 @@ RUN wget "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}
 RUN pip3 install numpy keras_preprocessing pandas sklearn matplotlib
 
 # config and download TensorFlow
-ENV TF_VERSION=v2.4.2
+ENV TF_VERSION=v2.6.0
 ENV TF_BUILD_PATH=/tf/src
 ENV TF_BUILD_OUTPUT=/tf/output
 RUN git clone  --recurse-submodules -b ${TF_VERSION} https://github.com/tensorflow/tensorflow ${TF_BUILD_PATH}
@@ -151,15 +151,19 @@ RUN git clone  --recurse-submodules -b ${TF_VERSION} https://github.com/tensorfl
 COPY patches/gramine ${GRAMINEDIR}
 
 # git apply diff
-COPY patches/tf ${TF_BUILD_PATH} 
-RUN cd ${TF_BUILD_PATH} && git apply tf2_4.diff
+COPY tf_v2.6.0.patch ${TF_BUILD_PATH}
+COPY grpc_ratls.patch ${TF_BUILD_PATH}/third_party/grpc/
+RUN cd ${TF_BUILD_PATH} && git apply tf_v2.6.0.patch
+COPY patches/tf ${TF_BUILD_PATH}
+
+RUN pip install numpy
 
 # build and install TensorFlow
 RUN cd ${TF_BUILD_PATH} && ./build.sh ubuntu
 RUN cd ${TF_BUILD_PATH} && bazel build -c opt //tensorflow/tools/pip_package:build_pip_package
 RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} && pip install ${TF_BUILD_OUTPUT}/tensorflow-*.whl
 
-COPY patches/sgx_default_qcnl.conf /etc
+# COPY patches/sgx_default_qcnl.conf /etc
 
 # disable apport
 RUN echo "enabled=0" > /etc/default/apport

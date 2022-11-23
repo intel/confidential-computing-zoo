@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright (c) 2022 Intel Corporation
 #
@@ -13,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/bin/bash
 set -e
 
 if  [ -n "$1" ] ; then
@@ -28,24 +28,14 @@ else
     ip_addr=127.0.0.1
 fi
 
-tag=latest
+if  [ -n "$3" ] ; then
+    tag=$3
+else
+    tag=latest
+fi
 
-if [ "$3" == "ubuntu" ] || [ ! -n "$3" ]; then
-docker run -it \
-    --restart=always \
-    --cap-add=SYS_PTRACE \
-    --security-opt seccomp=unconfined \
-    --device=/dev/sgx_enclave:/dev/sgx/enclave \
-    --device=/dev/sgx_provision:/dev/sgx/provision \
-    --name=${name} \
-    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
-    -v /home:/home/host-home \
-	--net=host \
-    --add-host=pccs.service.com:${ip_addr} \
-    horizontal_fl:${tag} \
-    bash
-elif [ "$4" == "anolisos" ]; then
-docker run -it \
+if [ "$4" != "anolisos" ] ; then
+docker run -itd \
     --restart=always \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
@@ -56,6 +46,20 @@ docker run -it \
     -v /home:/home/host-home \
     --net=host \
     --add-host=pccs.service.com:${ip_addr} \
-    anolisos_horizontal_fl:${tag} \
+    horizontal_fl:${tag} \
     bash
-fi   
+else
+docker run -itd \
+    --restart=always \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --device=/dev/sgx_enclave:/dev/sgx/enclave \
+    --device=/dev/sgx_provision:/dev/sgx/provision \
+    --name=${name} \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+    -v /home:/home/host-home \
+    --net=host \
+    --add-host=pccs.service.com:${ip_addr} \
+    horizontal_fl:anolis_sgx_latest \
+    bash
+fi

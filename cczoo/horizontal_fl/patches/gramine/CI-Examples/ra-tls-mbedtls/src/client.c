@@ -21,19 +21,7 @@
  *  limitations under the License.
  */
 
-/* SPDX-License-Identifier: Apache-2.0 */
-/* Copyright (C) 2006-2015, ARM Limited, All Rights Reserved
- *               2020, Intel Labs
- */
-
-/*
- * SSL client demonstration program (with RA-TLS).
- * This program is originally based on an mbedTLS example ssl_client1.c but uses RA-TLS flows (SGX
- * Remote Attestation flows) if RA-TLS library is required by user.
- * Note that this program builds against mbedTLS 3.x.
- */
-
-#include "mbedtls/build_info.h"
+#include "mbedtls/config.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -50,6 +38,7 @@
 #define MBEDTLS_EXIT_SUCCESS EXIT_SUCCESS
 #define MBEDTLS_EXIT_FAILURE EXIT_FAILURE
 
+#include "mbedtls/certs.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/debug.h"
 #include "mbedtls/entropy.h"
@@ -57,8 +46,8 @@
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/ssl.h"
 
-/* RA-TLS: on client, only need to register ra_tls_verify_callback_der() for cert verification */
-int (*ra_tls_verify_callback_der_f)(uint8_t* der_crt, size_t der_crt_size);
+/* RA-TLS: on client, only need to register ra_tls_verify_callback() for cert verification */
+int (*ra_tls_verify_callback_f)(void* data, mbedtls_x509_crt* crt, int depth, uint32_t* flags);
 
 /* RA-TLS: if specified in command-line options, use our own callback to verify SGX measurements */
 void (*ra_tls_set_measurement_callback_f)(int (*f_cb)(const char* mrenclave, const char* mrsigner,
@@ -69,8 +58,6 @@ void (*ra_tls_set_measurement_callback_f)(int (*f_cb)(const char* mrenclave, con
 #define GET_REQUEST "GET / HTTP/1.0\r\n\r\n"
 
 #define DEBUG_LEVEL 1
-
-#define CA_CRT_PATH "ssl/ca.crt"
 
 static void my_debug(void* ctx, int level, const char* file, int line, const char* str) {
     ((void)level);
@@ -153,23 +140,6 @@ static int my_verify_measurements(const char* mrenclave, const char* mrsigner,
     }
 }
 
-/* RA-TLS: mbedTLS-specific callback to verify the x509 certificate */
-static int my_verify_callback(void* data, mbedtls_x509_crt* crt, int depth, uint32_t* flags) {
-    (void)data;
-
-    if (depth != 0) {
-        /* the cert chain in RA-TLS consists of single self-signed cert, so we expect depth 0 */
-        return MBEDTLS_ERR_X509_INVALID_FORMAT;
-    }
-    if (flags) {
-        /* mbedTLS sets flags to signal that the cert is not to be trusted (e.g., it is not
-         * correctly signed by a trusted CA; since RA-TLS uses self-signed certs, we don't care
-         * what mbedTLS thinks and ignore internal cert verification logic of mbedTLS */
-        *flags = 0;
-    }
-    return ra_tls_verify_callback_der_f(crt->raw.p, crt->raw.len);
-}
-
 static bool getenv_client_inside_sgx() {
     char* str = getenv("RA_TLS_CLIENT_INSIDE_SGX");
     if (!str)
@@ -190,7 +160,7 @@ int main(int argc, char** argv) {
 
     char* error;
     void* ra_tls_verify_lib           = NULL;
-    ra_tls_verify_callback_der_f      = NULL;
+    ra_tls_verify_callback_f          = NULL;
     ra_tls_set_measurement_callback_f = NULL;
 
     mbedtls_entropy_context entropy;
@@ -232,7 +202,7 @@ int main(int argc, char** argv) {
              * RA-TLS verification with DCAP inside SGX enclave uses dummies instead of real
              * functions from libsgx_urts.so, thus we don't need to load this helper library.
              */
-            ra_tls_verify_lib = dlopen("libra_tls_verify_dcap_gramine.so", RTLD_LAZY);
+            ra_tls_verify_lib = dlopen("libra_tls_verify_dcap_graphene.so", RTLD_LAZY);
             if (!ra_tls_verify_lib) {
                 mbedtls_printf("%s\n", dlerror());
                 mbedtls_printf("User requested RA-TLS verification with DCAP inside SGX but cannot find lib\n");
@@ -258,7 +228,7 @@ int main(int argc, char** argv) {
     }
 
     if (ra_tls_verify_lib) {
-        ra_tls_verify_callback_der_f = dlsym(ra_tls_verify_lib, "ra_tls_verify_callback_der");
+        ra_tls_verify_callback_f = dlsym(ra_tls_verify_lib, "ra_tls_verify_callback");
         if ((error = dlerror()) != NULL) {
             mbedtls_printf("%s\n", error);
             return 1;
@@ -377,9 +347,10 @@ int main(int argc, char** argv) {
     mbedtls_printf("  . Loading the CA root certificate ...");
     fflush(stdout);
 
-    ret = mbedtls_x509_crt_parse_file(&cacert, CA_CRT_PATH);
+    ret = mbedtls_x509_crt_parse(&cacert, (const unsigned char*)mbedtls_test_cas_pem,
+                                 mbedtls_test_cas_pem_len);
     if (ret < 0) {
-        mbedtls_printf( " failed\n  !  mbedtls_x509_crt_parse_file returned -0x%x\n\n", -ret );
+        mbedtls_printf( " failed\n  !  mbedtls_x509_crt_parse returned -0x%x\n\n", -ret );
         goto exit;
     }
 
@@ -390,7 +361,7 @@ int main(int argc, char** argv) {
     if (ra_tls_verify_lib) {
         /* use RA-TLS verification callback; this will overwrite CA chain set up above */
         mbedtls_printf("  . Installing RA-TLS callback ...");
-        mbedtls_ssl_conf_verify(&conf, &my_verify_callback, NULL);
+        mbedtls_ssl_conf_verify(&conf, ra_tls_verify_callback_f, NULL);
         mbedtls_printf(" ok\n");
     }
 
@@ -414,12 +385,16 @@ int main(int argc, char** argv) {
     mbedtls_printf("  . Performing the SSL/TLS handshake...");
     fflush(stdout);
 
+    mbedtls_printf("\n******************* %s -> %s : %d ******************* \n", __FILE__, __FUNCTION__, __LINE__);
+
     while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
         if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
             mbedtls_printf(" failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", -ret);
             goto exit;
         }
     }
+
+    mbedtls_printf("\n******************* %s -> %s : %d ******************* \n", __FILE__, __FUNCTION__, __LINE__);
 
     mbedtls_printf(" ok\n");
 
