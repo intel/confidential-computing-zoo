@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright (c) 2022 Intel Corporation
 #
@@ -13,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/bin/bash
 set -e
 
 if  [ -n "$1" ] ; then
@@ -38,7 +38,7 @@ fi
 no_proxy="localhost,127.0.0.1"
 # proxy_server="" # your http proxy server
 if [ ${image_tag} == "anolisos" ] ; then
-docker run -it \
+docker run -itd \
     --restart=unless-stopped \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
@@ -54,7 +54,7 @@ docker run -it \
     ${image_tag}_psi:latest \
     bash
 else
-docker run -it \
+docker run -itd \
     --restart=unless-stopped \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \

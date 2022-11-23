@@ -351,7 +351,8 @@ The following is the configuration of the DCsv3-series instance used:
 					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html"><span>Secure Logistic Regression Inference with HE and Intel SGX&nbsp;</span></a></li>
 					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><span>RA-TLS Enhanced gRPC&nbsp;</span></a></li>
 					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a></li>
-        </ul>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">Private Set Intersection (PSI)</a></li>
+				</ul>
 			</td>
 		</tr>
 	</tbody>
