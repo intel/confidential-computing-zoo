@@ -1017,6 +1017,12 @@ Set Intersection (PSI)</a><br />
 
 ---
 
+# Penetration Testing
+
+CCZoo provides a serials of Penetration Testing cases to demonstrate the cases to find/exploit
+vulnerabilities of applications/frameworks/services under different scenarios without Intel TEE,
+compared with Intel TEE runtime protection capability. Pen-tests cases can be found at https://cczoo.readthedocs.io.
+
 # Confidential Computing Zoo Documentation
 
 The official confidential computing zoo documentation can be found at https://cczoo.readthedocs.io.
@@ -1033,4 +1039,4 @@ Welcome to join the Wechat group or Slack channel for CCZoo tech discussion.
 - [Slack Channel](https://join.slack.com/t/cc-zoo/shared_invite/zt-13c1of71t-1U8C61vbLZWxu0JuwbGi5w)
 
 
-You can check CCZoo previous PDT meeting munites [here](https://github.com/intel/confidential-computing-zoo/wiki/CCZoo-PDT-Meeting).
+You can check CCZoo previous PDT meeting minutes [here](https://github.com/intel/confidential-computing-zoo/wiki/CCZoo-PDT-Meeting).

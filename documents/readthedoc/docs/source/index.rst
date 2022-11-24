@@ -46,6 +46,12 @@ Table of Contents
 
 .. toctree::
    :maxdepth: 1
+   :caption: Penetration Testing
+
+   Pentests/readsecret.md
+
+.. toctree::
+   :maxdepth: 1
    :caption: LibOS Introduction
 
    LibOS/libos.md
