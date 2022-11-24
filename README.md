@@ -1023,6 +1023,8 @@ CCZoo provides a serials of Penetration Testing cases to demonstrate the cases t
 vulnerabilities of applications/frameworks/services under different scenarios without Intel TEE,
 compared with Intel TEE runtime protection capability. Pen-tests cases can be found at https://cczoo.readthedocs.io.
 
+---
+
 # Confidential Computing Zoo Documentation
 
 The official confidential computing zoo documentation can be found at https://cczoo.readthedocs.io.
