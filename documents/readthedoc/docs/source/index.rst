@@ -49,8 +49,8 @@ Table of Contents
    :caption: Penetration Testing
 
    Pentests/Overview.md
-   Pentests/unauthorized_access/redis/README.md
-   Pentests/memory_attack/sgx/key_generator/README.md
+   Pentests/unauthorized_access/redis/index.md
+   Pentests/memory_attack/sgx/key_generator/index.md
 
 .. toctree::
    :maxdepth: 1
