@@ -1,0 +1,10 @@
+*.sig
+*.sgx
+*.token
+*.manifest
+*.so
+*.o
+*.rdb
+*.log
+*.tmp
+core.*
