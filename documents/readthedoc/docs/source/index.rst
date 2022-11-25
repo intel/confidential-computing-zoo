@@ -48,7 +48,9 @@ Table of Contents
    :maxdepth: 1
    :caption: Penetration Testing
 
-   Pentests/readsecret.md
+   Pentests/Overview.md
+   Pentests/unauthorized_access/redis/README.md
+   Pentests/unauthorized_access/sgx/key_generator/README.md
 
 .. toctree::
    :maxdepth: 1
