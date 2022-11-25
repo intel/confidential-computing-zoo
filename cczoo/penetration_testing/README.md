@@ -2,15 +2,15 @@
 
 ## Introduction
 
-This penetration testing aims to show how SGX protects the runtime confidentiality of applications while face privileged malware memory attacks.
+This penetration testing aims to show how SGX protects the runtime confidentiality of applications while facing privileged malware memory attacks.
 
-Usually a complete penetration test is divided into two stages, namely unauthorized access and data theft.
+CCZoo penetration tests case include two parts: unauthorized access and data theft.
 
-The first stage is to gain server privileges through unauthorized access, such as implanting privileged backdoors and obtaining privileged shells.
+unauthorized access is to gain server privileges through unauthorized access, such as implanting privileged backdoors and obtaining privileged shells.
 
-In the second stage, in order to verify the memory confidentiality of SGX runtime, memory attacks will be performed on high-value data applications through privileged applications or shells to steal their runtime memory data.
+Data theft is to verify the memory confidentiality of SGX runtime, memory attacks will be performed on high-value data applications through privileged applications or shells to steal their runtime memory data.
 
-## Two-stage overview
+## Tests overview
 
 1. Unauthorized Access:
     - Redis
