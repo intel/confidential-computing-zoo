@@ -50,7 +50,7 @@ Table of Contents
 
    Pentests/Overview.md
    Pentests/unauthorized_access/redis/README.md
-   Pentests/unauthorized_access/sgx/key_generator/README.md
+   Pentests/memory_attack/sgx/key_generator/README.md
 
 .. toctree::
    :maxdepth: 1
