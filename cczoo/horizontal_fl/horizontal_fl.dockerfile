@@ -96,7 +96,7 @@ ENV WERROR=1
 ENV SGX=1
 
 RUN apt-get install -y gawk bison python3-click python3-jinja2 golang ninja-build \ 
-    libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler \ 
+    libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler\ 
     libgmp-dev libmpfr-dev libmpc-dev libisl-dev nasm
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
