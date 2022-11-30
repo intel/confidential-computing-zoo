@@ -53,14 +53,14 @@ ENV GRAMINE_PKGLIBDIR=/usr/local/lib64/gramine
 ENV ARCH_LIBDIR=/lib64
 
 RUN yum install -y gawk bison python3-click python3-jinja2 golang ninja-build 
-RUN yum install -y openssl-devel protobuf-c-devel python3-protobuf protobuf-c-compiler
+RUN yum install -y openssl-devel protobuf-c-devel python3-protobuf protobuf-c-compiler protobuf-compiler
 RUN yum install -y gmp-devel mpfr-devel libmpc-devel isl-devel nasm python3-devel mailcap
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
     && pip3 install --upgrade pip \
     && pip3 install toml meson wheel cryptography paramiko pyelftools
 
-RUN rm -rf ${GRAMINEDIR} && git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
+RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
     && git checkout ${GRAMINE_VERSION}
 
@@ -93,7 +93,7 @@ RUN cd ${GRAMINEDIR}/subprojects/cJSON*/ \
 RUN cd /usr/bin && curl -fLO https://releases.bazel.build/3.1.0/release/bazel-3.1.0-linux-x86_64 && chmod +x bazel-3.1.0-linux-x86_64 
 
 # deps 
-RUN python3 -m pip install numpy keras_preprocessing cryptography pyelftools && pip3 install --upgrade pip setuptools==44.1.1
+RUN python3 -m pip install numpy keras_preprocessing cryptography && pip3 install --upgrade pip setuptools==44.1.1
 
 # config and download TensorFlow
 ENV TF_VERSION=v2.4.2
