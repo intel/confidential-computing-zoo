@@ -28,6 +28,16 @@ proxy_server="" # your http proxy server
 
 cd `dirname $0`
 
+if [ $1 == "anolisos" ]; then
+DOCKER_BUILDKIT=0 docker build \
+    --build-arg no_proxy=${no_proxy} \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    --build-arg AZURE=${azure} \
+    -f Anolisos.dockerfile \
+    -t anolisos_lr_infer_he_sgx:latest \
+    .
+else
 DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg http_proxy=${proxy_server} \
@@ -36,3 +46,4 @@ DOCKER_BUILDKIT=0 docker build \
     -f Dockerfile \
     -t lr_infer_he_sgx:latest \
     .
+fi
