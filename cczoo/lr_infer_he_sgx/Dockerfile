@@ -77,17 +77,17 @@ RUN if [ -z "$AZURE" ]; then \
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-ENV GRAMINE_VERSION=v1.2
+ENV GRAMINE_VERSION=v1.3.1
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV WERROR=1
 ENV SGX=1
 
 RUN apt-get install -y bison gawk nasm python3-click python3-jinja2 ninja-build pkg-config \
-    libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler \
+    libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler\
     libgmp-dev libmpfr-dev libmpc-dev libisl-dev
 
 RUN pip3 install --upgrade pip \
-    && pip3 install toml meson cryptography
+    && pip3 install toml meson cryptography pyelftools
 
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
@@ -137,6 +137,3 @@ RUN cmake -S. -Bbuild \
     && ENTRYPOINT=infer_server make
 
 RUN echo "/lr_infer_he_sgx/start_service.sh" >> ~/.bashrc
-
-ENV http_proxy=
-ENV https_proxy=

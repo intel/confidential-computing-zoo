@@ -25,6 +25,12 @@ if  [ -z "$1" ]; then
     exit 1
 fi
 
+docker_image="lr_infer_he_sgx:latest"
+
+if [ "$2" = "anolisos" ]; then
+    docker_image="anolisos_lr_infer_he_sgx:latest"
+fi
+
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"
 proxy_server="" # your http proxy server
@@ -42,7 +48,7 @@ if [ $1 = "client" ]; then
         -e no_proxy=${no_proxy} \
         -e http_proxy=${proxy_server} \
         -e https_proxy=${proxy_server} \
-        lr_infer_he_sgx:latest \
+        ${docker_image} \
         /lr_infer_he_sgx/build/src/infer_client --data datasets/lrtest_mid_eval.csv
 elif [ $1 = "server" ]; then
     container=$(echo `docker ps -a | grep infer_server`)
@@ -60,7 +66,7 @@ elif [ $1 = "server" ]; then
         -e no_proxy=${no_proxy} \
         -e http_proxy=${proxy_server} \
         -e https_proxy=${proxy_server} \
-        lr_infer_he_sgx:latest \
+        ${docker_image} \
         /lr_infer_he_sgx/infer_server
 else
     Usage

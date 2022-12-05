@@ -34,19 +34,19 @@ For deployments on Microsoft Azure:
 ```shell
 AZURE=1 ./build_docker_image.sh
 ```
-For other cloud deployments:
+For Anolis OS cloud deployments:
 ```shell
-./build_docker_image.sh
+./build_docker_image.sh anolisos
 ```
 ### Execution
 Open 2 terminals, one for the inference client that has data to be inferred and the other for the inference server that has a AI model.
 - Inference server
 ```
-./start_container.sh server
+./start_container.sh server [ubuntu/anolisos]
 ```
 - Inference client
 ```
-./start_container.sh client
+./start_container.sh client [ubuntu/anolisos]
 ```
 ### Result
 >EncryptionParameters: wrote 91 bytes  
