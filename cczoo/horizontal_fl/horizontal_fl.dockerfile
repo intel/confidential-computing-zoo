@@ -139,7 +139,7 @@ RUN wget "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}
  && dpkg -i bazel_*.deb
 
 # deps 
-RUN pip3 install numpy keras_preprocessing pandas==1.5.2 scikit-learn==1.1.3 matplotlib
+RUN pip3 install numpy==1.23.5 keras_preprocessing pandas==1.5.2 scikit-learn==1.1.3 matplotlib
 
 # config and download TensorFlow
 ENV TF_VERSION=v2.4.2
