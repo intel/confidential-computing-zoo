@@ -30,4 +30,4 @@ build_type=release
 ./build_docker_image.sh ${base_image} ${image_tag} ${build_type}
 ```
 
-`ubuntu:18.04` and `ubuntu:20.04` could be selected as base_image.
+`ubuntu:18.04`, `ubuntu:20.04` and `anolisos` could be selected as base_image.
