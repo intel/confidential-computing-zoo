@@ -34,7 +34,7 @@ RUN mkdir /opt/intel && cd /opt/intel \
     && sha256sum sgx_rpm_local_repo.tar.gz \
     && tar xvf sgx_rpm_local_repo.tar.gz \
     && yum-config-manager --add-repo file:///opt/intel/sgx_rpm_local_repo \
-    && yum -y --nogpgcheck install libsgx-urts libsgx-launch libsgx-epid libsgx-quote-ex libsgx-dcap-ql libsgx-uae-service libsgx-dcap-quote-verify-devel 
+    && yum -y --nogpgcheck install libsgx-urts libsgx-launch libsgx-epid libsgx-quote-ex libsgx-dcap-ql libsgx-uae-service libsgx-dcap-quote-verify-devel \
     && yum -y groupinstall 'Development Tools'
 
 # COPY patches/libsgx_dcap_quoteverify.so  /usr/lib64/
@@ -67,9 +67,9 @@ RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${
     && cd ${ISGX_DRIVER_PATH} \
     && git checkout ${SGX_DCAP_VERSION}
 
-ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib64:${LD_LIBRARY_PATH}
+ARG BUILD_TYPE=release
 RUN cd ${GRAMINEDIR} \
-    && LD_LIBRARY_PATH="" meson setup build/ --buildtype=debug -Dprefix=${INSTALL_PREFIX} -Ddirect=enabled -Dsgx=enabled -Ddcap=enabled -Dsgx_driver=dcap1.10 -Dsgx_driver_include_path=${ISGX_DRIVER_PATH}/driver/linux/include \
+    && LD_LIBRARY_PATH="" meson setup build/ --buildtype=${BUILD_TYPE} -Dprefix=${INSTALL_PREFIX} -Ddirect=enabled -Dsgx=enabled -Ddcap=enabled -Dsgx_driver=dcap1.10 -Dsgx_driver_include_path=${ISGX_DRIVER_PATH}/driver/linux/include \
     && LD_LIBRARY_PATH="" ninja -C build/ \
     && LD_LIBRARY_PATH="" ninja -C build/ install
 RUN gramine-sgx-gen-private-key
