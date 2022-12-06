@@ -23,15 +23,23 @@ else
 
 fi
 
-if  [ -n "$2" ] ; then
+if  [ "$2" == "anolisos" ] ; then
+    image_tag=gramine-sgx-dev:v1.2-anolisos
+elif  [ -n "$2" ] ; then
     image_tag=$2
 else
     image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
 fi
 
+if  [ -n "$3" ] ; then
+    build_type=$3
+else
+    build_type=release
+fi
+
 # You can remove no_proxy and proxy_server if your network doesn't need it
 no_proxy="localhost,127.0.0.1"
-proxy_server="" # your http proxy server
+# proxy_server="" # your http proxy server
 
 cd `dirname $0`
 
@@ -42,8 +50,9 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg https_proxy=${proxy_server} \
     --build-arg base_image=${base_image} \
     --build-arg BASE_IMAGE=${base_image} \
+    --build-arg BUILD_TYPE=${build_type} \
     -f gramine-sgx-dev:v1.2-anolisos.dockerfile \
-    -t gramine-sgx-dev:v1.2-anolisos \
+    -t ${image_tag} \
     .
 else
 DOCKER_BUILDKIT=0 docker build \
@@ -52,8 +61,9 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg https_proxy=${proxy_server} \
     --build-arg base_image=${base_image} \
     --build-arg BASE_IMAGE=${base_image} \
+    --build-arg BUILD_TYPE=${build_type} \
     -f gramine-sgx-dev.dockerfile \
-    -t gramine-sgx-dev:v1.2-ubuntu20.04-latest \
+    -t ${image_tag} \
     .
 fi
 cd -

@@ -26,7 +26,8 @@ Execute the following command to build this docker image:
 ```
 base_image=ubuntu:20.04
 image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
-./build_docker_image.sh ${base_image} ${image_tag}
+build_type=release
+./build_docker_image.sh ${base_image} ${image_tag} ${build_type}
 ```
 
 `ubuntu:18.04` and `ubuntu:20.04` could be selected as base_image.
