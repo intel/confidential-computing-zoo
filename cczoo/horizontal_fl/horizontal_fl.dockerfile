@@ -139,7 +139,7 @@ RUN wget "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}
  && dpkg -i bazel_*.deb
 
 # deps 
-RUN pip3 install numpy keras_preprocessing pandas scikit-learn matplotlib
+RUN pip3 install numpy keras_preprocessing pandas sklearn matplotlib
 
 # config and download TensorFlow
 ENV TF_VERSION=v2.4.2
@@ -186,7 +186,7 @@ RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ]; then \
 
 ARG BASE_IMAGE=ubuntu:20.04
 RUN if [ "${BASE_IMAGE}" = "ubuntu:20.04" ] ; then \
-    python -m pip install markupsafe==2.0.1 && pip install -U numpy --upgrade; \
+    python -m pip install markupsafe==2.0.1 && pip install numpy --upgrade; \
     fi
 
 RUN if [ "$WORKLOAD" = "image_classification" ]; then \
