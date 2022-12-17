@@ -37,6 +37,7 @@ Table of Contents
    Solutions/bigdl-ppml/index.md
    Solutions/phe_homo_lr/phe_homo_lr.md
    Solutions/psi/PSI.md
+   Solutions/httpa/index.md
 
 .. toctree::
    :maxdepth: 1
