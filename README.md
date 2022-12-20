@@ -713,25 +713,25 @@ of them is proven useful enough and stable enough via a thorough validation with
 CCZoo reference solutions running on various public cloud services, it will graduate
 from CCZoo and evolve to a standalone project.
 
-<table border="1" bordercolor="#000000" cellpadding="2" cellspacing="0" style="width:100%;">
+<table border="1">
 	<tbody>
 		<tr>
 			<td colspan="1" rowspan="1">
-				<strong>Incubating Component Project <span style="font-size:22px;">'*'</span></strong> 
+				Incubating Component Project'*'
 			</td>
 			<td colspan="1" rowspan="1">
-				<span style="color:#333333;font-family:Arial;"><strong>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; Description</strong></span> 
+				&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; Description
 			</td>
 			<td rowspan="1">
-				<strong>Status</strong> 
+				Status
 			</td>
 			<td colspan="1" rowspan="1">
-				<span style="color:#333333;font-family:Arial;"><strong>Validated in Public Cloud</strong></span> 
+				Validated in Public Cloud
 			</td>
 		</tr>
 		<tr>
 			<td colspan="1">
-				<a href="https://cczoo.readthedocs.io/en/main/Solutions/rats-tls/index.html"><strong>RATS-TLS</strong></a> 
+				<a href="https://cczoo.readthedocs.io/en/main/Solutions/rats-tls/index.html">RATS-TLS</a> 
 			</td>
 			<td>
 				This project provides a proof-of-concept implementation on how to integrate Intel SGX and TDX remote attestation into the TLS connection setup. Conceptually, it extends the standard X.509 certificate&nbsp;with SGX and TDX related information. It also provides two non-SGX clients (Wolfssl and OpenSSL)&nbsp;to show how seamless remote attestation works with different TLS libraries.&nbsp;
@@ -740,12 +740,12 @@ from CCZoo and evolve to a standalone project.
 				Published
 			</td>
 			<td>
-				<span class="md-plain"><span><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#aliyun-ecs">Alibaba Cloud</a></span></span> 
+				<a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#aliyun-ecs">Alibaba Cloud</a>
 			</td>
 		</tr>
 		<tr>
 			<td colspan="1">
-				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><strong>RA-TLS Enhanced gRPC</strong></a> 
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html">RA-TLS Enhanced gRPC</a> 
 			</td>
 			<td>
 				This project provides an enhanced&nbsp;<a href="https://grpc.io/">gRPC</a>&nbsp;(Remote Procedure Call) framework to guarantee security during transmission and runtime via two-way&nbsp;<a href="https://arxiv.org/pdf/1801.05863">RA-TLS</a>&nbsp;(Intel SGX Remote Attestation with Transport Layer Security) based on&nbsp;<a href="https://en.wikipedia.org/wiki/Trusted_execution_environment">TEE</a>&nbsp;(Trusted Execution Environment).
@@ -754,14 +754,27 @@ from CCZoo and evolve to a standalone project.
 				Published
 			</td>
 			<td>
-				<span class="md-plain"><span><a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#aliyun-ecs">Alibaba Cloud</a>, <br />
+				<a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#aliyun-ecs">Alibaba Cloud</a>, <br />
 <a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#tencent-cloud">Tencent Cloud</a>,<br />
-<a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#bytedance-cloud" target="_blank">ByteDance Cloud</a></span></span> 
+<a href="https://cczoo.readthedocs.io/en/main/Solutions/grpc-ra-tls/index.html#bytedance-cloud" target="_blank">ByteDance Cloud</a>
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/httpa/index.html" target="_blank">HTTPA</a> 
+			</td>
+			<td>
+				&nbsp;HTTPA aims for two purposes. First, help perform remote attestation on the web application running inside the TEE in which the flow can be unilateral (one-way HTTPA) or bilateral (mutual HTTPA) by verifying attestation evidence with a verifier such as a trusted authority (TA). Second, help build secure communication directly with the web application at L7 running inside the TEE.&nbsp;<br />
+			</td>
+			<td>
+				Published
+			</td>
+			<td>
+				/
 			</td>
 		</tr>
 	</tbody>
 </table>
-
 
 ---
 
