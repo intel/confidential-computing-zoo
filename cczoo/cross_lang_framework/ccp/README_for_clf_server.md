@@ -41,14 +41,15 @@ git clone https://github.com/intel/confidential-computing-zoo.git
  ### 4. 运行clf_server镜像
  ```
   docker run -it -p 4433:4433 --device /dev/sgx_enclave --device /dev/sgx_provision
-             --v /home/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server/certs
-             --v /home/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server/clf_server.conf
+             -v <your_certs_folder>:/clf/cczoo/cross_lang_framework/clf_server/certs
+             -v <your_clf_server.conf>:/clf/cczoo/cross_lang_framework/clf_server/clf_server.conf
              sec_clf-server:gramine1.3-ubuntu20.04
  ```
  这个指令的作用是将打包好的clf-server的CCP镜像运行起来
  
 - `-p`端口号, 默认是4433端口
 - `--device`, CCP镜像依赖于intel的SGX, 需要将设备`/dev/sgx_enclave和/dev/sgx_provision`映射进container.
-- `--v`, 将证书文件夹映射进container：`/home/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server/certs`
-- `--v`, 将配置文件映射进container: `/home/confidential-computing-zoo/cczoo/cross_lang_framework/clf_server/clf_server.conf`
+- `-v`, 将证书文件夹映射进container：`/clf/cczoo/cross_lang_framework/clf_server/certs`， 证书的生成可以参考使用tools/gen_cert.sh，将生成的server_private_key.pem和server_signed_cert.crt映射进container。
+- `-v`, 将配置文件映射进container: `/clf/cczoo/cross_lang_framework/clf_server/clf_server.conf`
+
 配置细节请参考 [CLF文档](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/cross_lang_framework/README.md)
