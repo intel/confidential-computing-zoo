@@ -74,7 +74,7 @@ RUN apt-get update && apt-get install -y bison gawk nasm python3-click python3-j
     libgmp-dev libmpfr-dev libmpc-dev libisl-dev
 
 RUN pip3 install --upgrade pip \
-    && pip3 install 'meson>=0.56' 'toml>=0.10' cryptography
+    && pip3 install 'meson>=0.56' 'toml>=0.10'
 
 # for debug, just copy gramine from local in case failed to clone from github
 #RUN mkdir -p ${GRAMINEDIR}
@@ -152,7 +152,7 @@ RUN if [ ${PCCS_URL} != "default"  ]; then \
 #todo
 RUN n=0; until [ $n -ge 100 ] ;  do echo $n; n=$(($n+1)); git clone https://github.com/intel/confidential-computing-zoo.git ${CLF_PATH} && break; sleep 1; done
 RUN cd ${CLF_PATH} \
-    && git checkout ccp \
+    && git checkout branch-dev/cross_lang_framework \
     && echo "---build clf_server---" \
     && cd ${CLF_PATH}/cczoo/cross_lang_framework/clf_server \
     && GRAMINEDIR=/gramine make

@@ -33,19 +33,12 @@
 #include "clf_server.h"
 #include "cmd_params.h"
 
-#define WRAP_KEY_SIZE	16
-#define MRSIGNER_LEN	32
-#define MRENCLAVE_LEN	32
 
 log_level_t g_log_level = LOG_LEVEL_INFO;
 static pthread_mutex_t g_print_lock;
 char g_secret_pf_key_hex[WRAP_KEY_SIZE * 2 + 1] = {0};
 
-#define MR_LEN		32
-char g_mrenclave[MR_LEN] = {0};
-char g_mrsigner[MR_LEN] = {0};
-uint16_t g_isv_prod_id = 0;
-uint16_t g_isv_svn = 0;
+struct cmd_params params;
 
 /* network port clf_server binding */
 uint16_t g_port = 4433;
@@ -81,23 +74,23 @@ static int verify_measurements_callback(const char* mrenclave, const char* mrsig
 	pthread_mutex_unlock(&g_print_lock);
 	char null_mrenclave[MRENCLAVE_LEN] = {0};
 	char null_mrsigner[MRSIGNER_LEN] = {0};
-	if(memcmp(g_mrenclave, null_mrenclave, MRENCLAVE_LEN)) {
-		if(memcmp(g_mrenclave, mrenclave, MRENCLAVE_LEN)) {
+	if(memcmp(params.MREnclave, null_mrenclave, MRENCLAVE_LEN)) {
+		if(memcmp(params.MREnclave, mrenclave, MRENCLAVE_LEN)) {
 			printf("mrenclave mismatch\n");
 			return ret;
 		}
 	}
-	if(memcmp(g_mrsigner, null_mrsigner, MRSIGNER_LEN)) {
-		if(memcmp(g_mrsigner, mrsigner, MRSIGNER_LEN)) {
+	if(memcmp(params.MRSigner, null_mrsigner, MRSIGNER_LEN)) {
+		if(memcmp(params.MRSigner, mrsigner, MRSIGNER_LEN)) {
 			printf("mrsigner mismatch\n");
 			return ret;
 		}
 	}
-	if(g_isv_prod_id!=0 && g_isv_prod_id!=*((uint16_t*)isv_prod_id)) {
+	if(params.isv_prod_id!=0 && params.isv_prod_id!=*((uint16_t*)isv_prod_id)) {
 		printf("isv_prod_id mismatch\n");
 		return ret;
 	}
-	if(g_isv_svn!=0 && g_isv_svn!=*((uint16_t*)isv_svn)){
+	if(params.isv_svn!=0 && params.isv_svn!=*((uint16_t*)isv_svn)){
 		printf("isv_svn mismatch\n");
 		return ret;
 	}
@@ -110,7 +103,6 @@ int main(int argc, char** argv) {
 	if (ret < 0)
 		return ret;
 
-	struct cmd_params params;
   	int status = 1;
   	status = cmd_params_process(argc, argv, &params);
   	if (status != 0)
