@@ -221,4 +221,5 @@ cd /client
 python3 ./resnet_client_grpc.py -batch 1 -cnum 1 -loop 50 -url grpc.tf-serving.service.com:8500 -ca `pwd -P`/ssl_configure/ca_cert.pem -crt `pwd -P`/ssl_configure/client/cert.pem -key `pwd -P`/ssl_configure/client/key.pem
 ```
 After the inference is successful, You can get the inference result printed in the terminal window.
+
 ![img](./Images/ps3.png"Send remote request successfully")
