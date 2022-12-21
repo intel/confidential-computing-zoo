@@ -70,17 +70,18 @@ images for developing the gRPC RA-TLS application.
     ```
 
 - Intel SGX Driver and SDK/PSW. You need a machine that supports Intel SGX and FLC/DCAP. Please follow this guide to install the Intel SGX driver and SDK/PSW on the machine/VM. Make sure to install the driver with ECDSA/DCAP attestation.
-For deployments on Microsoft Azure, a script is provided to install general dependencies, Intel SGX DCAP dependencies, and the Azure DCAP Client. To run this script:
+
+  For deployments on Microsoft Azure, a script is provided to install general dependencies, Intel SGX DCAP dependencies, and the Azure DCAP Client. To run this script:
 
     ```shell
    cd cczoo/psi
    ./setup_azure_vm.sh
     ```
-After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Manager is active (running):
+  After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Manager is active (running):
 
-```shell
-systemctl status aesmd
-```
+    ```shell
+    systemctl status aesmd
+    ```
 
 ### Solution Ingredients
 This solution uses the following ingredients, which are installed as part of the container build process.
@@ -121,30 +122,59 @@ This example only shows an example of deploying PSI locally. If you want to depl
 
 ### Prepare the docker container
 Start four containers (one server, three clients).
+```bash
+cd cczoo/psi
+```
 
-For deployments on Microsoft Azure:
-```bash
-cd cczoo/psi
-./start_container.sh server
-./start_container.sh client1
-./start_container.sh client2
-./start_container.sh client3
-```
-For other cloud deployments:
-```bash
-cd cczoo/psi
-./start_container.sh server <pccs_service_ip>
-./start_container.sh client1 <pccs_service_ip>
-./start_container.sh client2 <pccs_service_ip>
-./start_container.sh client3 <pccs_service_ip>
-```
+- For deployments on Microsoft Azure:
+
+  In terminal 1, start the server container:
+  ```bash
+  ./start_container.sh server
+  ```
+
+  In terminal 2, start the client1 container:
+  ```bash
+  ./start_container.sh client1
+  ```
+
+  In terminal 3, start the client2 container:
+  ```bash
+  ./start_container.sh client2
+  ```
+
+  In terminal 4, start the client3 container:
+  ```bash
+  ./start_container.sh client3
+  ```
+
+- For other cloud deployments:
+
+  In terminal 1, start the server container:
+  ```bash
+  ./start_container.sh server <pccs_service_ip>
+  ```
+
+  In terminal 2, start the client1 container:
+  ```bash
+  ./start_container.sh client1 <pccs_service_ip>
+  ```
+
+  In terminal 3, start the client2 container:
+  ```bash
+  ./start_container.sh client2 <pccs_service_ip>
+  ```
+
+  In terminal 4, start the client3 container:
+  ```bash
+  ./start_container.sh client3 <pccs_service_ip>
+  ```
 
 ### Run the Python example
 
 For each container (server, client1, client2, client3), build the Python example and note the mr_enclave value from the build output.
 
 ```bash
-docker exec -it <container_name> bash
 cd /gramine/CI-Examples/psi/python
 ./build.sh
 ```
