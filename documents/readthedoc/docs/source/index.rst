@@ -37,12 +37,21 @@ Table of Contents
    Solutions/bigdl-ppml/index.md
    Solutions/phe_homo_lr/phe_homo_lr.md
    Solutions/psi/PSI.md
+   Solutions/httpa/index.md
 
 .. toctree::
    :maxdepth: 1
    :caption: Cloud Deployment
 
    Cloud/cloudDeployment.md
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Penetration Testing
+
+   Pentests/Overview.md
+   Pentests/unauthorized_access/redis/index.md
+   Pentests/memory_attack/sgx/key_generator/index.md
 
 .. toctree::
    :maxdepth: 1
