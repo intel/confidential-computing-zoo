@@ -181,7 +181,7 @@ cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving_ccp
 If Secret Provision and tf_serving are deployed on the same machine, please fill in `secret_prov_service_machine_ip` as the secret_prov container ip.
 
 Now, TensorFlow Serving is running in SGX and waiting for remote requests.
-![img](./Images/ps2.png"tf_serving request succeeded")
+![img](./Images/ps2.png)
 
 ## Build the client image
 
@@ -221,3 +221,4 @@ cd /client
 python3 ./resnet_client_grpc.py -batch 1 -cnum 1 -loop 50 -url grpc.tf-serving.service.com:8500 -ca `pwd -P`/ssl_configure/ca_cert.pem -crt `pwd -P`/ssl_configure/client/cert.pem -key `pwd -P`/ssl_configure/client/key.pem
 ```
 After the inference is successful, You can get the inference result printed in the terminal window.
+![img](./Images/ps3.png)
