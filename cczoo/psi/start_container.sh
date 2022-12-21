@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright (c) 2022 Intel Corporation
 #
@@ -13,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/bin/bash
 set -e
 
 if  [ -n "$1" ] ; then

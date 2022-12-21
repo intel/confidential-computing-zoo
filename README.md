@@ -248,7 +248,9 @@ document section that explains the corresponding details and then guides you to 
 (RA-gRPC)</span> 
 			</td>
 			<td>
-				<span class="md-plain"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">ByteDance Cloud</a></span> 
+				<span class="md-plain">
+					<a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">ByteDance Cloud</a>, <br />
+					<a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">Microsoft Azure</a></span> 
 			</td>
 			<td>
 				<strong><span style="font-family:Arial;">Published</span></strong> 
@@ -909,7 +911,7 @@ Below table shows solutions and component projects validated in public clouds. A
 				</div>
 			</td>
 			<td>
-				/
+				N/A
 			</td>
 			<td>
 				<a href="https://cloud.tencent.com/document/product/213/63353">sgx-dcap-server-tc.sh.tencent.cn&nbsp;</a> 
@@ -987,6 +989,9 @@ Set Intersection (PSI)</a><br />
 					</li>
 					<li>
 						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank">Secure Logistic Logical Regression Inference with HE and SGX</a>
+					</li>
+					<li>
+						<a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">Private Set Intersection (PSI)</a>
 					</li>
 				</ul>
 				<p>

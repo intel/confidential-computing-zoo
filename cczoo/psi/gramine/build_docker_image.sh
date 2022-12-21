@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright (c) 2022 Intel Corporation
 #
@@ -13,13 +14,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/bin/bash
 set -e
 
 if  [ "$1" == "anolisos" ] ; then
     base_image=$1
 else
     base_image=ubuntu:20.04
+fi
+
+if  [ -z "$AZURE" ] ; then
+    azure=
+else
+    azure=1
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
@@ -43,6 +49,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     --build-arg BASE_IMAGE=${base_image} \
+    --build-arg AZURE=${azure} \
     -f psi-gramine-sgx-dev.dockerfile \
     -t psi \
     ..
