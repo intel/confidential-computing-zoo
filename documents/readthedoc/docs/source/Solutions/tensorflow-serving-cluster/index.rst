@@ -120,6 +120,7 @@ Prerequisites
   FLC/DCAP. Please follow `this guide <https://download.01.org/intel-sgx/latest/linux-latest/docs/Intel_SGX_Installation_Guide_Linux_2.10_Open_Source.pdf>`__
   to install the Intel SGX driver and SDK/PSW on the machine/VM. Make sure to install the driver
   with ECDSA/DCAP attestation.
+  
   For deployments on Microsoft Azure, a script is provided to install general dependencies, Intel SGX DCAP dependencies, and the Azure DCAP Client. To run this script::
 
    cd <tensorflow-serving-cluster dir>/tensorflow-serving
