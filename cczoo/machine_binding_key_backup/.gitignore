@@ -1,0 +1,16 @@
+rkeyserver/App/enclave_u.*
+rkeyserver/Enclave/enclave_t.*
+rkeyserver/App/*.o
+rkeyserver/Enclave/*.o
+
+utils/tkey_exchange/*.o
+utils/tkey_exchange/sgx_tkey_exchange_t.*
+utils/tkey_exchange/sgx_tkey_exchange_u.*
+utils/ukey_exchange/*.o
+
+out/
+
+.history/
+.vscode/
+
+rkeyserver/App/auto_version.h
