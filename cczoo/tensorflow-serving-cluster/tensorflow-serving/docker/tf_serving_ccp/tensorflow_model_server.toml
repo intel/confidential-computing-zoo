@@ -3,51 +3,79 @@
 app.capi_target = "ccp.tencentcloudapi.com"
 app.kms_target = "kms.tencentcloudapi.com"
 
-##loader.preload = "file:{{ gramine.libos }}"
+# Path to the library OS
 loader.entrypoint = "file:{{ gramine.libos }}"
-loader.log_level = "error"
 
-# loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}:./"
-loader.env.LD_LIBRARY_PATH = "/usr/lib/python3.8/lib:/lib:/lib/x86_64-linux-gnu:/usr/lib:/usr/lib/x86_64-linux-gnu"
-#loader.env.PATH = "/usr/bin"
+libos.entrypoint = "tensorflow_model_server"
 
+loader.log_level = "{{log_level}}"
+#
+# # Read application arguments directly from the command line. Don't use this on production!
 loader.insecure__use_cmdline_argv = true
-##sys.enable_sigterm_injection = true
+#
+# # Environment variables for Python
+loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}:./"
+#
+# # Allow for injecting SIGTERM signal from the host.
+sys.enable_sigterm_injection = true
+#
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+  { path = "/usr{{ arch_libdir }}", uri = "file:/usr{{ arch_libdir }}" },
+  { path = "/etc", uri = "file:/etc" },
+  { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
+  { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
+  { path = "/models/resnet50-v15-fp32/1/saved_model.pb", uri = "file:models/resnet50-v15-fp32/1/saved_model.pb", type = "encrypted" },
+]
 
-fs.root.type = "chroot"
-fs.root.path = "/"
-fs.root.uri = "file:/"
+sgx.enclave_size = "4G"
+#
+# # Gramine creates stacks of 256KB by default. It is not enough for SciPy/NumPy
+# # packages, e.g., libopenblas dependency assumes more than 512KB-sized stacks.
+sys.stack.size = "4M"
+#
+# # Set the maximum number of enclave threads. For SGX v1, the number of enclave
+# # TCSes must be specified during signing, so the application cannot use more
+# # threads than the number of TCSes. Note that Gramine also creates an internal
+# # thread for handling inter-process communication (IPC), and potentially another
+# # thread for asynchronous events. Therefore, the actual number of threads that
+# # the application can create is (sgx.thread_num - 2).
+sgx.thread_num = 400
 
-fs.mount.lib.type = "chroot"
-fs.mount.lib.path = "/lib"
-fs.mount.lib.uri = "file:{{ gramine.runtimedir() }}"
+sgx.nonpie_binary = true
 
 loader.pal_internal_mem_size = "200M"
 
-sgx.nonpie_binary = true
-sgx.enclave_size = "4G"
-sgx.thread_num = 400
-sgx.remote_attestation = true
 sgx.ra_client_spid = ""
 
+# SGX Attestation
+sgx.remote_attestation = true
 loader.env.LD_PRELOAD = "libsecret_prov_attest.so"
 loader.env.SECRET_PROVISION_CONSTRUCTOR = "1"
-loader.env.SECRET_PROVISION_SET_PF_KEY = "1"
-loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "/certs/test-ca-sha256.crt"
+loader.env.SECRET_PROVISION_SET_KEY = "default"
+loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "ssl/ca.crt"
 loader.env.SECRET_PROVISION_SERVERS = "attestation.service.com:4433"
 
 sgx.trusted_files = [
+  "file:{{ gramine.libos }}",
   "file:{{ gramine.runtimedir() }}/",
   "file:{{ python.distlib }}/",
+  "file:libstdc++.so.6",
+  "file:libgcc_s.so.1",
   "file:/usr/lib/x86_64-linux-gnu/",
   "file:/lib/x86_64-linux-gnu/",
-  "file:/opt/ccp/bin/ccp-agent",
-  "file:/certs/test-ca-sha256.crt"
+  "file:/lib/x86_64-linux-gnu/libgcc_s.so.1",
+  "file:/lib/x86_64-linux-gnu/libz.so.1",
+  "file:/lib/x86_64-linux-gnu/libcom_err.so.2",
+  "file:/lib/x86_64-linux-gnu/libkeyutils.so.1",
+  "file:libsecret_prov_attest.so",
+  "file:ssl/ca.crt",
+  "file:tensorflow_model_server"
 ]
 
 
 sgx.allowed_files = [
-  "file:/",
   "file:/etc/nsswitch.conf",
   "file:/etc/ethers",
   "file:/etc/hosts",
@@ -56,10 +84,6 @@ sgx.allowed_files = [
   "file:/etc/gai.conf",
   "file:/etc/host.conf",
   "file:/etc/resolv.conf",
-  "file:/ssl.cfg"
+  "file:/tmp",
+  "file:ssl.cfg"
 ]
-
-sgx.protected_files = [
-  "file:/models/resnet50-v15-fp32/1/saved_model.pb"
-]
-
