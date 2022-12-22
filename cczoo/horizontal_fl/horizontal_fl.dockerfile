@@ -90,18 +90,18 @@ RUN if [ -z "$AZURE" ]; then \
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-ENV GRAMINE_VERSION=v1.2
+ENV GRAMINE_VERSION=v1.3.1
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV WERROR=1
 ENV SGX=1
 
 RUN apt-get install -y gawk bison python3-click python3-jinja2 golang ninja-build \ 
-    libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler \ 
+    libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler\ 
     libgmp-dev libmpfr-dev libmpc-dev libisl-dev nasm
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
     && pip3 install --upgrade pip \
-    && pip3 install toml meson cryptography
+    && pip3 install toml meson cryptography pyelftools
 
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
@@ -139,7 +139,7 @@ RUN wget "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}
  && dpkg -i bazel_*.deb
 
 # deps 
-RUN pip3 install numpy keras_preprocessing pandas sklearn matplotlib
+RUN pip3 install numpy==1.23.5 keras_preprocessing pandas==1.5.2 scikit-learn==1.1.3 matplotlib
 
 # config and download TensorFlow
 ENV TF_VERSION=v2.4.2
@@ -186,7 +186,7 @@ RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ]; then \
 
 ARG BASE_IMAGE=ubuntu:20.04
 RUN if [ "${BASE_IMAGE}" = "ubuntu:20.04" ] ; then \
-    python -m pip install markupsafe==2.0.1 && pip install numpy --upgrade; \
+    python -m pip install markupsafe==2.0.1 && pip install numpy==1.23.5 --upgrade; \
     fi
 
 RUN if [ "$WORKLOAD" = "image_classification" ]; then \

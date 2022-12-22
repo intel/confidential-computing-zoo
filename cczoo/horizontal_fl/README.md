@@ -143,31 +143,26 @@ If running locally, please fill in the local PCCS server address in `<PCCS ip ad
 
 ```shell
 ./start_container.sh ps0 <PCCS ip addr> <ubuntu/anolisos>
-docker exec -it ps0 bash
 cd recommendation_system
 test-sgx.sh ps0
 ```
 ```shell
 ./start_container.sh worker0 <PCCS ip addr> <ubuntu/anolisos>
-docker exec -it worker0 bash
 cd recommendation_system
 test-sgx.sh worker0
 ```
 ```shell
 ./start_container.sh worker1 <PCCS ip addr> <ubuntu/anolisos>
-docker exec -it worker1 bash
 cd recommendation_system
 test-sgx.sh worker1
 ```
 ```shell
 ./start_container.sh worker2 <PCCS ip addr> <ubuntu/anolisos>
-docker exec -it worker2 bash
 cd recommendation_system
 test-sgx.sh worker2
 ```
 ```shell
 ./start_container.sh worker3 <PCCS ip addr> <ubuntu/anolisos>
-docker exec -it worker3 bash
 cd recommendation_system
 test-sgx.sh worker3
 ```
@@ -207,19 +202,16 @@ Start three containers (ps0, worker0, worker1) and run the script for the corres
 If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
 ```shell
 ./start_container.sh ps0 <PCCS ip addr> latest <ubuntu/anolisos>
-docker exec -it ps0 bash
 cd image_classification
 test-sgx.sh ps0
 ```
 ```shell
 ./start_container.sh worker0 <PCCS ip addr> latest <ubuntu/anolisos>
-docker exec -it worker0 bash
 cd image_classification
 test-sgx.sh worker0
 ```
 ```shell
 ./start_container.sh worker1 <PCCS ip addr> latest <ubuntu/anolisos>
-docker exec -it worker1 bash
 cd image_classification
 test-sgx.sh worker1
 ```

@@ -28,14 +28,10 @@ else
     ip_addr=127.0.0.1
 fi
 
-if  [ ! -n "$3" ] ; then
-    tag=latest
-else
-    tag=$3
-fi
+tag=latest
 
-if [ "$4" == "anolisos" ]; then
-docker run -itd \
+if [ "$3" == "ubuntu" ] || [ ! -n "$3" ]; then
+docker run -it \
     --restart=always \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
@@ -61,5 +57,19 @@ docker run -itd \
     --net=host \
     --add-host=pccs.service.com:${ip_addr} \
     horizontal_fl:${tag} \
+    bash
+elif [ "$4" == "anolisos" ]; then
+docker run -it \
+    --restart=always \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --device=/dev/sgx_enclave:/dev/sgx/enclave \
+    --device=/dev/sgx_provision:/dev/sgx/provision \
+    --name=${name} \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+    -v /home:/home/host-home \
+    --net=host \
+    --add-host=pccs.service.com:${ip_addr} \
+    anolisos_horizontal_fl:${tag} \
     bash
 fi   

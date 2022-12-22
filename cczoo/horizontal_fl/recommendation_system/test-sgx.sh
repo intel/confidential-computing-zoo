@@ -49,7 +49,7 @@ function make_custom_env() {
 ROLE=$1
 
 if [ "$ROLE" == "make" ]; then
-    make clean && make | make_logfilter
+    make clean && make RA_TYPE=dcap | make_logfilter
 elif [ "$ROLE" == "ps0" ]; then
     make_custom_env
     taskset -c 0-8 stdbuf -o0 gramine-sgx python -u ps0.py 2>&1 | runtime_logfilter | tee -a ps0.log &
