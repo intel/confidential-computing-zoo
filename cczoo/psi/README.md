@@ -118,7 +118,23 @@ For Anolis OS:
 
 This solution uses a two-way attestation scheme. The client and server on both sides of the communication authenticate each other.
 
-This example only shows an example of deploying PSI locally. If you want to deploy the participants on different machines, please make sure that the correct measurements are filled in the `dynamic_config.json` file to ensure that the remote verification passes.
+This example only shows an example of deploying PSI locally. If you want to deploy the participants on different machines, please make sure that the correct measurements are filled in the `dynamic_config.json` file to ensure that the remote verification passes. For example:
+```bash
+{
+  "verify_mr_enclave" : "on",
+  "verify_mr_signer" : "on",
+  "verify_isv_prod_id" : "on",
+  "verify_isv_svn" : "on",
+  "sgx_mrs": [
+    {
+      "mr_enclave" : "1e4f3efafac6038dadaa94fdd248b93c82ae9f0a16642ff4bb07afe442aac56e",
+      "mr_signer" : "5add213ac35413033647621e2fab91edcc8b82f840426803feb8a603be2ce8d4",
+      "isv_prod_id" : "0",
+      "isv_svn" : "0"
+    }
+  ]
+}
+```
 
 ### Prepare the docker container
 Start four containers (one server, three clients).
