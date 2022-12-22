@@ -43,7 +43,6 @@ sgx.trusted_files = [
   "file:GramineJni/gramine_jni.class",
   "file:GramineJni/gramine_xx.class",
   "file:/usr/lib/libgramine_jni.so",
-  "file:certs/ca_cert.crt",
 #  "file:/home/ubuntu/readonly/",
 ]
 
@@ -56,6 +55,7 @@ sgx.allowed_files = [
   "file:/etc/passwd",
   "file:/etc/gai.conf",
   "file:/etc/resolv.conf",
+  "file:certs/ca_cert.crt",
 #  "file:/home/ubuntu/plain",
 ]
 

@@ -1,4 +1,4 @@
-# 在CCP平台上运行clf_server服务
+# 在CCP平台上运行clf_client服务
 本文档是关于在CCP平台上构建CLF框架中的clf_server镜像并运行该镜像的说明文档,阐述了用户在CCP平台上运行clf_server镜像服务的过程.
 
 ## CLF技术架构
@@ -44,12 +44,14 @@ git clone https://github.com/intel/confidential-computing-zoo.git
  ### 4. 运行clf_client镜像 
  ```
  docker run -ti --device /dev/sgx_enclave --device /dev/sgx_provision
-             --add-host=<clf_server_hostname>:<clf_server_ip> clf-client:gramine1.3-ubuntu20.04
+             -v <your_ca_cert>:/app_repo/cczoo/cross_lang_framework/clf_client/app/certs/ca_cert.crt
+             --add-host=<clf_server_hostname>:<clf_server_ip> sec_clf-client:gramine1.3-ubuntu20.04
              -Xmx4G clf_test <clf_server_hostname>
  ```
  这个指令的作用是将CCP平台上的clf-client镜像运行起来
  - `--device`, CCP镜像依赖于intel的SGX, 需要将设备`/dev/sgx_enclave和/dev/sgx_provision`映射进container.
- - `add-host`，为了让容器识别clf_server的主机名, 需要根据自己的需要将主机名和ip地址的匹配关系映射进container
+ - `-v`，将根证书映射进container。此证书用于验证server证书的合法性。证书的生成可以参考使用tools/gen_cert.sh，将生成的ca_cert.crt映射进container.
+ - `--add-host`，为了让容器识别clf_server的主机名, 需要根据自己的需要将主机名和ip地址的匹配关系映射进container
  - ` -Xmx4G clf_test <clf_server_hostname>` app具体需要的参数, 用户需要根据自己的APP参数对这部分进行修改
  
  CLF开发和配置细节请参考 [CLF文档](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/cross_lang_framework/README.md)
