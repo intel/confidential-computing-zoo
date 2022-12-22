@@ -56,7 +56,7 @@ docker tag intelcczoo/tensorflow_serving:ccp_tf_serving_latest tf_serving:latest
 
 2. Download the model
     ```shell
-    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/clien
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
     ./download_model.sh
     ```
     The downloaded and trained model files will be stored in the created `models/resnet50-v15-fp32` directory.
@@ -111,7 +111,7 @@ docker tag intelcczoo/tensorflow_serving:ccp_tf_serving_latest tf_serving:latest
     ./build_tf_serving_image.sh ${image_tag} ${docker_file}
     ```
 
-##	Build the Secret Provision image
+## Build the Secret Provision image
 
 Users can build a key verification service image in two ways:
 
@@ -139,7 +139,7 @@ Users can build a key verification service image in two ways:
 
 
 
-## Build TensorFlow Serving Confidential Image
+## Build TensorFlow Serving Confidential image
 
 1. Prepare the tf_serving image
 
@@ -205,11 +205,11 @@ This section will reuse the files in the `ssl_configure` directory
     docker build -f client.dockerfile . -t client:latest
     ```
 
-2.	Run and enter the client container
+2. Run and enter the client container
 
     ```shell
     docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" client:latest bash
-	```
+    ```
 
 ## send remote request
 
