@@ -64,7 +64,13 @@ RUN cd ${GRAMINEDIR} \
     && LD_LIBRARY_PATH="" ninja -C build/ install
 RUN gramine-sgx-gen-private-key
 
-COPY /usr/bin/tensorflow_model_server /usr/bin/
+#tensorflow_model_server
+RUN cd /usr/bin && curl -fLO https://releases.bazel.build/3.7.2/release/bazel-3.7.2-linux-x86_64 && chmod +x bazel-3.7.2-linux-x86_64 
+RUN git clone https://github.com/tensorflow/serving.git \
+    && cd serving \
+    && git checkout 2.6.2 \
+    && bazel-3.7.2-linux-x86_64 build -c opt //tensorflow_serving/model_servers:tensorflow_model_server
+RUN cp serving/bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server /usr/bin
 
 # Clean apt cache
 RUN yum -y clean all && rm -rf /var/cache
