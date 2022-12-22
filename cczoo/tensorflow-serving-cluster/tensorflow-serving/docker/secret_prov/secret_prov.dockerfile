@@ -105,7 +105,7 @@ RUN apt-get install -y libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf p
 RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55' cryptography pyelftools
 
 # Build Gramine
-RUN cd ${GRAMINEDIR} && pwd && meson setup build/ --buildtype=debug -Dsgx=enabled -Ddcap=enabled -Dsgx_driver="dcap1.10" -Dsgx_driver_include_path="/gramine/driver/driver/linux/include" \
+RUN cd ${GRAMINEDIR} && pwd && meson setup build/ --buildtype=release -Dsgx=enabled -Ddcap=enabled -Dsgx_driver="dcap1.10" -Dsgx_driver_include_path="/gramine/driver/driver/linux/include" \
     && ninja -C build/ \
     && ninja -C build/ install
 RUN gramine-sgx-gen-private-key

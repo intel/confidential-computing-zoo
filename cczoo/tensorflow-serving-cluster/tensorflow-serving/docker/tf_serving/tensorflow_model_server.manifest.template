@@ -48,7 +48,7 @@ loader.pal_internal_mem_size = "200M"
 sgx.ra_client_spid = ""
 
 # SGX Attestation
-sgx.remote_attestation = true
+sgx.remote_attestation = "dcap"
 loader.env.LD_PRELOAD = "libsecret_prov_attest.so"
 loader.env.SECRET_PROVISION_CONSTRUCTOR = "1"
 loader.env.SECRET_PROVISION_SET_KEY = "default"
