@@ -21,7 +21,7 @@ RUN curl -LO https://storage.googleapis.com/tensorflow-serving-apt/pool/${TF_SER
 
 COPY models ${MODEL_BASE_PATH}
 COPY ssl_configure/ssl.cfg  ${WORK_BASE_PATH}
-COPY certs ${WORK_BASE_PATH}/certs
+COPY ssl ${WORK_BASE_PATH}
 COPY tf_serving_entrypoint.sh /usr/bin
 
 RUN chmod +x /usr/bin/tf_serving_entrypoint.sh

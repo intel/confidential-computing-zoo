@@ -17,12 +17,11 @@ loader.insecure__use_cmdline_argv = true
 loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}:./"
 #
 # # Allow for injecting SIGTERM signal from the host.
-sys.enable_sigterm_injection = true
 #
 fs.mounts = [
   { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
-  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
-  { path = "/usr{{ arch_libdir }}", uri = "file:/usr{{ arch_libdir }}" },
+  { path = "/lib/x86_64-linux-gnu", uri = "file:/lib/x86_64-linux-gnu" },
+  { path = "/usr/lib/x86_64-linux-gnu", uri = "file:/usr/lib/x86_64-linux-gnu" },
   { path = "/etc", uri = "file:/etc" },
   { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
   { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
@@ -57,6 +56,10 @@ loader.env.SECRET_PROVISION_SET_KEY = "default"
 loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "ssl/ca.crt"
 loader.env.SECRET_PROVISION_SERVERS = "attestation.service.com:4433"
 
+fs.root.type = "chroot"
+fs.root.path = "/"
+fs.root.uri = "file:/"
+
 sgx.trusted_files = [
   "file:{{ gramine.libos }}",
   "file:{{ gramine.runtimedir() }}/",
@@ -87,3 +90,5 @@ sgx.allowed_files = [
   "file:/tmp",
   "file:ssl.cfg"
 ]
+
+
