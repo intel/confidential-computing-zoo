@@ -23,6 +23,7 @@ RUN mkdir -p  ${WORK_BASE_PATH}/ssl
 COPY models ${MODEL_BASE_PATH}
 COPY ssl_configure/ssl.cfg  ${WORK_BASE_PATH}
 COPY ssl ${WORK_BASE_PATH}/ssl
+COPY libsecret_prov_attest.so ${WORK_BASE_PATH}
 COPY tf_serving_entrypoint.sh /usr/bin
 
 RUN chmod +x /usr/bin/tf_serving_entrypoint.sh
