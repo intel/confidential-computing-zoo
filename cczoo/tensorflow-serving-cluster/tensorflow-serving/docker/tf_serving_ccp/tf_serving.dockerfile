@@ -19,9 +19,10 @@ RUN curl -LO https://storage.googleapis.com/tensorflow-serving-apt/pool/${TF_SER
 # RUN dpkg -i ./${TF_SERVING_PKGNAME}_${TF_SERVING_VERSION}_all.deb \
 #     && rm -f ${TF_SERVING_PKGNAME}_${TF_SERVING_VERSION}_all.deb
 
+RUN mkdir -p  ${WORK_BASE_PATH}/ssl
 COPY models ${MODEL_BASE_PATH}
 COPY ssl_configure/ssl.cfg  ${WORK_BASE_PATH}
-COPY ssl ${WORK_BASE_PATH}
+COPY ssl ${WORK_BASE_PATH}/ssl
 COPY tf_serving_entrypoint.sh /usr/bin
 
 RUN chmod +x /usr/bin/tf_serving_entrypoint.sh
