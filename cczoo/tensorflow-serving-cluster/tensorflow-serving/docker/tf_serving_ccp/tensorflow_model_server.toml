@@ -3,24 +3,25 @@
 app.capi_target = "ccp.tencentcloudapi.com"
 app.kms_target = "kms.tencentcloudapi.com"
 
-# Path to the library OS
 loader.entrypoint = "file:{{ gramine.libos }}"
 
 libos.entrypoint = "tensorflow_model_server"
 
-loader.log_level = "{{log_level}}"
-#
+loader.log_level = "all"
 # # Read application arguments directly from the command line. Don't use this on production!
 loader.insecure__use_cmdline_argv = true
 #
 # # Environment variables for Python
-loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}:./"
-#
+loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:/lib/x86_64-linux-gnu:/usr/lib:/usr/lib/x86_64-linux-gnu:./"
 # # Allow for injecting SIGTERM signal from the host.
+sys.enable_sigterm_injection = true
 #
+
+
 fs.mounts = [
   { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
   { path = "/lib/x86_64-linux-gnu", uri = "file:/lib/x86_64-linux-gnu" },
+  { path = "/ssl", uri = "file:/ssl" },
   { path = "/usr/lib/x86_64-linux-gnu", uri = "file:/usr/lib/x86_64-linux-gnu" },
   { path = "/etc", uri = "file:/etc" },
   { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
@@ -49,31 +50,21 @@ loader.pal_internal_mem_size = "200M"
 sgx.ra_client_spid = ""
 
 # SGX Attestation
-sgx.remote_attestation = true
+sgx.remote_attestation = "dcap"
 loader.env.LD_PRELOAD = "libsecret_prov_attest.so"
 loader.env.SECRET_PROVISION_CONSTRUCTOR = "1"
 loader.env.SECRET_PROVISION_SET_KEY = "default"
-loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "ssl/ca.crt"
+loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "/ssl/ca.crt"
 loader.env.SECRET_PROVISION_SERVERS = "attestation.service.com:4433"
-
-fs.root.type = "chroot"
-fs.root.path = "/"
-fs.root.uri = "file:/"
 
 sgx.trusted_files = [
   "file:{{ gramine.libos }}",
   "file:{{ gramine.runtimedir() }}/",
   "file:{{ python.distlib }}/",
-  "file:libstdc++.so.6",
-  "file:libgcc_s.so.1",
   "file:/usr/lib/x86_64-linux-gnu/",
   "file:/lib/x86_64-linux-gnu/",
-  "file:/lib/x86_64-linux-gnu/libgcc_s.so.1",
-  "file:/lib/x86_64-linux-gnu/libz.so.1",
-  "file:/lib/x86_64-linux-gnu/libcom_err.so.2",
-  "file:/lib/x86_64-linux-gnu/libkeyutils.so.1",
-  "file:libsecret_prov_attest.so",
-  "file:ssl/ca.crt",
+  "file:/ssl/",
+  "file:/ssl/ca.crt",
   "file:tensorflow_model_server"
 ]
 
@@ -90,5 +81,3 @@ sgx.allowed_files = [
   "file:/tmp",
   "file:ssl.cfg"
 ]
-
-
