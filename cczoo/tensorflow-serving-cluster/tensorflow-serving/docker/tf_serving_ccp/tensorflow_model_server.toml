@@ -7,7 +7,7 @@ loader.entrypoint = "file:{{ gramine.libos }}"
 
 libos.entrypoint = "tensorflow_model_server"
 
-loader.log_level = "all"
+loader.log_level = "error"
 # # Read application arguments directly from the command line. Don't use this on production!
 loader.insecure__use_cmdline_argv = true
 #
@@ -65,19 +65,10 @@ sgx.trusted_files = [
   "file:/lib/x86_64-linux-gnu/",
   "file:/ssl/",
   "file:/ssl/ca.crt",
-  "file:tensorflow_model_server"
+  "file:/usr/bin/tensorflow_model_server"
 ]
 
 
 sgx.allowed_files = [
-  "file:/etc/nsswitch.conf",
-  "file:/etc/ethers",
-  "file:/etc/hosts",
-  "file:/etc/group",
-  "file:/etc/passwd",
-  "file:/etc/gai.conf",
-  "file:/etc/host.conf",
-  "file:/etc/resolv.conf",
-  "file:/tmp",
-  "file:ssl.cfg"
+  "file:/",
 ]
