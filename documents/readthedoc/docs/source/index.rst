@@ -52,6 +52,7 @@ Table of Contents
    Pentests/Overview.md
    Pentests/unauthorized_access/redis/index.md
    Pentests/memory_attack/sgx/key_generator/index.md
+   Pentests/memory_attack/sgx/confidential_inference/index.md
 
 .. toctree::
    :maxdepth: 1

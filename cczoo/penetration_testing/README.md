@@ -1,27 +1,49 @@
-# Penetration Testing
+# Penetration Testing Overview
 
 ## Introduction
 
-This penetration testing aims to show how SGX protects the runtime confidentiality of applications while facing privileged malware memory attacks.
+This penetration testing aims to show how SGX protects the runtime confidentiality of applications while sufferring privileged malware memory attacks.
 
-CCZoo penetration tests case include two parts: unauthorized access and data theft.
+CCZoo penetration test provides two types test cases: unauthorized access and data theft(memory attack).
 
-unauthorized access is to gain server privileges through unauthorized access, such as implanting privileged backdoors and obtaining privileged shells.
+Unauthorized access is to gain server privileges through unauthorized access, such as implanting privileged backdoors and obtaining privileged shells.
 
 Data theft is to verify the memory confidentiality of SGX runtime, memory attacks will be performed on high-value data applications through privileged applications or shells to steal their runtime memory data.
 
-## Tests overview
+## Test Cases Overview
 
 1. Unauthorized Access:
+
     - Redis
+
+        When a hacker accesses Redis without password protection running as root, hacker's ssh public key can be written into the target server `/root/.ssh/authotrized_keys` file, and then the target server can be directly logged in through hacker's Private key.
+
+        ![](unauthorized_access/redis/redis.svg)
 
         Please refer to [unauthorized_access/redis/README.md](unauthorized_access/redis/README.md) for detail.
 
 2. Memory Attack:
-    - Key generator
+
+    - Key Generator
 
         This application is generating keys in memory and implemented based on the Intel SGX SDK.
 
         It will use the same source code to compile SGX applications and non-SGX applications, and perform memory attacks on them to verify the confidentiality of SGX runtime memory.
 
+        ![](memory_attack/sgx/key_generator/key_generator.svg)
+
         Please refer to [memory_attack/sgx/key_generator/README.md](memory_attack/sgx/key_generator/README.md) for detail.
+
+    - Confidential Inference
+
+        In the traditional AI inference workflow, it usually faces security risks of models and user data.
+
+        Developers usually adopt model encryption and TLS network transmission methods to solve data security risks in AI inference workflow.
+
+        Although the above two security methods can solve the data security issues in the storage and transmission process, there are still data security risks in this workflow, and hackers can get model and user data through memory attacks.
+
+        In the following demo, we will conduct attack simulation and security verification to demonstrate the effectiveness and limitations of the above security methods, and use intel SGX technology to prevent data theft through memory attacks, so as to achieve all-round (model storage, data network transport, inference service runtime) to protect the purpose of AI inference workflow.
+
+        ![](memory_attack/sgx/confidential_inference/confidential_inference.svg)
+
+        Please refer to [memory_attack/sgx/confidential_inference/README.md](memory_attack/sgx/confidential_inference/README.md) for detail.
