@@ -903,7 +903,7 @@ Below table shows solutions and component projects validated in public clouds. A
 				PCCS Server
 			</td>
 			<td>
-				<a href="https://help.aliyun.com/document_detail/208095.html">sgx-dcap-server.cn-hangzhou.aliyuncs.com</a> 
+				<a href="https://help.aliyun.com/document_detail/208095.html">sgx-dcap-server-vpc.cn-hangzhou.aliyuncs.com</a> 
 			</td>
 			<td>
 				<div>
