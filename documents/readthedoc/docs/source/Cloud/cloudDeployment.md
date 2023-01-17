@@ -67,7 +67,7 @@ The configuration of the ECS instance as below:
     <tr>
       <td style="text-align: left;">PCCS Server
       </td>
-      <td><a href="https://help.aliyun.com/document_detail/208095.html">sgx-dcap-server.cn-hangzhou.aliyuncs.com</a>
+      <td><a href="https://help.aliyun.com/document_detail/208095.html">sgx-dcap-server-vpc.cn-hangzhou.aliyuncs.com</a>
       </td>
     </tr>
     <tr>
