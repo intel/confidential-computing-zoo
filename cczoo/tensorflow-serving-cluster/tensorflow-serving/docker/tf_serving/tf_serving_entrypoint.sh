@@ -20,9 +20,26 @@ set -e
 unset http_proxy && unset https_proxy
 
 cd ${WORK_BASE_PATH}
-make SGX=1 -j `nproc`
+make SGX=${SGX} RA_TYPE=${RA_TYPE} -j `nproc`
 
-#LD_LIBRARY_PATH="/opt/intel/sgx-aesm-service/aesm/:$LD_LIBRARY_PATH" /opt/intel/sgx-aesm-service/aesm/aesm_service
+if [ ${start_aesm_service} ]; then
+    AESM="aesm_service"
+    if pgrep -x "$AESM" > /dev/null
+    then
+        echo "$AESM is running"
+    else
+        echo "Attempting to start $AESM"
+        mkdir -p /var/run/aesmd
+        LD_LIBRARY_PATH="/opt/intel/sgx-aesm-service/aesm:$LD_LIBRARY_PATH" /opt/intel/sgx-aesm-service/aesm/aesm_service
+
+        if pgrep -x "$AESM" > /dev/null
+        then
+            echo "$AESM is running"
+        else
+            echo "$AESM failed to start"
+        fi
+    fi
+fi
 
 # Bind Core 0-3
 taskset -c 0-3 gramine-sgx tensorflow_model_server \
