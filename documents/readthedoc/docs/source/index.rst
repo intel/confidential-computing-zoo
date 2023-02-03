@@ -39,6 +39,7 @@ Table of Contents
    Solutions/psi/PSI.md
    Solutions/httpa/index.md
    Solutions/tdx-encrypted-vfs/index.md
+   Solutions/tdx-tf-serving-ppml/index.md
 
 .. toctree::
    :maxdepth: 1
