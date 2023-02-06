@@ -38,6 +38,7 @@ Table of Contents
    Solutions/phe_homo_lr/phe_homo_lr.md
    Solutions/psi/PSI.md
    Solutions/httpa/index.md
+   Solutions/tdx-hfl/tdx-hfl.md
    Solutions/tdx-encrypted-vfs/index.md
    Solutions/tdx-tf-serving-ppml/index.md
 
