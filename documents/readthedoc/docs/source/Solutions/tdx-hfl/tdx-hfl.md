@@ -34,9 +34,7 @@ We use the LUKS storage service to encrypt the model generated during the traini
 ## Workflow
 In the training process, each worker uses local data in its TD to complete a round of training, and then sends the gradient information in the backpropagation process to the parameter server through the RA-TLS technology, and then the parameter server completes the gradient aggregation and update network parameters, and then send the updated parameters to each worker. The workflow is as follows:
 
-<div align=center>
-<img src=images/tdx_hfl.svg>
-</div>
+![](images/tdx_hfl.svg)
 
 The training phase can be divided into the following steps:
 
