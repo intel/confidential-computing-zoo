@@ -107,10 +107,10 @@ document section that explains the corresponding details and then guides you to 
 (</span><span style="color:#333333;font-family:Arial;">TensorFlow</span><span class="md-plain">)</span> 
 			</td>
 			<td>
-				Yes
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html" target="_blank">Yes</a><br />
 			</td>
 			<td>
-				-
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tdx-hfl/tdx-hfl.html" target="_blank">Yes</a>
 			</td>
 			<td>
 				Yes
@@ -246,9 +246,8 @@ document section that explains the corresponding details and then guides you to 
 (RA-gRPC)</span> 
 			</td>
 			<td>
-				<span class="md-plain">
-					<a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">ByteDance Cloud</a>, <br />
-					<a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">Microsoft Azure</a></span> 
+				<span class="md-plain"> <a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">ByteDance Cloud</a>, <br />
+<a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">Microsoft Azure</a></span> 
 			</td>
 			<td>
 				<strong><span style="font-family:Arial;">Published</span></strong> 
@@ -313,10 +312,10 @@ Cluster PPML</strong></span></a> <br />
 (TensorFlow, K8S)</span> 
 			</td>
 			<td>
-				Yes
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html" target="_blank">Yes</a>
 			</td>
 			<td>
-				-
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tdx-tf-serving-ppml/index.html" target="_blank">Yes</a>
 			</td>
 			<td>
 				Yes
@@ -359,7 +358,7 @@ Cluster PPML</strong></span></a> <br />
 		</tr>
 		<tr>
 			<td>
-				<span style="color:#333333;font-family:Arial;"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank"><strong>Secure Logistic Logical Regression Inference with HE and SGX</strong></a></span>
+				<span style="color:#333333;font-family:Arial;"><a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html" target="_blank"><strong>Secure Logistic Logical Regression Inference with HE and SGX</strong></a></span> 
 			</td>
 			<td>
 				Yes
@@ -702,7 +701,6 @@ on HE
 		</tr>
 	</tbody>
 </table>
-
 ---
 
 # Incubating Component Projects
