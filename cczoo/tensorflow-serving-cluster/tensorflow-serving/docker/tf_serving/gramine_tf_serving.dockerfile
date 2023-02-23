@@ -123,6 +123,8 @@ RUN cp ${GRAMINEDIR}/build/tools/sgx/ra-tls/libsecret_prov_attest.so . \
 
 COPY Makefile .
 COPY tensorflow_model_server.manifest.template .
+RUN make SGX=${SGX} RA_TYPE=${RA_TYPE} -j `nproc` | grep "mr_enclave\|mr_signer\|isv_prod_id\|isv_svn" | tee -a enclave.mr
+
 COPY tf_serving_entrypoint.sh /usr/bin
 COPY sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf
 

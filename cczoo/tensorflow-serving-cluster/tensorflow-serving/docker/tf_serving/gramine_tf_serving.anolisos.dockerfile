@@ -16,11 +16,11 @@ RUN yum -y install \
 
 # Intel SGX
 RUN mkdir /opt/intel && cd /opt/intel \
-    && wget https://mirrors.openanolis.cn/inclavare-containers/bin/anolis8.4/sgx-2.15.1/sgx_rpm_local_repo.tar.gz 
+    && wget https://mirrors.openanolis.cn/inclavare-containers/bin/anolis8.4/sgx-2.15.1/sgx_rpm_local_repo.tar.gz
 RUN cd /opt/intel && sha256sum sgx_rpm_local_repo.tar.gz \
     && tar xvf sgx_rpm_local_repo.tar.gz \
     && yum-config-manager --add-repo file:///opt/intel/sgx_rpm_local_repo \
-    && yum --nogpgcheck -y install libsgx-urts libsgx-launch libsgx-epid libsgx-quote-ex libsgx-dcap-ql libsgx-uae-service libsgx-dcap-quote-verify-devel 
+    && yum --nogpgcheck -y install libsgx-urts libsgx-launch libsgx-epid libsgx-quote-ex libsgx-dcap-ql libsgx-uae-service libsgx-dcap-quote-verify-devel
 RUN yum -y groupinstall 'Development Tools'
 
 # COPY patches/libsgx_dcap_quoteverify.so  /usr/lib64/
@@ -39,7 +39,7 @@ ENV SGX=1
 ENV GRAMINE_PKGLIBDIR=/usr/local/lib64/gramine
 ENV ARCH_LIBDIR=/lib64
 
-RUN yum -y install gawk bison python3-click python3-jinja2 golang ninja-build 
+RUN yum -y install gawk bison python3-click python3-jinja2 golang ninja-build
 RUN yum -y install openssl-devel protobuf-c-devel python3-protobuf protobuf-c-compiler protobuf-compiler
 
 RUN yum -y install gmp-devel mpfr-devel libmpc-devel isl-devel nasm python3-devel mailcap
@@ -65,7 +65,7 @@ RUN cd ${GRAMINEDIR} \
 RUN gramine-sgx-gen-private-key
 
 #tensorflow_model_server
-RUN cd /usr/bin && curl -fLO https://releases.bazel.build/3.7.2/release/bazel-3.7.2-linux-x86_64 && chmod +x bazel-3.7.2-linux-x86_64 
+RUN cd /usr/bin && curl -fLO https://releases.bazel.build/3.7.2/release/bazel-3.7.2-linux-x86_64 && chmod +x bazel-3.7.2-linux-x86_64
 RUN git clone https://github.com/tensorflow/serving.git \
     && cd serving \
     && git checkout 2.6.2 \
@@ -76,18 +76,21 @@ RUN cp serving/bazel-bin/tensorflow_serving/model_servers/tensorflow_model_serve
 RUN yum -y clean all && rm -rf /var/cache
 
 # Build Secret Provision
+ENV RA_TYPE=dcap
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
-    && make app dcap RA_TYPE=dcap
+    && make app ${RA_TYPE} RA_TYPE=${RA_TYPE}
 
 COPY ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 
 WORKDIR ${WORK_BASE_PATH}
 
 RUN cp ${GRAMINEDIR}/build/tools/sgx/ra-tls/libsecret_prov_attest.so . \
-    && cp -R ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl . 
+    && cp -R ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl .
 
 COPY anolisos/Makefile .
 COPY anolisos/tensorflow_model_server.manifest.template .
+RUN make SGX=${SGX} RA_TYPE=${RA_TYPE} -j `nproc` | grep "mr_enclave\|mr_signer\|isv_prod_id\|isv_svn" | tee -a enclave.mr
+
 COPY tf_serving_entrypoint.sh /usr/bin
 COPY sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf
 

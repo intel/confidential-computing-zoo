@@ -17,10 +17,12 @@ RUN yum -y install \
 # Intel SGX
 RUN mkdir /opt/intel && cd /opt/intel \
     && wget https://mirrors.openanolis.cn/inclavare-containers/bin/anolis8.4/sgx-2.15.1/sgx_rpm_local_repo.tar.gz 
+
 RUN cd /opt/intel && sha256sum sgx_rpm_local_repo.tar.gz \
     && tar xvf sgx_rpm_local_repo.tar.gz \
     && yum-config-manager --add-repo file:///opt/intel/sgx_rpm_local_repo \
-    && yum --nogpgcheck -y install libsgx-urts libsgx-launch libsgx-epid libsgx-quote-ex libsgx-dcap-ql libsgx-uae-service libsgx-dcap-quote-verify-devel 
+    && yum --nogpgcheck -y install libsgx-urts libsgx-launch libsgx-epid libsgx-quote-ex libsgx-dcap-ql libsgx-uae-service libsgx-dcap-quote-verify-devel
+
 RUN yum -y groupinstall 'Development Tools'
 
 # COPY patches/libsgx_dcap_quoteverify.so  /usr/lib64/
@@ -65,15 +67,14 @@ RUN cd ${GRAMINEDIR} \
 RUN yum -y clean all && rm -rf /var/cache
 # Build Secret Provision
 RUN gramine-sgx-gen-private-key
+
+# Build Secret Provision
+ENV RA_TYPE=dcap
+COPY patches/secret_prov_pf ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/secret_prov_pf
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
-    && make app dcap
+    && make app ${RA_TYPE} RA_TYPE=${RA_TYPE}
 
-COPY certs/server.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
-COPY certs/server.key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
-COPY certs/ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
-COPY certs/wrap_key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/secret_prov_pf 
-
-
+COPY patches/ssl ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 COPY sgx_default_qcnl.conf /etc/
 COPY entrypoint_secret_prov_server.sh /usr/bin/
 RUN chmod +x /usr/bin/entrypoint_secret_prov_server.sh

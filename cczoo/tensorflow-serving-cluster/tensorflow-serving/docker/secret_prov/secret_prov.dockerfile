@@ -88,14 +88,11 @@ RUN apt-get clean all
 
 # Build Secret Provision
 ENV RA_TYPE=dcap
+COPY patches/secret_prov_pf ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/secret_prov_pf
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
     && make app ${RA_TYPE} RA_TYPE=${RA_TYPE}
 
-COPY certs/server.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
-COPY certs/server.key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
-COPY certs/ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
-COPY certs/wrap_key ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/secret_prov_pf
-
+COPY patches/ssl ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 COPY sgx_default_qcnl.conf /etc/
 COPY entrypoint_secret_prov_server.sh /usr/bin/
 RUN chmod +x /usr/bin/entrypoint_secret_prov_server.sh

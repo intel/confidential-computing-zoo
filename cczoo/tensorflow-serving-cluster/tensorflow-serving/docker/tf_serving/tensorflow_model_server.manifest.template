@@ -7,6 +7,8 @@ loader.log_level = "{{ log_level }}"
 #
 # # Read application arguments directly from the command line. Don't use this on production!
 loader.insecure__use_cmdline_argv = true
+# loader.insecure__use_host_env = true
+
 #
 # # Environment variables for Python
 loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}:./"
@@ -23,9 +25,6 @@ fs.mounts = [
   { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
   { path = "/models/resnet50-v15-fp32/1/saved_model.pb", uri = "file:models/resnet50-v15-fp32/1/saved_model.pb", type = "encrypted" },
 ]
-
-
-
 
 sgx.enclave_size = "4G"
 #

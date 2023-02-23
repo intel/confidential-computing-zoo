@@ -253,59 +253,10 @@ Use the ``gramine-sgx-pf-crypt`` tool to encrypt the model file command as follo
 
 For more information about ``gramine-sgx-pf-crypt``, please refer to `pf_crypt <https://github.com/gramineproject/gramine/tree/master/Pal/src/host/Linux-SGX/tools/pf_crypt>`__.
 
-1.4 Start Secret Provision Service
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-In order to deploy this service easily, we build and run this service in container.
-Basically, we use ``secret_prov_server_dcap`` as the remote SGX Enclave Quote
-authentication service and relies on the Quote-related authentication library
-provided by SGX DCAP. The certification service will obtain Quote certification
-related data from Intel PCCS, such as TCB related information and CRL information.
-After successful verification of SGX Enclave Quote, the key stored in ``files/wrap-key``
-will be sent to the remote application.
-The remote application here is Gramine in the SGX environment.
-After remote Gramine gets the key, it will decrypt the encrypted model file.
 
-Build and run the secret provisioning service container.
-
-For deployments on Microsoft Azure::
-
-   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
-   ./build_secret_prov_image.sh azure
-   ./run_secret_prov.sh -i secret_prov_server:azure-latest -b https://sharedcus.cus.attest.azure.net
-   
-For Anolisos cloud deployments::
-
-   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
-   ./build_secret_prov_image.sh anolisos
-   ./run_secret_prov.sh -i secret_prov_server:anolisos-latest -a pccs.service.com:ip_addr
-
-For other cloud deployments::
-
-   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
-   ./build_secret_prov_image.sh
-   ./run_secret_prov.sh -i secret_prov_server:latest -a pccs.service.com:ip_addr
-
-*Note*:
-   1. ``ip_addr`` is the host machine where your PCCS service is installed.
-   2. ``secret provision service`` will start port ``4433`` and monitor request. Under public cloud instance, please make sure the port ``4433`` is enabled to access.
-   3. Under cloud SGX environment (except for Microsoft Azure), if CSP provides their own PCCS server, please replace the PCCS URL in ``sgx_default_qcnl.conf`` with the one provided by CSP. You can start the secret provision service::
-      
-      ./run_secret_prov.sh -i <secret_prov_service_image_id> 
-
-To check the secret provision service logs::
-
-   docker ps -a
-   docker logs <secret_prov_service_container_id>
-
-Get the container's IP address, which will be used when starting the TensorFlow Serving Service in the next step::
-
-   docker ps -a
-   docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <secret_prov_service_container_id>
-   
-
-2. Run TensorFlow Serving w/ Gramine in SGX-enabled machine
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Under SGX-enabled machine, please download source package::
+2. Build TensorFlow Serving Container Image
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+On an SGX-enabled machine, please download source package::
 
    git clone https://github.com/intel/confidential-computing-zoo.git
 
@@ -321,9 +272,8 @@ For example::
    tar -xvf models.tar
    tar -xvf ssl_configure.tar
 
-2.2 Build TensorFlow Serving Docker image
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Build the TensorFlow Serving container.
+2.2 Build TensorFlow Serving Container Image
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For deployments on Microsoft Azure::
 
@@ -379,8 +329,106 @@ secret key back to it when attestation verification pass in secret provision ser
 stored in secret provision server.
 For more syntax used in the manifest template, please refer to `Gramine Manifest syntax <https://github.com/gramineproject/gramine/blob/master/Documentation/manifest-syntax.rst>`__.
 
+2.3 TensorFlow Serving Container Measurements
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Take note of the TensorFlow Serving SGX measurements during the TensorFlow Serving container build. These measurements will be used when building the secret provisioning container.
 
-2.3 Execute TensorFlow Serving w/ Gramine in SGX
+Example mr_enclave and mr_signer values from the TensorFlow Serving container build::
+
+   Step 38/45 : RUN make SGX=${SGX} RA_TYPE=${RA_TYPE} -j `nproc` | grep "mr_enclave\|mr_signer\|isv_prod_id\|isv_svn" | tee -a enclave.mr
+    ---> Running in 1c1468764466
+       isv_prod_id: 0
+       isv_svn:     0
+       mr_enclave:  39b02dbf3cd6d6c68eb227a5da019c3721162085116a614ab4be0d1f81199d8f
+       mr_signer:   ae483edd52e38b2ef67f3962b75ad47f987db8d3a42d0cd1ca7b6ee4c7035a6e
+       isv_prod_id: 0
+       isv_svn:     0
+
+Alternatively, the mr_enclave and mr_signer values can be retrieved from a built TensorFlow Serving container image::
+
+   $ ./get_image_enclave_mr.sh <gramine_tf_serving_image_id>
+    mr_enclave:  39b02dbf3cd6d6c68eb227a5da019c3721162085116a614ab4be0d1f81199d8f
+    mr_signer:   ae483edd52e38b2ef67f3962b75ad47f987db8d3a42d0cd1ca7b6ee4c7035a6e
+    isv_prod_id: 0
+    isv_svn:     0
+
+
+
+3. Build Secret Provisioning Container Image
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In order to deploy this service easily, we build and run this service in container.
+Basically, we use ``secret_prov_server_dcap`` as the remote SGX Enclave Quote
+authentication service and relies on the Quote-related authentication library
+provided by SGX DCAP. The certification service will obtain Quote certification
+related data from Intel PCCS, such as TCB related information and CRL information.
+After successful verification of SGX Enclave Quote, the key stored in ``files/wrap-key``
+will be sent to the remote application.
+The remote application here is Gramine in the SGX environment.
+After remote Gramine gets the key, it will decrypt the encrypted model file.
+
+3.1 Configure Expected TensorFlow Serving Container Measurements
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Modify ``<tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov/patches/secret_prov_pf/ra_config.json`` with the TensorFlow Serving container measurements from the previous section. Do not copy and paste the following example values. Use the actual mr_enclave values from your TensorFlow Serving container(s). To support multiple TensorFlow Serving containers, the measurements for each container must be added as separate items in the "mrs" array::
+
+   {
+       "verify_mr_enclave" : "on",
+       "verify_mr_signer" : "on",
+       "verify_isv_prod_id" : "on",
+       "verify_isv_svn" : "on",
+       "mrs": [
+           {
+               "mr_enclave" : "39b02dbf3cd6d6c68eb227a5da019c3721162085116a614ab4be0d1f81199d8f",
+               "mr_signer" : "ae483edd52e38b2ef67f3962b75ad47f987db8d3a42d0cd1ca7b6ee4c7035a6e",
+               "isv_prod_id" : "0",
+               "isv_svn" : "0"
+           }
+       ]
+   }
+
+
+3.2 Build and Run Secret Provisioning Container
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For deployments on Microsoft Azure::
+
+   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
+   ./build_secret_prov_image.sh azure
+   ./run_secret_prov.sh -i secret_prov_server:azure-latest -b https://sharedcus.cus.attest.azure.net
+   
+For Anolisos cloud deployments::
+
+   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
+   ./build_secret_prov_image.sh anolisos
+   ./run_secret_prov.sh -i secret_prov_server:anolisos-latest -a pccs.service.com:ip_addr
+
+For other cloud deployments::
+
+   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
+   ./build_secret_prov_image.sh
+   ./run_secret_prov.sh -i secret_prov_server:latest -a pccs.service.com:ip_addr
+
+*Note*:
+   1. ``ip_addr`` is the host machine where your PCCS service is installed.
+   2. ``secret provision service`` will start port ``4433`` and monitor request. Under public cloud instance, please make sure the port ``4433`` is enabled to access.
+   3. Under cloud SGX environment (except for Microsoft Azure), if CSP provides their own PCCS server, please replace the PCCS URL in ``sgx_default_qcnl.conf`` with the one provided by CSP. You can start the secret provision service::
+      
+      ./run_secret_prov.sh -i <secret_prov_service_image_id> 
+
+To check the secret provision service logs::
+
+   docker ps -a
+   docker logs <secret_prov_service_container_id>
+
+Get the container's IP address, which will be used when starting the TensorFlow Serving Service in the next step::
+
+   docker ps -a
+   docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <secret_prov_service_container_id>
+   
+
+4. Run TensorFlow Serving w/ Gramine on SGX-enabled machine
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+4.1 Execute TensorFlow Serving w/ Gramine in SGX
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Run the TensorFlow Serving container.
 
@@ -425,12 +473,12 @@ Get the container's IP address, which will be used when starting the Client cont
 
 
 
-3. Remote Inference Request
-~~~~~~~~~~~~~~~~~
+5. Remote Inference Request
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 In this section, the files in the `ssl_configure` directory will be reused.
 
-3.1 Build Client Docker Image 
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+5.1 Build Client Container Image 
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 For Anolisos, build and run the Client container::
 
     cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
@@ -443,8 +491,8 @@ For non-Anolisos, build and run the Client container::
     docker build -f client.dockerfile . -t client:latest
     docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" client:latest bash   
 
-3.2 Send remote inference request
-^^^^^^^^^^^^^^^^^^^^^^^
+5.2 Send Remote Inference Request
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Send the remote inference request (with a dummy image) to demonstrate a single TensorFlow serving node with remote attestation::
 
    For one-way SSL/TLS authentication::

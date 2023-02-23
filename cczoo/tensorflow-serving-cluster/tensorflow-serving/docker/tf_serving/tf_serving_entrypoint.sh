@@ -20,7 +20,7 @@ set -e
 unset http_proxy && unset https_proxy
 
 cd ${WORK_BASE_PATH}
-make SGX=${SGX} RA_TYPE=${RA_TYPE} -j `nproc`
+# make SGX=${SGX} RA_TYPE=${RA_TYPE} -j `nproc`
 
 if [ ${start_aesm_service} ]; then
     AESM="aesm_service"
