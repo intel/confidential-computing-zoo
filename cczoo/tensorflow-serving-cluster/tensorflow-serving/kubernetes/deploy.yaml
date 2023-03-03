@@ -58,7 +58,7 @@ spec:
       containers:
       - name: gramine-tf-serving-container
         image: localhost:5000/gramine_tf_serving
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         env:
         - name: model_name
           value: "resnet50-v15-fp32"

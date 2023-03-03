@@ -57,7 +57,7 @@ spec:
       containers:
       - name: gramine-tf-serving-container
         image: <acrName>.azurecr.io/gramine_tf_serving:azure-latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         env:
         - name: SGX_AESM_ADDR
           value: "1" 
@@ -104,8 +104,8 @@ spec:
         - name: sgx-path
           mountPath: /dev/sgx
         - name: azure
-          mountPath: /gramine/CI-Examples/tensorflow-serving-cluster/tensorflow-serving/models
-          subPath: models
+          mountPath: /gramine/CI-Examples/tensorflow-serving-cluster/tensorflow-serving/models/resnet50-v15-fp32/1/saved_model.pb
+          subPath: saved_model.pb
         - name: azure
           mountPath: /gramine/CI-Examples/tensorflow-serving-cluster/tensorflow-serving/ssl.cfg
           subPath: ssl.cfg

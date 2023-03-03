@@ -151,13 +151,13 @@ and management of the containerized TensorFlow Serving application.
 Executing Confidential TF Serving without Kubernetes
 ----------------------------------------------------
 
-1. Client Preparation
-~~~~~~~~~~~~~~~~~~~~~
-Under client machine, please download source package::
+1. Prepare Model and SSL/TLS Certificates
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+First, download the CCZoo source package::
 
    git clone https://github.com/intel/confidential-computing-zoo.git
 
-1.1 Download the Model
+1.1 Download Model
 ^^^^^^^^^^^^^^^^^^^^^^
 We use ResNet50 model with FP32 precision for TensorFlow Serving to the inference.
 First, use ``download_model.sh`` to download the pre-trained model file. It will
@@ -179,7 +179,7 @@ The converted model file will be under::
 
    models/resnet50-v15-fp32/1/saved_model.pb
 
-1.2 Create the SSL/TLS certificate
+1.2 Create SSL/TLS Certificate
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 We choose gRPC SSL/TLS and create the SSL/TLS Keys and certificates by setting
 TensorFlow Serving domain name to establish a communication link between client
@@ -213,7 +213,7 @@ For two-way SSL/TLS authentication (server and client verify each other)::
 and ``ssl.cfg`` will be used by TensorFlow Serving.
 
 
-1.3 Create encrypted model file
+1.3 Encrypt Model File
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Starting from Intel SGX SDK v1.9, SGX SDK provides the function of secure file
 I/O operations. This function is provided by a component of the SGX SDK called
@@ -473,25 +473,39 @@ Get the container's IP address, which will be used when starting the Client cont
 
 
 
-5. Remote Inference Request
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+5. Build Client Container Image and Send Inference Request
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 In this section, the files in the `ssl_configure` directory will be reused.
 
 5.1 Build Client Container Image 
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-For Anolisos, build and run the Client container::
+Build the Client container.
 
-    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
-    docker build -f anolisos_client.dockerfile . -t anolisos_client:latest
-    docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" anolisos_client:latest bash
-
-For non-Anolisos, build and run the Client container::
+For Ubuntu::
 
     cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
     docker build -f client.dockerfile . -t client:latest
+
+For Anolisos::
+
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
+    docker build -f anolisos_client.dockerfile . -t anolisos_client:latest
+
+5.2 Build Client Container Image 
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Run the Client container.
+
+For Ubuntu::
+
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
     docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" client:latest bash   
 
-5.2 Send Remote Inference Request
+For Anolisos::
+
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
+    docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" anolisos_client:latest bash
+
+5.3 Send Remote Inference Request
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Send the remote inference request (with a dummy image) to demonstrate a single TensorFlow serving node with remote attestation::
 
