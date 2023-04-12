@@ -213,6 +213,7 @@ and ``ssl.cfg`` will be used by TensorFlow Serving.
 
 
 Encrypt ssl.cfg::
+
       mkdir -p plaintext/
       mv ssl_configure/ssl.cfg plaintext/
       LD_LIBRARY_PATH=./libs ./gramine-sgx-pf-crypt encrypt -w files/wrap-key -i plaintext/ssl.cfg -o ssl.cfg
