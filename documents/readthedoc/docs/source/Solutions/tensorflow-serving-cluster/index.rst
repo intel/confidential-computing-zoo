@@ -191,7 +191,6 @@ For one-way SSL/TLS authentication (client verifies server)::
 
       service_domain_name=grpc.tf-serving.service.com
       ./generate_oneway_ssl_config.sh ${service_domain_name}
-      tar -cvf ssl_configure.tar ssl_configure
 
 ``generate_oneway_ssl_config.sh`` will generate the directory 
 ``ssl_configure`` which includes ``server/*.pem`` and ``ssl.cfg``.
@@ -204,13 +203,21 @@ For two-way SSL/TLS authentication (server and client verify each other)::
       service_domain_name=grpc.tf-serving.service.com
       client_domain_name=client.tf-serving.service.com
       ./generate_twoway_ssl_config.sh ${service_domain_name} ${client_domain_name}
-      tar -cvf ssl_configure.tar ssl_configure
+      
 
 ``generate_twoway_ssl_config.sh`` will generate the directory 
 ``ssl_configure`` which includes ``server/*.pem``, ``client/*.pem``, 
 ``ca_*.pem`` and ``ssl.cfg``.
 ``client/*.pem`` and ``ca_cert.pem`` will be used by the remote client 
 and ``ssl.cfg`` will be used by TensorFlow Serving.
+
+
+Encrypt ssl.cfg::
+      mkdir -p plaintext/
+      mv ssl_configure/ssl.cfg plaintext/
+      LD_LIBRARY_PATH=./libs ./gramine-sgx-pf-crypt encrypt -w files/wrap-key -i plaintext/ssl.cfg -o ssl.cfg
+      mv ssl.cfg ssl_configure/
+      tar -cvf ssl_configure.tar ssl_configure
 
 
 1.3 Encrypt Model File
@@ -491,8 +498,8 @@ For Anolisos::
     cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
     docker build -f anolisos_client.dockerfile . -t anolisos_client:latest
 
-5.2 Build Client Container Image 
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+5.2 Run Client Container
+^^^^^^^^^^^^^^^^^^^^^^^^
 Run the Client container.
 
 For Ubuntu::
