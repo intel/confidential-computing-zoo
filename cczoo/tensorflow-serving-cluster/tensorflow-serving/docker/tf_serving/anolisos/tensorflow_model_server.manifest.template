@@ -21,6 +21,7 @@ fs.mounts = [
   { path = "/etc", uri = "file:/etc" },
   { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
   { path = "/models/resnet50-v15-fp32/1/saved_model.pb", uri = "file:models/resnet50-v15-fp32/1/saved_model.pb", type = "encrypted" },
+  { path = "/ssl.cfg", uri = "file:ssl.cfg", type = "encrypted" }
 ]
 
 sgx.enclave_size = "4G"
@@ -79,6 +80,5 @@ sgx.allowed_files = [
   "file:/etc/gai.conf",
   "file:/etc/host.conf",
   "file:/etc/resolv.conf",
-  "file:/tmp",
-  "file:ssl.cfg"
+  "file:/tmp"
 ]
