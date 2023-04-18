@@ -46,3 +46,7 @@ COPY grpc/v1.38.1 ${GRPC_V138_PATH}
 COPY gramine/CI-Examples ${GRAMINEDIR}/CI-Examples
 RUN cd ${GRAMINEDIR}/CI-Examples/psi/python && git apply *.diff \
 && cd ${GRAMINEDIR}/CI-Examples/psi/cpp && git apply *.diff
+
+RUN python3 -m pip install --upgrade pip \
+    && pip3 uninstall -y six \
+    && python3 -m pip install six
