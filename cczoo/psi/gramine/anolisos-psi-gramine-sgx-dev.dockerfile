@@ -39,10 +39,14 @@ RUN pip3 install --upgrade pip \
 RUN yum -y update \
     && yum -y install redhat-lsb golang strace gdb ctags curl zip sshpass jq
 
-RUN RUN yum -y clean all && rm -rf /var/cache
+RUN yum -y clean all && rm -rf /var/cache
 
 COPY grpc/common ${GRPC_V138_PATH}
 COPY grpc/v1.38.1 ${GRPC_V138_PATH}
 COPY gramine/CI-Examples ${GRAMINEDIR}/CI-Examples
 RUN cd ${GRAMINEDIR}/CI-Examples/psi/python && git apply *.diff \
 && cd ${GRAMINEDIR}/CI-Examples/psi/cpp && git apply *.diff
+
+RUN python3 -m pip install --upgrade pip \
+    && pip3 uninstall -y six \
+    && python3 -m pip install six
