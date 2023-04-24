@@ -1,33 +1,35 @@
-diff --git a./python.manifest.template b./python.manifest.template
-index 057cffe..480dd78 100644
---- a./python.manifest.template
-+++ b./python.manifest.template
-@@ -37,9 +37,10 @@ fs.mounts = [
+--- python.manifest.template
++++ python.manifest.template
+@@ -37,9 +37,7 @@
    { path = "/usr", uri = "file:/usr" },
    { type = "tmpfs", path = "/var/tmp" },
    { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
 -  { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
-+  # { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
-   # { path = "/usr/local/lib/python3.6/dist-packages/", uri = "file:/usr/local/lib/python3.6/dist-packages/" }, # for ubuntu:18.04
+-  # { path = "/usr/local/lib/python3.6/dist-packages/", uri = "file:/usr/local/lib/python3.6/dist-packages/" }, # for ubuntu:18.04
 -  { path = "/usr/local/lib/python3.8/dist-packages/", uri = "file:/usr/local/lib/python3.8/dist-packages/" }, # for ubuntu:20.04
-+  # { path = "/usr/local/lib/python3.8/dist-packages/", uri = "file:/usr/local/lib/python3.8/dist-packages/" }, # for ubuntu:20.04
 +  { path = "/usr/local/lib/python3.6/site-packages/", uri = "file:/usr/local/lib/python3.6/site-packages/" }, # for anolisos
  ]
- 
+
  sgx.debug = false
-@@ -60,10 +61,12 @@ sgx.trusted_files = [
+@@ -60,10 +58,9 @@
    "file:{{ arch_libdir }}/",
    "file:/usr/{{ arch_libdir }}/",
    "file:{{ python.stdlib }}/",
 -  "file:{{ python.distlib }}/",
-+  # "file:{{ python.distlib }}/",
-   # "file:/usr/local/lib/python3.6/dist-packages/",  # for ubuntu:18.04
+-  # "file:/usr/local/lib/python3.6/dist-packages/",  # for ubuntu:18.04
 -  "file:/usr/local/lib/python3.8/dist-packages/",  # for ubuntu:20.04
 -  "file:/etc/ssl/certs/ca-certificates.crt",
-+  # "file:/usr/local/lib/python3.8/dist-packages/",  # for ubuntu:20.04
-+  "file:/usr/local/lib/python3.6/site-packages/", 
-+  "file:/usr/local/lib64/python3.6/site-packages/", 
++  "file:/usr/local/lib/python3.6/site-packages/",
++  "file:/usr/local/lib64/python3.6/site-packages/",
 +  "file:/etc/ssl/certs/ca-bundle.crt",
    "file:server.py",
    "file:data_provider1.py",
    "file:data_provider2.py",
+@@ -88,4 +85,7 @@
+   "file:data1.txt",
+   "file:data2.txt",
+   "file:data3.txt",
++  "file:/usr/local/lib/python3.6/site-packages/",
++  "file:/usr/local/lib64/python3.6/site-packages/",
++  "file:/etc/ssl/certs/ca-bundle.crt",
+ ]

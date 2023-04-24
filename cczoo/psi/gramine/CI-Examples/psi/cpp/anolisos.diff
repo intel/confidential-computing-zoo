@@ -1,8 +1,6 @@
-diff --git a./grpc.manifest.template b./grpc.manifest.template
-index c29ed9d..fc8a3fb 100644
---- a./grpc.manifest.template
-+++ b./grpc.manifest.template
-@@ -58,7 +58,7 @@ sgx.trusted_files = [
+--- grpc.manifest.template
++++ grpc.manifest.template
+@@ -58,7 +58,7 @@
    "file:{{ gramine.runtimedir() }}/",
    "file:{{ arch_libdir }}/",
    "file:/usr{{ arch_libdir }}/",
