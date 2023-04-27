@@ -21,12 +21,14 @@ function usage_help() {
     echo -e "options:"
     echo -e "  -h Display help"
     echo -e "  -i {image_id}"
-    echo -e "  -a {pccs_service_com}"
+    echo -e "  -a {pccs_service_host}"
+    echo -e "  -b {azure_maa_prov_address}"
 }
 
-pccs_service_com="localhost:127.0.0.1"
+pccs_service_host="localhost:127.0.0.1"
+azure_maa_prov_address="https://sharedcus.cus.attest.azure.net"
 
-while getopts "h?i:a:" OPT; do
+while getopts "h?i:a:b:" OPT; do
     case $OPT in
         h|\?)
             usage_help
@@ -37,9 +39,13 @@ while getopts "h?i:a:" OPT; do
             image_id=$OPTARG
             ;;
         a)
-            echo -e "Option $OPTIND, pccs_service_com = $OPTARG"
-            pccs_service_com=$OPTARG
-            ;;      
+            echo -e "Option $OPTIND, pccs_service_host = $OPTARG"
+            pccs_service_host=$OPTARG
+            ;;
+        b)
+            echo -e "Option $OPTIND, azure_maa_prov_address = $OPTARG"
+            azure_maa_prov_address=$OPTARG
+            ;;
         ?)
             echo -e "Unknown option $OPTARG"
             usage_help
@@ -50,5 +56,6 @@ done
 
 docker run -itd -p 4433:4433 \
        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
-       --add-host=${pccs_service_com} \
+       -e RA_TLS_MAA_PROVIDER_URL=${azure_maa_prov_address} \
+       --add-host=${pccs_service_host} \
        ${image_id}

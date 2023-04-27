@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,9 +15,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 set -e
-cd ${WORK_BASE_PATH}/secret_prov_pf
-echo "Run Secret Porv Server!"
 
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libs stdbuf -o0  ./server_${RA_TYPE} wrap_key
+image=$1
+CMD='cat ${WORK_BASE_PATH}/enclave.mr | tail -n 4'
+
+docker run -it --rm --entrypoint="" ${image} bash -c "${CMD}"

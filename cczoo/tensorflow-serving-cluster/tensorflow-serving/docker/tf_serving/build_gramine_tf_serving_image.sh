@@ -20,30 +20,31 @@ set -e
 if  [ ! -n "$2" ] ; then
     tag=latest
 else
-    tag=$1
-fi
-
-if  [ -z "$AZURE" ] ; then
-    azure=
-else
-    azure=1
+    tag=$2
 fi
 
 # You can remove build-arg http_proxy and https_proxy if your network doesn't need it
-proxy_server=""
+# proxy_server=""
 
 if [ "$1" == "anolisos" ] ; then
 DOCKER_BUILDKIT=0 docker build \
-    -f anolisos_gramine_tf_serving.dockerfile . \
-    -t anolisos_gramine_tf_serving:${tag} \
+    -f gramine_tf_serving.anolisos.dockerfile \
+    -t gramine_tf_serving:anolisos-${tag} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
-    --build-arg AZURE=${azure}
+    .
+elif [ "$1" == "azure" ] ; then
+DOCKER_BUILDKIT=0 docker build \
+    -f gramine_tf_serving.azure.dockerfile \
+    -t gramine_tf_serving:azure-${tag} \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    .
 else
 DOCKER_BUILDKIT=0 docker build \
-    -f gramine_tf_serving.dockerfile . \
+    -f gramine_tf_serving.dockerfile \
     -t gramine_tf_serving:${tag} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
-    --build-arg AZURE=${azure}
+    .
 fi

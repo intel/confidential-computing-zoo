@@ -28,13 +28,12 @@ metadata:
   name: gramine-tf-serving-service
   namespace: gramine-tf-serving
 spec:
-  type: NodePort # LoadBalancer ClusterIP
+  type: LoadBalancer # NodePort ClusterIP
   ports:
   - name: grpc
     protocol: TCP
     port: 8500
     targetPort: 8500
-    nodePort: 30500
   selector:
     app: gramine-tf-serving-app
 
@@ -57,9 +56,11 @@ spec:
     spec:
       containers:
       - name: gramine-tf-serving-container
-        image: localhost:5000/gramine_tf_serving
+        image: <acrName>.azurecr.io/gramine_tf_serving:azure-latest
         imagePullPolicy: Always
         env:
+        - name: SGX_AESM_ADDR
+          value: "1" 
         - name: model_name
           value: "resnet50-v15-fp32"
         - name: file_system_poll_wait_seconds
@@ -94,18 +95,22 @@ spec:
           value: ""
         - name: no_proxy
           value: ""
+        - name: start_aesm_service
+          value: "1" 
         ports:
         - name: grpc
           containerPort: 8500
         volumeMounts:
         - name: sgx-path
           mountPath: /dev/sgx
-        - name: model-path
-          mountPath: /gramine/CI-Examples/tensorflow-serving-cluster/tensorflow-serving/models
-        - name: ssl-path
+        - name: azure
+          mountPath: /gramine/CI-Examples/tensorflow-serving-cluster/tensorflow-serving/models/resnet50-v15-fp32/1/saved_model.pb
+          subPath: saved_model.pb
+        - name: azure
           mountPath: /gramine/CI-Examples/tensorflow-serving-cluster/tensorflow-serving/ssl.cfg
-        - name: aesm-path
-          mountPath: /var/run/aesmd/aesm.socket
+          subPath: ssl.cfg
+        - name: var-run-aesmd
+          mountPath: /var/run/aesmd
         securityContext:
           privileged: true
         resources:
@@ -114,15 +119,17 @@ spec:
           requests:
             cpu: "2"
       volumes:
+      - name: azure
+        csi:
+          driver: file.csi.azure.com
+          readOnly: false
+          volumeAttributes:
+            secretName: azure-secret
+            shareName: <fileShareName>
+            mountOptions: "dir_mode=0777,file_mode=0777,cache=strict,actimeo=30,nosharesock"
       - name: sgx-path
         hostPath:
           path: /dev/sgx
-      - name: model-path
+      - name: var-run-aesmd
         hostPath:
-          path: <Your confidential-computing-zoo path>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/models
-      - name: ssl-path
-        hostPath:
-          path: <Your confidential-computing-zoo path>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/ssl_configure/ssl.cfg
-      - name: aesm-path
-        hostPath:
-          path: /var/run/aesmd/aesm.socket
+          path: /var/run/aesmd

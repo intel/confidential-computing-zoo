@@ -151,13 +151,13 @@ and management of the containerized TensorFlow Serving application.
 Executing Confidential TF Serving without Kubernetes
 ----------------------------------------------------
 
-1. Client Preparation
-~~~~~~~~~~~~~~~~~~~~~
-Under client machine, please download source package::
+1. Prepare Model and SSL/TLS Certificates
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+First, download the CCZoo source package::
 
    git clone https://github.com/intel/confidential-computing-zoo.git
 
-1.1 Download the Model
+1.1 Download Model
 ^^^^^^^^^^^^^^^^^^^^^^
 We use ResNet50 model with FP32 precision for TensorFlow Serving to the inference.
 First, use ``download_model.sh`` to download the pre-trained model file. It will
@@ -179,7 +179,7 @@ The converted model file will be under::
 
    models/resnet50-v15-fp32/1/saved_model.pb
 
-1.2 Create the SSL/TLS certificate
+1.2 Create SSL/TLS Certificate
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 We choose gRPC SSL/TLS and create the SSL/TLS Keys and certificates by setting
 TensorFlow Serving domain name to establish a communication link between client
@@ -187,11 +187,10 @@ and TensorFlow Serving.
 
 For ensuring security of the data being transferred between a client and server, SSL/TLS can be implemented either one-way TLS authentication or two-way TLS authentication (mutual TLS authentication).
 
-one-way SSL/TLS authentication(client verifies server)::
+For one-way SSL/TLS authentication (client verifies server)::
 
       service_domain_name=grpc.tf-serving.service.com
       ./generate_oneway_ssl_config.sh ${service_domain_name}
-      tar -cvf ssl_configure.tar ssl_configure
 
 ``generate_oneway_ssl_config.sh`` will generate the directory 
 ``ssl_configure`` which includes ``server/*.pem`` and ``ssl.cfg``.
@@ -199,12 +198,12 @@ one-way SSL/TLS authentication(client verifies server)::
 will be used by TensorFlow Serving.
 
 
-two-way SSL/TLS authentication(server and client verify each other)::
+For two-way SSL/TLS authentication (server and client verify each other)::
 
       service_domain_name=grpc.tf-serving.service.com
       client_domain_name=client.tf-serving.service.com
       ./generate_twoway_ssl_config.sh ${service_domain_name} ${client_domain_name}
-      tar -cvf ssl_configure.tar ssl_configure
+      
 
 ``generate_twoway_ssl_config.sh`` will generate the directory 
 ``ssl_configure`` which includes ``server/*.pem``, ``client/*.pem``, 
@@ -213,7 +212,16 @@ two-way SSL/TLS authentication(server and client verify each other)::
 and ``ssl.cfg`` will be used by TensorFlow Serving.
 
 
-1.3 Create encrypted model file
+Encrypt ssl.cfg::
+
+      mkdir -p plaintext/
+      mv ssl_configure/ssl.cfg plaintext/
+      LD_LIBRARY_PATH=./libs ./gramine-sgx-pf-crypt encrypt -w files/wrap-key -i plaintext/ssl.cfg -o ssl.cfg
+      mv ssl.cfg ssl_configure/
+      tar -cvf ssl_configure.tar ssl_configure
+
+
+1.3 Encrypt Model File
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Starting from Intel SGX SDK v1.9, SGX SDK provides the function of secure file
 I/O operations. This function is provided by a component of the SGX SDK called
@@ -253,57 +261,10 @@ Use the ``gramine-sgx-pf-crypt`` tool to encrypt the model file command as follo
 
 For more information about ``gramine-sgx-pf-crypt``, please refer to `pf_crypt <https://github.com/gramineproject/gramine/tree/master/Pal/src/host/Linux-SGX/tools/pf_crypt>`__.
 
-1.4 Start Secret Provision Service
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-In order to deploy this service easily, we build and run this service in container.
-Basically, we use ``secret_prov_server_dcap`` as the remote SGX Enclave Quote
-authentication service and relies on the Quote-related authentication library
-provided by SGX DCAP. The certification service will obtain Quote certification
-related data from Intel PCCS, such as TCB related information and CRL information.
-After successful verification of SGX Enclave Quote, the key stored in ``files/wrap-key``
-will be sent to the remote application.
-The remote application here is Gramine in the SGX environment.
-After remote Gramine gets the key, it will decrypt the encrypted model file.
 
-Build and run the secret provisioning service container. For deployments on Microsoft Azure::
-
-   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
-   sudo AZURE=1 ./build_secret_prov_image.sh
-   sudo ./run_secret_prov.sh -i secret_prov_server:latest
-   
-For other cloud deployments::
-
-   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
-   ./build_secret_prov_image.sh
-   ./run_secret_prov.sh -i secret_prov_server:latest -a pccs.service.com:ip_addr
-
-For Anolisos cloud deployments::
-
-   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
-   ./build_secret_prov_image.sh anolisos
-   ./run_secret_prov.sh -i anolisos_secret_prov_server:latest -a pccs.service.com:ip_addr
-
-*Note*:
-   1. ``ip_addr`` is the host machine where your PCCS service is installed.
-   2. ``secret provision service`` will start port ``4433`` and monitor request. Under public cloud instance, please make sure the port ``4433`` is enabled to access.
-   3. Under cloud SGX environment (except for Microsoft Azure), if CSP provides their own PCCS server, please replace the PCCS URL in ``sgx_default_qcnl.conf`` with the one provided by CSP. You can start the secret provision service::
-      
-      ./run_secret_prov.sh -i <secret_prov_service_image_id> 
-
-To check the secret provision service logs::
-
-   sudo docker ps -a
-   sudo docker logs <secret_prov_service_container_id>
-
-Get the container's IP address, which will be used when starting the TensorFlow Serving Service in the next step::
-
-   sudo docker ps -a
-   sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <secret_prov_service_container_id>
-   
-
-2. Run TensorFlow Serving w/ Gramine in SGX-enabled machine
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Under SGX-enabled machine, please download source package::
+2. Build TensorFlow Serving Container Image
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+On an SGX-enabled machine, please download source package::
 
    git clone https://github.com/intel/confidential-computing-zoo.git
 
@@ -319,24 +280,25 @@ For example::
    tar -xvf models.tar
    tar -xvf ssl_configure.tar
 
-2.2 Build TensorFlow Serving Docker image
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Build the TensorFlow Serving container. For deployments on Microsoft Azure::
+2.2 Build TensorFlow Serving Container Image
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For deployments on Microsoft Azure::
 
    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
-   sudo AZURE=1 ./build_gramine_tf_serving_image.sh
+   ./build_gramine_tf_serving_image.sh azure
       
-For other cloud deployments::
-
-   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
-   ./build_gramine_tf_serving_image.sh
-
 For Anolisos cloud deployments::
 
    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
    ./build_gramine_tf_serving_image.sh anolisos
 
-The dockerfile used is ``gramine_tf_serving.dockerfile``, which includes the following install items:
+For other cloud deployments::
+
+   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
+   ./build_gramine_tf_serving_image.sh
+
+The gramine_tf_serving dockerfile includes the following install items:
 
 - Install basic dependencies for source code build.
 - Install TensorFlow Serving.
@@ -375,20 +337,126 @@ secret key back to it when attestation verification pass in secret provision ser
 stored in secret provision server.
 For more syntax used in the manifest template, please refer to `Gramine Manifest syntax <https://github.com/gramineproject/gramine/blob/master/Documentation/manifest-syntax.rst>`__.
 
+2.3 TensorFlow Serving Container Measurements
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Take note of the TensorFlow Serving SGX measurements during the TensorFlow Serving container build. These measurements will be used when building the secret provisioning container.
 
-2.3 Execute TensorFlow Serving w/ Gramine in SGX
+Example mr_enclave and mr_signer values from the TensorFlow Serving container build::
+
+   Step 38/45 : RUN make SGX=${SGX} RA_TYPE=${RA_TYPE} -j `nproc` | grep "mr_enclave\|mr_signer\|isv_prod_id\|isv_svn" | tee -a enclave.mr
+    ---> Running in 1c1468764466
+       isv_prod_id: 0
+       isv_svn:     0
+       mr_enclave:  39b02dbf3cd6d6c68eb227a5da019c3721162085116a614ab4be0d1f81199d8f
+       mr_signer:   ae483edd52e38b2ef67f3962b75ad47f987db8d3a42d0cd1ca7b6ee4c7035a6e
+       isv_prod_id: 0
+       isv_svn:     0
+
+Alternatively, the mr_enclave and mr_signer values can be retrieved from a built TensorFlow Serving container image::
+
+   $ ./get_image_enclave_mr.sh <gramine_tf_serving_image_id>
+    mr_enclave:  39b02dbf3cd6d6c68eb227a5da019c3721162085116a614ab4be0d1f81199d8f
+    mr_signer:   ae483edd52e38b2ef67f3962b75ad47f987db8d3a42d0cd1ca7b6ee4c7035a6e
+    isv_prod_id: 0
+    isv_svn:     0
+
+
+
+3. Build Secret Provisioning Container Image
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In order to deploy this service easily, we build and run this service in container.
+Basically, we use ``secret_prov_server_dcap`` as the remote SGX Enclave Quote
+authentication service and relies on the Quote-related authentication library
+provided by SGX DCAP. The certification service will obtain Quote certification
+related data from Intel PCCS, such as TCB related information and CRL information.
+After successful verification of SGX Enclave Quote, the key stored in ``files/wrap-key``
+will be sent to the remote application.
+The remote application here is Gramine in the SGX environment.
+After remote Gramine gets the key, it will decrypt the encrypted model file.
+
+3.1 Configure Expected TensorFlow Serving Container Measurements
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Modify ``<tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov/patches/secret_prov_pf/ra_config.json`` with the TensorFlow Serving container measurements from the previous section. Do not copy and paste the following example values. Use the actual mr_enclave values from your TensorFlow Serving container(s). To support multiple TensorFlow Serving containers, the measurements for each container must be added as separate items in the "mrs" array::
+
+   {
+       "verify_mr_enclave" : "on",
+       "verify_mr_signer" : "on",
+       "verify_isv_prod_id" : "on",
+       "verify_isv_svn" : "on",
+       "mrs": [
+           {
+               "mr_enclave" : "39b02dbf3cd6d6c68eb227a5da019c3721162085116a614ab4be0d1f81199d8f",
+               "mr_signer" : "ae483edd52e38b2ef67f3962b75ad47f987db8d3a42d0cd1ca7b6ee4c7035a6e",
+               "isv_prod_id" : "0",
+               "isv_svn" : "0"
+           }
+       ]
+   }
+
+
+3.2 Build and Run Secret Provisioning Container
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For deployments on Microsoft Azure::
+
+   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
+   ./build_secret_prov_image.sh azure
+   ./run_secret_prov.sh -i secret_prov_server:azure-latest -b https://sharedcus.cus.attest.azure.net
+   
+For Anolisos cloud deployments::
+
+   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
+   ./build_secret_prov_image.sh anolisos
+   ./run_secret_prov.sh -i secret_prov_server:anolisos-latest -a pccs.service.com:ip_addr
+
+For other cloud deployments::
+
+   cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/secret_prov
+   ./build_secret_prov_image.sh
+   ./run_secret_prov.sh -i secret_prov_server:latest -a pccs.service.com:ip_addr
+
+*Note*:
+   1. ``ip_addr`` is the host machine where your PCCS service is installed.
+   2. ``secret provision service`` will start port ``4433`` and monitor request. Under public cloud instance, please make sure the port ``4433`` is enabled to access.
+   3. Under cloud SGX environment (except for Microsoft Azure), if CSP provides their own PCCS server, please replace the PCCS URL in ``sgx_default_qcnl.conf`` with the one provided by CSP. You can start the secret provision service::
+      
+      ./run_secret_prov.sh -i <secret_prov_service_image_id> 
+
+To check the secret provision service logs::
+
+   docker ps -a
+   docker logs <secret_prov_service_container_id>
+
+Get the container's IP address, which will be used when starting the TensorFlow Serving Service in the next step::
+
+   docker ps -a
+   docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <secret_prov_service_container_id>
+   
+
+4. Run TensorFlow Serving w/ Gramine on SGX-enabled machine
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+4.1 Execute TensorFlow Serving w/ Gramine in SGX
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Run the TensorFlow Serving container::
+Run the TensorFlow Serving container.
+
+For deployments on Microsoft Azure::
 
     cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
     cp ssl_configure/ssl.cfg .
-    sudo ./run_gramine_tf_serving.sh -i gramine_tf_serving:latest -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
+    ./run_gramine_tf_serving.sh -i gramine_tf_serving:azure-latest -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr> -b https://sharedcus.cus.attest.azure.net
 
-Run the TensorFlow Serving container::
+For Anolisos cloud deployments::
 
     cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
     cp ssl_configure/ssl.cfg .
-    sudo ./run_gramine_tf_serving.sh -i anolisos_gramine_tf_serving:latest -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
+    ./run_gramine_tf_serving.sh -i gramine_tf_serving:anolisos-latest -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
+
+For other cloud deployments::
+
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/tf_serving
+    cp ssl_configure/ssl.cfg .
+    ./run_gramine_tf_serving.sh -i gramine_tf_serving:latest -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
 
 *Note*:
    1. ``8500-8501`` are the ports created on (bound to) the host, you can change them if you need.
@@ -396,8 +464,8 @@ Run the TensorFlow Serving container::
 
 Check the TensorFlow Serving container logs::
 
-   sudo docker ps -a
-   sudo docker logs <tf_serving_container_id>
+   docker ps -a
+   docker logs <tf_serving_container_id>
 
 Now, the TensorFlow Serving is running in SGX and waiting for remote requests.
 
@@ -408,45 +476,53 @@ Now, the TensorFlow Serving is running in SGX and waiting for remote requests.
 
 Get the container's IP address, which will be used when starting the Client container in the next step::
 
-   sudo docker ps -a
-   sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <tf_serving_container_id>
+   docker ps -a
+   docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <tf_serving_container_id>
 
 
 
-3. Remote Inference Request
-~~~~~~~~~~~~~~~~~
+5. Build Client Container Image and Send Inference Request
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 In this section, the files in the `ssl_configure` directory will be reused.
 
-3.1 Build Client Docker Image 
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Build the Client container::
+5.1 Build Client Container Image 
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Build the Client container.
+
+For Ubuntu::
 
     cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
-    sudo docker build -f client.dockerfile . -t client:latest
+    docker build -f client.dockerfile . -t client:latest
 
-Build the Client container in Anolisos::
+For Anolisos::
 
     cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
-    sudo docker build -f anolisos_client.dockerfile . -t anolisos_client:latest
+    docker build -f anolisos_client.dockerfile . -t anolisos_client:latest
 
-Run the Client container::
+5.2 Run Client Container
+^^^^^^^^^^^^^^^^^^^^^^^^
+Run the Client container.
 
-    sudo docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" client:latest bash
+For Ubuntu::
 
-Run the Client container in Anolisos::
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
+    docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" client:latest bash   
 
-    sudo docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" anolisos_client:latest bash
+For Anolisos::
 
-3.2 Send remote inference request
-^^^^^^^^^^^^^^^^^^^^^^^
+    cd <tensorflow-serving-cluster dir>/tensorflow-serving/docker/client
+    docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_service_ip_addr>" anolisos_client:latest bash
+
+5.3 Send Remote Inference Request
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Send the remote inference request (with a dummy image) to demonstrate a single TensorFlow serving node with remote attestation::
 
-   one-way SSL/TLS authentication::
+   For one-way SSL/TLS authentication::
 
       cd /client
       python3 ./resnet_client_grpc.py -batch 1 -cnum 1 -loop 50 -url grpc.tf-serving.service.com:8500 -crt `pwd -P`/ssl_configure/server/cert.pem
 
-   two-way SSL/TLS authentication::
+   For two-way SSL/TLS authentication::
 
       cd /client
       python3 ./resnet_client_grpc.py -batch 1 -cnum 1 -loop 50 -url grpc.tf-serving.service.com:8500 -ca `pwd -P`/ssl_configure/ca_cert.pem -crt `pwd -P`/ssl_configure/client/cert.pem -key `pwd -P`/ssl_configure/client/key.pem
@@ -461,10 +537,10 @@ Then we will use Kubernetes to start multiple TensorFlow Serving containers.
 The following sections will reuse the machine/VM Intel SGX DCAP setup and containers built from the previous sections.
 Stop and remove the client and tf-serving containers. Start the secret provisioning container if it isn't running::
 
-    sudo docker ps -a
-    sudo docker stop <client_container_id> <tf_serving_container_id>
-    sudo docker rm <client_container_id> <tf_serving_container_id>
-    sudo docker start <secret_prov_service_container_id>
+    docker ps -a
+    docker stop <client_container_id> <tf_serving_container_id>
+    docker rm <client_container_id> <tf_serving_container_id>
+    docker start <secret_prov_service_container_id>
 
 1. Setup Kubernetes
 ~~~~~~~~~~~~~~~~~~~
@@ -552,9 +628,9 @@ The config file will open in an editor. Add the following hosts section::
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Setup a local Docker registry to serve the TensorFlow Serving container image to the Kubernetes cluster::
 
-    sudo docker run -d -p 5000:5000 --restart=always --name registry registry:2
-    sudo docker tag gramine_tf_serving:latest localhost:5000/gramine_tf_serving
-    sudo docker push localhost:5000/gramine_tf_serving
+    docker run -d -p 5000:5000 --restart=always --name registry registry:2
+    docker tag gramine_tf_serving:latest localhost:5000/gramine_tf_serving
+    docker push localhost:5000/gramine_tf_serving
 
    
 1.7 Start TensorFlow Serving Deployment
@@ -646,7 +722,7 @@ First, get the CLUSTER-IP of the load balanced TensorFlow Serving service::
 
 Run the Client container using the load balanced TensorFlow Serving IP address::
 
-    $ sudo docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_CLUSTER-IP>" client:latest bash
+    $ docker run -it --add-host="grpc.tf-serving.service.com:<tf_serving_CLUSTER-IP>" client:latest bash
     
 For one-way SSL/TLS authentication::
 

@@ -78,10 +78,28 @@ RUN apt-get update
 RUN apt-get install -y libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-qe3-logic sgx-aesm-service
 
 # Install SGX DCAP
-RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-default-qpl libsgx-dcap-quote-verify-dev
+RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev
+
+# Install SGX-DCAP quote provider library
+# Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
+RUN AZUREDIR=/azure \
+    && apt-get install -y libssl-dev libcurl4-openssl-dev pkg-config software-properties-common \
+    && add-apt-repository ppa:team-xbmc/ppa -y \
+    && apt-get update \
+    && apt-get install -y nlohmann-json3-dev \
+    && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
+    && cd ${AZUREDIR} \
+    && git checkout 1.10.0 \
+    && git submodule update --recursive --init \
+    && cd src/Linux \
+    && ./configure \
+    && make DEBUG=1 \
+    && make install \
+    && cp libdcap_quoteprov.so /usr/lib/x86_64-linux-gnu/
 
 # Clone Gramine and Init submodules
-ARG GRAMINE_VERSION=v1.3.1
+# dimakuv/ra-tls-maa
+ARG GRAMINE_VERSION=a2166216fd795adfa7391be7fb6398116c317ee3
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
     && git checkout ${GRAMINE_VERSION}
@@ -110,7 +128,7 @@ RUN curl -LO https://storage.googleapis.com/tensorflow-serving-apt/pool/${TF_SER
 RUN apt-get clean all
 
 # Build Secret Provision
-ENV RA_TYPE=dcap
+ENV RA_TYPE=maa
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
     && make app ${RA_TYPE} RA_TYPE=${RA_TYPE}
 
