@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2022 Intel Corporation
+# Copyright (c) 2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,36 +28,24 @@ else
     ip_addr=127.0.0.1
 fi
 
-tag=latest
+if  [ ! -n "$3" ] ; then
+    tag=ali_tdx_latest
+else
+    tag=$3
+fi
 
-if [ "$3" == "ubuntu" ] || [ ! -n "$3" ]; then
-docker run -itd \
-    --restart=always \
-    --cap-add=SYS_PTRACE \
-    --security-opt seccomp=unconfined \
-    --device=/dev/sgx_enclave:/dev/sgx/enclave \
-    --device=/dev/sgx_provision:/dev/sgx/provision \
-    --name=${name} \
-    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
-    -v /home:/home/host-home \
-    --net=host \
-    --add-host=pccs.service.com:${ip_addr} \
-    horizontal_fl:${tag} \
-    bash
-elif [ "$3" == "anolisos" ]; then
 docker run -it \
     --restart=always \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
-    --device=/dev/sgx_enclave:/dev/sgx/enclave \
-    --device=/dev/sgx_provision:/dev/sgx/provision \
     --name=${name} \
-    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+    --privileged=true \
+    -v /var/run/aesmd/aesm:/var/run/aesmd/aesm \
     -v /home:/home/host-home \
+    -v /dev:/dev \
     --net=host \
+    --add-host=pa.com:127.0.0.1 \
+    --add-host=pb.com:127.0.0.1 \
     --add-host=pccs.service.com:${ip_addr} \
-    anolisos_horizontal_fl:${tag} \
+    horizontal_fl:${tag} \
     bash
-else
-    echo "unsupported distros '$3', should be 'ubuntu' or 'anolisos'"
-fi

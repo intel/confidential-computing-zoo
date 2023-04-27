@@ -5,3 +5,4 @@ opencv-python>=4.4.0
 tensorflow==2.11.1
 tensorflow-serving-api==2.6.2
 protobuf==3.19.5
+
