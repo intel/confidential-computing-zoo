@@ -279,7 +279,7 @@ For Anolisos cloud deployments::
 
 For other cloud deployments::
 
-   docker pull intelcczoo/tensorflow_serving:tensorflow_serving_latest
+   docker pull intelcczoo/tensorflow_serving:default_tensorflow_serving_latest
 
 
 2.2 Alternatively Build TensorFlow Serving Container Image
@@ -441,9 +441,9 @@ Modify ``<cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/do
 Update the Secret Provisioning container image with the TensorFlow Serving container's SGX measurements. This creates an updated Secret Provisioning container image with an updated tag::
 
    cd <cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/secret_prov/patches/secret_prov_pf
-   ./update_sgx_measurements.sh <secret_prov_repo:tag>
+   ./update_sgx_measurements.sh <tensorflow_serving:secret_prov_server_tag>
 
-This will create a new Secret Provisioning container image with "-updated" appended to its tag.
+This will create a new Secret Provisioning container image with "_updated" appended to its tag.
 
 
 6. Run Secret Provisioning Container
@@ -457,22 +457,22 @@ Change directories::
 
 For deployments on Microsoft Azure::
   
-   ./run_secret_prov.sh -i <secret_prov_repo:azure-tag-updated> -b https://sharedcus.cus.attest.azure.net
+   ./run_secret_prov.sh -i <tensorflow_serving:azure_secret_prov_server_tag_updated> -b https://sharedcus.cus.attest.azure.net
    
 For Anolisos cloud deployments::
 
-   ./run_secret_prov.sh -i <secret_prov_repo:anolisos-tag-updated> -a pccs.service.com:ip_addr
+   ./run_secret_prov.sh -i <tensorflow_serving:anolis_secret_prov_server_tag_updated> -a pccs.service.com:ip_addr
 
 For other cloud deployments::
 
-   ./run_secret_prov.sh -i <secret_prov_repo:default-tag-updated> -a pccs.service.com:ip_addr
+   ./run_secret_prov.sh -i <tensorflow_serving:default_secret_prov_server_tag_updated> -a pccs.service.com:ip_addr
 
 *Note*:
    1. ``ip_addr`` is the host machine where your PCCS service is installed.
    2. ``secret provision service`` will start port ``4433`` and monitor request. Under public cloud instance, please make sure the port ``4433`` is enabled to access.
    3. Under cloud SGX environment (except for Microsoft Azure), if CSP provides their own PCCS server, please replace the PCCS URL in ``sgx_default_qcnl.conf`` with the one provided by CSP. You can start the secret provision service::
       
-      ./run_secret_prov.sh -i <secret_prov_repo:default-tag-updated> 
+      ./run_secret_prov.sh -i <tensorflow_serving:secret_prov_server_tag_updated> 
 
 To check the secret provision service logs::
 
@@ -512,15 +512,15 @@ Run the TensorFlow Serving container, specifying the TensorFlow Serving containe
 
 For deployments on Microsoft Azure::
 
-    ./run_gramine_tf_serving.sh -i <gramine_tf_serving_repo:azure-tag> -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr> -b https://sharedcus.cus.attest.azure.net
+    ./run_gramine_tf_serving.sh -i <tensorflow_serving:azure_tensorflow_serving_tag> -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr> -b https://sharedcus.cus.attest.azure.net
 
 For Anolisos cloud deployments::
 
-    ./run_gramine_tf_serving.sh -i <gramine_tf_serving_repo:anolisos-tag> -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
+    ./run_gramine_tf_serving.sh -i <tensorflow_serving:anolis_tensorflow_serving_tag> -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
 
 For other cloud deployments::
 
-    ./run_gramine_tf_serving.sh -i <gramine_tf_serving_repo:default-tag> -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
+    ./run_gramine_tf_serving.sh -i <tensorflow_serving:default_tensorflow_serving_tag> -p 8500-8501 -m resnet50-v15-fp32 -s ssl.cfg -a attestation.service.com:<secret_prov_service_container_ip_addr>
 
 *Note*:
    1. ``8500-8501`` are the ports created on (bound to) the host, you can change them if you need.
@@ -573,11 +573,11 @@ Change directories::
     
 For Anolisos::
 
-    docker build -f anolisos_client.dockerfile . -t anolisos_client:latest
+    docker build -f anolisos_client.dockerfile . -t tensorflow_serving:anolis_client_latest
 
 For other cloud deployments, including on Microsoft Azure::
 
-    docker build -f client.dockerfile . -t client:latest
+    docker build -f client.dockerfile . -t tensorflow_serving:default_client_latest
 
 
 7. Run Client Container and Send Inference Request
@@ -729,18 +729,18 @@ There are two Yaml files: ``deploy.yaml`` and ``ingress.yaml``.
 You can look at `this <https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#deploymentspec-v1-apps>`__
 for more information about Yaml.
 
-Customize the ``deploy.yaml`` TensorFlow Serving container information, if needed::
+Customize ``deploy.yaml`` with your TensorFlow Serving container tag::
 
     containers:
     - name: gramine-tf-serving-container
-      image: localhost:5000/gramine_tf_serving
+      image: localhost:5000/tensorflow_serving:<Your tensorflow_serving tag>
       imagePullPolicy: IfNotPresent
 
-Customize the ``deploy.yaml`` model and ssl host paths::
-
+Customize ``deploy.yaml`` with your model host path and ssl host path::     
       - name: model-path
         hostPath:
           path: <Your confidential-computing-zoo path>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/models
+          
       - name: ssl-path
         hostPath:
           path: <Your confidential-computing-zoo path>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/ssl_configure/ssl.cfg
