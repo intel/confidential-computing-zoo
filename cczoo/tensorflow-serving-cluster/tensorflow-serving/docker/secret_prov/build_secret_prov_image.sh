@@ -23,27 +23,29 @@ else
     tag=$2
 fi
 
+repo_name="tensorflow_serving"
+
 # You can remove build-arg http_proxy and https_proxy if your network doesn't need it
 # proxy_server=""
 
 if [ "$1" == "anolisos" ] ; then
 DOCKER_BUILDKIT=0 docker build \
     -f secret_prov.anolisos.dockerfile \
-    -t secret_prov_server:anolisos-${tag} \
+    -t ${repo_name}:anolis_secret_prov_server_${tag} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     .
 elif [ "$1" == "azure" ] ; then
 DOCKER_BUILDKIT=0 docker build \
     -f secret_prov.azure.dockerfile \
-    -t secret_prov_server:azure-${tag} \
+    -t ${repo_name}:azure_secret_prov_server_${tag} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     .
 else
 DOCKER_BUILDKIT=0 docker build \
     -f secret_prov.dockerfile \
-    -t secret_prov_server:${tag} \
+    -t ${repo_name}:default_secret_prov_server_${tag} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     .

@@ -57,7 +57,7 @@ spec:
     spec:
       containers:
       - name: gramine-tf-serving-container
-        image: localhost:5000/gramine_tf_serving
+        image: localhost:5000/tensorflow_serving:<Your tensorflow_serving tag>
         imagePullPolicy: Always
         env:
         - name: model_name

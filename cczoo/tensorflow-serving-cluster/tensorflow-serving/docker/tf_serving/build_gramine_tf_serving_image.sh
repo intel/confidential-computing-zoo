@@ -26,24 +26,26 @@ fi
 # You can remove build-arg http_proxy and https_proxy if your network doesn't need it
 # proxy_server=""
 
+repo_name="tensorflow_serving"
+
 if [ "$1" == "anolisos" ] ; then
 DOCKER_BUILDKIT=0 docker build \
     -f gramine_tf_serving.anolisos.dockerfile \
-    -t gramine_tf_serving:anolisos-${tag} \
+    -t ${repo_name}:anolis_tensorflow_serving_${tag} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     .
 elif [ "$1" == "azure" ] ; then
 DOCKER_BUILDKIT=0 docker build \
     -f gramine_tf_serving.azure.dockerfile \
-    -t gramine_tf_serving:azure-${tag} \
+    -t ${repo_name}:azure_tensorflow_serving_${tag}  \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     .
 else
 DOCKER_BUILDKIT=0 docker build \
     -f gramine_tf_serving.dockerfile \
-    -t gramine_tf_serving:${tag} \
+    -t ${repo_name}:default_tensorflow_serving_${tag}  \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     .

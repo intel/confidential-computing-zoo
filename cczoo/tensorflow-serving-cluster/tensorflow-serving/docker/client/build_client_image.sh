@@ -23,7 +23,8 @@ function usage() {
     echo -e "  -b BUILDTYPE   build type;"
     echo -e "                   BUILDTYPE is 'anolisos', or 'default';"
     echo -e "                   BUILDTYPE default is 'default'"
-    echo -e "  -t TAG         docker tag;"
+    echo -e "  -t TAG         docker tag suffix;"
+    echo -e "                   docker tag is BUILDTYPE_client_TAG;"
     echo -e "                   TAG default is 'latest'"
     echo -e "  -p PROXY       proxy info;"
     echo -e "                   PROXY format is http://proxyserver:port;"
@@ -33,6 +34,7 @@ function usage() {
 build_type="default"
 tag="latest"
 proxy_server=""
+repo_name="tensorflow_serving"
 
 while getopts "h?b:t:p:" OPT; do
     case $OPT in
@@ -63,14 +65,14 @@ done
 if [ "$build_type" == "anolisos" ] ; then
 DOCKER_BUILDKIT=0 docker build \
     -f anolisos_client.dockerfile \
-    -t client:anolisos-${tag} \
+    -t ${repo_name}:anolis_client_${tag} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     .
 elif [ "$build_type" == "default" ] ; then
 DOCKER_BUILDKIT=0 docker build \
     -f client.dockerfile \
-    -t client:default-${tag} \
+    -t ${repo_name}:default_client_${tag} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     .
