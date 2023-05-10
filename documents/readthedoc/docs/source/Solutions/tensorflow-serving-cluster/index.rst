@@ -621,11 +621,11 @@ Stop and remove the client and tf-serving containers. Start the Secret Provision
     docker ps -a
     docker stop <client_container_id> <tf_serving_container_id>
     docker rm <client_container_id> <tf_serving_container_id>
-    docker start <secret_prov_service_container_id>
+    docker start <secret_prov_server_container_id>
 
 1. Setup Kubernetes
 ~~~~~~~~~~~~~~~~~~~
-First, please make sure the system time on your machine is updated.
+First, please make sure the system date/time on your machine is updated to the current date/time.
 
 1.1 Install Kubernetes
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -636,20 +636,19 @@ use ``install_kubernetes.sh`` to install Kubernetes::
    cd <cczoo_base_dir>/cczoo/tensorflow-serving-cluster/kubernetes
    sudo ./install_kubernetes.sh
 
-Create the control plane / master node and allow pods to be scheduled onto this node::
+Create the control plane / master node::
 
    unset http_proxy && unset https_proxy
    swapoff -a && free -m
    sudo rm /etc/containerd/config.toml
    containerd config default | sudo tee /etc/containerd/config.toml
    sudo systemctl restart containerd
-   sudo kubeadm init --v=5 --node-name=master-node --pod-network-cidr=10.244.0.0/16 --kubernetes-version=v1.23.9 --cri-socket /run/containerd/containerd.sock
+   sudo kubeadm init --v=5 --node-name=master-node --pod-network-cidr=10.244.0.0/16 --kubernetes-version=v1.27.1
 
    mkdir -p $HOME/.kube
    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
    sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
-   kubectl taint nodes --all node-role.kubernetes.io/master-
 
 1.2 Setup Flannel in Kubernetes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -675,14 +674,21 @@ Deploy the Nginx service::
 
    kubectl apply -f ingress-nginx/deploy-nodeport.yaml
 
-1.4 Verify Node Status
+1.4 Allow Scheduling On Node
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Allow pods to be scheduled on the node::
+
+   kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
+   
+1.5 Verify Node Status
 ^^^^^^^^^^^^^^^^^^^^^^
 
 Get node info to verify that the node status is Ready::
 
    kubectl get node
    
-1.5 Config Kubernetes cluster DNS
+1.6 Config Kubernetes cluster DNS
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Configure the cluster DNS in Kubernetes so that all the TensorFlow
@@ -705,16 +711,16 @@ The config file will open in an editor. Add the following hosts section::
 
 ``${secret_prov_service_container_ip_addr}`` is the IP address of the Secret Provisioning Server container.
 
-1.6 Setup Docker Registry
+1.7 Setup Docker Registry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Setup a local Docker registry to serve the TensorFlow Serving container image to the Kubernetes cluster::
 
     docker run -d -p 5000:5000 --restart=always --name registry registry:2
-    docker tag gramine_tf_serving:latest localhost:5000/gramine_tf_serving
-    docker push localhost:5000/gramine_tf_serving
+    docker tag tensorflow_serving:<tag> localhost:5000/tensorflow_serving:<tag>
+    docker push localhost:5000/tensorflow_serving:<tag>
 
    
-1.7 Start TensorFlow Serving Deployment
+1.8 Start TensorFlow Serving Deployment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Let's take a look at the configuration for the elastic deployment of
 TensorFlow Serving under the directory::
@@ -734,13 +740,14 @@ Customize ``deploy.yaml`` with your TensorFlow Serving container tag::
       imagePullPolicy: IfNotPresent
 
 Customize ``deploy.yaml`` with your model host path and ssl host path::     
-      - name: model-path
-        hostPath:
-          path: <Your confidential-computing-zoo path>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/models
+
+     - name: model-path
+       hostPath:
+         path: <Your confidential-computing-zoo path>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/models
           
-      - name: ssl-path
-        hostPath:
-          path: <Your confidential-computing-zoo path>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/ssl_configure/ssl.cfg
+     - name: ssl-path
+       hostPath:
+         path: <Your confidential-computing-zoo path>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/ssl_configure/ssl.cfg
 
 
 ``ingress.yaml`` mainly configures the networking options.
@@ -755,7 +762,7 @@ Apply the two yaml files::
     kubectl apply -f deploy.yaml
     kubectl apply -f ingress.yaml
 
-1.8 Verify TensorFlow Serving Deployment
+1.9 Verify TensorFlow Serving Deployment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Verify one pod of the TensorFlow Serving container is running and that the service is ready (look for log "Entering the event loop")::
 
@@ -771,7 +778,7 @@ Check pod info if the pod is not running::
 Check the coredns setup if the TensorFlow Serving service is not ready. This can be caused when the TensorFlow Serving service is unable to obtain the wrap-key (used to decrypt the model file) from the Secret Provisioning Server container.
 
 
-1.9 Scale the TensorFlow Serving Service
+1.10 Scale the TensorFlow Serving Service
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Scale the TensorFlow Serving service to two replicas::
@@ -791,10 +798,10 @@ Verify that two pods are now running. Also verify that the second pod of the Ten
 These TensorFlow Serving containers perform remote attestation with the Secret Provisioning Server to get the secret key. With the secret key, 
 the TensorFlow Serving containers can decrypted the model file.
 
-1.10. Run Client Container and Send Inference Request
+1.11 Run Client Container and Send Inference Request
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-1.10.1 Run Client Container
+1.11.1 Run Client Container
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 First, get the CLUSTER-IP of the load balanced TensorFlow Serving service::
 
@@ -814,7 +821,7 @@ For Anolisos, IMAGEID is <anolisos_client:tag>.
 For other cloud deployments, including on Microsoft Azure, IMAGEID is <default_client:tag>.
 
 
-1.10.2 Send Remote Inference Request
+1.11.2 Send Remote Inference Request
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Send the remote inference request (with a dummy image) to demonstrate a single TensorFlow serving node with remote attestation::
 
