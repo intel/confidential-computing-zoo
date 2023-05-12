@@ -142,8 +142,8 @@ This solution leverages the following ingredients.
   is an open-source system for automating deployment, scaling, and management of
   containerized applications. In this guide, we will first run the solution without the use of Kubernetes. Then we will run the solution using Kubernetes to provide automated deployment, scaling, and management of the containerized TensorFlow Serving application.
 
-
-Executing Confidential TF Serving without Kubernetes
+.. _without_k8s:
+Executing Confidential TF Serving Without Kubernetes
 ----------------------------------------------------
 There are several options to run this solution.
 
@@ -634,19 +634,23 @@ Observe the inference response output that begins with the following string::
 
 
 
-Executing Confidential TF Serving with Kubernetes
+Executing Confidential TF Serving With Kubernetes
 --------------------------------------------------
+In this section, we will setup Kubernetes on the SGX-enabled machine. Then we will use Kubernetes to start multiple TensorFlow Serving containers.
+
 There are several options to run this solution.
 
 Typical Setup: The Client container, Secret Provisioning Server container, and Kubernetes run on separate systems/VMs.
 
 Quick Start Setup (for demonstration purposes): Run all steps on a single system/VM - Client container, Secret Provisioning Server container, and Kubernetes all run on the same system/VM.
 
-In this section, we will setup Kubernetes on the SGX-enabled machine.
-Then we will use Kubernetes to start multiple TensorFlow Serving containers.
-The following sections will reuse the machine/VM Intel SGX DCAP setup and containers built from the previous sections.
 
-1. Preparation
+1. Prerequisites
+~~~~~~~~~~~~~~~~
+First, complete all the steps from the section Executing Confidential TF Serving Without Kubernetes, as this solution reuses the container images and the machine/VM Intel SGX DCAP setup.
+
+
+2. Preparation
 ~~~~~~~~~~~~~~
 Stop and remove the client and tf-serving containers. Start the Secret Provisioning Server container if it isn't running::
 
@@ -661,11 +665,11 @@ Take note of the Secret Provisioning Server container's IP address, which will b
    docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <secret_prov_server_container_id>
    
 
-2. Setup Kubernetes
+3. Setup Kubernetes
 ~~~~~~~~~~~~~~~~~~~
 This section sets up Kubernetes on the SGX-enabled system/VM that will run the TensorFlow Serving container(s).
 
-2.1 Install Kubernetes
+3.1 Install Kubernetes
 ^^^^^^^^^^^^^^^^^^^^^^
 
 First, please make sure the system date/time on your machine is updated to the current date/time.
@@ -690,7 +694,7 @@ Create the control plane / master node::
    sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
 
-2.2 Setup Flannel in Kubernetes
+3.2 Setup Flannel in Kubernetes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Setup Flannel in Kubernetes.
@@ -704,7 +708,7 @@ Deploy the Flannel service::
 
    kubectl apply -f flannel/deploy.yaml
 
-2.3 Setup Ingress-Nginx in Kubernetes
+3.3 Setup Ingress-Nginx in Kubernetes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Setup Ingress-Nginx in Kubernetes.
@@ -714,21 +718,21 @@ Deploy the Nginx service::
 
    kubectl apply -f ingress-nginx/deploy-nodeport.yaml
 
-2.4 Allow Scheduling On Node
+3.4 Allow Scheduling On Node
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Allow pods to be scheduled on the node::
 
    kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
    
-2.5 Verify Node Status
+3.5 Verify Node Status
 ^^^^^^^^^^^^^^^^^^^^^^
 
 Get node info to verify that the node status is Ready::
 
    kubectl get node
    
-2.6 Config Kubernetes cluster DNS
+3.6 Config Kubernetes cluster DNS
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Configure the cluster DNS in Kubernetes so that all the TensorFlow
@@ -752,16 +756,29 @@ The config file will open in an editor. Add the following "hosts" section above 
 
 
 
-2.7 Setup Docker Registry
+3.7 Setup Docker Registry
 ^^^^^^^^^^^^^^^^^^^^^^^^^
-Setup a local Docker registry to serve the TensorFlow Serving container image to the Kubernetes cluster::
+Setup a local Docker registry to serve the TensorFlow Serving container image to the Kubernetes cluster.
+
+Create the docker registry::
 
     docker run -d -p 5000:5000 --restart=always --name registry registry:2
-    docker tag tensorflow_serving:<tag> localhost:5000/tensorflow_serving:<tag>
-    docker push localhost:5000/tensorflow_serving:<tag>
+
+List the docker images, and take note of the tag of the TensorFlow Serving container image::
+
+    docker images
+
+Create a new tag, replacing "<tensorflow_serving_tag>" with the tag of the TensorFlow Serving container image::
+
+    tag=<tensorflow_serving_tag>
+    docker tag tensorflow_serving:${tag} localhost:5000/tensorflow_serving:${tag}
+    
+Push the TensorFlow Serving container image to the local Docker registry::
+
+    docker push localhost:5000/tensorflow_serving:${tag}
 
    
-2.8 Start TensorFlow Serving Deployment
+3.8 Start TensorFlow Serving Deployment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Let's take a look at the configuration for the elastic deployment of
 TensorFlow Serving under the directory::
@@ -803,7 +820,7 @@ Apply the two yaml files::
     kubectl apply -f deploy.yaml
     kubectl apply -f ingress.yaml
 
-2.9 Verify TensorFlow Serving Deployment
+3.9 Verify TensorFlow Serving Deployment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Verify one pod of the TensorFlow Serving container is running and that the service is ready::
 
@@ -830,7 +847,7 @@ Check pod info if the pod is not running::
 Check the coredns setup if the TensorFlow Serving service is not ready. This can be caused when the TensorFlow Serving service is unable to obtain the wrap-key (used to decrypt the model file) from the Secret Provisioning Server container.
 
 
-2.10 Scale the TensorFlow Serving Service
+3.10 Scale the TensorFlow Serving Service
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Scale the TensorFlow Serving service to two replicas::
@@ -848,10 +865,10 @@ Verify that two pods are now running. Also verify that the second pod of the Ten
     $ kubectl logs -n gramine-tf-serving gramine-tf-serving-deployment-548f95f46d-q4bcg
 
 
-3. Run Client Container and Send Inference Request
+4. Run Client Container and Send Inference Request
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-3.1 Get IP Address of TensorFlow Serving Service
+4.1 Get IP Address of TensorFlow Serving Service
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Get the CLUSTER-IP of the load balanced TensorFlow Serving service::
 
@@ -860,7 +877,7 @@ Get the CLUSTER-IP of the load balanced TensorFlow Serving service::
     gramine-tf-serving-service   NodePort   10.108.27.161   <none>        8500:30500/TCP   13m
 
 
-3.2 Run Client Container
+4.2 Run Client Container
 ^^^^^^^^^^^^^^^^^^^^^^^^
 On the Client system/VM, change directories and run the Client container, where IPADDR is the CLUSTER-IP value::
 
@@ -875,7 +892,7 @@ For Anolisos, IMAGEID is <anolisos_client:tag>.
 For other cloud deployments, including on Microsoft Azure, IMAGEID is <default_client:tag>.
 
 
-3.3 Send Remote Inference Request
+4.3 Send Remote Inference Request
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 From the Client container, send the remote inference request (with a dummy image)::
 
@@ -896,7 +913,7 @@ Observe the inference response output that begins with the following string::
 
 
 
-4. Cleaning Up
+5. Cleaning Up
 ~~~~~~~~~~~~~~
 
 To stop the TensorFlow Serving deployment::
