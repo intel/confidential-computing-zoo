@@ -63,9 +63,9 @@ Table of Contents
    LibOS/libos.md
 
 
-.. tocree::
+.. toctree::
    :maxdepth: 1
-   :cation: TDX Introduction
+   :caption: TDX Introduction
 
    TEE/TDX/inteltdx.md
    TEE/TDX/tdxstack.md
