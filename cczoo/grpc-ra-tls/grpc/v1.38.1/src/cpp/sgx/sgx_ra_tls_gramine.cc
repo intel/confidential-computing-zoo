@@ -18,7 +18,8 @@
 
 #ifdef SGX_RA_TLS_GRAMINE_BACKEND
 
-#include "sgx_ra_tls_impl.h"
+#include <grpcpp/security/sgx/sgx_ra_tls_backends.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_impl.h>
 
 namespace grpc {
 namespace sgx {
@@ -51,23 +52,23 @@ std::vector<std::string> gramine_generate_key_cert() {
     std::string error = "";
     std::vector<std::string> key_cert;
 
-    mbedtls_x509_crt srvcert;
-    mbedtls_pk_context pkey;
+    mbedtls_x509_crt cert;
+    mbedtls_pk_context key;
 
-    mbedtls_x509_crt_init(&srvcert);
-    mbedtls_pk_init(&pkey);
+    mbedtls_x509_crt_init(&cert);
+    mbedtls_pk_init(&key);
 
-    int ret = (*ra_tls_create_key_and_crt)(&pkey, &srvcert);
+    int ret = (*ra_tls_create_key_and_crt)(&key, &cert);
     if (ret != 0) {
         error = "gramine_generate_key_cert->ra_tls_create_key_and_crt";
         goto out;
     }
 
-    unsigned char private_key_pem[CERT_KEY_MAX_SIZE],
-                  cert_pem[CERT_KEY_MAX_SIZE];
+    unsigned char key_buffer[CERT_KEY_MAX_SIZE],
+                  cert_buffer[CERT_KEY_MAX_SIZE];
     size_t olen;
 
-    ret = mbedtls_pk_write_key_pem(&pkey, private_key_pem, CERT_KEY_MAX_SIZE);
+    ret = mbedtls_pk_write_key_pem(&key, key_buffer, CERT_KEY_MAX_SIZE);
     if (ret != 0) {
         error = "gramine_generate_key_cert->mbedtls_pk_write_key_pem";
         goto out;
@@ -75,19 +76,19 @@ std::vector<std::string> gramine_generate_key_cert() {
 
     ret = mbedtls_pem_write_buffer("-----BEGIN CERTIFICATE-----\n",
                                    "-----END CERTIFICATE-----\n",
-                                   srvcert.raw.p, srvcert.raw.len,
-                                   cert_pem, CERT_KEY_MAX_SIZE, &olen);
+                                   cert.raw.p, cert.raw.len,
+                                   cert_buffer, CERT_KEY_MAX_SIZE, &olen);
     if (ret != 0) {
         error = "gramine_generate_key_cert->mbedtls_pem_write_buffer";
         goto out;
     };
 
-    key_cert.emplace_back(std::string((char*) private_key_pem));
-    key_cert.emplace_back(std::string((char*) cert_pem));
+    key_cert.emplace_back(std::string((char*) key_buffer));
+    key_cert.emplace_back(std::string((char*) cert_buffer));
 
 out:
-    mbedtls_x509_crt_free(&srvcert);
-    mbedtls_pk_free(&pkey);
+    mbedtls_x509_crt_free(&cert);
+    mbedtls_pk_free(&key);
 
     if (ret != 0) {
         throw std::runtime_error(
@@ -119,12 +120,43 @@ void gramine_verify_init() {
 }
 
 int gramine_verify_cert(const char *der_crt, size_t len) {
-    return (*_ctx_.verify_callback_f)((uint8_t*)((void*)der_crt), len);
+    return (*_ctx_.verify_callback_f)((uint8_t*)der_crt, len);
 }
 
-ra_tls_measurement gramine_parse_measurement(const char *der_crt, size_t len) {
-    // TODO
-    return ra_tls_measurement();
+int gramine_parse_mr_callback(const char* mr_enclave, const char* mr_signer,
+                              const char* isv_prod_id, const char* isv_svn) {
+    struct ra_tls_measurement mr;
+    memcpy(mr.mr_enclave, mr_enclave, 32);
+    memcpy(mr.mr_signer, mr_signer, 32);
+    mr.isv_prod_id = *(uint16_t*)isv_prod_id;
+    mr.isv_svn = *(uint16_t*)isv_svn;
+    _ctx_.cache.mrs.insert({0, mr});
+    return 0;
+}
+
+ra_tls_measurement gramine_parse_measurement(const char *crt, size_t len) {
+    std::lock_guard<std::mutex> lock(_ctx_.mtx);
+
+    auto set_verify_mr_callback =
+        reinterpret_cast<void (*)(int (*)(const char *mr_enclave,
+                                          const char *mr_signer,
+                                          const char *isv_prod_id,
+                                          const char *isv_svn))>(
+            _ctx_.verify_lib.get_func("ra_tls_set_measurement_callback"));
+    (*set_verify_mr_callback)(gramine_parse_mr_callback);
+
+    gramine_verify_cert(crt, len);
+    ra_tls_measurement mr = _ctx_.cache.mrs[0];
+
+    set_verify_mr_callback =
+        reinterpret_cast<void (*)(int (*)(const char *mr_enclave,
+                                          const char *mr_signer,
+                                          const char *isv_prod_id,
+                                          const char *isv_svn))>(
+            _ctx_.verify_lib.get_func("ra_tls_set_measurement_callback"));
+    (*set_verify_mr_callback)(verify_measurement);
+
+    return mr;
 }
 
 } // namespace sgx

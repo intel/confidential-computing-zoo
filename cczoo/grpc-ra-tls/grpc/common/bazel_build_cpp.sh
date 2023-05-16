@@ -15,20 +15,21 @@
 
 set -ex
 
+export ABSEIL_PATH=${GRPC_PATH}/third_party/abseil-cpp
+
+if [ -z ${BUILD_TYPE} ]; then
+    export BUILD_TYPE=Debug
+fi
+
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
     export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
-if [ -z ${SGX_RA_TLS_SDK} ]; then
-    export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
-fi
+cd ${GRPC_PATH}
 
-${GRPC_PATH}/build_python.sh
+echo 'RA_TLS_BACKEND = "'${SGX_RA_TLS_BACKEND}'"' > ${GRPC_PATH}/bazel/ratls.bzl
+cat ${GRPC_PATH}/bazel/ratls.bzl
 
-cur_dir=`dirname $0`
+bazel build //:all --sandbox_debug -s -c dbg
 
-mkdir -p ${cur_dir}/build
-
-cp -r ${cur_dir}/*.py ${cur_dir}/build
-cp ${GRPC_PATH}/dynamic_config.json ${cur_dir}/build
-python3 -m grpc_tools.protoc -I ${GRPC_PATH}/examples/protos --python_out=${cur_dir}/build --grpc_python_out=${cur_dir}/build ratls.proto
+cd -

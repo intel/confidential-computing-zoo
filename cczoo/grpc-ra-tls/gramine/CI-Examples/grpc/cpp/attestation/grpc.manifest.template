@@ -23,7 +23,7 @@ loader.log_level = "{{ log_level }}"
 loader.insecure__use_cmdline_argv = true
 loader.insecure__use_host_env = false
 
-loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/local/lib:/usr/local/{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}"
+loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}:/usr/{{ arch_libdir }}"
 loader.env.LC_ALL = "C"
 loader.env.GRPC_VERBOSITY = "ERROR"
 
@@ -38,10 +38,6 @@ fs.mounts = [
   { path = "/etc", uri = "file:/etc" },
   { path = "/usr", uri = "file:/usr" },
   { type = "tmpfs", path = "/var/tmp" },
-  { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
-  { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
-  #{ path = "/usr/local/lib/python3.6/dist-packages/", uri = "file:/usr/local/lib/python3.6/dist-packages/" } # for ubuntu:18.04
-  { path = "/usr/local/lib/python3.8/dist-packages/", uri = "file:/usr/local/lib/python3.8/dist-packages/" } # for ubuntu:20.04
 ]
 
 sgx.debug = false
@@ -49,11 +45,7 @@ sgx.remote_attestation = true
 sgx.enable_stats = false
 sgx.nonpie_binary = true
 sgx.enclave_size = "2G"
-sgx.thread_num = 32
-
-# sgx.require_avx = true
-# sgx.require_avx512 = true
-# sgx.require_amx = true
+sgx.thread_num = 16
 
 sgx.trusted_files = [
   "file:{{ entrypoint }}",
@@ -61,15 +53,7 @@ sgx.trusted_files = [
   "file:{{ gramine.runtimedir() }}/",
   "file:{{ arch_libdir }}/",
   "file:/usr/{{ arch_libdir }}/",
-  "file:{{ python.stdlib }}/",
-  "file:{{ python.distlib }}/",
-  #"file:/usr/local/lib/python3.6/dist-packages/", # for ubuntu:18.04
-  "file:/usr/local/lib/python3.8/dist-packages/", # for ubuntu:20.04
   "file:/etc/ssl/certs/ca-certificates.crt",
-  "file:server.py",
-  "file:client.py",
-  "file:ratls_pb2.py",
-  "file:ratls_pb2_grpc.py",
 ]
 
 sgx.allowed_files = [
@@ -83,6 +67,9 @@ sgx.allowed_files = [
   "file:/etc/hosts",
   "file:/etc/group",
   "file:/etc/passwd",
-  "file:/proc/stat",
   "file:dynamic_config.json",
+  "file:secret.json",
+  "file:server.crt",
+  "file:server.key",
+  "file:ca.crt",
 ]

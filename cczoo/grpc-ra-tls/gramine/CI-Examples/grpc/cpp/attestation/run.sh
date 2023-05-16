@@ -15,20 +15,14 @@
 
 set -ex
 
-if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
+unset http_proxy https_proxy
+
+if [ "$1" == "server" ]; then
+    cd runtime/server
+        gramine-sgx grpc
+    cd -
+elif [ "$1" == "client" ]; then
+    cd runtime/client
+        gramine-sgx grpc -key=key1
+    cd -
 fi
-
-if [ -z ${SGX_RA_TLS_SDK} ]; then
-    export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
-fi
-
-${GRPC_PATH}/build_python.sh
-
-cur_dir=`dirname $0`
-
-mkdir -p ${cur_dir}/build
-
-cp -r ${cur_dir}/*.py ${cur_dir}/build
-cp ${GRPC_PATH}/dynamic_config.json ${cur_dir}/build
-python3 -m grpc_tools.protoc -I ${GRPC_PATH}/examples/protos --python_out=${cur_dir}/build --grpc_python_out=${cur_dir}/build ratls.proto

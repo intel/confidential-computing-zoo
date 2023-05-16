@@ -19,12 +19,13 @@
 #ifndef SGX_RA_TLS_OPTIONS_H
 #define SGX_RA_TLS_OPTIONS_H
 
-#include <grpc/grpc_security_constants.h>
 #include <grpc/status.h>
+#include <grpc/grpc_security.h>
+#include <grpc/grpc_security_constants.h>
 #include <grpc/support/log.h>
+#include <grpcpp/support/config.h>
 #include <grpcpp/security/tls_certificate_provider.h>
 #include <grpcpp/security/tls_credentials_options.h>
-#include <grpcpp/support/config.h>
 
 #include <memory>
 #include <vector>

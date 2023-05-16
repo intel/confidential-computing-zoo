@@ -16,7 +16,7 @@
  *
  */
 
-#include "sgx_ra_tls_impl.h"
+#include <grpcpp/security/sgx/sgx_ra_tls_impl.h>
 
 namespace grpc {
 namespace sgx {
@@ -230,7 +230,7 @@ int verify_measurement(const char* mr_enclave, const char* mr_signer,
     try {
         assert(mr_enclave && mr_signer && isv_prod_id && isv_svn);
         status = verify_measurement_internal(mr_enclave, mr_signer, isv_prod_id, isv_svn);
-        grpc_printf("remote attestation\n"); 
+        grpc_printf("remote attestation\n");
 
         if (_ctx_.cfg.verify_mr_enclave) {
             grpc_printf("  |- mr_enclave     :  %s\n", byte_to_hex(mr_enclave, 32).c_str());

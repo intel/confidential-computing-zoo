@@ -22,7 +22,7 @@ if [ -z ${BUILD_TYPE} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
+    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then
@@ -33,18 +33,16 @@ fi
 
 # build and install abseil library
 # https://abseil.io/docs/cpp/quickstart-cmake.html
-if [ ! -d "${ABSEIL_PATH}/build" ]; then
-    mkdir -p ${ABSEIL_PATH}/build
-    cd ${ABSEIL_PATH}/build
-    cmake -DCMAKE_CXX_STANDARD=11 \
-          -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE \
-          -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-          -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
-          ..
-    make -j `nproc`
-    make install
-    cd -
-fi
+mkdir -p ${ABSEIL_PATH}/build
+cd ${ABSEIL_PATH}/build
+cmake -DCMAKE_CXX_STANDARD=11 \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE \
+        -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+        -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
+        ..
+make -j `nproc`
+make install
+cd -
 
 # build and install grpc library
 mkdir -p ${GRPC_PATH}/build

@@ -82,7 +82,6 @@ images for developing the gRPC RA-TLS application.
 
         base_image=ubuntu:20.04
         image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
-
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
@@ -102,6 +101,30 @@ images for developing the gRPC RA-TLS application.
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
+    - On TDX
+
+        Refer to cczoo/grpc-ra-tls/tdx/README.md
+
+        ```
+        cd cczoo/grpc-ra-tls/tdx
+        source ./env
+        ./prepare_code.sh
+        pip3 install --upgrade pip
+        pip3 install -r ${GRPC_PATH}/requirements.txt
+        ```
+
+   - On DUMMY
+
+        Refer to cczoo/grpc-ra-tls/dummy/README.md
+
+        ```
+        cd cczoo/grpc-ra-tls/dummy
+        source ./env
+        ./prepare_code.sh
+        pip3 install --upgrade pip
+        pip3 install -r ${GRPC_PATH}/requirements.txt
+        ```
+
 2. Build gRPC RA-TLS docker image based on TEE docker image
 
    - On Gramine
@@ -110,11 +133,11 @@ images for developing the gRPC RA-TLS application.
         cd cczoo/grpc-ra-tls/gramine
 
         base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
-        image_tag=grpc-ratls-sgx-dev:graminev1.2-ubuntu20.04-latest
+        image_tag=grpc-ratls-dev:graminev1.2-ubuntu20.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
-        
-        `gramine-sgx-dev:v1.2-ubuntu20.04-latest` and `gramine-sgx-dev:v1.2-ubuntu-20.04-latest` 
+
+        `gramine-sgx-dev:v1.2-ubuntu20.04-latest` and `gramine-sgx-dev:v1.2-ubuntu-20.04-latest`
         could be selected as base_image.
 
    - On Occlum
@@ -123,12 +146,11 @@ images for developing the gRPC RA-TLS application.
         cd cczoo/grpc-ra-tls/occlum
 
         base_image=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
-        image_tag=grpc-ratls-sgx-dev:occlum0.26.3-ubuntu20.04-latest
+        image_tag=grpc-ratls-dev:occlum0.26.3-ubuntu20.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
-        `occlum-sgx-dev:0.26.3-ubuntu18.04` and `occlum-sgx-dev:0.26.3-ubuntu20.04` 
-        could be selected as base_image.
+        `occlum-sgx-dev:0.26.3-ubuntu18.04` and `occlum-sgx-dev:0.26.3-ubuntu20.04` could be selected as base_image.
 
 ## Config the remote attestation
 
@@ -186,7 +208,7 @@ In Gramine, it is defined in the template file.
     cd cczoo/grpc-ra-tls
 
     #start and enter the docker container
-    image_tag=grpc-ratls-sgx-dev:graminev1.2-ubuntu18.04-latest
+    image_tag=grpc-ratls-dev:graminev1.2-ubuntu20.04-latest
     ./start_container.sh ${pccs_service_ip} ${image_tag}
 
     #Run the aesm service
@@ -230,7 +252,7 @@ In Gramine, it is defined in the template file.
     cd cczoo/grpc-ra-tls/occlum
 
     #start and enter the docker container
-    image_tag=grpc-ratls-sgx-dev:occlum0.26.3-ubuntu20.04-latest
+    image_tag=grpc-ratls-dev:occlum0.26.3-ubuntu20.04-latest
     ./start_container.sh ${pccs_service_ip} ${image_tag}
     ```
 
@@ -345,7 +367,7 @@ Please refer to the examples for makefile and build script modifications.
 
 ---
 
-## Cloud Deployment
+## Cloud Practice
 
 ### 1. Alibaba Cloud
 

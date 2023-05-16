@@ -1,5 +1,4 @@
-#
-# Copyright (c) 2022 Intel Corporation
+# Copyright 2020 the gRPC authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,16 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -ex
+licenses(["notice"])  # 3-clause BSD
 
-unset http_proxy https_proxy
+cc_binary(
+    name = "server",
+    srcs = [
+        "server.cc",
+        "getopt.hpp",
+    ],
+    defines = ["BAZEL_BUILD"],
+    deps = [
+        "//:grpc++",
+        "//:grpc++_reflection",
+        "//examples/protos:ratls_proto",
+    ],
+)
 
-if [ "$1" == "server" ]; then
-    cd runtime/server
-        gramine-sgx grpc
-    cd -
-elif [ "$1" == "client" ]; then
-    cd runtime/client
-        gramine-sgx grpc
-    cd -
-fi
+cc_binary(
+    name = "client",
+    srcs = [
+        "client.cc",
+        "getopt.hpp",
+    ],
+    defines = ["BAZEL_BUILD"],
+    deps = [
+        "//:grpc++",
+        "//examples/protos:ratls_proto",
+    ],
+)

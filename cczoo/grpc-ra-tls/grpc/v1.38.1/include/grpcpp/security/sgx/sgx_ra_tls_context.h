@@ -19,16 +19,13 @@
 #ifndef SGX_RA_TLS_CONTEXT_H
 #define SGX_RA_TLS_CONTEXT_H
 
-#include "sgx_ra_tls_utils.h"
-
 #include <mutex>
 #include <unordered_map>
 
-#include <grpcpp/grpcpp.h>
-#include <grpc/grpc_security.h>
 #include <grpc/grpc_security_constants.h>
 #include <grpcpp/security/credentials.h>
-#include <grpcpp/security/tls_certificate_provider.h>
+#include <grpcpp/security/server_credentials.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_utils.h>
 
 #define CERT_KEY_MAX_SIZE 16000
 
@@ -63,6 +60,9 @@ struct ra_tls_cache {
     std::unordered_map<
             int, std::shared_ptr<grpc::experimental::TlsServerAuthorizationCheckConfig>
         > authorization_check_config;
+#ifdef SGX_RA_TLS_GRAMINE_BACKEND
+    std::unordered_map<int, ra_tls_measurement> mrs;
+#endif
 };
 
 struct ra_tls_context {

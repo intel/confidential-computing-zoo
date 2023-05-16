@@ -25,23 +25,28 @@ fi
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=grpc-ratls-sgx-dev:graminev1.2-ubuntu20.04-latest
+    image_tag=grpc-ratls-dev:tdx-dcap1.15-centos8-latest
 fi
 
-# You can remove no_proxy and proxy_server if your network doesn't need it
-no_proxy="localhost,127.0.0.1"
-proxy_server="" # your http proxy server
+# Use the host proxy as the default configuration, or specify a proxy_server
+# no_proxy="localhost,127.0.0.1"
+# proxy_server="" # your http proxy server
+
+if [ "$proxy_server" != "" ]; then
+    http_proxy=${proxy_server}
+    https_proxy=${proxy_server}
+fi
 
 docker run -it \
-    --restart=unless-stopped \
+    --privileged=true \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
-    --device=/dev/sgx_enclave:/dev/sgx/enclave \
-    --device=/dev/sgx_provision:/dev/sgx/provision \
     --add-host=pccs.service.com:${ip_addr} \
-    -e no_proxy=${no_proxy} \
-    -e http_proxy=${proxy_server} \
-    -e https_proxy=${proxy_server} \
+    -v /dev:/dev \
     -v /home:/home/host-home \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/host-aesm.socket \
+    -e no_proxy=${no_proxy} \
+    -e http_proxy=${http_proxy} \
+    -e https_proxy=${https_proxy} \
     ${image_tag} \
     bash

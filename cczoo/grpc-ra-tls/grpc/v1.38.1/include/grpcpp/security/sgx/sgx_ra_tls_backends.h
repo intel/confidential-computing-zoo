@@ -19,12 +19,10 @@
 #ifndef SGX_RA_TLS_BACKENDS_H
 #define SGX_RA_TLS_BACKENDS_H
 
-#include "sgx_ra_tls_utils.h"
-#include "sgx_ra_tls_context.h"
-
-#include <grpcpp/security/tls_credentials_options.h>
+#include <grpcpp/security/credentials.h>
 #include <grpcpp/security/server_credentials.h>
 #include <grpcpp/security/sgx/sgx_ra_tls_options.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_context.h>
 
 // Set 1 for strict security checks
 #define SGX_MESUREMENTS_MAX_SIZE 16
@@ -67,6 +65,16 @@ void occlum_verify_init();
 int occlum_verify_cert(const char *der_crt, size_t len);
 
 ra_tls_measurement occlum_parse_measurement(const char *der_crt, size_t len);
+
+#elif defined(SGX_RA_TLS_TDX_BACKEND)
+
+std::vector<std::string> tdx_generate_key_cert();
+
+void tdx_verify_init();
+
+int tdx_verify_cert(const char *der_crt, size_t len);
+
+ra_tls_measurement tdx_parse_measurement(const char *der_crt, size_t len);
 
 #endif
 

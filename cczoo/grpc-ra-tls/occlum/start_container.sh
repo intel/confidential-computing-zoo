@@ -16,16 +16,16 @@
 #!/bin/bash
 set -e
 
-if  [ ! -n "$1" ] ; then
-    base_image=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
+if  [ -n "$1" ] ; then
+    ip_addr=$1
 else
-    base_image=$1
+    ip_addr=127.0.0.1
 fi
 
-if  [ ! -n "$2" ] ; then
-    image_tag=grpc-ratls-dev:occlum0.26.3-ubuntu20.04-latest
-else
+if  [ -n "$2" ] ; then
     image_tag=$2
+else
+    image_tag=grpc-ratls-dev:occlum0.26.3-ubuntu20.04-latest
 fi
 
 # Use the host proxy as the default configuration, or specify a proxy_server
@@ -37,15 +37,17 @@ if [ "$proxy_server" != "" ]; then
     https_proxy=${proxy_server}
 fi
 
-cd `dirname $0`
-
-DOCKER_BUILDKIT=0 docker build \
-    --build-arg no_proxy=${no_proxy} \
-    --build-arg http_proxy=${http_proxy} \
-    --build-arg https_proxy=${https_proxy} \
-    --build-arg BASE_IMAGE=${base_image} \
-    -f grpc-ratls-dev.dockerfile \
-    -t ${image_tag} \
-    ..
-
-cd -
+docker run -it \
+    --privileged=true \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --add-host=pccs.service.com:${ip_addr} \
+    --device=/dev/sgx_enclave:/dev/sgx/enclave \
+    --device=/dev/sgx_provision:/dev/sgx/provision \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/host-aesm.socket \
+    -v /home:/home/host-home \
+    -e no_proxy=${no_proxy} \
+    -e http_proxy=${http_proxy} \
+    -e https_proxy=${https_proxy} \
+    ${image_tag} \
+    bash

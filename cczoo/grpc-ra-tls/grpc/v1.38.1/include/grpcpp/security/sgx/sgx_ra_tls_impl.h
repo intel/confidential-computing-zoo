@@ -19,8 +19,8 @@
 #ifndef SGX_RA_TLS_IMPL_H
 #define SGX_RA_TLS_IMPL_H
 
-#include "sgx_ra_tls_utils.h"
-#include "sgx_ra_tls_context.h"
+#include <grpcpp/security/sgx/sgx_ra_tls_context.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_utils.h>
 
 namespace grpc {
 namespace sgx {

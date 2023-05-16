@@ -68,7 +68,7 @@ class SecretClient {
             if (status.ok()) {
                 return reply.value();
             } else {
-                std::cout << "Error: " << status.error_code() << ", " << status.error_message() << std::endl;
+                std::cout << "Error code: " << status.error_code() << ", message: " << status.error_message() << std::endl;
                 return "RPC failed";
             }
         }

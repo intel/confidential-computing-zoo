@@ -18,7 +18,7 @@ set -e
 shopt -s expand_aliases
 alias logfilter="grep \"mr_enclave\|mr_signer\|isv_prod_id\|isv_svn\""
 
-GRPC_EXP_PATH=${GRPC_PATH}/examples/cpp/ratls
+GRPC_EXP_PATH=${GRPC_PATH}/examples/cpp/attestation
 RUNTIME_TMP_PATH=/tmp/grpc_tmp_runtime
 RUNTIME_PATH=`pwd -P`/runtime
 
@@ -31,6 +31,9 @@ function prepare_runtime() {
     # copy binary
     cp ${GRPC_EXP_PATH}/build/server .
     cp ${GRPC_EXP_PATH}/build/client .
+    cp -r ${GRPC_EXP_PATH}/build/server.* .
+    cp -r ${GRPC_EXP_PATH}/build/ca.* .
+    cp -r ${GRPC_EXP_PATH}/build/*.json .
     # make
     make clean
     ENTRYPOINT=./$1 make | logfilter
@@ -49,7 +52,7 @@ if [ -z ${BUILD_TYPE} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
+    export SGX_RA_TLS_BACKEND=OCCLUM # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then
@@ -68,7 +71,6 @@ prepare_runtime server
 prepare_runtime client
 
 # generate config json for sgx
-generate_json server client
 generate_json client server
 
 mv ${RUNTIME_TMP_PATH} ${RUNTIME_PATH}

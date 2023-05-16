@@ -17,13 +17,13 @@
 set -e
 
 if  [ ! -n "$1" ] ; then
-    base_image=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
+    base_image=tdx-dev:dcap1.15-centos8-latest
 else
     base_image=$1
 fi
 
 if  [ ! -n "$2" ] ; then
-    image_tag=grpc-ratls-dev:occlum0.26.3-ubuntu20.04-latest
+    image_tag=grpc-ratls-dev:tdx-dcap1.15-centos8-latest
 else
     image_tag=$2
 fi
