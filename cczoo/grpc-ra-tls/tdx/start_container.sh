@@ -44,7 +44,7 @@ docker run -it \
     --add-host=pccs.service.com:${ip_addr} \
     -v /dev:/dev \
     -v /home:/home/host-home \
-    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/host-aesm.socket \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
     -e no_proxy=${no_proxy} \
     -e http_proxy=${http_proxy} \
     -e https_proxy=${https_proxy} \

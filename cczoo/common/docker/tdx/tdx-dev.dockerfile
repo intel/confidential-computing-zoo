@@ -51,7 +51,7 @@ RUN wget https://download.01.org/intel-sgx/sgx-dcap/${DCAP_VERSION}/linux/distro
 COPY configs /
 
 # only for tdx vsock
-RUN echo 'port=4050' | tee /etc/tdx-attest.conf
+# RUN echo 'port=4050' | tee /etc/tdx-attest.conf
 
 # Clean tmp files
 RUN yum clean all && \

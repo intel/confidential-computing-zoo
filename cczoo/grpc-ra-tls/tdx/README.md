@@ -1,4 +1,4 @@
-## gRPC supporting Intel RA-TLS based on Intel TDX
+## RA-TLS Enhanced gRPC based on Intel TDX
 
 ## How to Build
 
@@ -25,7 +25,7 @@
     Pull docker image in `TDX Guest OS`, and exec the following command:
 
     ```
-    cczoo/grpc-ra-tls/start_container.sh ${pccs_service_ip} ${image_tag}
+    cczoo/grpc-ra-tls/tdx/start_container.sh ${pccs_service_ip} ${image_tag}
     ```
 
 2. Start aesm service

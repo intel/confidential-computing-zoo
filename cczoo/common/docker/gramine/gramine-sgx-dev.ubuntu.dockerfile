@@ -64,10 +64,8 @@ RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-default-qpl libsgx-dcap-qu
 # Gramine
 ENV GRAMINEDIR=/gramine
 ENV SGX_DCAP_VERSION=DCAP_1.11
-# ENV GRAMINE_VERSION=c662f63bba76736e6d5122a866da762efd1978c1
 ENV GRAMINE_VERSION=v1.2
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
-# ENV SGX_SIGNER_KEY=${GRAMINEDIR}/Pal/src/host/Linux-SGX/signer/enclave-key.pem
 ENV WERROR=1
 ENV SGX=1
 
@@ -76,7 +74,7 @@ RUN apt-get install -y bison gawk nasm python3-click python3-jinja2 ninja-build 
     libgmp-dev libmpfr-dev libmpc-dev libisl-dev
 
 RUN pip3 install --upgrade pip \
-    && pip3 install toml meson
+    && pip3 install toml meson cryptography
 
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
@@ -85,11 +83,6 @@ RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
 RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${ISGX_DRIVER_PATH} \
     && cd ${ISGX_DRIVER_PATH} \
     && git checkout ${SGX_DCAP_VERSION}
-
-# COPY gramine/patches ${GRAMINEDIR}
-# RUN cd ${GRAMINEDIR} \
-#     && git apply *.diff
-# RUN openssl genrsa -3 -out ${SGX_SIGNER_KEY} 3072
 
 ARG BUILD_TYPE=release
 RUN cd ${GRAMINEDIR} \
@@ -104,7 +97,7 @@ RUN cd ${GRAMINEDIR}/build/subprojects/mbedtls-mbedtls* \
     && cp -r include/mbedtls ${INSTALL_PREFIX}/include
 
 # Install cJSON
-RUN cd ${GRAMINEDIR}/subprojects/cJSON* \
+RUN cd ${GRAMINEDIR}/subprojects/cJSON*/ \
     && make static \
     && cp -r *.a ${INSTALL_PREFIX}/lib \
     && mkdir -p ${INSTALL_PREFIX}/include/cjson \
@@ -122,6 +115,8 @@ RUN apt-get clean all \
 RUN gramine-sgx-gen-private-key
 
 COPY configs /
+
+# COPY patches/libsgx_dcap_quoteverify.so  /usr/lib64/
 
 # Use it to ignore packages authenticate in apt-get
 # ENV apt_arg="-o Acquire::AllowInsecureRepositories=true \

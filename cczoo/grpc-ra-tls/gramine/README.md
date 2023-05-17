@@ -1,4 +1,4 @@
-# gRPC supporting Intel RA-TLS based on Gramine-SGX
+# RA-TLS Enhanced gRPC based on Gramine-SGX
 
 ## How to Build
 
@@ -26,7 +26,7 @@
 1. start container
 
     ```
-    cczoo/grpc-ra-tls/start_container.sh ${pccs_service_ip} ${image_tag}
+    cczoo/grpc-ra-tls/gramine/start_container.sh ${pccs_service_ip} ${image_tag}
     ```
 
 2. Start aesm service

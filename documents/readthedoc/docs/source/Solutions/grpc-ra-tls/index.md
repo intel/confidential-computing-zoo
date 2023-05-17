@@ -106,23 +106,11 @@ images for developing the gRPC RA-TLS application.
         Refer to cczoo/grpc-ra-tls/tdx/README.md
 
         ```
-        cd cczoo/grpc-ra-tls/tdx
-        source ./env
-        ./prepare_code.sh
-        pip3 install --upgrade pip
-        pip3 install -r ${GRPC_PATH}/requirements.txt
-        ```
+        cd cczoo/common/docker/tdx
 
-   - On DUMMY
-
-        Refer to cczoo/grpc-ra-tls/dummy/README.md
-
-        ```
-        cd cczoo/grpc-ra-tls/dummy
-        source ./env
-        ./prepare_code.sh
-        pip3 install --upgrade pip
-        pip3 install -r ${GRPC_PATH}/requirements.txt
+        base_image=centos:8
+        image_tag=tdx-dev:dcap1.15-centos8-latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
 2. Build gRPC RA-TLS docker image based on TEE docker image
@@ -151,6 +139,19 @@ images for developing the gRPC RA-TLS application.
         ```
 
         `occlum-sgx-dev:0.26.3-ubuntu18.04` and `occlum-sgx-dev:0.26.3-ubuntu20.04` could be selected as base_image.
+
+   - On TDX
+
+        ```bash
+        cd cczoo/grpc-ra-tls/tdx
+
+        base_image=tdx-dev:dcap1.15-centos8-latest
+        image_tag=grpc-ratls-dev:tdx-dcap1.15-centos8-latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
+        ```
+
+        `tdx-dev:dcap1.15-centos8-latest` could be selected as base_image.
+
 
 ## Config the remote attestation
 
@@ -205,7 +206,7 @@ In Gramine, it is defined in the template file.
     Prepare the docker container
 
     ```bash
-    cd cczoo/grpc-ra-tls
+    cd cczoo/grpc-ra-tls/gramine
 
     #start and enter the docker container
     image_tag=grpc-ratls-dev:graminev1.2-ubuntu20.04-latest
@@ -218,7 +219,7 @@ In Gramine, it is defined in the template file.
     Run the cpp example
 
     ```bash
-    cd /gramine/CI-Examples/grpc/cpp/ratls
+    cd ${GRAMINEDIR}/CI-Examples/grpc/cpp/ratls
     ./build.sh
 
     #Run the server
@@ -231,8 +232,7 @@ In Gramine, it is defined in the template file.
     Run the python example
 
     ```bash
-    cd /gramine/CI-Examples/grpc/python/ratls
-
+    cd ${GRAMINEDIR}/CI-Examples/grpc/python/ratls
     ./build.sh
 
     #Run the server
@@ -266,7 +266,7 @@ In Gramine, it is defined in the template file.
     ```
 
     ```bash
-    cd ~/demos/ra_tls
+    cd ${OCCLUM_PATH}/demos/ra_tls
 
     ./prepare_and_build_package.sh
     ./build_occlum_instance.sh
@@ -275,7 +275,7 @@ In Gramine, it is defined in the template file.
     Run the cpp example
 
     ```bash
-    cd ~/demos/ra_tls
+    cd ${OCCLUM_PATH}/demos/ra_tls
 
     #Run the server
     ./run.sh server &
@@ -283,6 +283,52 @@ In Gramine, it is defined in the template file.
     #Run the client
     ./run.sh client
     ```
+
+- TDX
+
+    Refer to `cczoo/grpc-ra-tls/tdx/README.md`
+
+    Prepare the docker container in `TDX Guest OS`.
+
+    ```bash
+    cd cczoo/grpc-ra-tls/tdx
+
+    #start and enter the docker container
+    image_tag=grpc-ratls-dev:tdx-dcap1.15-centos8-latest
+    ./start_container.sh ${pccs_service_ip} ${image_tag}
+
+    #Run the aesm service
+    /root/start_aesm_service.sh
+    ```
+
+    Run the cpp example
+
+    ```bash
+    cd ${GRPC_PATH}/examples/cpp/ratls
+    ./build.sh
+    cd build
+
+    #Run the server
+    ./server &
+
+    #Run the client
+    ./client
+    ```
+
+    Run the python example
+
+    ```bash
+    cd ${GRPC_PATH}/examples/python/ratls
+    ./build.sh
+    cd build
+
+    #Run the server
+    python3 -u ./server.py &
+
+    #Run the client
+    python3 -u ./client.py
+    ```
+
 
 ## How to develop the gRPC applications with RA-TLS
 
