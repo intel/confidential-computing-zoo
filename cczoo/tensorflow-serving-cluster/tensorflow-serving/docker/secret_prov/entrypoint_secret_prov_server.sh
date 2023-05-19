@@ -18,6 +18,6 @@
 
 set -e
 cd ${WORK_BASE_PATH}/secret_prov_pf
-echo "Run Secret Porv Server!"
+echo "Run Secret Prov Server!"
 
 LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libs stdbuf -o0  ./server_${RA_TYPE} wrap_key

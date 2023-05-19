@@ -39,11 +39,8 @@ RUN pip3 install --upgrade pip
 RUN pip install django-model-utils
 
 RUN mkdir client
-RUN mkdir -p client/ssl_configure
 COPY requirements.txt client/
 RUN pip3 install -r client/requirements.txt
 COPY resnet_client_grpc.py client/
 COPY utils.py client/
 COPY run_inference.sh client/
-COPY ssl_configure client/ssl_configure
-

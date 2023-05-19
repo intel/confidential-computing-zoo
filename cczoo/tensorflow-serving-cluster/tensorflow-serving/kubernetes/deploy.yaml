@@ -57,7 +57,7 @@ spec:
     spec:
       containers:
       - name: gramine-tf-serving-container
-        image: localhost:5000/gramine_tf_serving
+        image: localhost:5000/tensorflow_serving:<tensorflow_serving_tag>
         imagePullPolicy: Always
         env:
         - name: model_name
@@ -119,10 +119,10 @@ spec:
           path: /dev/sgx
       - name: model-path
         hostPath:
-          path: <Your confidential-computing-zoo path>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/models
+          path: <absolute_path_cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/models
       - name: ssl-path
         hostPath:
-          path: <Your confidential-computing-zoo path>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/ssl_configure/ssl.cfg
+          path: <absolute_path_cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving/ssl_configure/ssl.cfg
       - name: aesm-path
         hostPath:
           path: /var/run/aesmd/aesm.socket
