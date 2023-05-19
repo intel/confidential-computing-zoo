@@ -16,7 +16,7 @@
  *
  */
 
-#include "sgx_ra_tls_backends.h"
+#include <grpcpp/security/sgx/sgx_ra_tls_backends.h>
 
 namespace grpc {
 namespace sgx {
@@ -74,11 +74,13 @@ std::vector<std::string> ra_tls_generate_key_cert(int is_dummy) {
     if (is_dummy) {
         return dummy_generate_key_cert();
     } else {
-#ifdef SGX_RA_TLS_GRAMINE_BACKEND
+#if defined(SGX_RA_TLS_GRAMINE_BACKEND)
         return gramine_generate_key_cert();
-#elif SGX_RA_TLS_OCCLUM_BACKEND
+#elif defined(SGX_RA_TLS_OCCLUM_BACKEND)
         return occlum_generate_key_cert();
-#else
+#elif defined(SGX_RA_TLS_TDX_BACKEND)
+        return tdx_generate_key_cert();
+#elif defined(SGX_RA_TLS_DUMMY_BACKEND)
         return dummy_generate_key_cert();
 #endif
     }
@@ -114,11 +116,13 @@ void credential_option_set_certificate_provider(
 }
 
 void ra_tls_verify_init() {
-#ifdef SGX_RA_TLS_GRAMINE_BACKEND
+#if defined(SGX_RA_TLS_GRAMINE_BACKEND)
     gramine_verify_init();
-#elif  SGX_RA_TLS_OCCLUM_BACKEND
+#elif defined(SGX_RA_TLS_OCCLUM_BACKEND)
     occlum_verify_init();
-#elif SGX_RA_TLS_DUMMY_BACKEND
+#elif defined(SGX_RA_TLS_TDX_BACKEND)
+    tdx_verify_init();
+#elif defined(SGX_RA_TLS_DUMMY_BACKEND)
     dummy_verify_init();
 #endif
 }
@@ -132,21 +136,25 @@ void ra_tls_verify_init() {
     5. verify all measurements from the SGX quote
 */
 int ra_tls_verify_certificate(const char *der_crt, size_t len) {
-#ifdef SGX_RA_TLS_GRAMINE_BACKEND
+#if defined(SGX_RA_TLS_GRAMINE_BACKEND)
     return gramine_verify_cert(der_crt, len);
-#elif  SGX_RA_TLS_OCCLUM_BACKEND
+#elif defined(SGX_RA_TLS_OCCLUM_BACKEND)
     return occlum_verify_cert(der_crt, len);
-#elif SGX_RA_TLS_DUMMY_BACKEND
+#elif defined(SGX_RA_TLS_TDX_BACKEND)
+    return tdx_verify_cert(der_crt, len);
+#elif defined(SGX_RA_TLS_DUMMY_BACKEND)
     return dummy_verify_cert(der_crt, len);
 #endif
 }
 
 ra_tls_measurement ra_tls_parse_measurement(const char *der_crt, size_t len) {
-#ifdef SGX_RA_TLS_GRAMINE_BACKEND
+#if defined(SGX_RA_TLS_GRAMINE_BACKEND)
     return gramine_parse_measurement(der_crt, len);
-#elif  SGX_RA_TLS_OCCLUM_BACKEND
+#elif defined(SGX_RA_TLS_OCCLUM_BACKEND)
     return occlum_parse_measurement(der_crt, len);
-#elif SGX_RA_TLS_DUMMY_BACKEND
+#elif defined(SGX_RA_TLS_TDX_BACKEND)
+    return tdx_parse_measurement(der_crt, len);
+#elif defined(SGX_RA_TLS_DUMMY_BACKEND)
     return dummy_parse_measurement(der_crt, len);
 #endif
 }

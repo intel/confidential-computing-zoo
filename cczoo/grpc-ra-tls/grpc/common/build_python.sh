@@ -20,7 +20,7 @@ if [ -z ${DEBUG} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
+    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then
@@ -28,7 +28,7 @@ if [ -z ${SGX_RA_TLS_SDK} ]; then
 fi
 
 # build grpc c / cpp library
-${GRPC_PATH}/build_cpp.sh
+${GRPC_PATH}/cmake_build_cpp.sh
 
 # build grpc python wheel
 cd ${GRPC_PATH}
@@ -37,9 +37,10 @@ SGX_RA_TLS_BACKEND=${SGX_RA_TLS_BACKEND} python3 -c "import os; print(os.getenv(
 SGX_RA_TLS_BACKEND=${SGX_RA_TLS_BACKEND} python3 setup.py bdist_wheel
 cd -
 
-ldd ${GRPC_PATH}/python_build/lib.linux-x86_64-3.6/grpc/_cython/cygrpc.cpython-36m-x86_64-linux-gnu.so
+ldd ${GRPC_PATH}/python_build/lib.linux-x86_64-*/grpc/_cython/cygrpc.cpython-*-x86_64-linux-gnu.so
 
-pip3 uninstall -y grpcio
+# install grpc python wheel
+pip3 uninstall -y grpcio protobuf
 pip3 install ${GRPC_PATH}/dist/*.whl
 pip3 install grpcio-tools==1.38.1
 

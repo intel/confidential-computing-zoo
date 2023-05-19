@@ -11,7 +11,8 @@ guarantee security during transmission and runtime via two-way
 
 [gRPC](https://grpc.io/) is a modern, open source, high-performance remote procedure call (RPC)
 framework that can run anywhere. It enables client and server applications to communicate
-transparently, and simplifies the building of connected systems.
+transparently, and simplifies the building of connected systems. For securing gRPC connections, the
+SSL/TLS authentication mechanisms is built-in to gRPC.
 
 gRPC is designed to work with a variety of authentication mechanisms, making it easy to safely
 use gRPC to talk to other systems. For securing gRPC connections, the SSL/TLS authentication
@@ -79,8 +80,8 @@ images for developing the gRPC RA-TLS application.
         ```
         cd cczoo/common/docker/gramine
 
-        base_image=ubuntu:18.04
-        image_tag=gramine-sgx-dev:ubuntu-18.04-latest
+        base_image=ubuntu:20.04
+        image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
@@ -88,15 +89,27 @@ images for developing the gRPC RA-TLS application.
 
    - On Occlum
 
-        Occlum provides the docker image in docker registry, no need to build it by self.
+        Refer to cczoo/common/docker/occlum/README.md
 
         ```bash
-        docker pull occlum/occlum:0.26.3-ubuntu18.04
+        docker pull occlum/occlum:0.26.3-ubuntu20.04
 
         cd cczoo/common/docker/occlum
 
-        base_image=occlum/occlum:0.26.3
-        image_tag=occlum-sgx-dev:latest
+        base_image=occlum/occlum:0.26.3-ubuntu20.04
+        image_tag=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
+        ```
+
+    - On TDX
+
+        Refer to cczoo/grpc-ra-tls/tdx/README.md
+
+        ```
+        cd cczoo/common/docker/tdx
+
+        base_image=centos:8
+        image_tag=tdx-dev:dcap1.15-centos8-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
@@ -107,27 +120,45 @@ images for developing the gRPC RA-TLS application.
         ```bash
         cd cczoo/grpc-ra-tls/gramine
 
-        base_image=gramine-sgx-dev:ubuntu-18.04-latest
-        image_tag=grpc-gramine-sgx-dev:ubuntu-18.04-latest
+        base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
+        image_tag=grpc-ratls-dev:graminev1.2-ubuntu20.04-latest
         ./build_docker_image.sh ${base_image} ${image_tag}
         ```
 
-        `gramine-sgx-dev:ubuntu-18.04-latest` and `gramine-sgx-dev:ubuntu-20.04-latest`
+        `gramine-sgx-dev:v1.2-ubuntu20.04-latest` and `gramine-sgx-dev:v1.2-ubuntu-20.04-latest`
         could be selected as base_image.
 
    - On Occlum
 
         ```bash
         cd cczoo/grpc-ra-tls/occlum
-        ./build_docker_image.sh
+
+        base_image=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
+        image_tag=grpc-ratls-dev:occlum0.26.3-ubuntu20.04-latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
         ```
+
+        `occlum-sgx-dev:0.26.3-ubuntu18.04` and `occlum-sgx-dev:0.26.3-ubuntu20.04` could be selected as base_image.
+
+   - On TDX
+
+        ```bash
+        cd cczoo/grpc-ra-tls/tdx
+
+        base_image=tdx-dev:dcap1.15-centos8-latest
+        image_tag=grpc-ratls-dev:tdx-dcap1.15-centos8-latest
+        ./build_docker_image.sh ${base_image} ${image_tag}
+        ```
+
+        `tdx-dev:dcap1.15-centos8-latest` could be selected as base_image.
+
 
 ## Config the remote attestation
 
 For saving the expected measurement values of remote application enclave, we create a json template
 as following. It is loaded in gRPC server or client initialization.
 
-Refer to `cczoo/grpc-ra-tls/docker/grpc/common/dynamic_config.json`
+Refer to `cczoo/grpc-ra-tls/grpc/common/dynamic_config.json`
 
 ```json
 {
@@ -137,17 +168,17 @@ Refer to `cczoo/grpc-ra-tls/docker/grpc/common/dynamic_config.json`
     "verify_isv_svn": "on",
     "sgx_mrs": [
         {
-        "mr_enclave": "",
-        "mr_signer": "",
-        "isv_prod_id": "0",
-        "isv_svn": "0"
+            "mr_enclave": "",
+            "mr_signer": "",
+            "isv_prod_id": "0",
+            "isv_svn": "0"
         }
     ],
 }
 ```
 In Gramine examples, the mr_enclave and mr_signer are automatically parsed in `build.sh`.
 
-Refer to `cczoo/grpc-ra-tls/docker/gramine/gramine/CI-Examples/grpc/cpp/ratls/build.sh`
+Refer to `cczoo/grpc-ra-tls/gramine/CI-Examples/grpc/cpp/ratls/build.sh`
 
 ```bash
 function get_env() {
@@ -178,7 +209,8 @@ In Gramine, it is defined in the template file.
     cd cczoo/grpc-ra-tls/gramine
 
     #start and enter the docker container
-    ./start_container.sh ${pccs_service_ip}
+    image_tag=grpc-ratls-dev:graminev1.2-ubuntu20.04-latest
+    ./start_container.sh ${pccs_service_ip} ${image_tag}
 
     #Run the aesm service
     /root/start_aesm_service.sh
@@ -187,7 +219,7 @@ In Gramine, it is defined in the template file.
     Run the cpp example
 
     ```bash
-    cd /gramine/CI-Examples/grpc/cpp/ratls
+    cd ${GRAMINEDIR}/CI-Examples/grpc/cpp/ratls
     ./build.sh
 
     #Run the server
@@ -200,8 +232,7 @@ In Gramine, it is defined in the template file.
     Run the python example
 
     ```bash
-    cd /gramine/CI-Examples/grpc/python/ratls
-
+    cd ${GRAMINEDIR}/CI-Examples/grpc/python/ratls
     ./build.sh
 
     #Run the server
@@ -221,19 +252,21 @@ In Gramine, it is defined in the template file.
     cd cczoo/grpc-ra-tls/occlum
 
     #start and enter the docker container
-    ./start_container.sh ${pccs_service_ip}
+    image_tag=grpc-ratls-dev:occlum0.26.3-ubuntu20.04-latest
+    ./start_container.sh ${pccs_service_ip} ${image_tag}
     ```
 
     Build the cpp instance
 
     [LibRATS](https://github.com/inclavare-containers/librats) is optional to replace the
     default RA-TLS SDK which is to generate and verify hardware quotes.
+
     ```base
     export SGX_RA_TLS_SDK=LIBRATS
     ```
 
     ```bash
-    cd ~/demos/ra_tls
+    cd ${OCCLUM_PATH}/demos/ra_tls
 
     ./prepare_and_build_package.sh
     ./build_occlum_instance.sh
@@ -242,7 +275,7 @@ In Gramine, it is defined in the template file.
     Run the cpp example
 
     ```bash
-    cd ~/demos/ra_tls
+    cd ${OCCLUM_PATH}/demos/ra_tls
 
     #Run the server
     ./run.sh server &
@@ -250,6 +283,52 @@ In Gramine, it is defined in the template file.
     #Run the client
     ./run.sh client
     ```
+
+- TDX
+
+    Refer to `cczoo/grpc-ra-tls/tdx/README.md`
+
+    Prepare the docker container in `TDX Guest OS`.
+
+    ```bash
+    cd cczoo/grpc-ra-tls/tdx
+
+    #start and enter the docker container
+    image_tag=grpc-ratls-dev:tdx-dcap1.15-centos8-latest
+    ./start_container.sh ${pccs_service_ip} ${image_tag}
+
+    #Run the aesm service
+    /root/start_aesm_service.sh
+    ```
+
+    Run the cpp example
+
+    ```bash
+    cd ${GRPC_PATH}/examples/cpp/ratls
+    ./build.sh
+    cd build
+
+    #Run the server
+    ./server &
+
+    #Run the client
+    ./client
+    ```
+
+    Run the python example
+
+    ```bash
+    cd ${GRPC_PATH}/examples/python/ratls
+    ./build.sh
+    cd build
+
+    #Run the server
+    python3 -u ./server.py &
+
+    #Run the client
+    python3 -u ./client.py
+    ```
+
 
 ## How to develop the gRPC applications with RA-TLS
 
@@ -260,62 +339,81 @@ Please refer to the examples for makefile and build script modifications.
 
 - c++
 
-    Server side:
+    - Credentials verify option
 
-    Refer to `cczoo/grpc-ra-tls/docker/grpc/v1.38.1/examples/cpp/ratls/server.cc`
+        - Two-way RA-TLS: GRPC_RA_TLS_TWO_WAY_VERIFICATION
 
-    ```c++
-    std::shared_ptr<grpc::ServerCredentials> creds = nullptr;
-    if (sgx) {
-        creds = std::move(grpc::sgx::TlsServerCredentials("dynamic_config.json"));
-    } else {
-        creds = std::move(grpc::InsecureServerCredentials());
-    }
-    ```
+        - One-Way RA-TLS (Verify Server): GRPC_RA_TLS_SERVER_VERIFICATION
 
-    Client side:
+        - One-Way RA-TLS (Verify Client): GRPC_RA_TLS_CLIENT_VERIFICATION
 
-    Refer to `cczoo/grpc-ra-tls/docker/grpc/v1.38.1/examples/cpp/ratls/client.cc`
+    - Server side
 
-    ```c++
-    std::shared_ptr<grpc::ChannelCredentials> creds = nullptr;
-    if (sgx) {
-        creds = std::move(grpc::sgx::TlsCredentials("dynamic_config.json"));
-    } else {
-        creds = std::move(grpc::InsecureChannelCredentials());
-    }
-    ```
+        Refer to `cczoo/grpc-ra-tls/grpc/v1.38.1/examples/cpp/ratls/server.cc`
+
+        ```c++
+        std::shared_ptr<grpc::ServerCredentials> creds = nullptr;
+        if (sgx) {
+            creds = std::move(grpc::sgx::TlsServerCredentials(
+                        args.config, GRPC_RA_TLS_TWO_WAY_VERIFICATION));
+        } else {
+            creds = std::move(grpc::InsecureServerCredentials());
+        }
+        ```
+
+    - Client side
+
+        Refer to `cczoo/grpc-ra-tls/grpc/v1.38.1/examples/cpp/ratls/client.cc`
+
+        ```c++
+        std::shared_ptr<grpc::ChannelCredentials> creds = nullptr;
+        if (sgx) {
+            creds = std::move(grpc::sgx::TlsCredentials(
+                        args.config, GRPC_RA_TLS_TWO_WAY_VERIFICATION));
+        } else {
+            creds = std::move(grpc::InsecureChannelCredentials());
+        }
+        ```
 
 - python
 
-    Server side:
+    - Credentials verify option
 
-    Refer to `cczoo/grpc-ra-tls/docker/grpc/v1.38.1/examples/python/ratls/server.py`
+        - Two-way RA-TLS: verify_option="two-way"
 
-    ```python
-    if sgx:
-        cred = grpc.sgxratls_server_credentials(config_json=args.config)
-        server.add_secure_port(args.target, cred)
-    else:
-        server.add_insecure_port(args.target)
-    ```
+        - One-Way RA-TLS (Verify Server): verify_option="server"
 
-    Client side:
+        - One-Way RA-TLS (Verify Client): verify_option="client"
 
-    Refer to `cczoo/grpc-ra-tls/docker/grpc/v1.38.1/examples/python/ratls/client.py`
+    - Server side
 
-    ```python
-    if sgx:
-        cred = grpc.sgxratls_channel_credentials(config_json=args.config)
-        channel = grpc.secure_channel(args.target, cred)
-    else:
-        channel = grpc.insecure_channel(args.target)
-    ```
+        Refer to `cczoo/grpc-ra-tls/grpc/v1.38.1/examples/python/ratls/server.py`
 
+        ```python
+        if sgx:
+            cred = grpc.sgxratls_server_credentials(
+                config_json=args.config, verify_option="two-way")
+            server.add_secure_port(args.target, cred)
+        else:
+            server.add_insecure_port(args.target)
+        ```
+
+    - Client side
+
+        Refer to `cczoo/grpc-ra-tls/grpc/v1.38.1/examples/python/ratls/client.py`
+
+        ```python
+        if sgx:
+            cred = grpc.sgxratls_channel_credentials(
+                config_json=args.config, verify_option="two-way")
+            channel = grpc.secure_channel(args.target, cred)
+        else:
+            channel = grpc.insecure_channel(args.target)
+        ```
 
 ---
 
-## Cloud Deployment
+## Cloud Practice
 
 ### 1. Alibaba Cloud
 
@@ -351,3 +449,19 @@ The configuration of the M6ce instance as blow:
 - Instance SGX PCCS Server: [sgx-dcap-server-tc.sh.tencent.cn](https://cloud.tencent.com/document/product/213/63353)
 
 ***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
+
+### 3. ByteDance Cloud
+
+ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the ebmg2t instance as blow:
+
+- Instance Type  : `ecs.ebmg2t.32xlarge`.
+- Instance Kernel: kernel-5.15
+- Instance OS    : ubuntu-20.04
+- Instance Encrypted Memory: 256G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: `sgx-dcap-server.bytedance.com`.
+
+***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with ByteDance PCCS server address.

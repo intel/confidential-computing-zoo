@@ -18,8 +18,8 @@
 
 #ifdef SGX_RA_TLS_OCCLUM_BACKEND
 
-#include "sgx_ra_tls_backends.h"
-#include "sgx_ra_tls_impl.h"
+#include <grpcpp/security/sgx/sgx_ra_tls_backends.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_impl.h>
 
 #ifdef SGX_RA_TLS_LIBRATS_SDK
 #include "librats/api.h"
@@ -41,27 +41,27 @@ int occlum_generate_quote(
     rats_err_t err;
 
     if (!_ctx_.init_lib.get_handle()) {
-	    _ctx_.init_lib.open("librats_lib.so", RTLD_GLOBAL | RTLD_NOW);
+        _ctx_.init_lib.open("librats_lib.so", RTLD_GLOBAL | RTLD_NOW);
     }
     auto librats_init =
-	    reinterpret_cast< rats_err_t (*)(rats_conf_t *conf, rats_core_context_t *ctx)>(
-			    _ctx_.init_lib.get_func("librats_init"));
+        reinterpret_cast< rats_err_t (*)(rats_conf_t *conf, rats_core_context_t *ctx)>(
+                _ctx_.init_lib.get_func("librats_init"));
 
     if (!_ctx_.attest_lib.get_handle()) {
-	    _ctx_.attest_lib.open("libattester_sgx_ecdsa.so", RTLD_GLOBAL | RTLD_NOW);
+        _ctx_.attest_lib.open("libattester_sgx_ecdsa.so", RTLD_GLOBAL | RTLD_NOW);
     }
     auto librats_collect_evidence =
-	    reinterpret_cast< rats_attester_err_t (*)(rats_attester_ctx_t *ctx,
-			    attestation_evidence_t *evidence, uint8_t *hash,
-			    uint32_t hash_len)>(
-				    _ctx_.attest_lib.get_func("librats_collect_evidence"));
+        reinterpret_cast< rats_attester_err_t (*)(rats_attester_ctx_t *ctx,
+                attestation_evidence_t *evidence, uint8_t *hash,
+                uint32_t hash_len)>(
+                    _ctx_.attest_lib.get_func("librats_collect_evidence"));
 
     if (!_ctx_.cleanup_lib.get_handle()) {
-	    _ctx_.cleanup_lib.open("librats_lib.so", RTLD_GLOBAL | RTLD_NOW);
+        _ctx_.cleanup_lib.open("librats_lib.so", RTLD_GLOBAL | RTLD_NOW);
     }
     auto librats_cleanup =
-	    reinterpret_cast< rats_err_t (*)(rats_core_context_t *ctx)>(
-			    _ctx_.cleanup_lib.get_func("librats_cleanup"));
+        reinterpret_cast< rats_err_t (*)(rats_core_context_t *ctx)>(
+                _ctx_.cleanup_lib.get_func("librats_cleanup"));
 
     conf.api_version = RATS_API_VERSION_DEFAULT;
     conf.log_level = RATS_LOG_LEVEL_DEFAULT;
@@ -70,41 +70,41 @@ int occlum_generate_quote(
 
     rats_core_context_t *ctx = (rats_core_context_t *)malloc(sizeof(struct rats_core_context));
     if (!ctx) {
-	    grpc_printf("couldn't allocate rats_core_context\n");
-	    ret = -1;
+        grpc_printf("couldn't allocate rats_core_context.\n");
+        ret = -1;
     }
     memcpy(ev.type, "sgx_ecdsa", sizeof(ev.type));
 
     err = (*librats_init)(&conf, ctx);
     if (err != RATS_ERR_NONE) {
-	    grpc_printf("librats initialization failed\n");
-	    ret = -1;
+        grpc_printf("librats initialization failed.\n");
+        ret = -1;
     }
 
     aerr = (*librats_collect_evidence)(ctx->attester, &ev, (unsigned char *)hash, SHA256_DIGEST_LENGTH);
     if (aerr != RATS_ATTESTER_ERR_NONE) {
-	    grpc_printf("librats collect evidence failed\n");
-	    ret = -1;
+        grpc_printf("librats collect evidence failed.\n");
+        ret = -1;
     }
 
     quote_size = ev.ecdsa.quote_len;
     *quote_buf = (uint8_t*)calloc(quote_size, sizeof(uint8_t));
     if (nullptr == *quote_buf) {
-	    grpc_printf("Couldn't allocate quote_buf\n");
+        grpc_printf("couldn't allocate quote_buf.\n");
     }
     memcpy(*quote_buf, ev.ecdsa.quote, quote_size);
 
     err = (*librats_cleanup)(ctx);
     if (err != RATS_ERR_NONE) {
-	    grpc_printf("librats cleanup failed\n");
-	    ret = -1;
+        grpc_printf("librats cleanup failed.\n");
+        ret = -1;
     }
 #else
     void *handle = dcap_quote_open();
     quote_size = dcap_get_quote_size(handle);
     *quote_buf = (uint8_t*)calloc(quote_size, sizeof(uint8_t));
     if (nullptr == quote_buf) {
-        grpc_printf("Couldn't allocate quote_buf\n");
+        grpc_printf("couldn't allocate quote_buf.\n");
     }
 
     sgx_report_data_t report_data = { 0 };
@@ -112,7 +112,7 @@ int occlum_generate_quote(
 
     int ret = dcap_generate_quote(handle, *quote_buf, &report_data);
     if (ret != 0) {
-        grpc_printf("Error in dcap_generate_quote.\n");
+        grpc_printf("dcap_generate_quote failed.\n");
     }
 
     dcap_quote_close(handle);
@@ -211,27 +211,27 @@ int occlum_verify_cert(const char *der_crt, size_t len) {
     rats_core_context_t *ctx;
 
     if (!_ctx_.init_lib.get_handle()) {
-	    _ctx_.init_lib.open("librats_lib.so", RTLD_LAZY);
+        _ctx_.init_lib.open("librats_lib.so", RTLD_LAZY);
     }
     auto librats_init =
-	    reinterpret_cast< rats_err_t (*)(rats_conf_t *conf, rats_core_context_t *ctx)>(
-			    _ctx_.init_lib.get_func("librats_init"));
+        reinterpret_cast< rats_err_t (*)(rats_conf_t *conf, rats_core_context_t *ctx)>(
+                _ctx_.init_lib.get_func("librats_init"));
 
     if (!_ctx_.verify_lib.get_handle()) {
-	    _ctx_.verify_lib.open("libverifier_sgx_ecdsa.so", RTLD_LAZY);
+        _ctx_.verify_lib.open("libverifier_sgx_ecdsa.so", RTLD_LAZY);
     }
     auto librats_verify_evidence =
-	    reinterpret_cast< rats_verifier_err_t (*)(rats_verifier_ctx_t *ctx,
-			    attestation_evidence_t *evidence, uint8_t *hash,
-			    uint32_t hash_len)>(
-				    _ctx_.verify_lib.get_func("librats_verify_evidence"));
+        reinterpret_cast< rats_verifier_err_t (*)(rats_verifier_ctx_t *ctx,
+                attestation_evidence_t *evidence, uint8_t *hash,
+                uint32_t hash_len)>(
+                    _ctx_.verify_lib.get_func("librats_verify_evidence"));
 
     if (!_ctx_.cleanup_lib.get_handle()) {
-	    _ctx_.cleanup_lib.open("librats_lib.so", RTLD_GLOBAL | RTLD_NOW);//RTLD_LAZY);
+        _ctx_.cleanup_lib.open("librats_lib.so", RTLD_GLOBAL | RTLD_NOW);//RTLD_LAZY);
     }
     auto librats_cleanup =
-	    reinterpret_cast< rats_err_t (*)(rats_core_context_t *ctx)>(
-			    _ctx_.cleanup_lib.get_func("librats_cleanup"));
+        reinterpret_cast< rats_err_t (*)(rats_core_context_t *ctx)>(
+                _ctx_.cleanup_lib.get_func("librats_cleanup"));
 #endif
     BIO *bio = BIO_new(BIO_s_mem());
     BIO_write(bio, der_crt, len);
@@ -256,9 +256,9 @@ int occlum_verify_cert(const char *der_crt, size_t len) {
 
     ctx = (rats_core_context_t *)malloc(sizeof(struct rats_core_context));
     if (!ctx) {
-	    grpc_printf("couldn't malloc rats_core_context\n");
-	    ret = -1;
-	    goto out;
+        grpc_printf("couldn't malloc rats_core_context\n");
+        ret = -1;
+        goto out;
     }
     memcpy(ev.type, "sgx_ecdsa", sizeof(ev.type));
     memcpy(ev.ecdsa.quote, quote_buf, quote_size);
@@ -266,23 +266,23 @@ int occlum_verify_cert(const char *der_crt, size_t len) {
 
     err = (*librats_init)(&conf, ctx);
     if (err != RATS_ERR_NONE) {
-	    grpc_printf("librats initialization failed\n");
-	    ret = -1;
-	    goto out;
+        grpc_printf("librats initialization failed\n");
+        ret = -1;
+        goto out;
     }
 
     pubkey_hash = occlum_parse_pubkey_hash(quote_buf);
     verr = (*librats_verify_evidence)(ctx->verifier, &ev, pubkey_hash, SHA256_DIGEST_LENGTH);
     if (verr != RATS_VERIFIER_ERR_NONE) {
-	    grpc_printf("librats verify evidence failed\n");
-	    ret = -1;
-	    goto out;
+        grpc_printf("librats verify evidence failed\n");
+        ret = -1;
+        goto out;
     }
 
     err = (*librats_cleanup)(ctx);
     if (err != RATS_ERR_NONE) {
-	    grpc_printf("librats cleanup failed\n");
-	    ret = -1;
+        grpc_printf("librats cleanup failed\n");
+        ret = -1;
     }
 #else
     ret = occlum_verify_quote(quote_buf, quote_size);
@@ -303,7 +303,7 @@ int occlum_verify_cert(const char *der_crt, size_t len) {
     ret = verify_measurement((const char *)&p_rep_body->mr_enclave,
                              (const char *)&p_rep_body->mr_signer,
                              (const char *)&p_rep_body->isv_prod_id,
-                             (const char *)&p_rep_body->isv_svn); 
+                             (const char *)&p_rep_body->isv_svn);
 
 out:
     BIO_free(bio);
@@ -316,7 +316,7 @@ ra_tls_measurement occlum_parse_measurement(const char *der_crt, size_t len) {
     uint8_t *quote_buf = nullptr;
     uint8_t *pubkey_hash = nullptr;
     sgx_report_body_t *p_rep_body = nullptr;
-    struct ra_tls_measurement mrs;
+    struct ra_tls_measurement mr;
 
     BIO *bio = BIO_new(BIO_s_mem());
     BIO_write(bio, der_crt, len);
@@ -334,14 +334,14 @@ ra_tls_measurement occlum_parse_measurement(const char *der_crt, size_t len) {
     }
 
     p_rep_body = occlum_parse_report_body(quote_buf);
-    memcmp(mrs.mr_enclave, &p_rep_body->mr_enclave, 32);
-    memcmp(mrs.mr_signer, &p_rep_body->mr_signer, 32);
-    mrs.isv_prod_id = p_rep_body->isv_prod_id;
-    mrs.isv_svn = p_rep_body->isv_svn;
+    memcpy(mr.mr_enclave, &p_rep_body->mr_enclave, 32);
+    memcpy(mr.mr_signer, &p_rep_body->mr_signer, 32);
+    mr.isv_prod_id = p_rep_body->isv_prod_id;
+    mr.isv_svn = p_rep_body->isv_svn;
 
 out:
     BIO_free(bio);
-    return mrs;
+    return mr;
 }
 
 } // namespace sgx

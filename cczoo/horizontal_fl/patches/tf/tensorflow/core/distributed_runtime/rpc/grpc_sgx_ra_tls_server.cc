@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2021 Intel Corporation
+* Copyright (c) 2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -29,20 +29,36 @@ namespace sgx {
 
 // Server side is required to use a provider, because server always needs to use identity certs.
 ::grpc_impl::experimental::TlsKeyMaterialsConfig::PemKeyCertPair get_cred_key_pair() {
-        mbedtls_x509_crt srvcert;
+  mbedtls_x509_crt srvcert;
   mbedtls_pk_context pkey;
+
+  uint8_t* der_key = NULL;
+  uint8_t* der_crt = NULL;
 
   mbedtls_x509_crt_init(&srvcert);
   mbedtls_pk_init(&pkey);
 
   library_engine ra_tls_attest_lib("libra_tls_attest.so", RTLD_LAZY);
-  auto ra_tls_create_key_and_crt_f = reinterpret_cast<int (*)(mbedtls_pk_context*, mbedtls_x509_crt*)>(ra_tls_attest_lib.get_func("ra_tls_create_key_and_crt"));
+  auto ra_tls_create_key_and_crt_der_f = reinterpret_cast<int (*)(uint8_t**, size_t*, uint8_t**, size_t*)>(ra_tls_attest_lib.get_func("ra_tls_create_key_and_crt_der"));
 
-  int ret = (*ra_tls_create_key_and_crt_f)(&pkey, &srvcert);
+  size_t der_key_size;
+  size_t der_crt_size;
+  
+  int ret = (*ra_tls_create_key_and_crt_der_f)(&der_key, &der_key_size, &der_crt, &der_crt_size);
   if (ret != 0) {
-      throw std::runtime_error(std::string("ra_tls_create_key_and_crt failed and error %s\n\n", mbedtls_high_level_strerr(ret)));
+      throw std::runtime_error(std::string("ra_tls_create_key_and_crt_der_f failed and error %s\n\n", mbedtls_high_level_strerr(ret)));
   }
 
+  ret = mbedtls_x509_crt_parse(&srvcert, (unsigned char*)der_crt, der_crt_size);
+  if (ret != 0) {
+    throw std::runtime_error(std::string("mbedtls_x509_crt_parse_der failed and error %s\n\n", mbedtls_high_level_strerr(ret)));
+  }
+
+  ret = mbedtls_pk_parse_key(&pkey, (unsigned char*)der_key, der_key_size,/*pwd=*/NULL, 0, NULL, NULL);
+  if (ret != 0) {
+    throw std::runtime_error(std::string("mbedtls_pk_parse_key failed and error %s\n\n", mbedtls_high_level_strerr(ret)));
+  }
+  
   unsigned char private_key_pem[16000], cert_pem[16000];
   size_t olen;
 

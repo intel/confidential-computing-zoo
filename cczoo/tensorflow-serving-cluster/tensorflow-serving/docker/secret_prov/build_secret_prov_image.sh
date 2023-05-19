@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,15 +17,34 @@
 
 set -e
 
-if  [ ! -n "$1" ] ; then
+if  [ ! -n "$2" ] ; then
     tag=latest
 else
-    tag=$1
+    tag=$2
 fi
 
+# You can remove build-arg http_proxy and https_proxy if your network doesn't need it
+# proxy_server=""
 
+if [ "$1" == "anolisos" ] ; then
 DOCKER_BUILDKIT=0 docker build \
-    -f secret_prov.dockerfile . \
-    -t secret_prov_server:${tag}
-
-
+    -f secret_prov.anolisos.dockerfile \
+    -t secret_prov_server:anolisos-${tag} \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    .
+elif [ "$1" == "azure" ] ; then
+DOCKER_BUILDKIT=0 docker build \
+    -f secret_prov.azure.dockerfile \
+    -t secret_prov_server:azure-${tag} \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    .
+else
+DOCKER_BUILDKIT=0 docker build \
+    -f secret_prov.dockerfile \
+    -t secret_prov_server:${tag} \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    .
+fi

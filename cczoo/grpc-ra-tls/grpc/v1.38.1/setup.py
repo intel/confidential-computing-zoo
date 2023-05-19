@@ -268,11 +268,13 @@ if EXTRA_ENV_LINK_ARGS is None:
 if BUILD_WITH_SGX_RA_TLS:
     SGX_RA_TLS_BACKEND = os.getenv("SGX_RA_TLS_BACKEND")
     if SGX_RA_TLS_BACKEND == "GRAMINE":
-        EXTRA_ENV_LINK_ARGS += ' -lmbedx509_gramine -lmbedcrypto_gramine -lcjson -lcjson_utils'
+        EXTRA_ENV_LINK_ARGS += ' -lmbedx509_gramine -lmbedcrypto_gramine -lcjson -lcjson_utils -DSGX_RA_TLS_GRAMINE_BACKEND'
     elif SGX_RA_TLS_BACKEND == "OCCLUM":
-        EXTRA_ENV_LINK_ARGS += ' -ldcap_quote'
+        EXTRA_ENV_LINK_ARGS += ' -ldcap_quote -DSGX_RA_TLS_OCCLUM_BACKEND'
+    elif SGX_RA_TLS_BACKEND == "TDX":
+        EXTRA_ENV_LINK_ARGS += ' -ltdx_attest -lsgx_dcap_quoteverify -lsgx_urts -DSGX_RA_TLS_TDX_BACKEND'
     elif SGX_RA_TLS_BACKEND == "DUMMY":
-        pass
+        EXTRA_ENV_LINK_ARGS += ' -DSGX_RA_TLS_DUMMY_BACKEND'
     else:
         raise Exception('Undefined SGX_RA_TLS_BACKEND!')
 

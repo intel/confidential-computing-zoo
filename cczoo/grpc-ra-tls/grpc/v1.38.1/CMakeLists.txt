@@ -49,6 +49,7 @@ option(gRPC_BUILD_CODEGEN "Build codegen" ON)
 option(gRPC_BUILD_CSHARP_EXT "Build C# extensions" ON)
 option(gRPC_BACKWARDS_COMPATIBILITY_MODE "Build libraries that are binary compatible across a larger number of OS and libc versions" OFF)
 
+# RA-TLS
 option(SGX_RA_TLS_BACKEND "Default SGX RA-TLS Backend" "GRAMINE")
 
 if(SGX_RA_TLS_BACKEND STREQUAL "GRAMINE")
@@ -57,6 +58,11 @@ if(SGX_RA_TLS_BACKEND STREQUAL "GRAMINE")
 elseif(SGX_RA_TLS_BACKEND STREQUAL "OCCLUM")
   message("SGX_RA_TLS_OCCLUM_BACKEND is defined")
   add_definitions(-DSGX_RA_TLS_OCCLUM_BACKEND)
+elseif(SGX_RA_TLS_BACKEND STREQUAL "TDX")
+  message("SGX_RA_TLS_TDX_BACKEND is defined")
+  add_definitions(-DSGX_RA_TLS_TDX_BACKEND)
+  option(INTEL_SGXSDK_INCLUDE "Intel SGXSDK INCLUDE DIR" "/opt/intel/sgxsdk/include")
+  include_directories($ENV{INTEL_SGXSDK_INCLUDE})
 elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
   message("SGX_RA_TLS_DUMMY_BACKEND is defined")
   add_definitions(-DSGX_RA_TLS_DUMMY_BACKEND)
@@ -2088,61 +2094,22 @@ target_include_directories(grpc
     ${_gRPC_ZLIB_INCLUDE_DIR}
 )
 
-if(SGX_RA_TLS_BACKEND STREQUAL "GRAMINE")
-  target_link_libraries(grpc
-    ${_gRPC_BASELIB_LIBRARIES}
-    ${_gRPC_ZLIB_LIBRARIES}
-    ${_gRPC_CARES_LIBRARIES}
-    ${_gRPC_ADDRESS_SORTING_LIBRARIES}
-    ${_gRPC_RE2_LIBRARIES}
-    ${_gRPC_UPB_LIBRARIES}
-    ${_gRPC_ALLTARGETS_LIBRARIES}
-    absl::flat_hash_map
-    absl::inlined_vector
-    absl::bind_front
-    absl::statusor
-    gpr
-    ${_gRPC_SSL_LIBRARIES}
-    address_sorting
-    libmbedx509_gramine.a
-    libmbedcrypto_gramine.a
-  )
-elseif(SGX_RA_TLS_BACKEND STREQUAL "OCCLUM")
-  target_link_libraries(grpc
-    ${_gRPC_BASELIB_LIBRARIES}
-    ${_gRPC_ZLIB_LIBRARIES}
-    ${_gRPC_CARES_LIBRARIES}
-    ${_gRPC_ADDRESS_SORTING_LIBRARIES}
-    ${_gRPC_RE2_LIBRARIES}
-    ${_gRPC_UPB_LIBRARIES}
-    ${_gRPC_ALLTARGETS_LIBRARIES}
-    absl::flat_hash_map
-    absl::inlined_vector
-    absl::bind_front
-    absl::statusor
-    gpr
-    ${_gRPC_SSL_LIBRARIES}
-    address_sorting
-    libdcap_quote.a
-  )
-elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
-  target_link_libraries(grpc
-    ${_gRPC_BASELIB_LIBRARIES}
-    ${_gRPC_ZLIB_LIBRARIES}
-    ${_gRPC_CARES_LIBRARIES}
-    ${_gRPC_ADDRESS_SORTING_LIBRARIES}
-    ${_gRPC_RE2_LIBRARIES}
-    ${_gRPC_UPB_LIBRARIES}
-    ${_gRPC_ALLTARGETS_LIBRARIES}
-    absl::flat_hash_map
-    absl::inlined_vector
-    absl::bind_front
-    absl::statusor
-    gpr
-    ${_gRPC_SSL_LIBRARIES}
-    address_sorting
-  )
-endif()
+target_link_libraries(grpc
+  ${_gRPC_BASELIB_LIBRARIES}
+  ${_gRPC_ZLIB_LIBRARIES}
+  ${_gRPC_CARES_LIBRARIES}
+  ${_gRPC_ADDRESS_SORTING_LIBRARIES}
+  ${_gRPC_RE2_LIBRARIES}
+  ${_gRPC_UPB_LIBRARIES}
+  ${_gRPC_ALLTARGETS_LIBRARIES}
+  absl::flat_hash_map
+  absl::inlined_vector
+  absl::bind_front
+  absl::statusor
+  gpr
+  ${_gRPC_SSL_LIBRARIES}
+  address_sorting
+)
 
 if(_gRPC_PLATFORM_IOS OR _gRPC_PLATFORM_MAC)
   target_link_libraries(grpc "-framework CoreFoundation")
@@ -2839,15 +2806,16 @@ add_library(grpc++
   src/cpp/util/status.cc
   src/cpp/util/string_ref.cc
   src/cpp/util/time_cc.cc
+  src/cpp/sgx/cJSON.c
   src/cpp/sgx/sgx_ra_tls_credentials.cc
   src/cpp/sgx/sgx_ra_tls_options.cc
   src/cpp/sgx/sgx_ra_tls_backends.cc
   src/cpp/sgx/sgx_ra_tls_gramine.cc
   src/cpp/sgx/sgx_ra_tls_occlum.cc
+  src/cpp/sgx/sgx_ra_tls_tdx.cc
   src/cpp/sgx/sgx_ra_tls_dummy.cc
   src/cpp/sgx/sgx_ra_tls_impl.cc
   src/cpp/sgx/sgx_ra_tls_utils.cc
-  src/cpp/sgx/cjson/cJSON.c
 )
 
 set_target_properties(grpc++ PROPERTIES
@@ -2886,6 +2854,26 @@ target_link_libraries(grpc++
   ${_gRPC_ALLTARGETS_LIBRARIES}
   grpc
 )
+if(SGX_RA_TLS_BACKEND STREQUAL "GRAMINE")
+  target_link_libraries(grpc++
+    libmbedx509_gramine.a
+    libmbedcrypto_gramine.a
+  )
+elseif(SGX_RA_TLS_BACKEND STREQUAL "OCCLUM")
+  target_link_libraries(grpc++
+    libdcap_quote.a
+  )
+elseif(SGX_RA_TLS_BACKEND STREQUAL "TDX")
+  target_link_libraries(grpc++
+    tdx_attest
+    sgx_dcap_quoteverify
+    sgx_urts
+  )
+elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
+  target_link_libraries(grpc++
+    ""
+  )
+endif()
 
 foreach(_hdr
   include/grpc++/alarm.h
@@ -3045,10 +3033,15 @@ foreach(_hdr
   include/grpcpp/security/credentials.h
   include/grpcpp/security/server_credentials.h
   include/grpcpp/security/tls_certificate_provider.h
+  include/grpcpp/security/tls_credentials_options.h
   include/grpcpp/security/sgx/cJSON.h
   include/grpcpp/security/sgx/sgx_ra_tls.h
-  include/grpcpp/security/sgx/sgx_ra_tls_utils.h
   include/grpcpp/security/sgx/sgx_ra_tls_options.h
+  include/grpcpp/security/sgx/sgx_ra_tls_backends.h
+  include/grpcpp/security/sgx/sgx_ra_tls_context.h
+  include/grpcpp/security/sgx/sgx_ra_tls_impl.h
+  include/grpcpp/security/sgx/sgx_ra_tls_log.h
+  include/grpcpp/security/sgx/sgx_ra_tls_utils.h
   include/grpcpp/server.h
   include/grpcpp/server_builder.h
   include/grpcpp/server_context.h

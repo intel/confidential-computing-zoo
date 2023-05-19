@@ -19,10 +19,10 @@ unset http_proxy https_proxy
 
 if [ "$1" == "server" ]; then
     cd runtime/server
-        gramine-sgx grpc ./server
+        gramine-sgx grpc
     cd -
 elif [ "$1" == "client" ]; then
     cd runtime/client
-        gramine-sgx grpc ./client
+        gramine-sgx grpc
     cd -
 fi

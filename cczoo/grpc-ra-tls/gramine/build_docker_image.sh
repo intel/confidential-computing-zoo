@@ -17,29 +17,34 @@
 set -e
 
 if  [ ! -n "$1" ] ; then
-    base_image=gramine-sgx-dev:ubuntu-18.04-latest
+    base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
 else
     base_image=$1
 fi
 
 if  [ ! -n "$2" ] ; then
-    image_tag=grpc-gramine-sgx-dev:ubuntu-18.04-latest
+    image_tag=grpc-ratls-dev:graminev1.2-ubuntu20.04-latest
 else
     image_tag=$2
 fi
 
-# You can remove no_proxy and proxy_server if your network doesn't need it
-no_proxy="localhost,127.0.0.1"
+# Use the host proxy as the default configuration, or specify a proxy_server
+# no_proxy="localhost,127.0.0.1"
 # proxy_server="" # your http proxy server
+
+if [ "$proxy_server" != "" ]; then
+    http_proxy=${proxy_server}
+    https_proxy=${proxy_server}
+fi
 
 cd `dirname $0`
 
 DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
-    --build-arg http_proxy=${proxy_server} \
-    --build-arg https_proxy=${proxy_server} \
+    --build-arg http_proxy=${http_proxy} \
+    --build-arg https_proxy=${https_proxy} \
     --build-arg BASE_IMAGE=${base_image} \
-    -f grpc-gramine-sgx-dev.dockerfile \
+    -f grpc-ratls-dev.dockerfile \
     -t ${image_tag} \
     ..
 

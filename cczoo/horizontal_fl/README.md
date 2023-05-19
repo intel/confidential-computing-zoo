@@ -55,60 +55,170 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 
 ## Horizontal federated training execution
 
-### Requirements
+Recommendation System and Image Classification.
 
-- a machine that supports Intel SGX and FLC/DCAP
-- EPC size: 64GB
-- Docker
+### Prerequisites
 
-### Configuration
+- Ubuntu 18.04/Ubuntu 20.04. This solution should work on other Linux distributions as well,
+  but for simplicity we provide the steps for Ubuntu 18.04/Ubuntu 20.04.
 
-- framework: TensorFlow 2.4.2
-- model: ResNet-50
-- dataset: Cifar-10
-- ps num: 1
-- worker num: 2
-- container num: 3
+- Docker Engine. Docker Engine is an open source containerization technology for
+  building and containerizing your applications.
+  Please follow [this guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script)
+  to install Docker engine.
 
-### Build Docker image
+- CCZoo Horizontal Federated Learning source package:
+
 ```shell
-./build_docker_image.sh
+   git clone https://github.com/intel/confidential-computing-zoo.git
 ```
 
-### Start containers and aesm services
-Start three containers (ps0, worker0, worker1) and aesm services.
-If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`.
+- Intel SGX Driver and SDK/PSW. You need a machine that supports Intel SGX and
+  FLC/DCAP. Please follow [this guide](https://download.01.org/intel-sgx/latest/linux-latest/docs/Intel_SGX_SW_Installation_Guide_for_Linux.pdf)
+  to install the Intel SGX driver and SDK/PSW on the machine/VM. Make sure to install the driver
+  with ECDSA/DCAP attestation.
+  For deployments on Microsoft Azure, a script is provided to install general dependencies, Intel SGX DCAP dependencies, and the Azure DCAP Client. To run this script:
+
 ```shell
-./start_container.sh ps0 <PCCS ip addr>
-./start_aesm_service.sh
-```
-```shell
-./start_container.sh worker0 <PCCS ip addr>
-./start_aesm_service.sh
-```
-```shell
-./start_container.sh worker1 <PCCS ip addr>
-./start_aesm_service.sh
+   cd <horizontal_fl dir>
+   ./setup_azure_vm.sh
 ```
 
-If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
-
-### Run the training scripts
-Run the script for the corresponding job in each container.
+  After Intel SGX DCAP is setup, verify the Intel Architectural Enclave Service Manager is active (running):
+  
 ```shell
-cd hfl-tensorflow
+   systemctl status aesmd
+```
+  
+- EPC size: 64GB for image classification solution, 256GB for recommendation system solution
+
+ 
+### Solution Ingredients
+This solution uses the following ingredients, which are installed as part of the container build process.
+- TensorFlow 2.4.2
+- [Gramine](https://gramine.readthedocs.io)
+
+
+### Recommendation system
+#### Configuration
+
+- Model: dlrm
+- Dataset: click-through record in Kaggle Cretio Ad dataset
+- Number of container for ps: 1
+- Number of containers for workers: 4
+- CPU cores: 45
+
+#### Download dataset
+
+The dataset is saved in [GoogleDrive](https://docs.google.com/uc?export=download&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr), you can download it by:
+
+```shell
+wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr" -O train.tar && rm -rf /tmp/cookies.txt
+```
+
+Or [BaiduNetdisk](https://pan.baidu.com/s/1BkMBDMghvJXp0wK9EQHtMg?pwd=c7cf).
+The dataset should be placed in the `<horizontal_fl dir>/recommendation_system/dataset` folder.
+
+#### Build Docker image
+```shell
+cd <horizontal_fl dir>
+```
+For deployments on Microsoft Azure:
+```shell
+AZURE=1 ./build_docker_image.sh recommendation_system <ubuntu:18.04/ubuntu:20.04>
+```
+For other cloud deployments:
+```shell
+./build_docker_image.sh recommendation_system <ubuntu:18.04/ubuntu:20.04>
+```
+For delpoyment on Anolisos:
+```shell
+./build_docker_image.sh recommendation_system anolisos
+```
+
+#### Start containers and run the training scripts
+Start five containers (ps0, worker0, worker1, worker2, worker3) and run the script for the corresponding job in each container.
+
+If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
+
+```shell
+./start_container.sh ps0 <PCCS ip addr> <ubuntu/anolisos>
+cd recommendation_system
 test-sgx.sh ps0
 ```
 ```shell
-cd hfl-tensorflow
+./start_container.sh worker0 <PCCS ip addr> <ubuntu/anolisos>
+cd recommendation_system
 test-sgx.sh worker0
 ```
 ```shell
-cd hfl-tensorflow
+./start_container.sh worker1 <PCCS ip addr> <ubuntu/anolisos>
+cd recommendation_system
+test-sgx.sh worker1
+```
+```shell
+./start_container.sh worker2 <PCCS ip addr> <ubuntu/anolisos>
+cd recommendation_system
+test-sgx.sh worker2
+```
+```shell
+./start_container.sh worker3 <PCCS ip addr> <ubuntu/anolisos>
+cd recommendation_system
+test-sgx.sh worker3
+```
+
+You can see the training log information from the workers' terminals to confirm that the training is running normally. The model files generated during training will be saved in the `model` folder. In this example, the information related to variable values is stored in `model/model.ckpt-data` of `ps0`, and the information related to the computational graph structure is stored in `model/model.ckpt-meta` of `worker0`.
+
+### Image classification
+
+#### Configuration
+
+- Model: ResNet-50
+- Dataset: Cifar-10
+- Number of container for ps: 1
+- Number of containers for workers: 2
+- CPU cores: 6
+
+#### Build Docker image
+```shell
+cd <horizontal_fl dir>
+```
+For deployments on Microsoft Azure:
+```shell
+AZURE=1 ./build_docker_image.sh image_classification <ubuntu:18.04/ubuntu:20.04>
+```
+For other cloud deployments:
+```shell
+./build_docker_image.sh image_classification <ubuntu:18.04/ubuntu:20.04>
+```
+For deployment on Anolisos:
+```shell
+./build_docker_image.sh image_classification anolisos
+```
+
+#### Start containers and run the training scripts
+Start three containers (ps0, worker0, worker1) and run the script for the corresponding job in each container.
+
+If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud (except for Microsoft Azure), please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
+```shell
+./start_container.sh ps0 <PCCS ip addr> latest <ubuntu/anolisos>
+cd image_classification
+test-sgx.sh ps0
+```
+```shell
+./start_container.sh worker0 <PCCS ip addr> latest <ubuntu/anolisos>
+cd image_classification
+test-sgx.sh worker0
+```
+```shell
+./start_container.sh worker1 <PCCS ip addr> latest <ubuntu/anolisos>
+cd image_classification
 test-sgx.sh worker1
 ```
 
 You can see the training log information from the workers' terminals to confirm that the training is running normally. The model files generated during training will be saved in the `model` folder. In this example, the information related to variable values is stored in `model/model.ckpt-data` of `ps0`, and the information related to the computational graph structure is stored in `model/model.ckpt-meta` of `worker0`.
+
+
 
 ---
 ## Cloud Deployment
@@ -121,7 +231,7 @@ Cloud. It builds security-enhanced instance families [g7t, c7t, r7t](https://hel
 based on Intel® SGX technology to provide a trusted and confidential environment
 with a higher security level.
 
-The configuration of the ECS instance as blow:
+The configuration of the ECS instance as below:
 
 - Instance Type  : [g7t](https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k).
 - Instance Kernel: 4.19.91-24
@@ -137,7 +247,7 @@ The configuration of the ECS instance as blow:
 Tencent Cloud Virtual Machine (CVM) provide one instance named [M6ce](https://cloud.tencent.com/document/product/213/11518#M6ce),
 which supports Intel® SGX encrypted computing technology.
 
-The configuration of the M6ce instance as blow:
+The configuration of the M6ce instance as below:
 
 - Instance Type  : [M6ce.4XLARGE128](https://cloud.tencent.com/document/product/213/11518#M6ce)
 - Instance Kernel: 5.4.119-19-0009.1
@@ -148,6 +258,40 @@ The configuration of the M6ce instance as blow:
 
 ***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with Tencent PCCS server address.
 
+### 3. ByteDance Cloud
+
+ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
+which supports Intel® SGX encrypted computing technology.
+
+The configuration of the ebmg2t instance as below:
+
+- Instance Type  : `ecs.ebmg2t.32xlarge`.
+- Instance Kernel: kernel-5.15
+- Instance OS    : ubuntu-20.04
+- Instance Encrypted Memory: 256G
+- Instance vCPU  : 16
+- Instance SGX PCCS Server: `sgx-dcap-server.bytedance.com`.
+
+### 4. Microsoft Azure
+
+Microsoft Azure [DCsv3-series](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series) instances support Intel® SGX encrypted computing technology.
+
+DCsv3-series instance used for the recommendation system solution:
+
+- Instance Type  : Standard_DC48s_v3
+- Instance Kernel: 5.15.0-1014-azure
+- Instance OS    : Ubuntu Server 20.04 LTS - Gen2
+- Instance Encrypted Memory: 256G
+- Instance vCPU  : 48
+
+DCsv3-series instance used for the image classification solution:
+
+- Instance Type  : Standard_DC16s_v3
+- Instance Kernel: 5.15.0-1014-azure
+- Instance OS    : Ubuntu Server 20.04 LTS - Gen2
+- Instance Encrypted Memory: 64G
+- Instance vCPU  : 16
+
 <div id="refer-anchor-1"></div>
 
-- [1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
+[1] [Knauth, Thomas, et al. "Integrating remote attestation with transport layer security." arXiv preprint arXiv:1801.05863 (2018).](https://arxiv.org/pdf/1801.05863)
