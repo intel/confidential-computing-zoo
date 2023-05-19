@@ -108,8 +108,8 @@ Prerequisites
   building and containerizing your applications. In this tutorial, applications,
   like Gramine, TensorFlow Serving, secret provisioning, will be built in Docker
   images. Then Kubernetes will manage these Docker images.
-  Please follow `this guide <https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script>`__
-  to install Docker engine.
+  Please follow this `guide <https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script>`__
+  to install Docker engine. It is recommended to use a data disk of at least 128GB for the docker daemon data directory. This `guide <https://docs.docker.com/config/daemon/#daemon-data-directory>`_ describes how to configure the docker daemon data directory. If behind a proxy server, please refer to this `guide <https://docs.docker.com/config/daemon/systemd/>`_ for configuring the docker daemon proxy settings.
 
 - CCZoo source::
 
@@ -117,7 +117,7 @@ Prerequisites
    
 - System with processor that supports Intel® Software Guard Extensions (Intel® SGX), Datacenter Attestation Primitives (DCAP), and Flexible Launch Control (FLC).
 
-- For deployments on Microsoft Azure, run the following script to install general dependencies, Intel SGX DCAP dependencies, and the Azure DCAP Client. To run this script::
+- If using Microsoft Azure, run the following script to install general dependencies, Intel SGX DCAP dependencies, and the Azure DCAP Client. To run this script::
 
    cd <cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving
    sudo ./setup_azure_vm.sh
@@ -126,7 +126,7 @@ Prerequisites
   
    sudo systemctl status aesmd
 
-- For other deployments (other than on Microsoft Azure), use `this guide <https://download.01.org/intel-sgx/latest/linux-latest/docs/Intel_SGX_Installation_Guide_Linux_2.10_Open_Source.pdf>`__
+- For other deployments (other than Microsoft Azure), use `this guide <https://download.01.org/intel-sgx/sgx-linux/2.10/docs/Intel_SGX_Installation_Guide_Linux_2.10_Open_Source.pdf>`__
   to install the Intel SGX driver and SDK/PSW on the machine/VM. Make sure to install the driver
   with ECDSA/DCAP attestation.
   
@@ -157,32 +157,37 @@ Follow the steps below to download (or alternatively build) the Client container
 
 1.1 Download Client Container Image
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Download one of the following container images.
 
-For Anolisos cloud deployments::
+Container image based on Anolis OS::
 
    docker pull intelcczoo/tensorflow_serving:anolis_client_latest
 
-For other cloud deployments, including on Microsoft Azure::
+Default container image (for use on Microsoft Azure)::
 
    docker pull intelcczoo/tensorflow_serving:default_client_latest
 
 
 1.2 Alternatively Build Client Container Image
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Alternatively, build the Client container image.
-
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Download the CCZoo source::
 
     git clone https://github.com/intel/confidential-computing-zoo.git
     cd <cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/client
-    
-For Anolisos::
+
+Build one of the following container images.
+
+To build the container image based on Anolis OS::
 
     ./build_client_image.sh -b anolisos
 
-For other cloud deployments, including on Microsoft Azure::
+To build the default container image (for use on Microsoft Azure)::
 
     ./build_client_image.sh -b default
+
+NOTE: To specify the proxy server, add the ``-p PROXY`` parameter. For example::
+
+    ./build_client_image.sh -b default -p http://proxyserver:port
 
 
 2. Download/Build Secret Provisioning Server Container Image
@@ -201,39 +206,45 @@ Follow the steps below to download (or alternatively build) the Secret Provision
 
 2.1 Download Secret Provisioning Server Container Image
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-For deployments on Microsoft Azure::
+Download one of the following container images.
+
+Container image for use on Microsoft Azure::
 
    docker pull intelcczoo/tensorflow_serving:azure_secret_prov_server_latest
       
-For Anolisos cloud deployments::
+Container image based on Anolis OS::
 
    docker pull intelcczoo/tensorflow_serving:anolis_secret_prov_server_latest
 
-For other cloud deployments::
+Default container image::
 
    docker pull intelcczoo/tensorflow_serving:default_secret_prov_server_latest
 
 
 2.2 Alternatively Build Secret Provisioning Server Container Image
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Alternatively, build the Secret Provisioning Server container image.
-
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Download the CCZoo source::
 
    git clone https://github.com/intel/confidential-computing-zoo.git
    cd <cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/secret_prov
 
-For deployments on Microsoft Azure::
+Build one of the following container images.
+
+To build the container image for use on Microsoft Azure::
 
    ./build_secret_prov_image.sh azure
    
-For Anolisos cloud deployments::
+To build the container image based on Anolis OS::
 
    ./build_secret_prov_image.sh anolisos
 
-For other cloud deployments::
+To build the default container image::
 
    ./build_secret_prov_image.sh
+
+NOTE: To specify the proxy server, set the ``proxy_server`` variable prior to the call to ``build_secret_prov_image.sh``, for example::
+
+   proxy_server="http://proxyserver:port" ./build_secret_prov_image.sh
 
 
 3. Download/Build TensorFlow Serving Container Image
@@ -242,41 +253,44 @@ Follow the steps below to download (or alternatively build) the TensorFlow Servi
 
 3.1 Download TensorFlow Serving Container Image
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Download the TensorFlow Serving container image to the SGX-enabled machine.
+Download one of the following container images.
 
-For deployments on Microsoft Azure::
+Container image for use on Microsoft Azure::
 
    docker pull intelcczoo/tensorflow_serving:azure_tensorflow_serving_latest
       
-For Anolisos cloud deployments::
+Container image based on Anolis OS::
 
    docker pull intelcczoo/tensorflow_serving:anolis_tensorflow_serving_latest
 
-For other cloud deployments::
+Default container image::
 
    docker pull intelcczoo/tensorflow_serving:default_tensorflow_serving_latest
 
 
 3.2 Alternatively Build TensorFlow Serving Container Image
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Alternatively, build the TensorFlow Serving container image.
-
 Download the CCZoo source::
 
    git clone https://github.com/intel/confidential-computing-zoo.git
    cd <cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/tf_serving
    
-For deployments on Microsoft Azure::
+To build the container image for use on Microsoft Azure::
    
    ./build_gramine_tf_serving_image.sh azure
       
-For Anolisos cloud deployments::
+To build the container image based on Anolis OS::
 
    ./build_gramine_tf_serving_image.sh anolisos
 
-For other cloud deployments::
+To build the default container image::
 
    ./build_gramine_tf_serving_image.sh
+
+NOTE: To specify the proxy server, set the ``proxy_server`` variable prior to the call to ``build_gramine_tf_serving_image.sh``, for example::
+
+   proxy_server="http://proxyserver:port" ./build_gramine_tf_serving_image.sh
+
 
 3.2.1 TensorFlow Serving Container Build Explained
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -345,18 +359,6 @@ On the system with an already built TensorFlow Serving container image, get the 
     isv_prod_id: 0
     isv_svn:     0
 
-These are the same SGX measurements displayed during the TensorFlow Serving container build.
-Example mr_enclave and mr_signer values from a TensorFlow Serving container build::
-
-   Step 38/45 : RUN make SGX=${SGX} RA_TYPE=${RA_TYPE} -j `nproc` | grep "mr_enclave\|mr_signer\|isv_prod_id\|isv_svn" | tee -a enclave.mr
-    ---> Running in 1c1468764466
-       isv_prod_id: 0
-       isv_svn:     0
-       mr_enclave:  39b02dbf3cd6d6c68eb227a5da019c3721162085116a614ab4be0d1f81199d8f
-       mr_signer:   ae483edd52e38b2ef67f3962b75ad47f987db8d3a42d0cd1ca7b6ee4c7035a6e
-       isv_prod_id: 0
-       isv_svn:     0
-
 
 5. Update Expected TF Serving Container SGX Measurements for the Secret Provisioning Server
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -387,15 +389,15 @@ Change directories::
 
    cd <cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/secret_prov
 
-For deployments on Microsoft Azure::
+For use on Microsoft Azure (making sure to specify the ``azure``-specific container tag)::
   
    ./run_secret_prov.sh -i tensorflow_serving:<azure_secret_prov_server_tag> -r <absolute path to patches/secret_prov_pf/ra_config.json> -b https://sharedcus.cus.attest.azure.net
    
-For Anolisos cloud deployments::
+For Anolis OS deployments (making sure to specify the ``anolis``-specific container tag)::
 
    ./run_secret_prov.sh -i tensorflow_serving:<anolis_secret_prov_server_tag> -r <absolute path to patches/secret_prov_pf/ra_config.json> -a pccs.service.com:ip_addr
 
-For other cloud deployments::
+For other cloud deployments (making sure to specify the ``default``-specific container tag)::
 
    ./run_secret_prov.sh -i tensorflow_serving:<default_secret_prov_server_tag> -r <absolute path to patches/secret_prov_pf/ra_config.json> -a pccs.service.com:ip_addr
 
@@ -441,19 +443,20 @@ Confirm that the converted model file appears under::
    models/resnet50-v15-fp32/1/saved_model.pb
 
 7.2 Create SSL/TLS Certificate
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 We choose gRPC SSL/TLS and create the SSL/TLS Keys and certificates by setting
 TensorFlow Serving domain name to establish a communication link between client
 and TensorFlow Serving.
 
-For ensuring security of the data being transferred between a client and server, SSL/TLS can be implemented with either one-way TLS authentication or two-way TLS authentication (mutual TLS authentication).
+For ensuring security of the data being transferred between a client and server, SSL/TLS can be implemented with either two-way TLS authentication (mutual TLS authentication) or one-way TLS authentication.
+
+Select either two-way SSL/TLS authentication or one-way SSL/TLS authentication.
 
 To use two-way SSL/TLS authentication (server and client verify each other)::
 
       service_domain_name=grpc.tf-serving.service.com
       client_domain_name=client.tf-serving.service.com
       ./generate_twoway_ssl_config.sh ${service_domain_name} ${client_domain_name}
-      
 
 ``generate_twoway_ssl_config.sh`` will generate the directory 
 ``ssl_configure`` which includes ``server/*.pem``, ``client/*.pem``, 
@@ -470,8 +473,6 @@ Alternatively, to use one-way SSL/TLS authentication (client verifies server)::
 ``ssl_configure`` which includes ``server/*.pem`` and ``ssl.cfg``.
 ``server/cert.pem`` will be used by the remote client and ``ssl.cfg`` 
 will be used by TensorFlow Serving.
-
-
 
 7.3 Encrypt Model and SSL/TLS Certificate
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -500,7 +501,7 @@ the configuration option "sgx.protected_files.file_mode=file_name" is given, whi
 specifies the files to be protected by encryption.
 
 When TensorFlow Serving loads the model, the path to load the model is ``models/resnet50-v15-fp32/1/saved_model.pb``,
-and the encryption key is located in files/wrap-key. You can also customize the
+and the encryption key is located in ``files/wrap-key``. You can also customize the
 128-bit password. According to the file path matching principle, the file path must
 be consistent with the one used during encryption.
 
@@ -511,6 +512,8 @@ Encrypt the model file::
    LD_LIBRARY_PATH=./libs ./gramine-sgx-pf-crypt encrypt -w files/wrap-key -i  plaintext/saved_model.pb -o  models/resnet50-v15-fp32/1/saved_model.pb
    tar -cvf models.tar models
 
+The encrypted model file is located at ``models/resnet50-v15-fp32/1/saved_model.pb``.
+
 Encrypt ssl.cfg::
 
       mkdir -p plaintext/
@@ -519,7 +522,9 @@ Encrypt ssl.cfg::
       mv ssl.cfg ssl_configure/
       tar -cvf ssl_configure.tar ssl_configure
       
-For more information about ``gramine-sgx-pf-crypt``, please refer to `pf_crypt <https://github.com/gramineproject/gramine/tree/master/Pal/src/host/Linux-SGX/tools/pf_crypt>`__.
+The encrypted ssl.cfg is located at ``ssl_configure/ssl.cfg``.
+
+For more information about ``gramine-sgx-pf-crypt``, please refer to `pf_crypt <https://github.com/gramineproject/gramine/tree/master/tools/sgx/pf_crypt>`__.
 
 
 8. Run TensorFlow Serving w/ Gramine on SGX-enabled System
@@ -603,30 +608,30 @@ Extract the certificates on the Client system/VM::
 On the Client system/VM, change directories and run the Client container::
 
     cd <cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/client
+    
     ./run_client.sh -s <SSLDIR> -t <IPADDR> -i <IMAGEID>
       -s SSLDIR      SSLDIR is the absolute path to the ssl_configure directory
       -t IPADDR      IPADDR is the TF serving service IP address
       -i IMAGEID     IMAGEID is the client docker image ID
 
-For Anolisos, IMAGEID is <anolisos_client:tag>.
-For other cloud deployments, including on Microsoft Azure, IMAGEID is <default_client:tag>.
+``<IMAGEID>`` is the image ID of the container downloaded/built in section `1. Download/Build Client Container Image`_.
 
 
 9.3 Send Remote Inference Request
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-From the Client container, send the remote inference request (with a dummy image)::
+From the Client container, send the remote inference request (which uses a dummy image)::
 
-   If using two-way SSL/TLS authentication::
+Select either two-way or one-way SSL/TLS authentication based on which was selected in section `7.2 Create SSL/TLS Certificate`_.
 
-      cd /client
-      ./run_inference.sh twoway_ssl
+To use two-way SSL/TLS authentication::
 
-   If using one-way SSL/TLS authentication::
+   cd /client
+   ./run_inference.sh twoway_ssl
 
-      cd /client
-      ./run_inference.sh oneway_ssl
+To use one-way SSL/TLS authentication::
 
-
+   cd /client
+   ./run_inference.sh oneway_ssl
       
 Observe the inference response output that begins with the following string::
 
@@ -740,7 +745,7 @@ Serving pods can communicate with the Secret Provisioning Server::
 
    kubectl edit configmap -n kube-system coredns
 
-The config file will open in an editor. Add the following "hosts" section above the "prometheus" line as shown below, replacing x.x.x.x with the Secret Provisioning Server container IP address::
+The config file will open in an editor. Add the following ``hosts`` section above the ``prometheus`` line as shown below, replacing ``x.x.x.x`` with the Secret Provisioning Server container IP address::
 
     # new added
     hosts {
@@ -768,7 +773,7 @@ List the docker images, and take note of the tag of the TensorFlow Serving conta
 
     docker images
 
-Create a new tag, replacing "<tensorflow_serving_tag>" with the tag of the TensorFlow Serving container image::
+Create a new tag, replacing ``<tensorflow_serving_tag>`` with the tag of the TensorFlow Serving container image::
 
     tag=<tensorflow_serving_tag>
     docker tag tensorflow_serving:${tag} localhost:5000/tensorflow_serving:${tag}
@@ -787,17 +792,17 @@ TensorFlow Serving under the directory::
 
 There are two Yaml files: ``deploy.yaml`` and ``ingress.yaml``.
 
-Please refer to this `guide <https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#deploymentspec-v1-apps>`__
+Please refer to this `guide <https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#deployment-v1-apps>`__
 for more information about the yaml parameters.
 
-Customize ``deploy.yaml``, replacing "<tensorflow_serving_tag>" with the tag of your TensorFlow Serving container::
+Customize ``deploy.yaml``, replacing ``<tensorflow_serving_tag>`` with the tag of your TensorFlow Serving container::
 
     containers:
     - name: gramine-tf-serving-container
       image: localhost:5000/tensorflow_serving:<tensorflow_serving_tag>
       imagePullPolicy: IfNotPresent
 
-Customize ``deploy.yaml`` with the host absolute path to the models directory and the host absolute path to ssl.cfg::     
+Customize ``deploy.yaml`` with the host absolute path to the models directory and the host absolute path to ``ssl.cfg``::     
 
      - name: model-path
        hostPath:
@@ -809,7 +814,7 @@ Customize ``deploy.yaml`` with the host absolute path to the models directory an
 
 
 ``ingress.yaml`` mainly configures the networking options.
-Use the default domain name, or use a custom domain name::
+Use the default domain name as shown below, or use a custom domain name::
 
     rules:
       - host: grpc.tf-serving.service.com
@@ -856,7 +861,7 @@ Scale the TensorFlow Serving service to two replicas::
 
 This starts two TensorFlow Serving containers, each with its own TensorFlow Serving service running on its own SGX enclave.
 
-Verify that two pods are now running. Also verify that the second pod of the TensorFlow Serving container is running and that the service is ready (look for log "Entering the event loop")::
+Verify that two pods are now running. Also verify that the second pod of the TensorFlow Serving container is running and that the service is ready (look for the log ``Entering the event loop``)::
 
     $ kubectl get pods -n gramine-tf-serving
     NAME                                             READY   STATUS    RESTARTS   AGE
@@ -870,7 +875,7 @@ Verify that two pods are now running. Also verify that the second pod of the Ten
 
 4.1 Get IP Address of TensorFlow Serving Service
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Get the CLUSTER-IP of the load balanced TensorFlow Serving service::
+Get the ``CLUSTER-IP`` of the load balanced TensorFlow Serving service::
 
     $ kubectl get service -n gramine-tf-serving                             
     NAME                         TYPE       CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
@@ -879,7 +884,7 @@ Get the CLUSTER-IP of the load balanced TensorFlow Serving service::
 
 4.2 Run Client Container
 ^^^^^^^^^^^^^^^^^^^^^^^^
-On the Client system/VM, change directories and run the Client container, where IPADDR is the CLUSTER-IP value::
+On the Client system/VM, change directories and run the Client container, where ``IPADDR`` is the ``CLUSTER-IP`` value::
 
     cd <cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/client
     
@@ -888,24 +893,24 @@ On the Client system/VM, change directories and run the Client container, where 
       -t IPADDR      IPADDR is the TF serving service IP address
       -i IMAGEID     IMAGEID is the client docker image ID
 
-For Anolisos, IMAGEID is <anolisos_client:tag>.
-For other cloud deployments, including on Microsoft Azure, IMAGEID is <default_client:tag>.
+``<IMAGEID>`` is the image ID of the container downloaded/built in section `1. Download/Build Client Container Image`_.
 
 
 4.3 Send Remote Inference Request
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-From the Client container, send the remote inference request (with a dummy image)::
+From the Client container, send the remote inference request (which uses a dummy image)::
 
-   If using two-way SSL/TLS authentication::
+Select either two-way or one-way SSL/TLS authentication based on which was selected in section `7.2 Create SSL/TLS Certificate`_.
 
-      cd /client
-      ./run_inference.sh twoway_ssl
+To use two-way SSL/TLS authentication::
 
-   If using one-way SSL/TLS authentication::
+   cd /client
+   ./run_inference.sh twoway_ssl
 
-      cd /client
-      ./run_inference.sh oneway_ssl
+To use one-way SSL/TLS authentication::
 
+   cd /client
+   ./run_inference.sh oneway_ssl
 
 Observe the inference response output that begins with the following string::
 
@@ -926,7 +931,7 @@ Cloud Deployment
 ----------------
 
 ``Notice:``
-   1. Except for Microsoft Azure, please replace server link in `sgx_default_qcnl.conf` included in the dockerfile with public cloud PCCS server address.
+   1. Except for Microsoft Azure, please replace server link in ``sgx_default_qcnl.conf`` included in the dockerfile with public cloud PCCS server address.
    2. If you choose to run this solution in separated public cloud instance, please make sure the ports ``4433`` and ``8500-8501`` are enabled to access.
 
 
@@ -994,3 +999,5 @@ The following is the configuration of the DCsv3-series instance used:
 - Instance OS    : Ubuntu Server 20.04 LTS - Gen2
 - Instance Encrypted Memory: 64G
 - Instance vCPU  : 16
+
+Please refer to this `guide <cczoo_ppml_inference_azure.md>`_ for instructions on how to deploy this solution using Azure Kubernetes Service.
