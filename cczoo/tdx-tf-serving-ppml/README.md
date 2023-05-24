@@ -44,7 +44,7 @@ This practice involves three roles: Trusted side, Untrusted cloud side, and Clie
 1. Prepare source code
 
     ```
-    git clone https://github.com/intel/confidential-computing-zoo.git
+    git clone -b v1.0 https://github.com/intel/confidential-computing-zoo.git
     cd confidential-computing-zoo/cczoo/tdx-tf-serving-ppml
     cp -r ../tdx-encrypted-vfs ./tools
     ```
