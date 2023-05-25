@@ -39,9 +39,13 @@ docker run -it \
     --device=/dev/sgx_enclave:/dev/sgx/enclave \
     --device=/dev/sgx_provision:/dev/sgx/provision \
     --add-host=pccs.service.com:${ip_addr} \
+    --net=host \
     -e no_proxy=${no_proxy} \
     -e http_proxy=${proxy_server} \
     -e https_proxy=${proxy_server} \
     -v /home:/home/host-home \
+    -v `pwd -P`/../tools:/clf/cczoo/cross_lang_framework/clf_server/certs \
+    -v `pwd -P`/../clf_server/clf_server.conf:/clf/cczoo/cross_lang_framework/clf_server/clf_server.conf \
     ${image_tag} \
     bash
+

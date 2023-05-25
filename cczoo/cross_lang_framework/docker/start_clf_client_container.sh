@@ -25,7 +25,7 @@ fi
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=clf-client:gramine1.3-ubuntu20.04
+    image_tag=clf-client-app:gramine1.3-ubuntu20.04
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
@@ -39,9 +39,13 @@ docker run -it \
     --device=/dev/sgx_enclave:/dev/sgx/enclave \
     --device=/dev/sgx_provision:/dev/sgx/provision \
     --add-host=pccs.service.com:${ip_addr} \
+    --add-host=`hostname`:${ip_addr} \
     -e no_proxy=${no_proxy} \
     -e http_proxy=${proxy_server} \
     -e https_proxy=${proxy_server} \
     -v /home:/home/host-home \
+    -v `pwd -P`/../tools/ca_cert.crt:/clf/cczoo/cross_lang_framework/clf_client/app/certs/ca_cert.crt \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
     ${image_tag} \
     bash
+
