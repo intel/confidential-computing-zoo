@@ -21,6 +21,6 @@ metadata:
 data:
   attestation.override: | # you may select any name here, but it must end with the .override file extension
     hosts {
-      <secret provisioning service ip address> attestation.service.com
+      x.x.x.x attestation.service.com
       fallthrough
     }
