@@ -1000,4 +1000,4 @@ The following is the configuration of the DCsv3-series instance used:
 - Instance Encrypted Memory: 64G
 - Instance vCPU  : 16
 
-Please refer to this `guide <cczoo_ppml_inference_azure.md>`_ for instructions on how to deploy this solution using Azure Kubernetes Service.
+Please refer to this `guide <https://github.com/intel/confidential-computing-zoo/blob/main/documents/readthedoc/docs/source/Solutions/tensorflow-serving-cluster/cczoo_ppml_inference_azure.md>`_ for instructions on how to deploy this solution using Azure Kubernetes Service.
