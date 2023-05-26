@@ -32,6 +32,7 @@ fi
 no_proxy="localhost,127.0.0.1"
 proxy_server="" # your http proxy server
 
+# You need to get server_private_key.pem, server_signed_cert.crt by running file ../tools/gen_cert.sh before running this script
 docker run -it \
     --restart=unless-stopped \
     --cap-add=SYS_PTRACE \
@@ -44,8 +45,9 @@ docker run -it \
     -e http_proxy=${proxy_server} \
     -e https_proxy=${proxy_server} \
     -v /home:/home/host-home \
-    -v `pwd -P`/../tools:/clf/cczoo/cross_lang_framework/clf_server/certs \
-    -v `pwd -P`/../clf_server/clf_server.conf:/clf/cczoo/cross_lang_framework/clf_server/clf_server.conf \
+    -v `pwd -P`/../tools/server_private_key.pem:/clf/cczoo/cross_lang_framework/clf_server/certs/server_private_key.pem \
+    -v `pwd -P`/../tools/server_signed_cert.crt:/clf/cczoo/cross_lang_framework/clf_server/certs/server_signed_cert.crt \
+    -v `pwd -P`/../clf_server/clf_server.conf:/clf/cczoo/cross_lang_framework/clf_server/clf_server.conf \  
     ${image_tag} \
     bash
 
