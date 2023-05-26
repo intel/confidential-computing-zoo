@@ -41,6 +41,7 @@ docker run -d \
     --name=secretmanger \
     --privileged=true \
     --add-host=pccs.service.com:${ip_addr} \
+    --net=host \
     -v /dev:/dev \
     -v /home:/home/host-home \
     -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
