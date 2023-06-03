@@ -1,6 +1,6 @@
 # Encrypted VFS and TDX-RA Enhanced Tensorflow Serving
 
-This solution presents an security enhanced TensorFlow Serving framework to guarantee security during transmission (TLS), runtime ([Intel® TDX (Trust Domain Extensions)](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html)) and storage ([Encrypted VFS](https://github.com/intel/confidential-computing-zoo/tree/main/cczoo/tdx-encrypted-vfs)).
+This solution presents a security enhanced TensorFlow Serving framework to guarantee security during transmission (TLS), runtime ([Intel® TDX (Trust Domain Extensions)](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html)) and storage ([Encrypted VFS](https://github.com/intel/confidential-computing-zoo/tree/main/cczoo/tdx-encrypted-vfs)).
 
 
 ## Introduction
