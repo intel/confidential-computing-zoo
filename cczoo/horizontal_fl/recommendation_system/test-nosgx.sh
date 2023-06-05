@@ -1,0 +1,53 @@
+#
+# Copyright (c) 2022 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#!/bin/bash
+set -ex
+
+function make_custom_env() {
+    export CUDA_VISIBLE_DEVICES=""
+    export DNNL_VERBOSE=1
+    export GRPC_VERBOSITY=ERROR
+    export TF_CPP_MIN_LOG_LEVEL=1
+    export TF_GRPC_SGX_RA_TLS_ENABLE=""
+    export TF_DISABLE_MKL=0
+    export TF_ENABLE_MKL_NATIVE_FORMAT=1
+    export parallel_num_threads=4
+    export INTRA_OP_PARALLELISM_THREADS=$parallel_num_threads
+    export INTER_OP_PARALLELISM_THREADS=$parallel_num_threads
+    export KMP_SETTINGS=1
+    export KMP_BLOCKTIME=0
+    # network proxy
+    unset http_proxy https_proxy
+}
+
+ROLE=$1
+if [ "$ROLE" == "ps0" ]; then
+    make_custom_env
+    taskset -c 0-8 stdbuf -o0 python -u ps0.py 2>&1 | tee -a ps0.log &
+elif [ "$ROLE" == "worker0" ]; then
+    make_custom_env
+    taskset -c 9-17 stdbuf -o0 python -u worker0.py 2>&1 | tee -a worker0.log &
+elif [ "$ROLE" == "worker1" ]; then
+    make_custom_env
+    taskset -c 18-26 stdbuf -o0 python -u worker1.py 2>&1 | tee -a worker1.log &
+elif [ "$ROLE" == "worker2" ]; then
+    make_custom_env
+    taskset -c 27-35 stdbuf -o0 python -u worker2.py 2>&1 | tee -a worker2.log &
+elif [ "$ROLE" == "worker3" ]; then
+    make_custom_env
+    taskset -c 36-44 stdbuf -o0 python -u worker3.py 2>&1 | tee -a worker3.log &
+fi
+

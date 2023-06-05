@@ -40,6 +40,7 @@ EOF
 
 sudo apt-get update
 sudo apt install -y ethtool socat conntrack
+sudo apt-cache madison kubelet
 sudo apt-get install -y kubelet kubeadm kubectl kubernetes-cni
 sudo apt-mark hold kubelet kubeadm kubectl kubernetes-cni
 

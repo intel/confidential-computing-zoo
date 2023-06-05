@@ -1,7 +1,10 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
+
+# Enable it to disable debconf warning
+RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
 
 # Add steps here to set up dependencies
 RUN apt-get update \
@@ -36,10 +39,8 @@ RUN pip3 install --upgrade pip
 RUN pip install django-model-utils
 
 RUN mkdir client
-RUN mkdir -p client/ssl_configure
 COPY requirements.txt client/
 RUN pip3 install -r client/requirements.txt
 COPY resnet_client_grpc.py client/
 COPY utils.py client/
-COPY ssl_configure client/ssl_configure
-
+COPY run_inference.sh client/

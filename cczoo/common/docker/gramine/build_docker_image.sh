@@ -16,10 +16,37 @@
 #!/bin/bash
 set -e
 
+function usage_help() {
+    echo -e "usage_help:"
+    echo -e '  ./build_docker_image.sh ${base_image} ${image_tag} ${build_type}'
+    echo -e "  {base_image}"
+    echo -e "       ubuntu:18.04 | ubuntu20.04 | anolisos"
+    echo -e "  {image_tag}"
+    echo -e "       customed image tag"
+    echo -e "  {build_type}"
+    echo -e "       release | debug"
+}
+
+usage_help
+
 if  [ -n "$1" ] ; then
-    image_tag=$1
+    base_image=$1
 else
-    image_tag=gramine-sgx-dev:latest
+    base_image=ubuntu:20.04
+fi
+
+if  [ "$2" == "anolisos" ] ; then
+    image_tag=gramine-sgx-dev:v1.2-anolisos
+elif  [ -n "$2" ] ; then
+    image_tag=$2
+else
+    image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
+fi
+
+if  [ -n "$3" ] ; then
+    build_type=$3
+else
+    build_type=release
 fi
 
 # You can remove no_proxy and proxy_server if your network doesn't need it
@@ -28,12 +55,27 @@ no_proxy="localhost,127.0.0.1"
 
 cd `dirname $0`
 
+if [ "${base_image}" == "anolisos" ] ; then
 DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
+    --build-arg base_image=${base_image} \
+    --build-arg BASE_IMAGE=${base_image} \
+    --build-arg BUILD_TYPE=${build_type} \
+    -f gramine-sgx-dev:v1.2-anolisos.dockerfile \
+    -t ${image_tag} \
+    .
+else
+DOCKER_BUILDKIT=0 docker build \
+    --build-arg no_proxy=${no_proxy} \
+    --build-arg http_proxy=${proxy_server} \
+    --build-arg https_proxy=${proxy_server} \
+    --build-arg base_image=${base_image} \
+    --build-arg BASE_IMAGE=${base_image} \
+    --build-arg BUILD_TYPE=${build_type} \
     -f gramine-sgx-dev.dockerfile \
     -t ${image_tag} \
     .
-
+fi
 cd -

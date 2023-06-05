@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,12 +21,17 @@ function usage_help() {
     echo -e "options:"
     echo -e "  -h Display help"
     echo -e "  -i {image_id}"
-    echo -e "  -a {pccs_service_com}"
+    echo -e "  -a {pccs_service_host}"
+    echo -e "  -b {azure_maa_prov_address}"
+    echo -e "  -r {absolute path to patches/secret_prov_pf/ra_config.json}"
 }
 
-pccs_service_com="localhost:127.0.0.1"
+pccs_service_host="localhost:127.0.0.1"
+azure_maa_prov_address="https://sharedcus.cus.attest.azure.net"
+ra_config_abs_path_host='readlink -f patches/secret_prov_pf/ra_config.json'
+ra_config_abs_path_container="/gramine/CI-Examples/ra-tls-secret-prov/secret_prov_pf/ra_config.json"
 
-while getopts "h?i:a:" OPT; do
+while getopts "h?i:a:b:r:" OPT; do
     case $OPT in
         h|\?)
             usage_help
@@ -37,9 +42,17 @@ while getopts "h?i:a:" OPT; do
             image_id=$OPTARG
             ;;
         a)
-            echo -e "Option $OPTIND, pccs_service_com = $OPTARG"
-            pccs_service_com=$OPTARG
-            ;;      
+            echo -e "Option $OPTIND, pccs_service_host = $OPTARG"
+            pccs_service_host=$OPTARG
+            ;;
+        b)
+            echo -e "Option $OPTIND, azure_maa_prov_address = $OPTARG"
+            azure_maa_prov_address=$OPTARG
+            ;;
+        r)
+            echo -e "Option $OPTIND, ra_config_abs_path_host = $OPTARG"
+            ra_config_abs_path_host=$OPTARG
+            ;;
         ?)
             echo -e "Unknown option $OPTARG"
             usage_help
@@ -50,5 +63,7 @@ done
 
 docker run -itd -p 4433:4433 \
        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
-       --add-host=${pccs_service_com} \
+       -v ${ra_config_abs_path_host}:${ra_config_abs_path_container} \
+       -e RA_TLS_MAA_PROVIDER_URL=${azure_maa_prov_address} \
+       --add-host=${pccs_service_host} \
        ${image_id}

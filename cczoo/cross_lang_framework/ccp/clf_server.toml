@@ -1,0 +1,33 @@
+# Basic template
+
+app.capi_target = "ccp.tencentcloudapi.com"
+app.kms_target = "kms.tencentcloudapi.com"
+
+loader.entrypoint = "file:{{ gramine.libos }}"
+loader.log_level = "error"
+
+loader.env.LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu"
+loader.env.PATH = "/usr/bin"
+
+loader.insecure__use_cmdline_argv = true
+
+fs.root.type = "chroot"
+fs.root.path = "/"
+fs.root.uri = "file:/"
+
+fs.mount.lib.type = "chroot"
+fs.mount.lib.path = "/lib"
+fs.mount.lib.uri = "file:{{ gramine.runtimedir() }}"
+
+sgx.nonpie_binary = true
+sgx.enclave_size = "256M"
+sgx.thread_num = 4
+sgx.remote_attestation = true
+
+sgx.trusted_files = [
+  "file:{{ gramine.runtimedir() }}/",
+]
+
+sgx.allowed_files = [
+  "file:/",
+]
