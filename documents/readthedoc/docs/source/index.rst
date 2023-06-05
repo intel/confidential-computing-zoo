@@ -41,6 +41,7 @@ Table of Contents
    Solutions/tdx-hfl/tdx-hfl.md
    Solutions/tdx-encrypted-vfs/index.md
    Solutions/tdx-tf-serving-ppml/index.md
+   Solutions/td-encrypte-img/index.md
 
 .. toctree::
    :maxdepth: 1
