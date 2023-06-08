@@ -303,7 +303,7 @@ The training phase can be divided into the following steps:
 
     git clone https://github.com/intel/confidential-computing-zoo.git $cczoo_evfs_path
     cd $evfs_path/get_secret
-    git checkout 3a8a427ecb0849447b4dfd14292c3533d1fa5c1e
+    git checkout 57f522a487aa45a4156c4e44583863b6fa83c672
 
     ./build_docker_image.sh
     ./start_container.sh <PCCS_ADDRESS>

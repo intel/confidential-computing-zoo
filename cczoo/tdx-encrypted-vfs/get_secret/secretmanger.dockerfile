@@ -65,7 +65,7 @@ ARG GRPC_VERSION=v1.38.1
 ARG GRPC_VERSION_PATH=${GRPC_ROOT}/${GRPC_VERSION}
 RUN git clone --recurse-submodules -b ${GRPC_VERSION} https://github.com/grpc/grpc ${GRPC_VERSION_PATH} \
     && ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
-ARG CCZOO_VERSION=3a8a427ecb0849447b4dfd14292c3533d1fa5c1e
+ARG CCZOO_VERSION=57f522a487aa45a4156c4e44583863b6fa83c672
 RUN git clone https://github.com/intel/confidential-computing-zoo.git /confidential-computing-zoo \
     && cd /confidential-computing-zoo \
     && git checkout ${CCZOO_VERSION} \
