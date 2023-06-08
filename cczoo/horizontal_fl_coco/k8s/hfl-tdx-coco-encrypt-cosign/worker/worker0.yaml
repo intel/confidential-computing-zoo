@@ -1,0 +1,114 @@
+# Copyright 2021 Google Inc. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hfl-tdx-coco-w0-deployment
+  namespace: hfl-tdx-coco
+spec:
+  selector:
+    matchLabels:
+      app: hfl-tdx-coco-w0-app
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: hfl-tdx-coco-w0-app
+    spec:
+      dnsPolicy: ClusterFirst
+      runtimeClassName: kata-qemu-tdx
+      containers:
+      - name: hfl-tdx-coco-w0-container
+        image: registry.domain.local/horizontal_fl:tdx-encrypt-cosign-latest
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-c", "./entrypoint.sh worker0"]
+        # command: ["/bin/bash", "-c", "sleep infinity"]
+        env:
+        - name: TF_GRPC_SGX_RA_TLS_ENABLE
+          value: "on"
+        - name: ENABLE_VFS
+          value: "on"      # set "on" to enable
+        - name: APP_ID
+          value: "hfl-tdx-coco-app"
+        - name: RA_SERVICE_ADDRESS
+          value: "ra.service.com:50051"
+        - name: no_proxy
+          value: "localhost,ra.service.com"
+        ports:
+        - name: grpcs
+          containerPort: 61002
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: device-path
+          mountPath: /dev
+        - name: aesm-path
+          mountPath: /var/run/aesmd/aesm.socket
+      volumes:
+      - name: device-path
+        hostPath:
+          path: /dev
+      - name: aesm-path
+        hostPath:
+          path: /var/run/aesmd/aesm.socket
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    run: hfl-tdx-coco-w0-service
+  name: hfl-tdx-coco-w0-service
+  namespace: hfl-tdx-coco
+spec:
+  type: ClusterIP # LoadBalancer ClusterIP NodePort
+  ports:
+  - name: grpcs
+    protocol: TCP
+    port: 61002
+    targetPort: 61002
+  selector:
+    app: hfl-tdx-coco-w0-app
+
+---
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hfl-tdx-coco-w0-ingress
+  namespace: hfl-tdx-coco
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPCS"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30s"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "20s"
+spec:
+  ingressClassName: "nginx"
+  rules:
+  - host: w0.hfl-tdx-coco.service.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: hfl-tdx-coco-w0-service
+            port:
+              number: 61002
