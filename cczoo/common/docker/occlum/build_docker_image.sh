@@ -28,16 +28,21 @@ else
     image_tag=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
 fi
 
-# You can remove no_proxy and proxy_server if your network doesn't need it
-no_proxy="localhost,127.0.0.1"
-proxy_server="" # your http proxy server
+# Use the host proxy as the default configuration, or specify a proxy_server
+# no_proxy="localhost,127.0.0.1"
+# proxy_server="" # your http proxy server
+
+if [ "$proxy_server" != "" ]; then
+    http_proxy=${proxy_server}
+    https_proxy=${proxy_server}
+fi
 
 cd `dirname $0`
 
 DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
-    --build-arg http_proxy=${proxy_server} \
-    --build-arg https_proxy=${proxy_server} \
+    --build-arg http_proxy=${http_proxy} \
+    --build-arg https_proxy=${https_proxy} \
     --build-arg base_image=${base_image} \
     -f occlum-sgx-dev.dockerfile \
     -t ${image_tag} \

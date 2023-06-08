@@ -79,7 +79,7 @@ public:
             this->secrets.emplace(head->string, head->valuestring);
             head = head->next;
         }
-        printf("%s", secret_json.print_item(secret_json.get_handle()));
+        std::cout << secret_json.print_item(secret_json.get_handle()) << std::endl;
         return;
     };
 
@@ -89,13 +89,16 @@ public:
         auto status = grpc::StatusCode::NOT_FOUND;
         std::string value("");
 
+        auto key = request->key();
+        auto ctx = request->ctx();
+        // std::cout << key << std::endl;
+        // std::cout << ctx << std::endl;
+
         try {
-            // std::cout << request->key() << std::endl;
-            // std::cout << request->ctx() << std::endl;
-            auto key = request->key();
-            auto ctx = request->ctx();
             if (grpc::sgx::ra_tls_verify_certificate(
                     ctx.c_str(), CERT_KEY_MAX_SIZE)) {
+                auto mr = grpc::sgx::ra_tls_parse_measurement(ctx.c_str(), CERT_KEY_MAX_SIZE);
+                std::cout << grpc::sgx::byte_to_hex(mr.mr_enclave, 32) << std::endl;
                 status = grpc::StatusCode::UNAUTHENTICATED;
             } else {
                 value = this->secrets.at(key);
@@ -107,6 +110,10 @@ public:
             std::cout << "Not Found : " << request->key() << std::endl;
         };
 
+        // auto mr = grpc::sgx::ra_tls_parse_measurement(ctx.c_str(), CERT_KEY_MAX_SIZE);
+        // std::cout << grpc::sgx::byte_to_hex(mr.mr_enclave, 32) << std::endl;
+
+        fflush(stdout);
         reply->set_value(value);
         return grpc::Status(status, "");
     }

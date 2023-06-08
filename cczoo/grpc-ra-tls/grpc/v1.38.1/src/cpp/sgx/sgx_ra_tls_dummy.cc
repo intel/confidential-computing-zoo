@@ -18,7 +18,8 @@
 
 // #ifdef SGX_RA_TLS_DUMMY_BACKEND
 
-#include "sgx_ra_tls_impl.h"
+#include <grpcpp/security/sgx/sgx_ra_tls_backends.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_impl.h>
 
 namespace grpc {
 namespace sgx {

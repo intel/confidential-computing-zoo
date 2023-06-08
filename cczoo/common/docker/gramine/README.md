@@ -25,9 +25,8 @@ to do software development.
 Execute the following command to build this docker image:
 ```
 base_image=ubuntu:20.04
-image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
-build_type=release
-./build_docker_image.sh ${base_image} ${image_tag} ${build_type}
+image_tag=gramine-sgx-dev:v1.2-${base_image}-latest
+./build_docker_image.sh ${base_image} ${image_tag}
 ```
 
-`ubuntu:18.04`, `ubuntu:20.04` and `anolisos` could be selected as base_image.
+`ubuntu:18.04`, `ubuntu:20.04` and `openanolis/anolisos:8.4-x86_64` could be selected as base_image.
