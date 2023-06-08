@@ -1,0 +1,38 @@
+#!/bin/sh
+# This script should be in /etc/initramfs-tools/scripts/init-premount
+
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+. /scripts/functions
+
+log_begin_msg "-----------start----configure_networking"
+configure_networking
+log_end_msg "-----------end----configure_networking"
+# Begin real processing below this line
+
+if [ ! -e "/sbin/opening_disk.sh" ]; then
+	panic "unlocking executable not found"
+fi
+
+log_begin_msg "---------------Mounting rootfs"
+/sbin/opening_disk.sh || panic "unlocking failed"
+log_end_msg
+
+
+if [ ! -e "/dev/mapper/luks-rootfs" ]; then
+	panic "luks rootfs dm target not found"
+fi
+
+#panic "--------STOP HERE-------------"
+
+exit 0

@@ -1,0 +1,10 @@
+# <file system> <mount point> <type> <options> <dump> <pass>
+#
+/dev/vda2 /boot/efi vfat umask=0077 0 1
+LABEL=boot /boot ext4 defaults 0 1
+# device; this may be used with UUID= as a more robust way to name devices
+# /etc/fstab: static file system information.
+/dev/mapper/luks-rootfs / ext4 defaults 0 1
+/swapfile none swap sw 0 0
+# that works even if disks are added and removed. See fstab(5).
+
