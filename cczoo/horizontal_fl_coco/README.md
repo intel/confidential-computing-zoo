@@ -298,12 +298,12 @@ The training phase can be divided into the following steps:
     <SECRET_MANAGER_ADDRESS> is ip of secretmanger service.
 
     ```shell
-    cczoo_path=/tmp/confidential-computing-zoo
-    encrypted_vfs_path=$cczoo_path/cczoo/tdx-encrypted-vfs
+    cczoo_evfs_path=/tmp/confidential-computing-zoo
+    evfs_path=$cczoo_evfs_path/cczoo/tdx-encrypted-vfs
 
-    git clone https://github.com/intel/confidential-computing-zoo.git $cczoo_path
-    cd $encrypted_vfs_path/get_secret
-    git checkout 08f30d8bc616d60920f826ee8c633ff2d46a3c3b
+    git clone https://github.com/intel/confidential-computing-zoo.git $cczoo_evfs_path
+    cd $evfs_path/get_secret
+    git checkout 3a8a427ecb0849447b4dfd14292c3533d1fa5c1e
 
     ./build_docker_image.sh
     ./start_container.sh <PCCS_ADDRESS>
