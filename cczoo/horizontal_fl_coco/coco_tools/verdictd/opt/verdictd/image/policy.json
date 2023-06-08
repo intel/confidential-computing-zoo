@@ -1,0 +1,17 @@
+{
+    "default": [
+        {
+            "type": "reject"
+        }
+    ],
+    "transports": {
+        "docker": {
+            "registry.domain.local": [
+                {
+                    "type": "sigstoreSigned",
+                    "keyPath": "/run/image-security/cosign/cosign.pub"
+                }
+            ]
+        }
+    }
+}
