@@ -50,6 +50,9 @@ RUN wget https://download.01.org/intel-sgx/sgx-dcap/${DCAP_VERSION}/linux/distro
 
 COPY configs /
 
+RUN wget https://download.01.org/intel-sgx/sgx-dcap/${DCAP_VERSION}/linux/distro/centos-stream/sgx_linux_x64_sdk_2.18.100.3.bin && \
+    /install_sgx_sdk.sh
+
 # only for tdx vsock
 # RUN echo 'port=4050' | tee /etc/tdx-attest.conf
 
