@@ -20,10 +20,11 @@ export EXP_NAME=examples/cpp/ratls
 
 if [ -z ${BUILD_TYPE} ]; then
     export BUILD_TYPE=Debug
+    export COMPILATION_MODE=dbg
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
+    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then
@@ -31,19 +32,27 @@ if [ -z ${SGX_RA_TLS_SDK} ]; then
 fi
 
 # build grpc package
-${GRPC_PATH}/build_cpp.sh
+${GRPC_PATH}/cmake_build_cpp.sh
+# ${GRPC_PATH}/bazel_build_cpp.sh
 
 # build c++ example
 cd ${EXP_PATH}
 
 mkdir -p build
+touch build/.bazelignore
 cp ${GRPC_PATH}/dynamic_config.json build
 
+# build with cmake
 cd build
 cmake -D CMAKE_PREFIX_PATH=${INSTALL_PREFIX} \
       -D CMAKE_BUILD_TYPE=${BUILD_TYPE} \
       -D GRPC_AS_SUBMODULE=OFF \
       -D GRPC_FETCHCONTENT=OFF ..
 make -j `nproc`
+cd -
+
+# build with bazel
+# bazel build :all -c dbg
+# cp ${GRPC_PATH}/bazel-bin/${EXP_NAME}/server ${GRPC_PATH}/bazel-bin/${EXP_NAME}/client build
 
 cd -

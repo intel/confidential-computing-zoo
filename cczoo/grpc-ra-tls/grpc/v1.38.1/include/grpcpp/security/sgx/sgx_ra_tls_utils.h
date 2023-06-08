@@ -19,17 +19,25 @@
 #ifndef SGX_RA_TLS_UTILS_H
 #define SGX_RA_TLS_UTILS_H
 
+#include <string>
+#include <vector>
 #include <memory>
+#include <dlfcn.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <time.h>
+#include <sys/stat.h>
 
-#include <grpc/grpc_security_constants.h>
-#include <grpcpp/security/credentials.h>
-#include <grpcpp/security/server_credentials.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_log.h>
 
+#define HEX_DUMP_SIZE   16
+#define MAX_ROW_SIZE    70
 
 namespace grpc {
 namespace sgx {
 
-#include "cJSON.h"
+#include <grpcpp/security/sgx/cJSON.h>
 
 class library_engine {
     public:
@@ -90,9 +98,9 @@ void byte_to_hex(const char* src, char* dst, size_t src_size);
 std::string byte_to_hex(const char* src, size_t src_size);
 
 void print_hex_dump(const char *title, const char *prefix_str,
-                    const char *buf, int len);
+                    const uint8_t *buf, int len);
 
 } // namespace sgx
 } // namespace grpc
 
-#endif  // SGX_RA_TLS_UTILS_H
+#endif // SGX_RA_TLS_UTILS_H

@@ -16,7 +16,7 @@
  *
  */
 
-#include "sgx_ra_tls_utils.h"
+#include <grpcpp/security/sgx/sgx_ra_tls_utils.h>
 
 #include <cstring>
 #include <iostream>
@@ -42,10 +42,10 @@ void check_delete(T ptr) {
 }
 
 bool check_file(const char* file_path) {
-    bool ret = false; 
+    bool ret = false;
     if (file_path) {
-        struct stat buffer;   
-        ret = stat(file_path, &buffer) == 0; 
+        struct stat buffer;
+        ret = stat(file_path, &buffer) == 0;
     }
     return ret;
 }
@@ -79,8 +79,8 @@ std::string byte_to_hex(const char *src, size_t src_size) {
 };
 
 void print_hex_dump(const char *title, const char *prefix_str,
-                    const char *buf, int len) {
-    const char *ptr = buf;
+                    const uint8_t *buf, int len) {
+    const uint8_t *ptr = buf;
     int i, rowsize = HEX_DUMP_SIZE;
 
     if (!len || !buf) {
@@ -132,14 +132,14 @@ void library_engine::close() {
 }
 
 void* library_engine::get_func(const char* name) {
-  auto func = dlsym(handle, name);
-  error = dlerror();
-  if (error != nullptr || func == nullptr) {
-    throw std::runtime_error("dlsym " + std::string(name) + " error, " + std::string(error));
-    return nullptr;
-  } else {
-    return func;
-  }
+    auto func = dlsym(handle, name);
+    error = dlerror();
+    if (error != nullptr || func == nullptr) {
+        throw std::runtime_error("dlsym " + std::string(name) + " error, " + std::string(error));
+        return nullptr;
+    } else {
+        return func;
+    }
 }
 
 void* library_engine::get_handle() {

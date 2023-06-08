@@ -20,11 +20,11 @@ function usage_help() {
     echo -e "usage_help:"
     echo -e '  ./build_docker_image.sh ${base_image} ${image_tag} ${build_type}'
     echo -e "  {base_image}"
-    echo -e "       ubuntu:18.04 | ubuntu20.04 | anolisos"
+    echo -e "       ubuntu:18.04 | ubuntu20.04 | openanolis/anolisos:8.4-x86_64"
     echo -e "  {image_tag}"
     echo -e "       customed image tag"
-    echo -e "  {build_type}"
-    echo -e "       release | debug"
+    echo -e "  {docker_file}"
+    echo -e "       gramine-sgx-dev.ubuntu.dockerfile | gramine-sgx-dev.anolisos.dockerfile"
 }
 
 usage_help
@@ -35,47 +35,37 @@ else
     base_image=ubuntu:20.04
 fi
 
-if  [ "$2" == "anolisos" ] ; then
-    image_tag=gramine-sgx-dev:v1.2-anolisos
-elif  [ -n "$2" ] ; then
+if  [ -n "$2" ] ; then
     image_tag=$2
 else
     image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
 fi
 
 if  [ -n "$3" ] ; then
-    build_type=$3
+    docker_file=$3
 else
-    build_type=release
+    docker_file=gramine-sgx-dev.ubuntu.dockerfile
 fi
 
-# You can remove no_proxy and proxy_server if your network doesn't need it
-no_proxy="localhost,127.0.0.1"
+# Use the host proxy as the default configuration, or specify a proxy_server
+# no_proxy="localhost,127.0.0.1"
 # proxy_server="" # your http proxy server
+
+if [ "$proxy_server" != "" ]; then
+    http_proxy=${proxy_server}
+    https_proxy=${proxy_server}
+fi
 
 cd `dirname $0`
 
-if [ "${base_image}" == "anolisos" ] ; then
 DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
-    --build-arg http_proxy=${proxy_server} \
-    --build-arg https_proxy=${proxy_server} \
+    --build-arg http_proxy=${http_proxy} \
+    --build-arg https_proxy=${https_proxy} \
     --build-arg base_image=${base_image} \
     --build-arg BASE_IMAGE=${base_image} \
-    --build-arg BUILD_TYPE=${build_type} \
-    -f gramine-sgx-dev:v1.2-anolisos.dockerfile \
+    -f ${docker_file} \
     -t ${image_tag} \
     .
-else
-DOCKER_BUILDKIT=0 docker build \
-    --build-arg no_proxy=${no_proxy} \
-    --build-arg http_proxy=${proxy_server} \
-    --build-arg https_proxy=${proxy_server} \
-    --build-arg base_image=${base_image} \
-    --build-arg BASE_IMAGE=${base_image} \
-    --build-arg BUILD_TYPE=${build_type} \
-    -f gramine-sgx-dev.dockerfile \
-    -t ${image_tag} \
-    .
-fi
+
 cd -

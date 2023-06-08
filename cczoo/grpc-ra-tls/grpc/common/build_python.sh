@@ -20,7 +20,7 @@ if [ -z ${DEBUG} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
+    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then
@@ -28,7 +28,7 @@ if [ -z ${SGX_RA_TLS_SDK} ]; then
 fi
 
 # build grpc c / cpp library
-${GRPC_PATH}/build_cpp.sh
+${GRPC_PATH}/cmake_build_cpp.sh
 
 # build grpc python wheel
 cd ${GRPC_PATH}

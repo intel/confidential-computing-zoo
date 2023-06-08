@@ -21,29 +21,13 @@
 
 #include <memory>
 
-#include <grpc/grpc_security_constants.h>
-#include <grpcpp/security/credentials.h>
-#include <grpcpp/security/server_credentials.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_backends.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_context.h>
 
 #define CERT_KEY_MAX_SIZE 16000
 
 namespace grpc {
 namespace sgx {
-
-struct ra_tls_measurement {
-    char mr_enclave[32];
-    char mr_signer[32];
-    uint16_t isv_prod_id;
-    uint16_t isv_svn;
-};
-
-struct ra_tls_config {
-    bool verify_mr_enclave  = true;
-    bool verify_mr_signer   = true;
-    bool verify_isv_prod_id = true;
-    bool verify_isv_svn     = true;
-    std::vector<ra_tls_measurement> mrs;
-};
 
 std::vector<std::string> ra_tls_generate_key_cert(int is_dummy);
 
