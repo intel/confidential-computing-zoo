@@ -16,13 +16,15 @@
  *
  */
 
-#include "sgx_ra_tls_backends.h"
+#include <grpcpp/security/server_credentials.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_options.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_backends.h>
 
 namespace grpc {
 namespace sgx {
 
 std::shared_ptr<grpc::ChannelCredentials> TlsCredentials(
-    ra_tls_config cfg, grpc_tls_server_verification_option verify_option=GRPC_RA_TLS_TWO_WAY_VERIFICATION) {
+    ra_tls_config cfg, grpc_tls_server_verification_option verify_option) {
     ra_tls_parse_config(cfg);
 
     grpc::sgx::CredentialsOptions options(verify_option);
@@ -35,7 +37,7 @@ std::shared_ptr<grpc::ChannelCredentials> TlsCredentials(
 };
 
 std::shared_ptr<grpc::ChannelCredentials> TlsCredentials(
-    const char* cfg_json, grpc_tls_server_verification_option verify_option=GRPC_RA_TLS_TWO_WAY_VERIFICATION) {
+    const char* cfg_json, grpc_tls_server_verification_option verify_option) {
     ra_tls_parse_config(cfg_json);
 
     grpc::sgx::CredentialsOptions options(verify_option);
@@ -48,7 +50,7 @@ std::shared_ptr<grpc::ChannelCredentials> TlsCredentials(
 };
 
 std::shared_ptr<grpc::ServerCredentials> TlsServerCredentials(
-    ra_tls_config cfg, grpc_tls_server_verification_option verify_option=GRPC_RA_TLS_TWO_WAY_VERIFICATION) {
+    ra_tls_config cfg, grpc_tls_server_verification_option verify_option) {
     ra_tls_parse_config(cfg);
 
     grpc::sgx::CredentialsOptions options(verify_option);
@@ -61,7 +63,7 @@ std::shared_ptr<grpc::ServerCredentials> TlsServerCredentials(
 };
 
 std::shared_ptr<grpc::ServerCredentials> TlsServerCredentials(
-    const char* cfg_json, grpc_tls_server_verification_option verify_option=GRPC_RA_TLS_TWO_WAY_VERIFICATION) {
+    const char* cfg_json, grpc_tls_server_verification_option verify_option) {
     ra_tls_parse_config(cfg_json);
 
     grpc::sgx::CredentialsOptions options(verify_option);

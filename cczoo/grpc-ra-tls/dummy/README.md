@@ -1,4 +1,4 @@
-## gRPC supporting Intel RA-TLS
+## RA-TLS Enhanced gRPC
 
 ### Source env
 

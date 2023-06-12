@@ -1,4 +1,4 @@
-
+#
 # Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,7 @@ FROM openanolis/anolisos:8.4-x86_64 AS Anolisos
 ENV INSTALL_PREFIX=/usr/local
 ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib64:${LD_LIBRARY_PATH}
 ENV PATH=${INSTALL_PREFIX}/bin:${LD_LIBRARY_PATH}:${PATH}
+
 # Add steps here to set up dependencies
 RUN yum -y install \
     openssl-devel \
@@ -37,7 +38,6 @@ RUN mkdir /opt/intel && cd /opt/intel \
     && yum -y --nogpgcheck install libsgx-urts libsgx-launch libsgx-epid libsgx-quote-ex libsgx-dcap-ql libsgx-uae-service libsgx-dcap-quote-verify-devel \
     && yum -y groupinstall 'Development Tools'
 
-# COPY patches/libsgx_dcap_quoteverify.so  /usr/lib64/
 RUN yum -y install --nogpgcheck sgx-dcap-pccs libsgx-dcap-default-qpl
 
 # Gramine
@@ -52,10 +52,11 @@ ENV SGX=1
 ENV GRAMINE_PKGLIBDIR=/usr/local/lib64/gramine
 ENV ARCH_LIBDIR=/lib64
 
-RUN yum -y install gawk bison python3-click python3-jinja2 golang ninja-build 
+RUN yum -y install gawk bison python3-click python3-jinja2 golang ninja-build
 RUN yum -y install openssl-devel protobuf-c-devel python3-protobuf protobuf-c-compiler
 RUN yum -y install gmp-devel mpfr-devel libmpc-devel isl-devel nasm python3-devel mailcap
-#install gramine
+
+# Install gramine
 RUN ln -s /usr/bin/python3 /usr/bin/python \
     && python3 -m pip install --upgrade pip \
     && python3 -m pip install toml meson wheel cryptography paramiko \
@@ -72,9 +73,7 @@ RUN cd ${GRAMINEDIR} \
     && LD_LIBRARY_PATH="" meson setup build/ --buildtype=${BUILD_TYPE} -Dprefix=${INSTALL_PREFIX} -Ddirect=enabled -Dsgx=enabled -Ddcap=enabled -Dsgx_driver=dcap1.10 -Dsgx_driver_include_path=${ISGX_DRIVER_PATH}/driver/linux/include \
     && LD_LIBRARY_PATH="" ninja -C build/ \
     && LD_LIBRARY_PATH="" ninja -C build/ install
-RUN gramine-sgx-gen-private-key
 
-FROM Anolisos AS Psi_tensorflow
 # Install mbedtls
 RUN cd ${GRAMINEDIR}/build/subprojects/mbedtls-mbedtls* \
     && cp -r *_gramine.a ${INSTALL_PREFIX}/lib \
@@ -94,7 +93,11 @@ RUN echo "exit 0" > /usr/sbin/policy-rc.d
 # Clean tmp files
 RUN yum -y clean all && rm -rf /var/cache
 
+RUN gramine-sgx-gen-private-key
+
 COPY configs /
+
+# COPY patches/libsgx_dcap_quoteverify.so  /usr/lib64/
 
 # Workspace
 ENV WORK_SPACE_PATH=${GRAMINEDIR}
