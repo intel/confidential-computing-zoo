@@ -47,7 +47,7 @@ docker run -it \
     -v /home:/home/host-home \
     -v `pwd -P`/../tools/server_private_key.pem:/clf/cczoo/cross_lang_framework/clf_server/certs/server_private_key.pem \
     -v `pwd -P`/../tools/server_signed_cert.crt:/clf/cczoo/cross_lang_framework/clf_server/certs/server_signed_cert.crt \
-    -v `pwd -P`/../clf_server/clf_server.conf:/clf/cczoo/cross_lang_framework/clf_server/clf_server.conf \  
+    -v `pwd -P`/../clf_server/clf_server.conf:/clf/cczoo/cross_lang_framework/clf_server/clf_server.conf \
     ${image_tag} \
     bash
 
