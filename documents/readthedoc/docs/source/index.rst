@@ -41,6 +41,7 @@ Table of Contents
    Solutions/tdx-hfl/tdx-hfl.md
    Solutions/hfl-tdx-coco/index.md
    Solutions/tdx-encrypted-vfs/index.md
+   Solutions/tdx-encrypted-img/index.md
    Solutions/tdx-tf-serving-ppml/index.md
 
 .. toctree::
