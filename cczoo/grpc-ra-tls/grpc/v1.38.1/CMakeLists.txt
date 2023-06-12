@@ -58,6 +58,11 @@ if(SGX_RA_TLS_BACKEND STREQUAL "GRAMINE")
 elseif(SGX_RA_TLS_BACKEND STREQUAL "OCCLUM")
   message("SGX_RA_TLS_OCCLUM_BACKEND is defined")
   add_definitions(-DSGX_RA_TLS_OCCLUM_BACKEND)
+elseif(SGX_RA_TLS_BACKEND STREQUAL "TDX")
+  message("SGX_RA_TLS_TDX_BACKEND is defined")
+  add_definitions(-DSGX_RA_TLS_TDX_BACKEND)
+  option(INTEL_SGXSDK_INCLUDE "Intel SGXSDK INCLUDE DIR" "/opt/intel/sgxsdk/include")
+  include_directories($ENV{INTEL_SGXSDK_INCLUDE})
 elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
   message("SGX_RA_TLS_DUMMY_BACKEND is defined")
   add_definitions(-DSGX_RA_TLS_DUMMY_BACKEND)
@@ -2801,15 +2806,16 @@ add_library(grpc++
   src/cpp/util/status.cc
   src/cpp/util/string_ref.cc
   src/cpp/util/time_cc.cc
+  src/cpp/sgx/cJSON.c
   src/cpp/sgx/sgx_ra_tls_credentials.cc
   src/cpp/sgx/sgx_ra_tls_options.cc
   src/cpp/sgx/sgx_ra_tls_backends.cc
   src/cpp/sgx/sgx_ra_tls_gramine.cc
   src/cpp/sgx/sgx_ra_tls_occlum.cc
+  src/cpp/sgx/sgx_ra_tls_tdx.cc
   src/cpp/sgx/sgx_ra_tls_dummy.cc
   src/cpp/sgx/sgx_ra_tls_impl.cc
   src/cpp/sgx/sgx_ra_tls_utils.cc
-  src/cpp/sgx/cjson/cJSON.c
 )
 
 set_target_properties(grpc++ PROPERTIES
@@ -2856,6 +2862,12 @@ if(SGX_RA_TLS_BACKEND STREQUAL "GRAMINE")
 elseif(SGX_RA_TLS_BACKEND STREQUAL "OCCLUM")
   target_link_libraries(grpc++
     libdcap_quote.a
+  )
+elseif(SGX_RA_TLS_BACKEND STREQUAL "TDX")
+  target_link_libraries(grpc++
+    tdx_attest
+    sgx_dcap_quoteverify
+    sgx_urts
   )
 elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
   target_link_libraries(grpc++
@@ -3024,8 +3036,12 @@ foreach(_hdr
   include/grpcpp/security/tls_credentials_options.h
   include/grpcpp/security/sgx/cJSON.h
   include/grpcpp/security/sgx/sgx_ra_tls.h
-  include/grpcpp/security/sgx/sgx_ra_tls_utils.h
   include/grpcpp/security/sgx/sgx_ra_tls_options.h
+  include/grpcpp/security/sgx/sgx_ra_tls_backends.h
+  include/grpcpp/security/sgx/sgx_ra_tls_context.h
+  include/grpcpp/security/sgx/sgx_ra_tls_impl.h
+  include/grpcpp/security/sgx/sgx_ra_tls_log.h
+  include/grpcpp/security/sgx/sgx_ra_tls_utils.h
   include/grpcpp/server.h
   include/grpcpp/server_builder.h
   include/grpcpp/server_context.h

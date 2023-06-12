@@ -16,7 +16,7 @@
 set -ex
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,DUMMY
+    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then

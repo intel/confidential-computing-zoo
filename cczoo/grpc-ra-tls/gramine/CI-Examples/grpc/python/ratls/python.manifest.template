@@ -13,11 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-loader.entrypoint = "file:{{ gramine.libos }}"
 libos.entrypoint = "{{ entrypoint }}"
 # libos.check_invalid_pointers = false
 
-# loader.entrypoint = "file:{{ gramine.libos }}"
+loader.entrypoint = "file:{{ gramine.libos }}"
 loader.log_level = "{{ log_level }}"
 # loader.log_file = ""
 
@@ -25,6 +24,7 @@ loader.insecure__use_cmdline_argv = true
 loader.insecure__use_host_env = false
 
 loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/local/lib:/usr/local/{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}"
+loader.env.LC_ALL = "C"
 loader.env.GRPC_VERBOSITY = "ERROR"
 
 loader.pal_internal_mem_size = "128M"
@@ -84,5 +84,5 @@ sgx.allowed_files = [
   "file:/etc/group",
   "file:/etc/passwd",
   "file:/proc/stat",
-  "file:dynamic_config.json"
+  "file:dynamic_config.json",
 ]

@@ -1,46 +1,76 @@
-## get_secret service based on gRPC supporting Intel RA-TLS
+## get_secret service based on RA-TLS Enhanced gRPC
 
-### Setup environment
-
-Please refer to `grpc-ra-tls/tdx/README.md` for detail.
-
-### Build code
+### Build docker image
 
 ```
-source ../../../grpc-ra-tls/tdx/env
-./build_grpc_get_secret.sh
+base_image=centos:8
+image_tag=grpc-ratls-secretmanger-dev:tdx-dcap1.15-centos8-latest
+./build_docker_image.sh $base_image $image_tag
 ```
 
-### Copy runtime
+### Prepare runtime
 
-- client
-    prepare for the client of `mount_encrypted_vfs.sh`
+prepare for the runtime for `mount_encrypted_vfs.sh`
 
-    ```
-    cp ${GRPC_PATH}/examples/cpp/secretmanger/build/client .
-    ```
-
-- server
-
-    prepare for the server of `mount_encrypted_vfs.sh`
-
-    ```
-    cp ${GRPC_PATH}/examples/cpp/secretmanger/build/server .
-    cp ${GRPC_PATH}/examples/cpp/secretmanger/build/*.json .
-    ```
+```
+./prepare_runtime.sh
+```
 
 ### Start service
 
-    Add your <key name> <value> pair to `secret.json`, then
+1. start service container in Host
 
     ```
-    hostname=localhost:50051
-    ./server -host=${hostname} &
+    ./start_container.sh <PCCS_ADDRESS>
     ```
 
-### Get secret
+2. Add your <APP_ID>:<PASSWORD> pair to `secret.json` in container.
 
     ```
-    hostname=localhost:50051
-    ./client -host=${hostname} -key=<key name>
+    docker exec -it secretmanger bash
+    vim ${WORK_SPACE_PATH}/build/secret.json
+    ```
+
+3. restart service container
+
+    ```
+    docker restart secretmanger
+    ```
+
+### Test service
+
+- Test in guest:
+
+    ```
+    APP_ID=app1
+    RA_SERVICE_ADDRESS=localhost:50051
+    RUNTIME_DIR=runtime/ra-client
+    TRY_MAX_NUM=5
+
+    cd $RUNTIME_DIR
+    try_count=0
+    while [ "$try_count" != "$TRY_MAX_NUM" ]
+    do
+        PASSWORD=`no_proxy=$noproxy,localhost LD_LIBRARY_PATH=usr/lib GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=usr/bin/roots.pem usr/bin/ra-client -host=$RA_SERVICE_ADDRESS -key=$APP_ID | grep 'Secret' | awk -F ': ' '{print $2}'`
+        if [ "$PASSWORD" == "RPC failed" ]; then
+            try_count=$((try_count + 1))
+        else
+            echo $PASSWORD
+            break
+        fi
+    done
+    cd -
+    ```
+
+- Test in guest docker:
+
+    ```
+    docker exec -it secretmanger bash
+
+        cd ${WORK_SPACE_PATH}/build
+        GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=$GRPC_PATH/etc/roots.pem \
+        ./client \
+            -host=localhost:50051 \
+            -cfg=/usr/bin/dynamic_config.json \
+            -key=<APP_ID>
     ```

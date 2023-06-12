@@ -1,35 +1,49 @@
 set -e
 
 if  [ -n "$1" ] ; then
-    LOOP_DEVICE=$1
+    export VFS_PATH=$1
 else
-    LOOP_DEVICE=$(losetup -f)
+    export VFS_PATH=/root/vfs
 fi
-echo "Idle Loop Device: "${LOOP_DEVICE}
 
 if  [ -n "$2" ] ; then
-    FS_DIR=$2
+    export MOUNT_PATH=$2
 else
-    FS_DIR=luks_fs
+    export MOUNT_PATH=/mnt/luks_fs
 fi
 
-if  [ "$4" = "" ]; then
-    cryptsetup luksOpen ${LOOP_DEVICE} ${FS_DIR}
+# bind loop device to virtual volume
+LOOP_DEVICE=$(losetup -f)
+losetup ${LOOP_DEVICE} ${VFS_PATH}
+echo "Bind ${VFS_PATH} to loop device ${LOOP_DEVICE}"
+
+# luksOpen mapper
+MAPPER_DIR=$RANDOM$RANDOM$RANDOM$RANDOM
+MAPPER_PATH=/dev/mapper/${MAPPER_DIR}
+
+if  [ "$3" == "" ]; then
+    echo "luksOpen ${LOOP_DEVICE} to luks mapper ${MAPPER_PATH} via password"
+    cryptsetup luksOpen ${LOOP_DEVICE} ${MAPPER_DIR}
 else
-    cd `dirname $0`
-    TDX_ID=tdx
-    PASSWORD=`get_secret/client -host=${hostname} -key=${TDX_ID} | grep "Secret" | awk '{print $3}'`
-    echo "Get VFS Password via gRPC-RA-TLS, ID: ${TDX_ID} -> PASSWORD: ${PASSWORD}"
-    echo ${PASSWORD} | cryptsetup luksOpen ${LOOP_DEVICE} ${FS_DIR}
+    echo "luksOpen ${LOOP_DEVICE} to luks mapper ${MAPPER_PATH} via secretmanager service"
+    cd `dirname $0`/get_secret/runtime/ra-client
+    APP_ID=$3
+    TRY_MAX_NUM=5
+    try_count=0
+    while [ "$try_count" != "$TRY_MAX_NUM" ]
+    do
+        PASSWORD=`no_proxy=$noproxy,localhost LD_LIBRARY_PATH=usr/lib GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=usr/bin/roots.pem usr/bin/ra-client -host=$RA_SERVICE_ADDRESS -key=$APP_ID | grep 'Secret' | awk -F ': ' '{print $2}'`
+        if [ "$PASSWORD" == "RPC failed" ]; then
+            try_count=$((try_count + 1))
+        else
+            break
+        fi
+    done
     cd -
-fi
-ls -al /dev/mapper/${FS_DIR}
-
-if  [ "$3" = "format" ]; then
-    mkfs.ext4 /dev/mapper/${FS_DIR}
+    # echo "Get Password via gRPC-RA-TLS, APP_ID: ${APP_ID} -> PASSWORD: ${PASSWORD}"
+    echo ${PASSWORD} | cryptsetup luksOpen ${LOOP_DEVICE} ${MAPPER_DIR}
 fi
 
-mkdir -p /mnt/${FS_DIR}
-mount /dev/mapper/${FS_DIR} /mnt/${FS_DIR}
-
-ls /mnt/${FS_DIR}
+mkdir -p ${MOUNT_PATH}
+mount ${MAPPER_PATH} ${MOUNT_PATH}
+ls -al ${MOUNT_PATH}

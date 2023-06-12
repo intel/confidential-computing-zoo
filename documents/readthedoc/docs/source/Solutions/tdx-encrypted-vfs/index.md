@@ -34,59 +34,52 @@ apt install cryptsetup
 
 ### Create encrypted block file
 
-This command will create luks block file and bind it to a idle loop device.
+This command will create luks encrypted block file.
 
 ```
-VIRTUAL_FS=/root/vfs
-./create_encrypted_vfs.sh ${VIRTUAL_FS}
-```
-
-After above, user need to create env `LOOP_DEVICE` to bind to the loop device manually.
-
-```
-export LOOP_DEVICE=<the binded loop device in outputs>
+VFS_SIZE=1G
+VFS_PATH=/root/vfs
+./create_encrypted_vfs.sh ${VFS_PATH} ${VFS_SIZE}
 ```
 
 ### Mount encrypted block file
 
-- Mount and format via password
-
-    The block loop device needs to be formatted as `ext4` on first mount.
+- Mount via password
 
     ```
-    FS_DIR=luks_fs
-    ./mount_encrypted_vfs.sh ${LOOP_DEVICE} ${FS_DIR} format
+    VFS_PATH=/root/vfs
+    MOUNT_PATH=/mnt/luks_fs
+    ./mount_encrypted_vfs.sh ${VFS_PATH} ${MOUNT_PATH}
     ```
 
-    `Note`: only need to format device on first mount.
+- Mount via `gRPC-ra-tls`
 
-- Mount without format via password
-
-    ```
-    FS_DIR=luks_fs
-    ./unmount_encrypted_vfs.sh ${VIRTUAL_FS} ${FS_DIR}
-    ./mount_encrypted_vfs.sh ${LOOP_DEVICE} ${FS_DIR} notformat
-    ```
-
-- Mount without format via `gRPC-ra-tls`
-
-    1. build `get_secret` service and copy runtime.
+    1. build `secretmanager` service and prepare runtime.
 
         refer to [get_secret/README.md](https://github.com/intel/confidential-computing-zoo/tree/main/cczoo/tdx-encrypted-vfs/get_secret/README.md) for detail.
 
-    2. start `get_secret` service.
+    2. start `secretmanager` service.
 
         refer to [get_secret/README.md](https://github.com/intel/confidential-computing-zoo/tree/main/cczoo/tdx-encrypted-vfs/get_secret/README.md) for detail.
 
-    3. mount with `get_secret` service.
+    3. mount with `secretmanager` service.
 
         ```
-        FS_DIR=luks_fs
-        ./unmount_encrypted_vfs.sh ${VIRTUAL_FS} ${FS_DIR}
-
-        export hostname=localhost:50051
-        ./mount_encrypted_vfs.sh ${LOOP_DEVICE} ${FS_DIR} notformat get_secret
+        APP_ID=<APP_ID>
+        RA_SERVICE_ADDRESS=localhost:50051
+        VFS_PATH=/root/vfs
+        ./mount_encrypted_vfs.sh ${VFS_PATH} ${MOUNT_PATH} ${APP_ID}
         ```
+
+        Please remember the `loop device` and `luks mapper` from output, it will be used in `Unmount encrypted block file` phase.
+
+### Unmount encrypted block file
+
+```
+MAPPER_PATH=<the luks mapper>
+LOOP_DEVICE=<the binded luks loop device>
+./unmount_encrypted_vfs.sh ${MOUNT_PATH} ${MAPPER_PATH} ${LOOP_DEVICE}
+```
 
 ## Cloud Practice
 
