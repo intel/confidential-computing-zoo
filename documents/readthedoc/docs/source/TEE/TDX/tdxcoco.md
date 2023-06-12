@@ -11,7 +11,7 @@ Design Principle
 -	Remove k8s cluster admin from TCB in addition to infrastructure provider like CSP
 -	End2End strong security including runtime/storage/secrets with remote attestation
  
- ![](./img/coco-arc.svg)
+ ![](./img/coco-arc.png)
  
 ## CoCo Architecture
 The following diagram provides an overview of TDX confidential container architecture with key components. 
@@ -20,4 +20,4 @@ Guest rootfs including kata-agent are also protected and verified by feature of 
 The encrypted container image is pulled and decrypted within TDX guest and storage allocated by CSI driver is decrypted before use as well.
 All credential info like image decryption key, image signing signature file, launch policy are retrieved if and only if remote attestation is successful.
  
- ![](./img/tdxcoco-arc.svg)
+ ![](./img/tdxcoco-arc.png)
