@@ -71,5 +71,5 @@ Table of Contents
 
    TEE/TDX/inteltdx.md
    TEE/TDX/tdxstack.md
-
+   TEE/TDX/tdxcoco.md 
 
