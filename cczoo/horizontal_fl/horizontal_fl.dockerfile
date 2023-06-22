@@ -29,8 +29,8 @@ ENV LC_ALL=C.UTF-8 LANG=C.UTF-8
 
 # Add steps here to set up dependencies
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends apt-utils \
-    && apt-get install -y \
+    && apt-get install -y --no-install-recommends \
+        apt-utils \
         ca-certificates \
         build-essential \
         autoconf \
@@ -41,8 +41,13 @@ RUN apt-get update \
         zlib1g-dev \
         wget \
         unzip \
-	    vim \
-        jq
+	vim \
+        jq \
+        gnupg \
+        ca-certificates \
+        software-properties-common \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 ARG BASE_IMAGE=ubuntu:20.04
 RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ] ; then \
@@ -56,28 +61,40 @@ RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ] ; then \
     fi
 
 # Intel SGX
-RUN wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add - \
-    && apt-get update
+RUN ["/bin/bash", "-c", "set -o pipefail && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -"]
 
 # Install SGX-PSW
-RUN apt-get install -y libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-quote-ex-dev libsgx-qe3-logic sgx-aesm-service
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-quote-ex-dev libsgx-qe3-logic sgx-aesm-service \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install SGX-DCAP
-RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install SGX-DCAP quote provider library
+WORKDIR /azure
+ARG AZUREDIR=/azure
 RUN if [ -z "$AZURE" ]; then \
         # Not a build for Azure, so install the default quote provider library \
-        apt-get install -y libsgx-dcap-default-qpl libsgx-dcap-default-qpl-dev; \
+        apt-get-update \
+        && apt-get install -y --no-install-recommends \
+            libsgx-dcap-default-qpl libsgx-dcap-default-qpl-dev \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*; \
     else \
         # Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
-        AZUREDIR=/azure \
-        && apt-get install -y libssl-dev libcurl4-openssl-dev pkg-config software-properties-common \
-        && add-apt-repository ppa:team-xbmc/ppa -y \
+        add-apt-repository ppa:team-xbmc/ppa -y \
         && apt-get update \
-        && apt-get install -y nlohmann-json3-dev \
+        && apt-get install -y --no-install-recommends libssl-dev libcurl4-openssl-dev pkg-config nlohmann-json3-dev \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/* \
         && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
-        && cd ${AZUREDIR} \
         && git checkout 1.10.0 \
         && git submodule update --recursive --init \
         && cd src/Linux \
@@ -95,24 +112,29 @@ ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV WERROR=1
 ENV SGX=1
 
-RUN apt-get install -y gawk bison python3-click python3-jinja2 golang ninja-build \ 
-    libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler\ 
-    libgmp-dev libmpfr-dev libmpc-dev libisl-dev nasm
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gawk bison python3-click python3-jinja2 golang ninja-build \ 
+        libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler\ 
+        libgmp-dev libmpfr-dev libmpc-dev libisl-dev nasm \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
-    && pip3 install --upgrade pip \
-    && pip3 install toml meson cryptography pyelftools
+    && pip3 install --no-cache-dir --upgrade \
+        'pip>=23.1.2' 'wheel>=0.38.0' 'toml>=0.10' 'meson>=0.55' 'cryptography>=41.0.1' 'pyelftools>=0.29' 'setuptools==44.1.1' \
+        'numpy==1.23.5' 'keras_preprocessing>=1.1.2' 'pandas==1.5.2' 'scikit-learn==1.1.3' 'matplotlib>=3.7.1'
 
+WORKDIR ${GRAMINEDIR}
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
-    && cd ${GRAMINEDIR} \
     && git checkout ${GRAMINE_VERSION}
 
+WORKDIR ${ISGX_DRIVER_PATH}
 RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${ISGX_DRIVER_PATH} \
-    && cd ${ISGX_DRIVER_PATH} \
     && git checkout ${SGX_DCAP_VERSION}
 
-RUN cd ${GRAMINEDIR} \
-    && LD_LIBRARY_PATH="" meson setup build/ --buildtype=debug -Dprefix=${INSTALL_PREFIX} -Ddirect=enabled -Dsgx=enabled -Ddcap=enabled -Dsgx_driver=dcap1.10 -Dsgx_driver_include_path=${ISGX_DRIVER_PATH}/driver/linux/include \
+WORKDIR ${GRAMINEDIR}
+RUN LD_LIBRARY_PATH="" meson setup build/ --buildtype=debug -Dprefix=${INSTALL_PREFIX} -Ddirect=enabled -Dsgx=enabled -Ddcap=enabled -Dsgx_driver=dcap1.10 -Dsgx_driver_include_path=${ISGX_DRIVER_PATH}/driver/linux/include \
     && LD_LIBRARY_PATH="" ninja -C build/ \
     && LD_LIBRARY_PATH="" ninja -C build/ install
 
@@ -131,15 +153,10 @@ RUN cd ${GRAMINEDIR}/subprojects/cJSON* \
     && mkdir -p ${INSTALL_PREFIX}/include/cjson \
     && cp -r *.h ${INSTALL_PREFIX}/include/cjson
 
-RUN pip3 install --upgrade pip setuptools==44.1.1
-
 # bazel
 ENV BAZEL_VERSION=3.1.0
-RUN wget "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel_${BAZEL_VERSION}-linux-x86_64.deb" \
+RUN wget -q "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel_${BAZEL_VERSION}-linux-x86_64.deb" \
  && dpkg -i bazel_*.deb
-
-# deps 
-RUN pip3 install numpy==1.23.5 keras_preprocessing pandas==1.5.2 scikit-learn==1.1.3 matplotlib
 
 # config and download TensorFlow
 ENV TF_VERSION=v2.4.2
@@ -151,13 +168,17 @@ RUN git clone  --recurse-submodules -b ${TF_VERSION} https://github.com/tensorfl
 COPY patches/gramine ${GRAMINEDIR}
 
 # git apply diff
-COPY patches/tf ${TF_BUILD_PATH} 
-RUN cd ${TF_BUILD_PATH} && git apply tf2_4.diff
+COPY patches/tf ${TF_BUILD_PATH}
+WORKDIR ${TF_BUILD_PATH} 
+RUN git apply tf2_4.diff
 
 # build and install TensorFlow
-RUN cd ${TF_BUILD_PATH} && ./build.sh ubuntu
-RUN cd ${TF_BUILD_PATH} && bazel build -c opt //tensorflow/tools/pip_package:build_pip_package
-RUN cd ${TF_BUILD_PATH} && bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} && pip install ${TF_BUILD_OUTPUT}/tensorflow-*.whl
+WORKDIR ${TF_BUILD_PATH}
+RUN ./build.sh ubuntu
+WORKDIR ${TF_BUILD_PATH}
+RUN bazel build -c opt //tensorflow/tools/pip_package:build_pip_package
+WORKDIR ${TF_BUILD_PATH}
+RUN bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} && pip install --no-cache-dir ${TF_BUILD_OUTPUT}/tensorflow-*.whl
 
 COPY patches/sgx_default_qcnl.conf /etc
 
@@ -186,12 +207,12 @@ RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ]; then \
 
 ARG BASE_IMAGE=ubuntu:20.04
 RUN if [ "${BASE_IMAGE}" = "ubuntu:20.04" ] ; then \
-    python -m pip install markupsafe==2.0.1 && pip install numpy==1.23.5 --upgrade; \
+    python -m pip install --no-cache-dir markupsafe==2.0.1 && pip install --no-cache-dir numpy==1.23.5 --upgrade; \
     fi
 
 RUN if [ "$WORKLOAD" = "image_classification" ]; then \
     # prepare cifar-10 dataset and make image classification project \
-	cd /image_classification && wget https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz \
+	cd /image_classification && wget -q https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz \
 	&& test-sgx.sh make; \
     elif [ "$WORKLOAD" = "recommendation_system" ]; then \
     # prepare dataset and make recommendation system project \
@@ -206,3 +227,5 @@ RUN apt-get clean all \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf ~/.cache/pip/* \
     && rm -rf /tmp/*
+
+WORKDIR /
