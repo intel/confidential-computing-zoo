@@ -25,11 +25,22 @@ ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
 # Enable it to disable debconf warning
-RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+RUN ["/bin/bash", "-c", "set -o pipefail && echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections"]
 
 # Add steps here to set up dependencies
 RUN apt-get update \
-    && apt-get install -y \
+    && apt-get install -y --no-install-recommends \
+        wget \
+        gnupg \
+        ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ["/bin/bash", "-c", "set -o pipefail && echo 'deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main' | tee /etc/apt/sources.list.d/intel-sgx.list"]
+RUN ["/bin/bash", "-c", "set -o pipefail && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -"]
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         autoconf \
         bison \
         build-essential \
@@ -49,33 +60,42 @@ RUN apt-get update \
         curl \
         init \
         nasm \
-    && apt-get install -y --no-install-recommends apt-utils
-
-RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list \
-    && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -
-
-
-RUN apt-get update
+        software-properties-common \
+        apt-utils \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install SGX PSW
-RUN apt-get install -y libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-qe3-logic sgx-aesm-service
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-qe3-logic sgx-aesm-service \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install SGX DCAP
-RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install SGX-DCAP quote provider library
 # Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
-RUN AZUREDIR=/azure \
-    && apt-get install -y libssl-dev libcurl4-openssl-dev pkg-config software-properties-common \
-    && add-apt-repository ppa:team-xbmc/ppa -y \
+RUN add-apt-repository ppa:team-xbmc/ppa -y \ 
     && apt-get update \
-    && apt-get install -y nlohmann-json3-dev \
-    && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
-    && cd ${AZUREDIR} \
+    && apt-get install -y --no-install-recommends \
+        libssl-dev libcurl4-openssl-dev pkg-config nlohmann-json3-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /azure
+ARG AZUREDIR=/azure
+RUN git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
     && git checkout 1.10.0 \
-    && git submodule update --recursive --init \
-    && cd src/Linux \
-    && ./configure \
+    &&git submodule update --recursive --init
+
+WORKDIR /azure/src/Linux
+RUN ./configure \
     && make DEBUG=1 \
     && make install \
     && cp libdcap_quoteprov.so /usr/lib/x86_64-linux-gnu/
@@ -83,33 +103,36 @@ RUN AZUREDIR=/azure \
 # Clone Gramine and Init submodules
 # dimakuv/ra-tls-maa
 ARG GRAMINE_VERSION=a2166216fd795adfa7391be7fb6398116c317ee3
+WORKDIR ${GRAMINEDIR}
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
-    && cd ${GRAMINEDIR} \
     && git checkout ${GRAMINE_VERSION}
 
 # Create SGX driver for header files
+WORKDIR ${ISGX_DRIVER_PATH}
 RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${ISGX_DRIVER_PATH} \
-    && cd ${ISGX_DRIVER_PATH} \
     && git checkout DCAP_1.11
 
-RUN apt-get install -y gawk bison python3-click python3-jinja2 golang  ninja-build python3
-RUN apt-get install -y libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler
-RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55' cryptography pyelftools
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gawk bison python3-click python3-jinja2 golang  ninja-build python3 \
+        libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -B -m pip install --no-cache-dir 'wheel>=0.38.0' 'toml>=0.10' 'meson>=0.55' 'cryptography>=41.0.1' 'pyelftools>=0.29'
 
 # Build Gramine
-RUN cd ${GRAMINEDIR} && pwd && meson setup build/ --buildtype=release -Dsgx=enabled -Ddcap=enabled -Dsgx_driver="dcap1.10" -Dsgx_driver_include_path="/gramine/driver/driver/linux/include" \
+WORKDIR ${GRAMINEDIR}
+RUN pwd && meson setup build/ --buildtype=release -Dsgx=enabled -Ddcap=enabled -Dsgx_driver="dcap1.10" -Dsgx_driver_include_path="/gramine/driver/driver/linux/include" \
     && ninja -C build/ \
     && ninja -C build/ install
 RUN gramine-sgx-gen-private-key
 
-# Clean apt cache
-RUN apt-get clean all
-
 # Build Secret Provision
 ENV RA_TYPE=maa
 COPY patches/secret_prov_pf ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/secret_prov_pf
-RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
-    && make app ${RA_TYPE} RA_TYPE=${RA_TYPE}
+WORKDIR ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov
+RUN make app ${RA_TYPE} RA_TYPE=${RA_TYPE}
 
 COPY patches/ssl ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 COPY sgx_default_qcnl.conf /etc/
