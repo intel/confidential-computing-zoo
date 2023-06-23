@@ -25,30 +25,28 @@ ENV SGX=1
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
-# Enable it to disable debconf warning
+# Disable debconf warning
 RUN ["/bin/bash", "-c", "set -o pipefail && echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections"]
 
-# Add steps here to set up dependencies
-# Add steps here to set up dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+# Install initial dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
         curl \
         gnupg \
         ca-certificates \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+        software-properties-common \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN ["/bin/bash", "-c", "set -o pipefail && echo 'deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main' | tee /etc/apt/sources.list.d/intel-sgx.list"]
 RUN ["/bin/bash", "-c", "set -o pipefail && curl https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -"]
+RUN add-apt-repository ppa:team-xbmc/ppa -y
 
 # Add TensorFlow Serving distribution URI as a package source
 # Specify 2.8.0 which is the latest version compatible with the glibc version in Ubuntu 18.04
 RUN ["/bin/bash", "-c", "set -o pipefail && echo 'deb [trusted=yes arch=amd64] http://storage.googleapis.com/tensorflow-serving-apt testing tensorflow-model-server-2.8.0' | tee /etc/apt/sources.list.d/tensorflow-serving.list"]
 RUN ["/bin/bash", "-c", "set -o pipefail && curl https://storage.googleapis.com/tensorflow-serving-apt/tensorflow-serving.release.pub.gpg | apt-key add -"]
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         autoconf \
         bison \
         build-essential \
@@ -56,7 +54,6 @@ RUN apt-get update \
         gawk \
         git \
         golang \
-        libcurl4-openssl-dev \
         libprotobuf-c-dev \
         protobuf-c-compiler \
         protobuf-compiler \
@@ -68,15 +65,18 @@ RUN apt-get update \
         python3-jinja2 \
         libnss-mdns \
         libnss-myhostname \
-        libcurl4-openssl-dev \
         libprotobuf-c-dev \
         lsb-release \
         ninja-build \
         nasm \
-        software-properties-common \
         apt-utils \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Install SGX PSW
+        libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-qe3-logic sgx-aesm-service \
+# Install SGX DCAP
+        libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev \
+# Install dependencies for Azure DCAP Client
+        libssl-dev libcurl4-openssl-dev pkg-config nlohmann-json3-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 RUN python3 -B -m pip install --no-cache-dir \
@@ -86,29 +86,7 @@ RUN python3 -B -m pip install --no-cache-dir \
     'cryptography>=41.0.1' \
     'pyelftools>=0.29'
 
-# Install SGX PSW
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-qe3-logic sgx-aesm-service \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install SGX DCAP
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install SGX-DCAP quote provider library
-# Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
-RUN add-apt-repository ppa:team-xbmc/ppa -y \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        libssl-dev libcurl4-openssl-dev pkg-config nlohmann-json3-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
+# Build and install the Azure DCAP Client (Release 1.10.0)
 WORKDIR /azure
 ARG AZUREDIR=/azure
 RUN git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
@@ -159,7 +137,7 @@ RUN cp ${GRAMINEDIR}/build/tools/sgx/ra-tls/libsecret_prov_attest.so . \
 
 COPY Makefile .
 COPY tensorflow_model_server.manifest.template .
-RUN make SGX=${SGX} RA_TYPE=${RA_TYPE} -j "$(nproc)" | grep "mr_enclave\|mr_signer\|isv_prod_id\|isv_svn" | tee -a enclave.mr
+RUN ["/bin/bash", "-c", "set -o pipefail && make SGX=${SGX} RA_TYPE=${RA_TYPE} -j \"$(nproc)\" | grep \"mr_enclave\\|mr_signer\\|isv_prod_id\\|isv_svn\" | tee -a enclave.mr"]
 
 COPY tf_serving_entrypoint.sh /usr/bin
 COPY sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf

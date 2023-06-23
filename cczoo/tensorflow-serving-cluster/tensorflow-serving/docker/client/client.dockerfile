@@ -3,10 +3,10 @@ FROM ubuntu:20.04
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
-# Enable it to disable debconf warning
+# Disable debconf warning
 RUN ["/bin/bash", "-c", "set -o pipefail && echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections"]
 
-# Add steps here to set up dependencies
+# Install dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         autoconf \

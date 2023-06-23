@@ -24,30 +24,28 @@ ENV SGX=1
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
-# Enable it to disable debconf warning
+# Disable debconf warning
 RUN ["/bin/bash", "-c", "set -o pipefail && echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections"]
 
-# Add steps here to set up dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+# Install initial dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
         gnupg \
         ca-certificates \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+        software-properties-common \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN ["/bin/bash", "-c", "set -o pipefail && echo 'deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main' | tee /etc/apt/sources.list.d/intel-sgx.list"]
 RUN ["/bin/bash", "-c", "set -o pipefail && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -"]
+RUN add-apt-repository ppa:team-xbmc/ppa -y
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         autoconf \
         bison \
         build-essential \
         coreutils \
         gawk \
         git \
-        libcurl4-openssl-dev \
         libprotobuf-c-dev \
         protobuf-c-compiler \
         python3-protobuf \
@@ -56,43 +54,26 @@ RUN apt-get update \
         libnss-mdns \
         libnss-myhostname \
         lsb-release \
-        wget \
         curl \
         init \
         nasm \
-        software-properties-common \
         apt-utils \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
+        gawk bison python3-click python3-jinja2 golang ninja-build python3 \
+        libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler \
 # Install SGX PSW
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
         libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-qe3-logic sgx-aesm-service \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
 # Install SGX DCAP
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
         libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install SGX-DCAP quote provider library
-# Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
-RUN add-apt-repository ppa:team-xbmc/ppa -y \ 
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
+# Install dependencies for Azure DCAP Client
         libssl-dev libcurl4-openssl-dev pkg-config nlohmann-json3-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Build and install the Azure DCAP Client (Release 1.10.0)
 WORKDIR /azure
 ARG AZUREDIR=/azure
 RUN git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
     && git checkout 1.10.0 \
-    &&git submodule update --recursive --init
+    && git submodule update --recursive --init
 
 WORKDIR /azure/src/Linux
 RUN ./configure \
@@ -111,13 +92,6 @@ RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
 WORKDIR ${ISGX_DRIVER_PATH}
 RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${ISGX_DRIVER_PATH} \
     && git checkout DCAP_1.11
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        gawk bison python3-click python3-jinja2 golang  ninja-build python3 \
-        libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -B -m pip install --no-cache-dir 'wheel>=0.38.0' 'toml>=0.10' 'meson>=0.55' 'cryptography>=41.0.1' 'pyelftools>=0.29'
 
@@ -139,3 +113,5 @@ COPY sgx_default_qcnl.conf /etc/
 COPY entrypoint_secret_prov_server.sh /usr/bin/
 RUN chmod +x /usr/bin/entrypoint_secret_prov_server.sh
 ENTRYPOINT ["/usr/bin/entrypoint_secret_prov_server.sh"]
+
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
