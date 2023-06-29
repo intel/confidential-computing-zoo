@@ -51,12 +51,14 @@ The training phase can be divided into the following steps:
 
 Steps **②**-**⑥** will be repeated continuously during the training process. Since the workers and the parameter server run in memory-encrypted enclave environment, and RA-TLS technology guarantees encryption during transmission, this solution can ensure privacy during training.
 
-## Horizontal Federated Training Execution
+## Solution Ingredients
+This solution leverages the following ingredients.
+- [TensorFlow](https://www.tensorflow.org/)
+- [Gramine](https://gramine.readthedocs.io)
 
-### Prerequisites
+## Prerequisites
 
-- Ubuntu 18.04/Ubuntu 20.04. This solution should work on other Linux distributions as well,
-  but for simplicity we provide the steps for Ubuntu 18.04/Ubuntu 20.04.
+- Ubuntu 20.04. This solution should work on other Linux distributions as well, but for simplicity we provide the steps for Ubuntu 20.04.
 
 - Docker Engine. Docker Engine is an open-source containerization technology for building and containerizing your applications. In this tutorial, applications like Gramine and TensorFlow will be built into Docker container images. Please follow this [guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script) to install Docker engine. It is recommended to use a data disk of at least 128GB for the docker daemon data directory. This [guide](https://docs.docker.com/config/daemon/#daemon-data-directory) describes how to configure the docker daemon data directory. If behind a proxy server, please refer to this [guide]( https://docs.docker.com/config/daemon/systemd/) for configuring the docker daemon proxy settings.
 
@@ -82,40 +84,35 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
   
 - EPC size: 64GB for image classification solution, 256GB for recommendation system solution
 
- 
-### Solution Ingredients
-This solution leverages the following ingredients.
-- [TensorFlow](https://www.tensorflow.org/)
-- [Gramine](https://gramine.readthedocs.io)
 
-
-### Recommendation System
-#### Configuration
+## Recommendation System
+### Configuration
 
 - Model: dlrm
 - Dataset: click-through record in Kaggle Cretio Ad dataset
 - Number of containers for ps: 1
 - Number of containers for workers: 4
 - CPU cores: 45
+- EPC size: 256GB
 
-#### Download Dataset
+### Download Dataset
 
-The dataset is saved in [GoogleDrive](https://docs.google.com/uc?export=download&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr), you can download it by:
+Download the [dataset](https://docs.google.com/uc?export=download&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr) to the `<cczoo_base_dir>/cczoo/horizontal_fl/recommendation_system/dataset` directory:
 
 ```shell
+cd <cczoo_base_dir>/cczoo/horizontal_fl/recommendation_system/dataset
 wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1xkmlOTtgqSQEWEi7ieHWYvlAl5bSthSr" -O train.tar && rm -rf /tmp/cookies.txt
 ```
 
-Or [BaiduNetdisk](https://pan.baidu.com/s/1BkMBDMghvJXp0wK9EQHtMg?pwd=c7cf).
-The dataset should be placed in the `<cczoo_base_dir>/cczoo/horizontal_fl/recommendation_system/dataset` directory.
+Alternatively, the dataset can be obtained from [BaiduNetdisk](https://pan.baidu.com/s/1BkMBDMghvJXp0wK9EQHtMg?pwd=c7cf).
 
-#### Build Container Image
+### Build Container Image
 ```shell
 cd <cczoo_base_dir>/cczoo/horizontal_fl
 ```
 To build the container image for use on Microsoft Azure:
 ```shell
-AZURE=1 ./build_docker_image.sh recommendation_system ubuntu:20.04
+./build_docker_image.sh recommendation_system azure
 ```
 To build the container image based on Anolis OS:
 ```shell
@@ -123,98 +120,101 @@ To build the container image based on Anolis OS:
 ```
 To build the default container image:
 ```shell
-./build_docker_image.sh recommendation_system <ubuntu:18.04/ubuntu:20.04>
+./build_docker_image.sh recommendation_system default
 ```
 NOTE: To specify the proxy server, set the `proxy_server` variable prior to the call to `build_docker_image.sh`, for example:
 ```shell
-proxy_server=http://proxyserver:port ./build_docker_image.sh recommendation_system
+proxy_server=http://proxyserver:port ./build_docker_image.sh recommendation_system azure
 ```
    
-#### Start Containers and Run Training Scripts
+### Start Containers and Run Training Scripts
 Start five containers (ps0, worker0, worker1, worker2, worker3) and run the script for the corresponding job in each container.
+`<IMAGEID>` is the image ID of the container built in the previous section.
 
-For use on Microsoft Azure:
+#### For Use on Microsoft Azure:
 
 ```shell
-./start_container.sh ps0
+./start_container.sh ps0 <IMAGEID>
 docker exec -it ps0 bash
 cd /recommendation_system
 test-sgx.sh ps0
 ```
 ```shell
-./start_container.sh worker0
+./start_container.sh worker0 <IMAGEID>
 docker exec -it worker0 bash
 cd /recommendation_system
 test-sgx.sh worker0
 ```
 ```shell
-./start_container.sh worker1
+./start_container.sh worker1 <IMAGEID>
 docker exec -it worker1 bash
 cd /recommendation_system
 test-sgx.sh worker1
 ```
 ```shell
-./start_container.sh worker2
+./start_container.sh worker2 <IMAGEID>
 docker exec -it worker2 bash
 cd /recommendation_system
 test-sgx.sh worker2
 ```
 ```shell
-./start_container.sh worker3
+./start_container.sh worker3 <IMAGEID>
 docker exec -it worker3 bash
 cd /recommendation_system
 test-sgx.sh worker3
 ```
 
-For Anolis OS and other cloud deployments:
+#### For Anolis OS and Other Cloud Deployments:
 
-If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and use 127.0.0.1 for the `<PCCS ip addr>` parameter.
+If running locally in a non-cloud environment, use the local PCCS server address for the `<PCCS ip addr>` parameter. If running in a cloud environment,  use `127.0.0.1` for the `<PCCS ip addr>` parameter, and then modify the `PCCS server address` value in `/etc/sgx_default_qcnl.conf`. `<IMAGEID>` is the image ID of the container built in the previous section.
 
 ```shell
-./start_container.sh ps0 <PCCS ip addr> <ubuntu/anolisos>
+./start_container.sh ps0 <IMAGEID> <PCCS ip addr>
 cd /recommendation_system
 test-sgx.sh ps0
 ```
 ```shell
-./start_container.sh worker0 <PCCS ip addr> <ubuntu/anolisos>
+./start_container.sh worker0 <IMAGEID> <PCCS ip addr>
 cd /recommendation_system
 test-sgx.sh worker0
 ```
 ```shell
-./start_container.sh worker1 <PCCS ip addr> <ubuntu/anolisos>
+./start_container.sh worker1 <IMAGEID> <PCCS ip addr>
 cd /recommendation_system
 test-sgx.sh worker1
 ```
 ```shell
-./start_container.sh worker2 <PCCS ip addr> <ubuntu/anolisos>
+./start_container.sh worker2 <IMAGEID> <PCCS ip addr>
 cd /recommendation_system
 test-sgx.sh worker2
 ```
 ```shell
-./start_container.sh worker3 <PCCS ip addr> <ubuntu/anolisos>
+./start_container.sh worker3 <IMAGEID> <PCCS ip addr>
 cd /recommendation_system
 test-sgx.sh worker3
 ```
 
-You can see the training log information from the workers' terminals to confirm that the training is running normally. The model files generated during training will be saved in the `model` folder. In this example, the information related to variable values is stored in `model/model.ckpt-data` of `ps0`, and the information related to the computational graph structure is stored in `model/model.ckpt-meta` of `worker0`.
+#### Expected Results:
+Monitor the training log on each worker container (`/recommendation_system/worker*.log`) until the training has completed. Training is completed when the training log contains `DLRM training finished.`. The ps0 container saves the variable values in the `/recommendation_system/model` directory. The worker0 container saves the computational graph structure in the `/recommendation_system/model` directory.
 
-### Image Classification
+## Image Classification
 
-#### Configuration
+### Configuration
 
 - Model: ResNet-50
 - Dataset: Cifar-10
 - Number of containers for ps: 1
 - Number of containers for workers: 2
 - CPU cores: 6
+- EPC size: 64GB
 
-#### Build Container Image
+### Build Container Image
 ```shell
 cd <cczoo_base_dir>/cczoo/horizontal_fl
 ```
 To build the container image for use on Microsoft Azure:
 ```shell
-AZURE=1 ./build_docker_image.sh image_classification ubuntu:20.04
+./build_docker_image.sh image_classification azure
 ```
 To build the container image based on Anolis OS:
 ```shell
@@ -222,58 +222,61 @@ To build the container image based on Anolis OS:
 ```
 To build the default container image:
 ```shell
-./build_docker_image.sh image_classification <ubuntu:18.04/ubuntu:20.04>
+./build_docker_image.sh image_classification default
 ```
 NOTE: To specify the proxy server, set the `proxy_server` variable prior to the call to `build_docker_image.sh`, for example:
 ```shell
-proxy_server=http://proxyserver:port ./build_docker_image.sh image_classification
+proxy_server=http://proxyserver:port ./build_docker_image.sh image_classification azure
 ```
 
-#### Start Containers and Run Training Scripts
+### Start Containers and Run Training Scripts
 Start three containers (ps0, worker0, worker1) and run the script for the corresponding job in each container.
+`<IMAGEID>` is the image ID of the container built in the previous section.
 
-For use on Microsoft Azure:
+#### For Use on Microsoft Azure:
 
 ```shell
-./start_container.sh ps0
+./start_container.sh ps0 <IMAGEID>
 docker exec -it ps0 bash
 cd /image_classification
 test-sgx.sh ps0
 ```
 ```shell
-./start_container.sh worker0
+./start_container.sh worker0 <IMAGEID>
 docker exec -it worker0 bash
 cd /image_classification
 test-sgx.sh worker0
 ```
 ```shell
-./start_container.sh worker1
+./start_container.sh worker1 <IMAGEID>
 docker exec -it worker1 bash
 cd /image_classification
 test-sgx.sh worker1
 ```
 
-For Anolis OS and other cloud deployments:
+#### For Anolis OS and Other Cloud Deployments:
 
-If running locally, please fill in the local PCCS server address in `<PCCS ip addr>`. If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and use 127.0.0.1 for the `<PCCS ip addr>` parameter.
+If running locally in a non-cloud environment, use the local PCCS server address for the `<PCCS ip addr>` parameter. If running in a cloud environment,  use `127.0.0.1` for the `<PCCS ip addr>` parameter, and then modify the `PCCS server address` value in `/etc/sgx_default_qcnl.conf`. `<IMAGEID>` is the image ID of the container built in the previous section.
 
 ```shell
-./start_container.sh ps0 <PCCS ip addr> <ubuntu/anolisos>
+./start_container.sh ps0 <IMAGEID> <PCCS ip addr>
 cd /image_classification
 test-sgx.sh ps0
 ```
 ```shell
-./start_container.sh worker0 <PCCS ip addr> <ubuntu/anolisos>
+./start_container.sh worker0 <IMAGEID> <PCCS ip addr>
 cd /image_classification
 test-sgx.sh worker0
 ```
 ```shell
-./start_container.sh worker1 <PCCS ip addr> <ubuntu/anolisos>
+./start_container.sh worker1 <IMAGEID> <PCCS ip addr>
 cd /image_classification
 test-sgx.sh worker1
 ```
 
-You can see the training log information from the workers' terminals to confirm that the training is running normally. The model files generated during training will be saved in the `model` folder. In this example, the information related to variable values is stored in `model/model.ckpt-data` of `ps0`, and the information related to the computational graph structure is stored in `model/model.ckpt-meta` of `worker0`.
+#### Expected Results:
+
+Monitor the training log on each worker container (`/image_classification/worker*-gramine-python.log`) until the training has completed. Training is completed when the training log contains `Optimization finished.`. The ps0 container saves the variable values in the `/image_classification/model` directory. The worker0 container saves the computational graph structure in the `/image_classification/model` directory.
 
 
 ---

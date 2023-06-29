@@ -113,5 +113,3 @@ COPY sgx_default_qcnl.conf /etc/
 COPY entrypoint_secret_prov_server.sh /usr/bin/
 RUN chmod +x /usr/bin/entrypoint_secret_prov_server.sh
 ENTRYPOINT ["/usr/bin/entrypoint_secret_prov_server.sh"]
-
-RUN apt-get clean && rm -rf /var/lib/apt/lists/*

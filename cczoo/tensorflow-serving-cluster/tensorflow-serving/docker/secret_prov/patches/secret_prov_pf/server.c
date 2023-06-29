@@ -18,6 +18,7 @@
 
 #define SRV_CRT_PATH "../ssl/server.crt"
 #define SRV_KEY_PATH "../ssl/server.key"
+#define WRAP_KEY_PATH "wrap_key"
 
 // static pthread_mutex_t g_print_lock;
 
@@ -56,14 +57,14 @@ int main(int argc, char** argv) {
     if (ret < 0)
         return ret;
 
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s key_path\n", argv[0]);
+    if (argc > 1) {
+        fprintf(stderr, "Usage: %s\n", argv[0]);
         return 1;
     } else {
-        printf("--- Reading the master key for encrypted files from '%s' ---\n", argv[1]);
-        int fd = open(argv[1], O_RDONLY);
+        printf("--- Reading the master key for encrypted files from '%s' ---\n", WRAP_KEY_PATH);
+        int fd = open(WRAP_KEY_PATH, O_RDONLY);
         if (fd < 0) {
-            fprintf(stderr, "[error] cannot open %s\n", argv[1]);
+            fprintf(stderr, "[error] cannot open %s\n", WRAP_KEY_PATH);
             return 1;
         }
         while (1) {
@@ -76,7 +77,7 @@ int main(int argc, char** argv) {
             } else if (errno == EAGAIN || errno == EINTR) {
                 continue;
             } else {
-                fprintf(stderr, "[error] cannot read %s\n", argv[1]);
+                fprintf(stderr, "[error] cannot read %s\n", WRAP_KEY_PATH);
                 close(fd);
                 return 1;
             }
@@ -84,12 +85,12 @@ int main(int argc, char** argv) {
 
         ret = close(fd);
         if (ret < 0) {
-            fprintf(stderr, "[error] cannot close %s\n", argv[1]);
+            fprintf(stderr, "[error] cannot close %s\n", WRAP_KEY_PATH);
             return 1;
         }
 
         if (bytes_read != SECRET_KEY_SIZE) {
-            fprintf(stderr, "[error] encryption key from %s is not %dB in size\n", argv[1],
+            fprintf(stderr, "[error] encryption key from %s is not %dB in size\n", WRAP_KEY_PATH,
                     SECRET_KEY_SIZE);
             return 1;
         }

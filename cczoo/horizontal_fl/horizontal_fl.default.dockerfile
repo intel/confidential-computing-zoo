@@ -13,13 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# https://github.com/oscarlab/graphene/blob/master/Tools/gsc/images/graphene_aks.latest.dockerfile
-
-ARG BASE_IMAGE=ubuntu:20.04
-FROM ${BASE_IMAGE}
-
-# Optional build argument to select a build for Azure
-ARG AZURE
+FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV INSTALL_PREFIX=/usr/local
@@ -27,9 +21,18 @@ ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib/x86_64-linux-gnu
 ENV PATH=${INSTALL_PREFIX}/bin:${LD_LIBRARY_PATH}:${PATH}
 ENV LC_ALL=C.UTF-8 LANG=C.UTF-8
 
-# Add steps here to set up dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+# Install initial dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        wget \
+        gnupg \
+        ca-certificates \
+        software-properties-common \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN ["/bin/bash", "-c", "set -o pipefail && echo 'deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main' | tee /etc/apt/sources.list.d/intel-sgx.list"]
+RUN ["/bin/bash", "-c", "set -o pipefail && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -"]
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
         apt-utils \
         ca-certificates \
         build-essential \
@@ -39,70 +42,18 @@ RUN apt-get update \
         python3-dev \
         git \
         zlib1g-dev \
-        wget \
         unzip \
 	vim \
         jq \
-        gnupg \
-        ca-certificates \
-        software-properties-common \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-ARG BASE_IMAGE=ubuntu:20.04
-RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ] ; then \
-        echo "use ubuntu:18.04 as base image" ; \
-        echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
-    elif [ "${BASE_IMAGE}" = "ubuntu:20.04" ] ; then \
-        echo "use ubuntu:20.04 as base image" ; \
-        echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list ; \
-    else \
-        echo "wrong base image!" ;\
-    fi
-
-# Intel SGX
-RUN ["/bin/bash", "-c", "set -o pipefail && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -"]
-
-# Install SGX-PSW
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+        pkg-config \
+        gawk bison python3-click python3-jinja2 golang ninja-build \
+        libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler\
+        libgmp-dev libmpfr-dev libmpc-dev libisl-dev nasm \
+# Install SGX PSW
         libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-quote-ex-dev libsgx-qe3-logic sgx-aesm-service \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install SGX-DCAP
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install SGX-DCAP quote provider library
-WORKDIR /azure
-ARG AZUREDIR=/azure
-RUN if [ -z "$AZURE" ]; then \
-        # Not a build for Azure, so install the default quote provider library \
-        apt-get-update \
-        && apt-get install -y --no-install-recommends \
-            libsgx-dcap-default-qpl libsgx-dcap-default-qpl-dev \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/*; \
-    else \
-        # Build for Azure, so install the Azure DCAP Client (Release 1.10.0) \
-        add-apt-repository ppa:team-xbmc/ppa -y \
-        && apt-get update \
-        && apt-get install -y --no-install-recommends libssl-dev libcurl4-openssl-dev pkg-config nlohmann-json3-dev \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/* \
-        && git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
-        && git checkout 1.10.0 \
-        && git submodule update --recursive --init \
-        && cd src/Linux \
-        && ./configure \
-        && make DEBUG=1 \
-        && make install \
-        && cp libdcap_quoteprov.so /usr/lib/x86_64-linux-gnu/; \
-    fi
+# Install SGX DCAP
+        libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev libsgx-dcap-default-qpl libsgx-dcap-default-qpl-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Gramine
 ENV GRAMINEDIR=/gramine
@@ -111,14 +62,6 @@ ENV GRAMINE_VERSION=v1.3.1
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
 ENV WERROR=1
 ENV SGX=1
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        gawk bison python3-click python3-jinja2 golang ninja-build \ 
-        libcurl4-openssl-dev libprotobuf-c-dev python3-protobuf protobuf-c-compiler protobuf-compiler\ 
-        libgmp-dev libmpfr-dev libmpc-dev libisl-dev nasm \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
 
 RUN ln -s /usr/bin/python3 /usr/bin/python \
     && pip3 install --no-cache-dir --upgrade \
@@ -141,17 +84,17 @@ RUN LD_LIBRARY_PATH="" meson setup build/ --buildtype=debug -Dprefix=${INSTALL_P
 RUN gramine-sgx-gen-private-key
 
 # Install mbedtls
-RUN cd ${GRAMINEDIR}/build/subprojects/mbedtls-mbedtls* \
-    && cp -r *_gramine.a ${INSTALL_PREFIX}/lib \
-    && cd ${GRAMINEDIR}/subprojects/mbedtls-mbedtls*/mbedtls-mbedtls* \
-    && cp -r include/mbedtls ${INSTALL_PREFIX}/include
+WORKDIR ${GRAMINEDIR}/build/subprojects/mbedtls-mbedtls-3.2.1
+RUN cp -r ./*_gramine.a ${INSTALL_PREFIX}/lib
+WORKDIR ${GRAMINEDIR}/subprojects/mbedtls-mbedtls-3.2.1/mbedtls-mbedtls-3.2.1
+RUN cp -r include/mbedtls ${INSTALL_PREFIX}/include
 
 # Install cJSON
-RUN cd ${GRAMINEDIR}/subprojects/cJSON* \
-    && make static \
-    && cp -r *.a ${INSTALL_PREFIX}/lib \
+WORKDIR ${GRAMINEDIR}/subprojects/cJSON-1.7.12
+RUN make static \
+    && cp -r ./*.a ${INSTALL_PREFIX}/lib \
     && mkdir -p ${INSTALL_PREFIX}/include/cjson \
-    && cp -r *.h ${INSTALL_PREFIX}/include/cjson
+    && cp -r ./*.h ${INSTALL_PREFIX}/include/cjson
 
 # bazel
 ENV BAZEL_VERSION=3.1.0
@@ -169,7 +112,7 @@ COPY patches/gramine ${GRAMINEDIR}
 
 # git apply diff
 COPY patches/tf ${TF_BUILD_PATH}
-WORKDIR ${TF_BUILD_PATH} 
+WORKDIR ${TF_BUILD_PATH}
 RUN git apply tf2_4.diff
 
 # build and install TensorFlow
@@ -183,8 +126,8 @@ RUN bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT} 
 COPY patches/sgx_default_qcnl.conf /etc
 
 # disable apport
-RUN echo "enabled=0" > /etc/default/apport
-RUN echo "exit 0" > /usr/sbin/policy-rc.d
+RUN echo "enabled=0" > /etc/default/apport \
+    && echo "exit 0" > /usr/sbin/policy-rc.d
 
 # Build argument to select a workload
 ARG WORKLOAD
@@ -192,23 +135,7 @@ ARG WORKLOAD
 COPY image_classification /image_classification
 COPY recommendation_system /recommendation_system
 
-RUN if [ "${BASE_IMAGE}" = "ubuntu:18.04" ]; then \
-    cd /image_classification && \
-    sed -i "41s/# //" python.manifest.template && \
-    sed -i "42s/^/#/" python.manifest.template && \
-    sed -i "65s/# //" python.manifest.template && \
-    sed -i "66s/^/#/" python.manifest.template && \
-    cd ../recommendation_system && \
-    sed -i "41s/# //" python.manifest.template && \
-    sed -i "42s/^/#/" python.manifest.template && \
-    sed -i "65s/# //" python.manifest.template && \
-    sed -i "66s/^/#/" python.manifest.template; \
-    fi
-
-ARG BASE_IMAGE=ubuntu:20.04
-RUN if [ "${BASE_IMAGE}" = "ubuntu:20.04" ] ; then \
-    python -m pip install --no-cache-dir markupsafe==2.0.1 && pip install --no-cache-dir numpy==1.23.5 --upgrade; \
-    fi
+RUN python -m pip install --no-cache-dir markupsafe==2.0.1 && pip install --no-cache-dir numpy==1.23.5 --upgrade;
 
 RUN if [ "$WORKLOAD" = "image_classification" ]; then \
     # prepare cifar-10 dataset and make image classification project \
