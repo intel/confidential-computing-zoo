@@ -93,7 +93,9 @@ WORKDIR ${ISGX_DRIVER_PATH}
 RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${ISGX_DRIVER_PATH} \
     && git checkout DCAP_1.11
 
-RUN python3 -B -m pip install --no-cache-dir 'wheel>=0.38.0' 'toml>=0.10' 'meson>=0.55' 'cryptography>=41.0.1' 'pyelftools>=0.29'
+RUN python3 -B -m pip install --no-cache-dir \
+    'wheel==0.40.*' 'toml==0.10.*' 'meson==1.1.*' 'cryptography==41.0.*' 'pyelftools==0.29' \
+    'certifi==2022.12.7' 'jinja2==2.11.*' 'protobuf==3.19.5' 'requests==2.31.*' 'urllib3==1.26.*'
 
 # Build Gramine
 WORKDIR ${GRAMINEDIR}
