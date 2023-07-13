@@ -39,9 +39,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir --upgrade \
-    'pip>=23.1.2' \
-    'django-model-utils>=4.3.1' \
-    'wheel>=0.38.0'
+    'pip==23.1.*' 'django-model-utils==4.3.*' 'wheel==0.40.*' 'django==4.2.*' 'jinja2==2.11.*' 'setuptools==65.5.*'
 
 WORKDIR /client
 COPY requirements.txt .
