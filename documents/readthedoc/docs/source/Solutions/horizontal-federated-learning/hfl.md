@@ -53,7 +53,7 @@ Steps **②**-**⑥** will be repeated continuously during the training process.
 
 ## Solution Ingredients
 This solution leverages the following ingredients.
-- [TensorFlow](https://www.tensorflow.org/)
+- [TensorFlow](https://www.tensorflow.org/). Please notice that this solution modifies [TensorFlow version v2.4.2](https://github.com/tensorflow/tensorflow/tree/v2.4.2) with the patch file `<cczoo_base_dir>/cczoo/horizontal_fl/patches/tf/tf2_4.diff` to support RA-TLS.
 - [Gramine](https://gramine.readthedocs.io)
 
 ## Prerequisites

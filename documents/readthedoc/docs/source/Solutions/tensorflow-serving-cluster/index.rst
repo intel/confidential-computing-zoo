@@ -138,6 +138,7 @@ This solution leverages the following ingredients.
 - TensorFlow Serving. `TensorFlow Serving <https://www.TensorFlow.org/tfx/guide/serving>`__
   is a flexible, high-performance serving system for machine learning models.
 - Gramine. `Gramine <https://gramine.readthedocs.io>`__ is a lightweight library OS, designed to run a single application with minimal host requirements. Gramine runs unmodified applications inside Intel SGX.
+  Please notice that this solution modifies `Gramine version v1.3.1 <https://github.com/gramineproject/gramine/tree/v1.3.1>`__ secret provisioning server with the files in ``<cczoo_base_dir>/cczoo/tensorflow-serving-cluster/tensorflow-serving/docker/secret_prov/patches/secret_prov_pf`` to customize the SGX measurement verification callback. 
 - Kubernetes. `Kubernetes <https://kubernetes.io/docs/concepts/overview/what-is-kubernetes/>`__
   is an open-source system for automating deployment, scaling, and management of
   containerized applications. In this guide, we will first run the solution without the use of Kubernetes. Then we will run the solution using Kubernetes to provide automated deployment, scaling, and management of the containerized TensorFlow Serving application.
