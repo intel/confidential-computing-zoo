@@ -307,9 +307,15 @@ GRPCXX_RA_TLS_HDRS = [
     "include/grpcpp/security/sgx/sgx_ra_tls_impl.h",
     "include/grpcpp/security/sgx/sgx_ra_tls_log.h",
     "include/grpcpp/security/sgx/sgx_ra_tls_utils.h",
+    "src/cpp/sgx/azure_tdx/AttestClient.h",
+    "src/cpp/sgx/azure_tdx/Utils.h",
+    "src/cpp/sgx/azure_tdx/Logger.h",
+    "src/cpp/sgx/azure_tdx/HttpClient_I.h",
+    "src/cpp/sgx/azure_tdx/HttpClient.h",
 ]
 
 GRPCXX_RA_TLS_SRCS = [
+    "src/cpp/sgx/azure_tdx/HttpClient.cpp",
     "src/cpp/sgx/cJSON.c",
     "src/cpp/sgx/sgx_ra_tls_credentials.cc",
     "src/cpp/sgx/sgx_ra_tls_options.cc",

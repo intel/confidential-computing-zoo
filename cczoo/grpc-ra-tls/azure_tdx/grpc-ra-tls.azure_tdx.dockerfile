@@ -24,46 +24,36 @@ ENV LC_ALL=C.UTF-8 LANG=C.UTF-8
 # Install initial dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
-        gnupg \
         ca-certificates \
-        software-properties-common \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN ["/bin/bash", "-c", "set -o pipefail && echo 'deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main' | tee /etc/apt/sources.list.d/intel-sgx.list"]
-RUN ["/bin/bash", "-c", "set -o pipefail && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -"]
+WORKDIR /dcap
+RUN wget https://download.01.org/intel-sgx/sgx-dcap/1.19/linux/distro/ubuntu20.04-server/sgx_debian_local_repo.tgz \
+    && tar -xvf sgx_debian_local_repo.tgz
+RUN ["/bin/bash", "-c", "set -o pipefail && echo 'deb [trusted=yes arch=amd64] file:/dcap/sgx_debian_local_repo focal main' | tee /etc/apt/sources.list.d/intel-sgx.list"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         apt-utils \
-        build-essential \
         python3-pip \
         git \
-        cmake \
-        unzip \
         vim \
-# Install SGX PSW
-        libsgx-ae-qve libtdx-attest libtdx-attest-dev tdx-qgs libsgx-urts \
-# Install SGX DCAP
-        libsgx-dcap-quote-verify libsgx-dcap-quote-verify-dev \
-# Install dependencies for Azure DCAP Client
-        libssl-dev libcurl4-openssl-dev pkg-config nlohmann-json3-dev \
-# Install dependencies for Azure confidential-computing-cvm-guest-attestation
-        libjsoncpp-dev libboost-all-dev \
+# required for gRPC build
+        build-essential cmake libcurl4-openssl-dev nlohmann-json3-dev \
+# SGX PSW packages required for gRPC build
+        libtdx-attest libtdx-attest-dev \
+# required for bazel setup
+        unzip \
+# required for Azure confidential-computing-cvm-guest-attestation
+        libjsoncpp-dev libboost-all-dev libssl1.1 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Build and install the Azure DCAP Client (Release 1.12.0)
-WORKDIR /azure
-ARG AZUREDIR=/azure
-RUN git clone https://github.com/microsoft/Azure-DCAP-Client ${AZUREDIR} \
-    && git checkout 1.12.0 \
-    && git submodule update --recursive --init
-
-WORKDIR /azure/src/Linux
-RUN ./configure \
-    && make DEBUG=1 \
-    && make install \
-    && cp libdcap_quoteprov.so /usr/lib/x86_64-linux-gnu/
-
-ENV AZDCAP_DEBUG_LOG_LEVEL=ERROR
+# Azure confidential-computing-cvm-guest-attestation
+WORKDIR /
+RUN git clone -b tdx-preview https://github.com/Azure/confidential-computing-cvm-guest-attestation
+WORKDIR /confidential-computing-cvm-guest-attestation
+RUN git checkout e045e8f52543f823f9a85d1b33338f99dec70397
+WORKDIR /confidential-computing-cvm-guest-attestation/tdx-attestation-app
+RUN dpkg -i package/azguestattestation1_1.0.3_amd64.deb
 
 # bazel
 RUN wget -q https://github.com/bazelbuild/bazel/releases/download/3.7.2/bazel-3.7.2-installer-linux-x86_64.sh
@@ -82,28 +72,20 @@ RUN git clone --recurse-submodules -b ${GRPC_VERSION} https://github.com/grpc/gr
 
 RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
 
-# Azure confidential-computing-cvm-guest-attestation
-WORKDIR /
-RUN git clone -b tdx-preview https://github.com/Azure/confidential-computing-cvm-guest-attestation
-WORKDIR /confidential-computing-cvm-guest-attestation/tdx-attestation-app
-RUN wget -q http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
-    && dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
-    && rm libssl1.1_1.1.1f-1ubuntu2_amd64.deb
-RUN dpkg -i package/azguestattestation1_1.0.3_amd64.deb 
-
-# patch grpc
 COPY grpc/common ${GRPC_VERSION_PATH}
 COPY grpc/${GRPC_VERSION} ${GRPC_VERSION_PATH}
-
 COPY grpc/common/azure_tdx_config.json /etc
 
-# build grpc and ra-tls example server/client
+# Install Python dependencies
+RUN pip3 install --upgrade --no-cache-dir \
+        'pip==23.1.*' 'certifi==2022.12.7' 'requests==2.31.*' 'urllib3==1.26.*' 'cython==0.29.36'\
+    && pip3 install --no-cache-dir -r "${GRPC_PATH}/requirements.txt"
+
+# Build grpc ra-tls example server/client
 WORKDIR ${GRPC_PATH}/examples/cpp/ratls
 RUN build.sh
-
-# install python dependencies
-RUN pip3 install --upgrade --no-cache-dir 'pip==23.1.*' 'certifi==2022.12.7' 'requests==2.31.*' 'urllib3==1.26.*' \
-    && pip3 install --no-cache-dir -r ${GRPC_PATH}/requirements.txt
+WORKDIR ${GRPC_PATH}/examples/python/ratls
+RUN build.sh
 
 # Clean tmp files
 RUN apt-get clean all \

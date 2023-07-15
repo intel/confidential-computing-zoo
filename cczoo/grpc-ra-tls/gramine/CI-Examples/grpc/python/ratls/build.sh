@@ -45,5 +45,3 @@ make clean && make | logfilter
 jq ' .sgx_mrs[0].mr_enclave = ''"'`get_env mr_enclave`'" | .sgx_mrs[0].mr_signer = ''"'`get_env mr_signer`'" ' dynamic_config.json > ./dynamic_config.json.tmp
 
 mv ./dynamic_config.json.tmp ./dynamic_config.json
-
-kill -9 `pgrep -f gramine`

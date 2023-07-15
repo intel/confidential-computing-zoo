@@ -45,9 +45,9 @@ namespace AttestClient {
       headers.push_back(api_key_header.c_str());
       stream << "{\"quote\":\"" << Utils::base64url_to_base64(encoded_quote) << "\"";
 
-      if (!encoded_claims.empty()) {
-        stream << ",\"user_data\":\"" << Utils::base64url_to_base64(encoded_claims) << "\"";
-      }
+      // if (!encoded_claims.empty()) {
+      //   stream << ",\"user_data\":\"" << Utils::base64url_to_base64(encoded_claims) << "\"";
+      // }
       stream << "}";
     }
     else {

@@ -28,7 +28,7 @@ static ra_tls_config parse_config_json(const char* file) {
         grpc_printf("could not to find and parse file!\n");
     } else {
         class json_engine sgx_json(file);
-        grpc_printf("%s\n", sgx_json.print_item(sgx_json.get_handle()));
+        //grpc_printf("%s\n", sgx_json.print_item(sgx_json.get_handle()));
 
         cfg.verify_mr_enclave = sgx_json.cmp_item(sgx_json.get_item(sgx_json.get_handle(), "verify_mr_enclave"), "on");
         cfg.verify_mr_signer = sgx_json.cmp_item(sgx_json.get_item(sgx_json.get_handle(), "verify_mr_signer"), "on");

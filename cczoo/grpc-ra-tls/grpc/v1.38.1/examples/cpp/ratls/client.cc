@@ -35,7 +35,7 @@ struct argparser {
     const char* config;
     std::string server_address;
     argparser() {
-        server_address = getarg("localhost:70051", "-host", "--host");
+        server_address = getarg("localhost:8500", "-host", "--host");
         config = getarg("dynamic_config.json", "-cfg", "--config");
     };
 };
@@ -78,7 +78,7 @@ void run_client() {
     std::string user_a = greeter.SayHello("a");
     std::string user_b = greeter.SayHello("b");
 
-    std::cout << "Greeter received: " << user_a << ", "<< user_b << std::endl;
+    std::cout << "Greeter received: " << user_a << " " << user_b << std::endl;
 };
 
 int main(int argc, char** argv) {

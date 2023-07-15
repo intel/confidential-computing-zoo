@@ -274,7 +274,7 @@ if BUILD_WITH_SGX_RA_TLS:
     elif SGX_RA_TLS_BACKEND == "TDX":
         EXTRA_ENV_LINK_ARGS += ' -ltdx_attest -lsgx_dcap_quoteverify -lsgx_urts -DSGX_RA_TLS_TDX_BACKEND'
     elif SGX_RA_TLS_BACKEND == "AZURE_TDX":
-        EXTRA_ENV_LINK_ARGS += ' -ltdx_attest -lsgx_dcap_quoteverify -lsgx_urts -DSGX_RA_TLS_AZURE_TDX_BACKEND'
+        EXTRA_ENV_LINK_ARGS += ' -lazguestattestation -lcurl -DSGX_RA_TLS_AZURE_TDX_BACKEND'
     elif SGX_RA_TLS_BACKEND == "DUMMY":
         EXTRA_ENV_LINK_ARGS += ' -DSGX_RA_TLS_DUMMY_BACKEND'
     else:

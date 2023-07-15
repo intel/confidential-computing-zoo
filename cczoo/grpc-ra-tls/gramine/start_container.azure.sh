@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,23 +16,31 @@
 #!/bin/bash
 set -e
 
-usage() {
-    echo -e "Usage: $0 IMAGE_ID"
-    echo -e "  IMAGE_ID   Container image ID;"
+function usage() {
+    echo -e 'usage:'
+    echo -e '  $0 ${image_id}'
+    echo -e '  {image_id}'
+    echo -e '       default: grpc-ratls-dev-azure:latest'
 }
 
-if [ "$#" -lt 1 ]; then
-    usage
-    exit 1
+usage
+
+if  [ -n "$1" ] ; then
+    image_id=$1
+else
+    image_id=grpc-ratls-dev-azure:latest
 fi
 
-image_id=${1}
-
-docker run -itd \
+docker run -it \
     --privileged=true \
-    -p 8500:8500 \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
-    -v /dev:/dev \
+    --device=/dev/sgx_enclave:/dev/sgx/enclave \
+    --device=/dev/sgx_provision:/dev/sgx/provision \
+    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+    -v /home:/home/host-home \
+    -e no_proxy=${no_proxy} \
+    -e http_proxy=${http_proxy} \
+    -e https_proxy=${https_proxy} \
     ${image_id} \
     bash

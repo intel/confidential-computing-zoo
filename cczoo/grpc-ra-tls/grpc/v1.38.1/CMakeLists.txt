@@ -2809,6 +2809,7 @@ add_library(grpc++
   src/cpp/util/status.cc
   src/cpp/util/string_ref.cc
   src/cpp/util/time_cc.cc
+  src/cpp/sgx/azure_tdx/HttpClient.cpp
   src/cpp/sgx/cJSON.c
   src/cpp/sgx/sgx_ra_tls_credentials.cc
   src/cpp/sgx/sgx_ra_tls_options.cc
@@ -2874,9 +2875,6 @@ elseif(SGX_RA_TLS_BACKEND STREQUAL "TDX")
   )
 elseif(SGX_RA_TLS_BACKEND STREQUAL "AZURE_TDX")
   target_link_libraries(grpc++
-    tdx_attest
-    sgx_dcap_quoteverify
-    sgx_urts
     azguestattestation
     curl
   )
