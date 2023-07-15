@@ -63,6 +63,9 @@ elseif(SGX_RA_TLS_BACKEND STREQUAL "TDX")
   add_definitions(-DSGX_RA_TLS_TDX_BACKEND)
   option(INTEL_SGXSDK_INCLUDE "Intel SGXSDK INCLUDE DIR" "/opt/intel/sgxsdk/include")
   include_directories($ENV{INTEL_SGXSDK_INCLUDE})
+elseif(SGX_RA_TLS_BACKEND STREQUAL "AZURE_TDX")
+  message("SGX_RA_TLS_AZURE_TDX_BACKEND is defined")
+  add_definitions(-DSGX_RA_TLS_AZURE_TDX_BACKEND)
 elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
   message("SGX_RA_TLS_DUMMY_BACKEND is defined")
   add_definitions(-DSGX_RA_TLS_DUMMY_BACKEND)
@@ -2868,6 +2871,14 @@ elseif(SGX_RA_TLS_BACKEND STREQUAL "TDX")
     tdx_attest
     sgx_dcap_quoteverify
     sgx_urts
+  )
+elseif(SGX_RA_TLS_BACKEND STREQUAL "AZURE_TDX")
+  target_link_libraries(grpc++
+    tdx_attest
+    sgx_dcap_quoteverify
+    sgx_urts
+    azguestattestation
+    curl
   )
 elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
   target_link_libraries(grpc++

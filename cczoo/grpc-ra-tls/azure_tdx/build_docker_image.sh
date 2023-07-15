@@ -13,22 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -ex
+#!/bin/bash
+set -e
 
-if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,AZURE_TDX,DUMMY
+if  [ ! -n "$1" ] ; then
+    tag=latest
+else
+    tag=$1
 fi
 
-if [ -z ${SGX_RA_TLS_SDK} ]; then
-    export SGX_RA_TLS_SDK=DEFAULT # DEFAULT,LIBRATS
-fi
-
-${GRPC_PATH}/build_python.sh
-
-cur_dir=`dirname $0`
-
-mkdir -p ${cur_dir}/build
-
-cp -r ${cur_dir}/*.py ${cur_dir}/build
-cp ${GRPC_PATH}/dynamic_config.json ${cur_dir}/build
-python3 -m grpc_tools.protoc -I ${GRPC_PATH}/examples/protos --python_out=${cur_dir}/build --grpc_python_out=${cur_dir}/build ratls.proto
+DOCKER_BUILDKIT=0 docker build \
+    -f grpc-ra-tls.azure_tdx.dockerfile .. \
+    -t grpc-ra-tls:azure_tdx_${tag} \
+    --build-arg no_proxy=${no_proxy} \
+    --build-arg http_proxy=${http_proxy} \
+    --build-arg https_proxy=${https_proxy} \

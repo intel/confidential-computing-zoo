@@ -56,14 +56,20 @@ void RunServer() {
 
     GreeterServiceImpl service;
 
+    std::cout << "server: start" << std::endl;
     grpc::EnableDefaultHealthCheckService(true);
+    std::cout << "server: after EnableDefaultHealthCheckService" << std::endl;
     grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+    std::cout << "server: after InitProtoReflectionServerBuilderPlugin" << std::endl;
 
     grpc::ServerBuilder builder;
+    std::cout << "server: after builder" << std::endl;
 
     auto creds = grpc::sgx::TlsServerCredentials(
                     args.config, GRPC_RA_TLS_TWO_WAY_VERIFICATION);
     GPR_ASSERT(creds.get() != nullptr);
+
+    std::cout << "server: after TlsServerCredentials" << std::endl;
 
     builder.AddListeningPort(args.server_address, creds);
 

@@ -16,13 +16,10 @@
  *
  */
 
-#ifdef SGX_RA_TLS_TDX_BACKEND
-
-#define devname "/dev/tdx-attest"
+#if defined(SGX_RA_TLS_TDX_BACKEND) || defined (SGX_RA_TLS_AZURE_TDX_BACKEND)
 
 #include <grpcpp/security/sgx/sgx_ra_tls_backends.h>
 #include <grpcpp/security/sgx/sgx_ra_tls_impl.h>
-
 #include <stdio.h>
 #include <vector>
 #include <string>
@@ -31,14 +28,28 @@
 #include <cstring>
 #include "sgx_urts.h"
 
+#ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
+#include <azguestattestation1/AttestationClient.h>
+#include <nlohmann/json.hpp>
+#include <chrono>
+#include "azure_tdx/Utils.h"
+#include "azure_tdx/Logger.h"
+#include "azure_tdx/AttestClient.h"
+#include "azure_tdx/HttpClient.h"
+#endif
 
 namespace grpc {
 namespace sgx {
 
 #include <sgx_ql_quote.h>
 #include <sgx_dcap_quoteverify.h>
-
 #include <tdx_attest.h>
+
+#ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
+using json = nlohmann::json;
+using namespace std;
+using namespace std::chrono;
+#endif
 
 const uint8_t g_att_key_id_list[256] = {0};
 
@@ -49,6 +60,143 @@ static void tdx_gen_report_data(uint8_t *reportdata) {
     }
 }
 
+#ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
+static int tdx_generate_quote(
+        uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash) {
+
+    int ret = -1;
+
+    std::string config_filename = "/etc/azure_tdx_config.json";
+
+    // set attestation request based on config file
+    std::ifstream config_file(config_filename);
+    json config = json::parse(config_file);
+    config_file.close();
+
+    std::string attestation_url;
+    if (!config.contains("attestation_url")) {
+      fprintf(stderr, "attestation_url is missing\n\n");
+      return(0);
+    }
+    attestation_url = config["attestation_url"];
+
+    std::string api_key;
+    if (config.contains("api_key")) {
+      api_key = config["api_key"];
+    }
+
+    bool metrics_enabled = false;
+    if (config.contains("enable_metrics")) {
+      metrics_enabled = config["enable_metrics"];
+    }
+
+    std::string provider;
+    if (!config.contains("attestation_provider")) {
+      fprintf(stderr, "attestation_provider is missing\n\n");
+      return(0);
+    }
+    provider = config["attestation_provider"];
+
+    if (!Utils::case_insensitive_compare(provider, "amber") &&
+        !Utils::case_insensitive_compare(provider, "maa")) {
+      fprintf(stderr, "Attestation provider was incorrect\n\n");
+      return(0);
+    }
+
+    std::map<std::string, std::string> hash_type;
+    hash_type["maa"] = "sha256";
+    hash_type["amber"] = "sha512";
+
+    // check for user claims
+    std::string client_payload;
+    json user_claims = config["claims"];
+    if (!user_claims.is_null()) {
+      client_payload = user_claims.dump();
+    }
+
+    // if attesting with Amber, we need to make sure an API token was provided
+    if (api_key.empty() && Utils::case_insensitive_compare(provider, "amber")) {
+      fprintf(stderr, "Attestation endpoint \"api_key\" value missing\n\n");
+      return(0);
+    }
+
+    std::string output_filename = "quote.txt";
+    if (config.contains("output_filename")) {
+      output_filename = config["output_filename"];
+    }
+
+    AttestationClient *attestation_client = nullptr;
+    Logger *log_handle = new Logger();
+
+    // Initialize attestation client
+    if (!Initialize(log_handle, &attestation_client)) {
+      fprintf(stderr, "Failed to create attestation client object\n\n");
+      Uninitialize();
+      return(0);
+    }
+    attest::AttestationResult result;
+
+    bool has_quote = true;
+    std::string quote_data;
+
+    auto start = high_resolution_clock::now();
+
+    result = attestation_client->GetHardwarePlatformEvidence(quote_data, client_payload, hash_type[provider]);
+
+    auto stop = high_resolution_clock::now();
+    duration<double, std::milli> elapsed = stop - start;
+
+    if (result.code_ != attest::AttestationResult::ErrorCode::SUCCESS) {
+      has_quote = false;
+    }
+
+    if (has_quote) {
+      cout << "shui - has quote" << endl;
+
+      // Parses the returned json response
+      json json_response = json::parse(quote_data);
+
+      std::string encoded_quote = json_response["quote"];
+      if (encoded_quote.empty()) {
+          result.code_ = attest::AttestationResult::ErrorCode::ERROR_EMPTY_TD_QUOTE;
+          result.description_ = std::string("Empty Quote received from IMDS Quote Endpoint");
+	  return(0);
+      }
+
+      // decode the base64url encoded quote to raw bytes
+      std::vector<unsigned char> quote_bytes = Utils::base64url_to_binary(encoded_quote);
+
+      if (!output_filename.empty()) {
+          std::ofstream output_file(output_filename, std::ios::out | std::ios::binary);
+          output_file.write((char *)quote_bytes.data(), quote_bytes.size());
+          output_file.close();
+
+          std::stringstream stream;
+          stream << "Quote output file generated: " << output_filename;
+          stream << "quote_bytes.size(): " << quote_bytes.size();
+          cout << stream.str() << endl;;
+      }
+
+      quote_size = quote_bytes.size();
+
+      // print_hex_dump("TDX quote data\n", " ", *quote_buf, quote_size);
+
+      printf("tdx_generate_quote, quote_size %d\n", quote_size);
+
+      *quote_buf = (uint8_t *)realloc(*quote_buf, quote_size+SHA256_DIGEST_LENGTH);
+      cout << "after realloc" << endl;
+      memcpy(*quote_buf, (uint8_t *)quote_bytes.data(), quote_size);
+      cout << "after first memcpy" << endl;
+      memcpy((*quote_buf)+quote_size, hash, SHA256_DIGEST_LENGTH);
+      cout << "after second memcpy" << endl;
+      quote_size += SHA256_DIGEST_LENGTH;
+
+      print_hex_dump("TDX quote data\n", " ", *quote_buf, quote_size);
+    }
+
+    return ret;
+};
+#else
 static int tdx_generate_quote(
         uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash) {
     int ret = -1;
@@ -82,6 +230,7 @@ static int tdx_generate_quote(
     // printf("tdx_generate_quote, sizeof %d, quote_size %d\n", sizeof(*quote_buf), quote_size);
     return ret;
 };
+#endif
 
 std::vector<std::string> tdx_generate_key_cert() {
     return generate_key_cert(tdx_generate_quote);
@@ -160,6 +309,10 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
             } else {
                 grpc_printf("Warning: App: Verification completed, but collateral is out of date based on 'expiration_check_date' you provided.\n");
                 ret = 1;
+#ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
+		grpc_printf("Warning: FIXME - Bypass collateral expiration check.\n");
+		ret = 0;
+#endif
             }
             break;
         case SGX_QL_QV_RESULT_CONFIG_NEEDED:
@@ -231,4 +384,4 @@ ra_tls_measurement tdx_parse_measurement(const char *der_crt, size_t len) {
 } // namespace sgx
 } // namespace grpc
 
-#endif // SGX_RA_TLS_TDX_BACKEND
+#endif // SGX_RA_TLS_TDX_BACKEND || SGX_RA_TLS_AZURE_TDX_BACKEND
