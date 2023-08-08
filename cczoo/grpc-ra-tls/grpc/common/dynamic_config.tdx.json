@@ -1,0 +1,26 @@
+{
+    "verify_mr_seam" : "off",
+    "verify_mrsigner_seam" : "off",
+    "verify_mr_td" : "on",
+    "verify_mr_config_id" : "off",
+    "verify_mr_owner" : "off",
+    "verify_mr_owner_config" : "off",
+    "verify_rt_mr0" : "on",
+    "verify_rt_mr1" : "on",
+    "verify_rt_mr2" : "on",
+    "verify_rt_mr3" : "off",
+    "tdx_mrs": [
+        {
+            "mr_seam" : "",
+            "mrsigner_seam" : "",
+            "mr_td" : "",
+            "mr_config_id" : "",
+            "mr_owner" : "",
+            "mr_owner_config" : "",
+            "rt_mr0" : "",
+            "rt_mr1" : "",
+            "rt_mr2" : "",
+            "rt_mr3" : ""
+        }
+    ]
+}

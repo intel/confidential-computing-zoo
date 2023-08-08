@@ -17,15 +17,15 @@
 set -e
 
 if  [ -n "$1" ] ; then
-    base_image=$1
+    image_tag=$1
 else
-    base_image=centos:8
+    image_tag=tdx-dev:dcap1.15-centos8-latest
 fi
 
 if  [ -n "$2" ] ; then
-    image_tag=$2
+    docker_file=$2
 else
-    image_tag=tdx-dev:dcap1.15-centos8-latest
+    docker_file=tdx-dev.centos.dockerfile
 fi
 
 # Use the host proxy as the default configuration, or specify a proxy_server
@@ -43,8 +43,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg http_proxy=${http_proxy} \
     --build-arg https_proxy=${https_proxy} \
-    --build-arg BASE_IMAGE=${base_image} \
-    -f tdx-dev.dockerfile \
+    -f ${docker_file} \
     -t ${image_tag} \
     .
 

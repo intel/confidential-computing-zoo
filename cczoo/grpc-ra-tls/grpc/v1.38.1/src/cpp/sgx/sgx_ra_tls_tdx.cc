@@ -30,14 +30,13 @@
 #include <fstream>
 #include <cstring>
 #include "sgx_urts.h"
-
+#include "sgx_quote_4.h"
 
 namespace grpc {
 namespace sgx {
 
 #include <sgx_ql_quote.h>
 #include <sgx_dcap_quoteverify.h>
-
 #include <tdx_attest.h>
 
 const uint8_t g_att_key_id_list[256] = {0};
@@ -66,6 +65,7 @@ static int tdx_generate_quote(
     }
     // print_hex_dump("TDX report\n", " ", tdx_report.d, sizeof(tdx_report.d));
 
+    // https://github.com/intel/SGXDataCenterAttestationPrimitives/blob/dcap_1.15_reproducible/QuoteGeneration/quote_wrapper/tdx_attest/tdx_attest.c#L179
     if (TDX_ATTEST_SUCCESS != tdx_att_get_quote(&report_data, NULL, 0, &selected_att_key_id,
         quote_buf, &quote_size, 0)) {
         grpc_fprintf(stderr, "failed to get the quote.\n");
@@ -132,7 +132,8 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
     current_time = time(NULL);
 
     // call DCAP quote verify library for quote verification
-    print_hex_dump("TDX parse quote data\n", " ", quote_buf, quote_size);
+    // https://github.com/intel/SGXDataCenterAttestationPrimitives/blob/dcap_1.15_reproducible/QuoteVerification/dcap_quoteverify/sgx_dcap_quoteverify.cpp#L777
+    // print_hex_dump("TDX parse quote data\n", " ", quote_buf, quote_size);
     dcap_ret = tdx_qv_verify_quote(
             quote_buf, quote_size,
             NULL,
@@ -182,10 +183,15 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
     return ret;
 }
 
+sgx_report2_body_t * tdx_parse_report_body(void *quote_buf) {
+    return &((sgx_quote4_t *)quote_buf)->report_body;
+}
+
 int tdx_verify_cert(const char *der_crt, size_t len) {
     int ret = 0;
     uint32_t quote_size = 0;
     uint8_t *quote_buf = nullptr;
+    sgx_report2_body_t *report_body = nullptr;
 
     BIO *bio = BIO_new(BIO_s_mem());
     BIO_write(bio, der_crt, len);
@@ -213,10 +219,18 @@ int tdx_verify_cert(const char *der_crt, size_t len) {
         goto out;
     }
 
-    // ret = verify_measurement((const char *)&p_rep_body->mr_enclave,
-    //                          (const char *)&p_rep_body->mr_signer,
-    //                          (const char *)&p_rep_body->isv_prod_id,
-    //                          (const char *)&p_rep_body->isv_svn);
+    report_body = tdx_parse_report_body(quote_buf);
+    ret = verify_measurement(
+            (const char*)report_body->mr_seam.m,
+            (const char*)report_body->mrsigner_seam.m,
+            (const char*)report_body->mr_td.m,
+            (const char*)report_body->mr_config_id.m,
+            (const char*)report_body->mr_owner.m,
+            (const char*)report_body->mr_owner_config.m,
+            (const char*)report_body->rt_mr[0].m,
+            (const char*)report_body->rt_mr[1].m,
+            (const char*)report_body->rt_mr[2].m,
+            (const char*)report_body->rt_mr[3].m);
 
 out:
     BIO_free(bio);

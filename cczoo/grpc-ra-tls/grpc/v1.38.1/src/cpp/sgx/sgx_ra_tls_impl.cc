@@ -16,10 +16,20 @@
  *
  */
 
-#include <grpcpp/security/sgx/sgx_ra_tls_impl.h>
+// #include <grpcpp/security/sgx/sgx_ra_tls_impl.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_context.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_utils.h>
 
 namespace grpc {
 namespace sgx {
+
+#include <openssl/evp.h>
+#include <openssl/rsa.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
+#include <openssl/sha.h>
+#include <openssl/pem.h>
+#include <openssl/asn1.h>
 
 const char *RA_TLS_SHORT_NAME = "RA-TLS";
 const char *RA_TLS_LONG_NAME = "RA-TLS Extension";
@@ -180,6 +190,253 @@ int verify_pubkey_hash(X509 *x509, uint8_t *pubkey_hash, uint32_t hash_size) {
     return ret;
 }
 
+#ifdef SGX_RA_TLS_TDX_BACKEND
+
+ra_tls_config parse_config_json(const char* file) {
+    struct ra_tls_config cfg;
+
+    if (!check_file(file)) {
+        grpc_printf("could not to find and parse file!\n");
+    } else {
+        class json_engine tdx_json(file);
+        grpc_printf("%s\n", tdx_json.print_item(tdx_json.get_handle()));
+
+        cfg.verify_mr_seam = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_mr_seam"), "on");
+        cfg.verify_mrsigner_seam = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_mrsigner_seam"), "on");
+        cfg.verify_mr_td = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_mr_td"), "on");
+        cfg.verify_mr_config_id = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_mr_config_id"), "on");
+        cfg.verify_mr_owner = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_mr_owner"), "on");
+        cfg.verify_mr_owner_config = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_mr_owner_config"), "on");
+        cfg.verify_rt_mr0 = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_rt_mr0"), "on");
+        cfg.verify_rt_mr1 = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_rt_mr1"), "on");
+        cfg.verify_rt_mr2 = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_rt_mr2"), "on");
+        cfg.verify_rt_mr3 = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_rt_mr3"), "on");
+
+        auto objs = tdx_json.get_item(tdx_json.get_handle(), "tdx_mrs");
+        auto obj_num = std::min(cJSON_GetArraySize(objs), MESUREMENTS_MAX_SIZE);
+
+        cfg.mrs = std::vector<ra_tls_measurement>(obj_num, ra_tls_measurement());
+        for (auto i = 0; i < obj_num; i++) {
+            auto obj = cJSON_GetArrayItem(objs, i);
+
+            auto mr_seam = tdx_json.print_item(tdx_json.get_item(obj, "mr_seam"));
+            memset(cfg.mrs[i].mr_seam, 0, sizeof(cfg.mrs[i].mr_seam));
+            hex_to_byte(mr_seam+1, cfg.mrs[i].mr_seam, sizeof(cfg.mrs[i].mr_seam));
+
+            auto mrsigner_seam = tdx_json.print_item(tdx_json.get_item(obj, "mrsigner_seam"));
+            memset(cfg.mrs[i].mrsigner_seam, 0, sizeof(cfg.mrs[i].mrsigner_seam));
+            hex_to_byte(mrsigner_seam+1, cfg.mrs[i].mrsigner_seam, sizeof(cfg.mrs[i].mrsigner_seam));
+
+            auto mr_td = tdx_json.print_item(tdx_json.get_item(obj, "mr_td"));
+            memset(cfg.mrs[i].mr_td, 0, sizeof(cfg.mrs[i].mr_td));
+            hex_to_byte(mr_td+1, cfg.mrs[i].mr_td, sizeof(cfg.mrs[i].mr_td));
+
+            auto mr_config_id = tdx_json.print_item(tdx_json.get_item(obj, "mr_config_id"));
+            memset(cfg.mrs[i].mr_config_id, 0, sizeof(cfg.mrs[i].mr_config_id));
+            hex_to_byte(mr_config_id+1, cfg.mrs[i].mr_config_id, sizeof(cfg.mrs[i].mr_config_id));
+
+            auto mr_owner = tdx_json.print_item(tdx_json.get_item(obj, "mr_owner"));
+            memset(cfg.mrs[i].mr_owner, 0, sizeof(cfg.mrs[i].mr_owner));
+            hex_to_byte(mr_owner+1, cfg.mrs[i].mr_owner, sizeof(cfg.mrs[i].mr_owner));
+
+            auto mr_owner_config = tdx_json.print_item(tdx_json.get_item(obj, "mr_owner_config"));
+            memset(cfg.mrs[i].mr_owner_config, 0, sizeof(cfg.mrs[i].mr_owner_config));
+            hex_to_byte(mr_owner_config+1, cfg.mrs[i].mr_owner_config, sizeof(cfg.mrs[i].mr_owner_config));
+
+            auto rt_mr0 = tdx_json.print_item(tdx_json.get_item(obj, "rt_mr0"));
+            memset(cfg.mrs[i].rt_mr0, 0, sizeof(cfg.mrs[i].rt_mr0));
+            hex_to_byte(rt_mr0+1, cfg.mrs[i].rt_mr0, sizeof(cfg.mrs[i].rt_mr0));
+
+            auto rt_mr1 = tdx_json.print_item(tdx_json.get_item(obj, "rt_mr1"));
+            memset(cfg.mrs[i].rt_mr1, 0, sizeof(cfg.mrs[i].rt_mr1));
+            hex_to_byte(rt_mr1+1, cfg.mrs[i].rt_mr1, sizeof(cfg.mrs[i].rt_mr1));
+
+            auto rt_mr2 = tdx_json.print_item(tdx_json.get_item(obj, "rt_mr2"));
+            memset(cfg.mrs[i].rt_mr2, 0, sizeof(cfg.mrs[i].rt_mr2));
+            hex_to_byte(rt_mr2+1, cfg.mrs[i].rt_mr2, sizeof(cfg.mrs[i].rt_mr2));
+
+            auto rt_mr3 = tdx_json.print_item(tdx_json.get_item(obj, "rt_mr3"));
+            memset(cfg.mrs[i].rt_mr3, 0, sizeof(cfg.mrs[i].rt_mr3));
+            hex_to_byte(rt_mr3+1, cfg.mrs[i].rt_mr3, sizeof(cfg.mrs[i].rt_mr3));
+        };
+    }
+
+    return cfg;
+}
+
+static bool verify_measurement_internal(
+                    const char* mr_seam,
+                    const char* mrsigner_seam,
+                    const char* mr_td,
+                    const char* mr_config_id,
+                    const char* mr_owner,
+                    const char* mr_owner_config,
+                    const char* rt_mr0,
+                    const char* rt_mr1,
+                    const char* rt_mr2,
+                    const char* rt_mr3) {
+    bool status = false;
+    auto & cfg = _ctx_.cfg;
+    for (auto & obj : cfg.mrs) {
+        status = true;
+
+        if (status && cfg.verify_mr_seam && \
+            memcmp(obj.mr_seam, mr_seam, 32)) {
+            status = false;
+        }
+        if (status && cfg.verify_mrsigner_seam && \
+            memcmp(obj.mrsigner_seam, mrsigner_seam, 32)) {
+            status = false;
+        }
+        if (status && cfg.verify_mr_td && \
+            memcmp(obj.mr_td, mr_td, 32)) {
+            status = false;
+        }
+        if (status && cfg.verify_mr_config_id && \
+            memcmp(obj.mr_config_id, mr_config_id, 32)) {
+            status = false;
+        }
+        if (status && cfg.verify_mr_owner && \
+            memcmp(obj.mr_owner, mr_owner, 32)) {
+            status = false;
+        }
+        if (status && cfg.verify_mr_owner_config && \
+            memcmp(obj.mr_owner_config, mr_owner_config, 32)) {
+            status = false;
+        }
+        if (status && cfg.verify_rt_mr0 && \
+            memcmp(obj.rt_mr0, rt_mr0, 32)) {
+            status = false;
+        }
+        if (status && cfg.verify_rt_mr1 && \
+            memcmp(obj.rt_mr1, rt_mr1, 32)) {
+            status = false;
+        }
+        if (status && cfg.verify_rt_mr2 && \
+            memcmp(obj.rt_mr2, rt_mr2, 32)) {
+            status = false;
+        }
+        if (status && cfg.verify_rt_mr3 && \
+            memcmp(obj.rt_mr3, rt_mr3, 32)) {
+            status = false;
+        }
+        if (status) {
+            break;
+        }
+    }
+    return status;
+}
+
+int verify_measurement(const char* mr_seam,
+                       const char* mrsigner_seam,
+                       const char* mr_td,
+                       const char* mr_config_id,
+                       const char* mr_owner,
+                       const char* mr_owner_config,
+                       const char* rt_mr0,
+                       const char* rt_mr1,
+                       const char* rt_mr2,
+                       const char* rt_mr3) {
+    std::lock_guard<std::mutex> lock(_ctx_.mtx);
+    bool status = false;
+    try {
+        grpc_printf("remote attestation\n");
+
+        if (_ctx_.cfg.verify_mr_seam) {
+            grpc_printf("  |- mr_seam        :  %s\n", byte_to_hex(mr_seam, 32).c_str());
+        };
+        if (_ctx_.cfg.verify_mrsigner_seam) {
+            grpc_printf("  |- mrsigner_seam  :  %s\n", byte_to_hex(mrsigner_seam, 32).c_str());
+        };
+        if (_ctx_.cfg.verify_mr_td) {
+            grpc_printf("  |- mr_td     :  %s\n", byte_to_hex(mr_td, 32).c_str());
+        };
+        if (_ctx_.cfg.verify_mr_config_id) {
+            grpc_printf("  |- mr_config_id   :  %s\n", byte_to_hex(mr_config_id, 32).c_str());
+        };
+        if (_ctx_.cfg.verify_mr_owner) {
+            grpc_printf("  |- mr_owner       :  %s\n", byte_to_hex(mr_owner, 32).c_str());
+        };
+        if (_ctx_.cfg.verify_mr_owner_config) {
+            grpc_printf("  |- mr_owner_config:  %s\n", byte_to_hex(mr_owner_config, 32).c_str());
+        };
+        if (_ctx_.cfg.verify_rt_mr0) {
+            grpc_printf("  |- rt_mr0         :  %s\n", byte_to_hex(rt_mr0, 32).c_str());
+        };
+        if (_ctx_.cfg.verify_rt_mr1) {
+            grpc_printf("  |- rt_mr1         :  %s\n", byte_to_hex(rt_mr1, 32).c_str());
+        };
+        if (_ctx_.cfg.verify_rt_mr2) {
+            grpc_printf("  |- rt_mr2         :  %s\n", byte_to_hex(rt_mr2, 32).c_str());
+        };
+        if (_ctx_.cfg.verify_rt_mr3) {
+            grpc_printf("  |- rt_mr3         :  %s\n", byte_to_hex(rt_mr3, 32).c_str());
+        };
+        if (status = verify_measurement_internal(
+                                        mr_seam,
+                                        mrsigner_seam,
+                                        mr_td,
+                                        mr_config_id,
+                                        mr_owner,
+                                        mr_owner_config,
+                                        rt_mr0,
+                                        rt_mr1,
+                                        rt_mr2,
+                                        rt_mr3)) {
+            grpc_printf("  |- verify result  :  success\n");
+        } else {
+            grpc_printf("  |- verify result  :  failed\n");
+        }
+    } catch (...) {
+        grpc_printf("unable to verify measurement!");
+    }
+
+    fflush(stdout);
+    return status ? 0 : -1;
+}
+
+#else
+
+ra_tls_config parse_config_json(const char* file) {
+    struct ra_tls_config cfg;
+
+    if (!check_file(file)) {
+        grpc_printf("could not to find and parse file!\n");
+    } else {
+        class json_engine sgx_json(file);
+        grpc_printf("%s\n", sgx_json.print_item(sgx_json.get_handle()));
+
+        cfg.verify_mr_enclave = sgx_json.cmp_item(sgx_json.get_item(sgx_json.get_handle(), "verify_mr_enclave"), "on");
+        cfg.verify_mr_signer = sgx_json.cmp_item(sgx_json.get_item(sgx_json.get_handle(), "verify_mr_signer"), "on");
+        cfg.verify_isv_prod_id = sgx_json.cmp_item(sgx_json.get_item(sgx_json.get_handle(), "verify_isv_prod_id"), "on");
+        cfg.verify_isv_svn = sgx_json.cmp_item(sgx_json.get_item(sgx_json.get_handle(), "verify_isv_svn"), "on");
+
+        auto objs = sgx_json.get_item(sgx_json.get_handle(), "sgx_mrs");
+        auto obj_num = std::min(cJSON_GetArraySize(objs), MESUREMENTS_MAX_SIZE);
+
+        cfg.mrs = std::vector<ra_tls_measurement>(obj_num, ra_tls_measurement());
+        for (auto i = 0; i < obj_num; i++) {
+            auto obj = cJSON_GetArrayItem(objs, i);
+
+            auto mr_enclave = sgx_json.print_item(sgx_json.get_item(obj, "mr_enclave"));
+            memset(cfg.mrs[i].mr_enclave, 0, sizeof(cfg.mrs[i].mr_enclave));
+            hex_to_byte(mr_enclave+1, cfg.mrs[i].mr_enclave, sizeof(cfg.mrs[i].mr_enclave));
+
+            auto mr_signer = sgx_json.print_item(sgx_json.get_item(obj, "mr_signer"));
+            memset(cfg.mrs[i].mr_signer, 0, sizeof(cfg.mrs[i].mr_signer));
+            hex_to_byte(mr_signer+1, cfg.mrs[i].mr_signer, sizeof(cfg.mrs[i].mr_signer));
+
+            auto isv_prod_id = sgx_json.print_item(sgx_json.get_item(obj, "isv_prod_id"));
+            cfg.mrs[i].isv_prod_id = strtoul(isv_prod_id, nullptr, 10);
+
+            auto isv_svn = sgx_json.print_item(sgx_json.get_item(obj, "isv_svn"));
+            cfg.mrs[i].isv_svn = strtoul(isv_svn, nullptr, 10);
+        };
+    }
+
+    return cfg;
+}
+
 static bool verify_measurement_internal(const char* mr_enclave,
                                         const char* mr_signer,
                                         const char* isv_prod_id,
@@ -228,8 +485,6 @@ int verify_measurement(const char* mr_enclave, const char* mr_signer,
     std::lock_guard<std::mutex> lock(_ctx_.mtx);
     bool status = false;
     try {
-        assert(mr_enclave && mr_signer && isv_prod_id && isv_svn);
-        status = verify_measurement_internal(mr_enclave, mr_signer, isv_prod_id, isv_svn);
         grpc_printf("remote attestation\n");
 
         if (_ctx_.cfg.verify_mr_enclave) {
@@ -248,7 +503,8 @@ int verify_measurement(const char* mr_enclave, const char* mr_signer,
             grpc_printf("  |- isv_svn        :  %hu\n", *((uint16_t*)isv_svn));
         };
 
-        if (status) {
+        if (status = verify_measurement_internal(
+                        mr_enclave, mr_signer, isv_prod_id, isv_svn)) {
             grpc_printf("  |- verify result  :  success\n");
         } else {
             grpc_printf("  |- verify result  :  failed\n");
@@ -260,6 +516,8 @@ int verify_measurement(const char* mr_enclave, const char* mr_signer,
     fflush(stdout);
     return status ? 0 : -1;
 }
+
+#endif
 
 } // namespace sgx
 } // namespace grpc

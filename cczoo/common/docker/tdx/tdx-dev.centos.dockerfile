@@ -29,7 +29,7 @@ RUN cd /etc/yum.repos.d/ && \
 RUN yum install -y yum-utils.noarch
 RUN yum groupinstall -y 'Development Tools'
 
-RUN yum install -y python3 python3-devel && \
+RUN yum install -y python38 python38-devel python38-pip && \
     yum install -y python3-protobuf protobuf-c-devel protobuf-c-compiler openssl-devel libcurl-devel && \
     yum install -y cryptsetup e4fsprogs expect wget vim
 
@@ -46,12 +46,16 @@ RUN wget https://download.01.org/intel-sgx/sgx-dcap/${DCAP_VERSION}/linux/distro
     yum install -y --nogpgcheck sgx_rpm_local_repo/libsgx-urts-*.el8.x86_64.rpm && \
     yum install -y --setopt=install_weak_deps=False --nogpgcheck tdx-qgs && \
     yum install -y --setopt=install_weak_deps=False --nogpgcheck libsgx-dcap-quote-verify-devel && \
-    yum install -y --setopt=install_weak_deps=False --nogpgcheck libsgx-ae-qve
+    yum install -y --setopt=install_weak_deps=False --nogpgcheck libsgx-ae-qve && \
+    rm -f sgx_rpm_local_repo.tgz
 
 COPY configs /
 
-RUN wget https://download.01.org/intel-sgx/sgx-dcap/${DCAP_VERSION}/linux/distro/centos-stream/sgx_linux_x64_sdk_2.18.100.3.bin && \
-    /install_sgx_sdk.sh
+RUN wget https://download.01.org/intel-sgx/sgx-dcap/${DCAP_VERSION}/linux/distro/centos-stream/sgx_linux_x64_sdk_2.18.100.3.bin -P /opt/intel && \
+    chmod +x /opt/intel/sgx_linux_x64_sdk_2.18.100.3.bin && \
+    /install_sgxsdk.sh /opt/intel/sgx_linux_x64_sdk_2.18.100.3.bin
+
+ENV INTEL_SGXSDK_INCLUDE=/opt/intel/sgxsdk/include
 
 # only for tdx vsock
 # RUN echo 'port=4050' | tee /etc/tdx-attest.conf
