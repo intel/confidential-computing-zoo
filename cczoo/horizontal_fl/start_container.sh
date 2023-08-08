@@ -16,21 +16,29 @@
 
 set -e
 
-if  [ -n "$1" ] ; then
-    name=$1
-else
-    name=ps0
+function usage() {
+    echo -e "Usage: $0 NAME IMAGE_ID [PCCS_IP]"
+    echo -e "  NAME       Container name;"
+    echo -e "                For example: ps0"
+    echo -e "  IMAGE_ID   Container image ID;"
+    echo -e "  PCCS_IP    Optional PCCS IP address;"
+}
+
+
+if [ "$#" -lt 2 ]; then
+    usage
+    exit 1
 fi
 
-if  [ -n "$2" ] ; then
-    ip_addr=$2
+name=${1}
+image_id=${2}
+
+if  [ -n "$3" ] ; then
+    ip_addr=$3
 else
     ip_addr=127.0.0.1
 fi
 
-tag=latest
-
-if [ "$3" == "ubuntu" ] || [ ! -n "$3" ]; then
 docker run -itd \
     --restart=always \
     --cap-add=SYS_PTRACE \
@@ -42,22 +50,5 @@ docker run -itd \
     -v /home:/home/host-home \
     --net=host \
     --add-host=pccs.service.com:${ip_addr} \
-    horizontal_fl:${tag} \
+    ${image_id} \
     bash
-elif [ "$3" == "anolisos" ]; then
-docker run -it \
-    --restart=always \
-    --cap-add=SYS_PTRACE \
-    --security-opt seccomp=unconfined \
-    --device=/dev/sgx_enclave:/dev/sgx/enclave \
-    --device=/dev/sgx_provision:/dev/sgx/provision \
-    --name=${name} \
-    -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
-    -v /home:/home/host-home \
-    --net=host \
-    --add-host=pccs.service.com:${ip_addr} \
-    anolisos_horizontal_fl:${tag} \
-    bash
-else
-    echo "unsupported distros '$3', should be 'ubuntu' or 'anolisos'"
-fi

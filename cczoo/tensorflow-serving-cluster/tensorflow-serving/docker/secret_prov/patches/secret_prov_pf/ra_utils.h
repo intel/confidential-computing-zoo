@@ -17,7 +17,7 @@
 
 #include <pthread.h>
 #include <stdbool.h>
-#include "cJSON.h"
+#include "/gramine/subprojects/cJSON-1.7.12/cJSON.h"
 
 #define RA_TLS_MRS_MAX_SIZE 100
 #define RA_TLS_CONFIG_JSON "./ra_config.json"
@@ -100,8 +100,9 @@ cJSON* open_json_file(const char* file) {
     fseek(file_ptr, 0, SEEK_END);
     int length = ftell(file_ptr);
     fseek(file_ptr, 0, SEEK_SET);
-    char *buffer = malloc(length);
-    fread(buffer, 1, length, file_ptr);
+    char *buffer = malloc(length + 1); // +1 for a NULL
+    size_t num_read = fread(buffer, 1, length, file_ptr);
+    buffer[num_read] = '\0'; // terminate with NULL
     fclose(file_ptr);
 
     cJSON* handle = cJSON_Parse((const char *)buffer);

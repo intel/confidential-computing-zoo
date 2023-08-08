@@ -16,16 +16,33 @@
 #!/bin/bash
 set -e
 
-if  [ ! -n "$1" ] ; then
-    workload=image_classification
-else
-    workload=$1
+function usage() {
+    echo -e "Usage: $0 WORKLOADTYPE BUILDTYPE [TAG]"
+    echo -e "  WORKLOADTYPE   workload type;"
+    echo -e "                   WORKLOADTYPE is 'image_classification' or 'recommendation_system'"
+    echo -e "  BUILDTYPE      build type;"
+    echo -e "                   BUILDTYPE is 'azure', 'anolisos', or 'default'"
+    echo -e "  TAG            docker tag suffix;"
+    echo -e "                   docker tag is BUILDTYPE_TAG;"
+    echo -e "                   TAG default is 'latest'"
+}
+
+
+if [ "$#" -lt 2 ]; then
+    usage
+    exit 1
 fi
 
-if  [ ! -n "$2" ] ; then
-    base_image=ubuntu:20.04
-else
-    base_image=$2
+workload_type=${1}
+if  [ "$1" != "image_classification" ] && [ "$1" != "recommendation_system" ]; then
+    usage
+    exit 1
+fi
+
+build_type=${2}
+if  [ "$2" != "azure" ] && [ "$2" != "anolisos" ] && [ "$2" != "default" ]; then
+    usage
+    exit 1
 fi
 
 if  [ ! -n "$3" ] ; then
@@ -34,34 +51,11 @@ else
     tag=$3
 fi
 
-if  [ -z "$AZURE" ] ; then
-    azure=
-else
-    azure=1
-fi
-
-# You can remove build-arg http_proxy and https_proxy if your network doesn't need it
-# no_proxy="localhost,127.0.0.0/1"
-#proxy_server="" # your http proxy server
-
-if [ ${base_image} != "anolisos" ]; then
 DOCKER_BUILDKIT=0 docker build \
-    -f horizontal_fl.dockerfile . \
-    -t horizontal_fl:${tag} \
+    -f horizontal_fl.${build_type}.dockerfile . \
+    -t horizontal_fl:${build_type}_${workload_type}_${tag} \
     --network=host \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     --build-arg no_proxy=${no_proxy} \
-    --build-arg AZURE=${azure} \
-    --build-arg WORKLOAD=${workload} \
-    --build-arg BASE_IMAGE=${base_image} 
-else
-DOCKER_BUILDKIT=0 docker build \
-    -f anolisos_horizontal_fl.dockerfile . \
-    -t anolisos_horizontal_fl:${tag} \
-    --network=host \
-    --build-arg http_proxy=${proxy_server} \
-    --build-arg https_proxy=${proxy_server} \
-    --build-arg no_proxy=${no_proxy} \
-    --build-arg WORKLOAD=${workload} 
-fi   
+    --build-arg WORKLOAD=${workload_type} \

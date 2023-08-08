@@ -62,29 +62,11 @@ The following steps can be used to deploy the CCZoo ML serving online inference 
 1.8 Configure the network security group of the Trusted System VM to add an Inbound Port Rule for the Secret Provisioning service port 4433. This [guide](https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview) gives an overview of Azure network security groups.
 
 ### Step 2: Prepare Applications
-2.1 On the Client System VM, download the client container image:
+2.1 On the Client System VM, [build the Client container image](index.rst#1-build-client-container-image), specifying the `default` build.
 
-```shell
-   docker pull intelcczoo/tensorflow_serving:default_client_latest
-```
+2.2 On the Trusted System VM, [build the Secret Provisioning container image](index.rst#2-build-secret-provisioning-server-container-image), specifying the `azure` build.
 
-   (Alternatively, on the Client System VM, you can [build the Client container image](index.rst#12-alternatively-build-client-container-image), specifying the `default` build.)
-
-2.2 On the Trusted System VM, download the Secret Provisioning container image:
-
-```shell
-   docker pull intelcczoo/tensorflow_serving:azure_secret_prov_server_latest
-```
-
-   (Alternatively, you can [build the Secret Provisioning container image](index.rst#22-alternatively-build-secret-provisioning-server-container-image), specifying the `azure` build.)
-
-2.3 Download the ML Serving container image to a system (with recommended free space of 128GB allocated to the Docker daemon data directory) that has push access to your Azure Container Registry:
-
-```shell
-   docker pull intelcczoo/tensorflow_serving:azure_tensorflow_serving_latest
-```
-
-   (Alternatively, you can [build the ML Serving container image](index.rst#32-alternatively-build-tensorflow-serving-container-image), specifying the `azure` build.)
+2.3 On a system (with recommended free space of 128GB allocated to the Docker daemon data directory) that has push access to your Azure Container Registry, [build the ML Serving container image](index.rst#3-build-tensorflow-serving-container-image), specifying the `azure` build.
 
 2.4 [Obtain the ML Serving container SGX measurements.](index.rst#4-obtain-the-tensorflow-serving-container-sgx-measurements)
 
