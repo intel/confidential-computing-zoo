@@ -3,7 +3,9 @@
 ## Introduction
 This solution provides a secret provision service following RA-TLS based remote attestation through gRPC. Secrets are stored in `KMS` that is hosted on tenant side beforehand and secrets distribution is managed by `Policy Manager` according to pre-defined policy. Once the tenant verifies the quote from CSP SGX Enclave successfully, `KMS Agent` retrieves secrets from `KMS` and tenant sends them to the remote CSP SGX Enclave through an established secure gRPC channel.
 
-![](img/asps_arch.png)
+<div align=center>
+<img src="image/asps_arch.png" width="75%">
+</div>
 
 Remote Attestation with TLS (RA-TLS) process of ASPS:
 
@@ -53,8 +55,12 @@ Typically, KMS server runs on a trusted machine on tenant side.
     Cluster Name    vault-cluster-be481703
     Cluster ID      b8b03960-4e0f-e091-3fce-80da10796874
     HA Enabled      false
-    ROOT_TOKEN:
-    hvs.DoY6eqRWYDF6fvr1vnC4P2MJ
+    ```
+    `ROOT_TOKEN`:
+    ```
+    DoY6eqRWYDF6fvr1vnC4P2MJ
+    ```
+    ```
     UNSEAL KEY:
     iZJu+0ipNMZIDeu1Lf+nRuhfC3bWCXQzuQ2XJFCBHrQ=
     Success! Enabled the kv secrets engine at: occlum/1/
@@ -79,12 +85,12 @@ Typically, KMS server runs on a trusted machine on tenant side.
     ```
     `APP1_TOKEN`:
     ```
-    hvs.CAESIHKzKhuwsjqXDuerMkSTQ7JheMQFIvCWBxMd9UlK3yF0Gh4KHGh2cy5SRGZlOXdxZ3ZWRXJrZEdSOUJPWDgwQ3k
+    CAESIHKzKhuwsjqXDuerMkSTQ7JheMQFIvCWBxMd9UlK3yF0Gh4KHGh2cy5SRGZlOXdxZ3ZWRXJrZEdSOUJPWDgwQ3k
     Success! Uploaded policy: app2_policy
     ```
     `APP2_TOKEN`:
     ```
-    hvs.CAESIAiEu2MytmO1l3M59hRd43nwefgJN2koa1JbNYUu64KdGh4KHGh2cy5oSnRVMVVsQlZNaTlFVklDTkRxanpQUHg
+    CAESIAiEu2MytmO1l3M59hRd43nwefgJN2koa1JbNYUu64KdGh4KHGh2cy5oSnRVMVVsQlZNaTlFVklDTkRxanpQUHg
     ```
 
 3. Configure ASPS instance in the ASPS container
@@ -100,15 +106,23 @@ Typically, KMS server runs on a trusted machine on tenant side.
     ```json
     # policy_vault.json
     {
-        "id" : 1,
-        "mr_enclave" : <your_mr_enclave>,
-        "app_token" : <your_app_token>,
-        "secrets" : {
-            "master_key" : "occlum/1/image_key",
-        }
+        "kms" : "vault",
+        "addr" : "http://127.0.0.1:8200",
+        "auth_method" : "token",
+        "root_key" : <your_root_token>,
+        "app_list" : [
+            {
+                "id" : 1,
+                "mr_enclave" : <your_mr_enclave>,
+                "app_token" : <your_app_token>,
+                "secrets" : {
+                    "master_key" : "occlum/1/image_key",
+                }
+            }
+        ]
     }
     ```
-    User need to adjust the policy manifest above accordingly. Replace the value of `mr_enclave` with the expected value of mr_enclave. Replace the value of `app_token` with the `APP*_TOKEN` generated previously. Configure `secrets` with the actual secret key names and corresponding values or KMS path. The key is `"master_key"` and the value is `"occlum/1/image_key"` in this example.
+    User need to adjust the policy manifest above accordingly. Replace the value of `mr_enclave` with the expected value of mr_enclave. Replace the value of `*_token` with the `*_TOKEN` generated previously. Configure `secrets` with the actual secret key names and corresponding values or KMS path. The key is `"master_key"` and the value is `"occlum/1/image_key"` in this example.
 
     Re-build the `occlum_instance_server` instance.
 
