@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -e
 
 occlum_glibc=/opt/occlum/glibc/lib/
 

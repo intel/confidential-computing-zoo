@@ -31,9 +31,14 @@ else
     ip_addr=127.0.0.1
 fi
 
-# You can remove no_proxy and proxy_server if your network doesn't need it
-no_proxy="localhost,127.0.0.1"
+# Use the host proxy as the default configuration, or specify a proxy_server
+# no_proxy="localhost,127.0.0.1"
 # proxy_server="" # your http proxy server
+
+if [ "${proxy_server}" != "" ]; then
+    http_proxy=${proxy_server}
+    https_proxy=${proxy_server}
+fi
 
 if [ $1 = "kms" ]; then
     # KMS server
@@ -45,8 +50,8 @@ if [ $1 = "kms" ]; then
         --network=host \
         --cap-add=SYS_PTRACE \
         -e no_proxy=${no_proxy} \
-        -e http_proxy=${proxy_server} \
-        -e https_proxy=${proxy_server} \
+        -e http_proxy=${http_proxy} \
+        -e https_proxy=${https_proxy} \
         kms_server:latest \
         /kms_server/init_vault_server.sh
 elif [ $1 = "asps" ]; then
@@ -65,8 +70,8 @@ elif [ $1 = "asps" ]; then
         --device=/dev/sgx_provision:/dev/sgx/provision \
         --add-host=attestation.service.com:${ip_addr} \
         -e no_proxy=${no_proxy} \
-        -e http_proxy=${proxy_server} \
-        -e https_proxy=${proxy_server} \
+        -e http_proxy=${http_proxy} \
+        -e https_proxy=${https_proxy} \
         -v /home:/home/host-home \
         asp_service:latest \
         bash
