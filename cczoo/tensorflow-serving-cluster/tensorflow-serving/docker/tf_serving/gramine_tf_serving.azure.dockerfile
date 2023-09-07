@@ -72,6 +72,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         apt-utils \
 # Install SGX PSW
         libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-qe3-logic sgx-aesm-service \
+        libsgx-aesm-quote-ex-plugin \
 # Install SGX DCAP
         libsgx-dcap-ql-dev libsgx-dcap-quote-verify-dev \
 # Install dependencies for Azure DCAP Client
