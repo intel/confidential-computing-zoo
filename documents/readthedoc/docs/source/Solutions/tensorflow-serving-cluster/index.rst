@@ -644,7 +644,7 @@ Create the control plane / master node::
    sudo rm /etc/containerd/config.toml
    containerd config default | sudo tee /etc/containerd/config.toml
    sudo systemctl restart containerd
-   sudo kubeadm init --v=5 --node-name=master-node --pod-network-cidr=10.244.0.0/16 --kubernetes-version=v1.27.1
+   sudo kubeadm init --v=5 --node-name=master-node --pod-network-cidr=10.244.0.0/16
 
    mkdir -p $HOME/.kube
    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
