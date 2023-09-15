@@ -29,7 +29,7 @@ else
 fi
 
 if  [ ! -n "$3" ] ; then
-    tag=ali_tdx_latest
+    tag=tdx
 else
     tag=$3
 fi
