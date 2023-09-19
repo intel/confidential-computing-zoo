@@ -12,6 +12,7 @@ CCZoo maintains a live table, as below, to indicate the correlations between bus
 document section that explains the corresponding details and then guides you to the source codes. Enjoy!
 
 #  Solution List (Solution to Component Correlation)
+
 <table border="1" bordercolor="#000000" cellpadding="2" cellspacing="0" style="width:100%;">
 	<tbody>
 		<tr>
@@ -110,7 +111,7 @@ document section that explains the corresponding details and then guides you to 
 				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html" target="_blank">Yes</a><br />
 			</td>
 			<td>
-				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tdx-hfl/tdx-hfl.html" target="_blank">Yes</a>
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tdx-hfl/tdx-hfl.html" target="_blank">Yes</a> 
 			</td>
 			<td>
 				Yes
@@ -312,10 +313,10 @@ Cluster PPML</strong></span></a> <br />
 (TensorFlow, K8S)</span> 
 			</td>
 			<td>
-				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html" target="_blank">Yes</a>
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html" target="_blank">Yes</a> 
 			</td>
 			<td>
-				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tdx-tf-serving-ppml/index.html" target="_blank">Yes</a>
+				<a href="https://cczoo.readthedocs.io/en/latest/Solutions/tdx-tf-serving-ppml/index.html" target="_blank">Yes</a> 
 			</td>
 			<td>
 				Yes
@@ -699,8 +700,116 @@ on HE
 				Not Start
 			</td>
 		</tr>
+		<tr>
+			<td colspan="14">
+				<span style="font-size:18px;"><b><i>Confidential AIGC</i></b></span> 
+			</td>
+		</tr>
+		<tr>
+			<td>
+				Confidential LLM Inference (RAG)&nbsp;<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<p>
+					WIP
+				</p>
+				<p>
+					(1) TDVM&nbsp;<br />
+(2) CoCo<br />
+(3) TDVM+GPU
+				</p>
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<span>Confidential LLM Rec System&nbsp;</span><span>&nbsp;</span><br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<p>
+					WIP
+				</p>
+				<p>
+					(1) TDVM&nbsp;<br />
+(2) CoCo<br />
+(3) TDVM+GPU
+				</p>
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+			<td>
+				<br />
+			</td>
+		</tr>
 	</tbody>
 </table>
+
 ---
 
 # Incubating Component Projects
