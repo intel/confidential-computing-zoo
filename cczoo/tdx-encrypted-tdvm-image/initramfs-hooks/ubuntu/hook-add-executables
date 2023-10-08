@@ -17,7 +17,7 @@ esac
 
 copy_exec /sbin/opening_disk.sh
 copy_exec /sbin/getting_key.sh
-copy_exec /sbin/key.example
+
 
 # For RA
 copy_exec /etc/hosts
