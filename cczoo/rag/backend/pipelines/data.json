@@ -1,0 +1,217 @@
+[
+    {
+        "title": "Q1 Revenue  down 22% QoQ",
+        "query": [
+            "You said Q1 revenue would be down 5-10%; now guiding down 22% QoQ",
+            "You said Q2/Q3 was revenue bottom, then you said Q4 was down and Q1 down even more.  When is the bottom?",
+            "Why is Q1 guide revenue down so much vs what said previously?"
+        ],
+        "sentences": [
+            "We said no better than seasonal & since then, macro worse",
+            "Expecting larger customer inventory burn in Q1 vs Q4 (Record inv burn Q1)",
+            "-$3B Q1 vs $1.5B Q4 (CCG ~18Mu burn Q1)  DONT say #s",
+            "RevMax in Q4 ($1.7B); none baked in for Q1"
+        ],
+        "output": "We expect Q123 revenue of $10.5 billion to $11.5 billion.  In addition to continued macro headwinds, we expect customers will burn inventory at a faster pace than the prior few quarters in response to macro TAM softness impacting our CCG, DCAI and NEX lines of business.  We see potential for market conditions to improve faster than typical seasonality as third-party data shows macro headwinds easing in the second half of the year.  We continue to evaluate our investments and will remain laser-focused on optimizing for ROI and adjusting for market conditions across operating expenses and capital assets."
+    },
+    {
+        "title": "Cost cutting targets are no longer sufficient",
+        "query": [
+            "Financials have significantly degraded since $3B cost savings announced",
+            "More cost reductions necessary?"
+        ],
+        "sentences": [
+            "We are not sitting still.  2022 guide $27B net CapEx, closed <$24B",
+            "Stepping on the brake and the accelerator at the same time",
+            "SMART capital, Internal foundry",
+            "Anticipate a 2H recovery",
+            "Wont let 3 qrtr economic cycle dictate 5 yr capital build out"
+        ],
+        "output": "We have set cost targets of $3B for 2023 growing to $8-$10B by 2025.  We will accomplish this by leveraging  non-foundry 3rd parties, adjusting OpEx spending in line with best in class benchmarks and optimize are factory network.  And this past year, we also proactively adjusting our spending plans in line of macro environment.  For example, our 2022 guide was $27B in net CapEx but we closed at less than $24B.  But taking a step back, we are not going to let a 3 qrtr economic cycle dictate a 5 yr capital build out.  We will actively leverage SMART capital and Internal foundry."
+    },
+    {
+        "title": "Sapphire Rapids is uncompetitive",
+        "query": [
+            "SPR was meant to compete with Milan and GNR with Genoa, so youre 2 years behind with Genoa out now and GNR in 24",
+            "You lost over 10 points in MSS in 2022. Given market dynamics and uncompetitive products, share loss will accelerate with no bottom until SRF ramps in 25",
+            "Massive Intel installed base where TCO benefit of Genoa offsets the refresh cost"
+        ],
+        "sentences": [
+            "SPR leads in broad range of real-world workloads and stronger in high growth segments (AI, security, networking and HPC)",
+            "Platform leadership, driving industry transitions (PCIeG5, DDR5, CXL)",
+            "Most built-in accelerators of any DC CPU on market, on all skus includinglow CC",
+            "2x design wins on SPR vs.ICL",
+            "Strong pull from customers as you saw from C-suite testimonials at Jan 10 launch",
+            "Getting mojo back; product RM is continuing tostrengthen and is on track",
+            "Fighting socket by socket to defend and win share"
+        ],
+        "output": "When looking at real-world workloads, Sapphire wins in AI, security, networking and HPC.  These workloads are growing 2x the market.  We have platform leadership, driving industry transitions such as PCIeG5, DDR5 and CXL.  Sapphire has the ost built-in accelerators of any DC CPU on market.  Market reception has been strong.  We have 2x design wins on Sapphire vs.Icelake and have strong pull from customers as you saw from C-suite testimonials at Jan 10 launch.  We are really getting are mojo back.  Our product roadmap  is continuing tostrengthen and is on track.  We are fighting socket by socket to defend and win share.  This is our gighest quality Xeon ever prior to production release."
+    },
+    {
+        "title": "Status of Tower and China approval",
+        "query": [
+            "Towerapproval appears to be stalled? When do you expect to close?",
+            "Foundry ambitions are at risk if China doesnt approve.",
+            "Why would China help a US tech company right now?"
+        ],
+        "sentences": [
+            "We are working hard with all relevant regulatory bodies.  We remain optimistic that we  will close as soon as possible.  This is pending regulatory approval and we will update you when we have more information"
+        ],
+        "output": "We are engaged in the final stages of theregulatory review process. While we continue to work towards closing in the first quarter of 2023, thetransaction may close in the first half of 2023, subject to regulatory approval andcustomary closing conditions."
+    },
+    {
+        "title": "How keep paying the dividend?",
+        "query": [
+            "22 FCF of ($4.1B) with expectation to be significantly worse in 23",
+            "$6bn/yr in dividend over scope of investment cycle = 1 yr of CapEx",
+            "Must pay $6bn to close Tower Acquisition",
+            "You will need to continue to borrow to fund dividend"
+        ],
+        "sentences": [
+            "Our Board reviews dividend policy quarterly; As part of Q1 guide, we are continuing the dividend",
+            "Multiple pools of capital (CHIPS, SCIPS, ITC)",
+            "Better products drive strong FCF in future",
+            "Aggressive cost cutting actions + Smart Capital",
+            "Balance sheet remains strong with ~$28b (as of Q422) cash & investments, modest leverage & strong investment grade credit profile"
+        ],
+        "output": "The board announced a quarterly dividend of $0.365 per share in Q123.  We take a disciplined approach to our capital allocation strategy & remain committed to being prudent allocators of our owners capital."
+    },
+    {
+        "title": "IFS Deal Value",
+        "query": [
+            "In Q3 earnings, you stated that IFS  had qualified opportunities of $7B. This quarter, saying  lifetime deal value of $4B. Does this mean your reducing your forecast by $3B?"
+        ],
+        "sentences": [
+            "Traction and confidence in IFS business continues to grow.",
+            "Qualified opportunities did not reduce; just showing a different metric",
+            "Q3: Qualified opportunities was a probability wtd estimate of customer potential pipeline",
+            "Q4: Lifetime deal value is a measure of just the companies we have an MoU with",
+            "Lifetime deal value of greater than $4B",
+            "Active pipeline of engagements with 7 out of the 10 largest foundry customers",
+            "Taped-out 11 of 43 customer and ecosystem test chips",
+            "We continue to make progress on Intel 18A and have already shared the engineering release of PDK 0.5 with our lead customers and expect to have the formal release in the next few weeks."
+        ],
+        "output": "Our traction and confidence in the IFS business continues to grow.  The qualified opportunities did not reduce.  We are  just showing a different metric now that is a better reflection of the business.  In Q3, we referenced qualified opportunities which was a probability weighted  estimate of customer potential pipeline.  In Q4, we are now using lifetime deal value which is a measure of the companies we have an MoU with.  As stated in the prepared remarks, we have engagements with 7 of the 10 largest foundry customers.  We taped-out 11 of 43 customer and ecosystem test chips.  Good progress on Intel 18A and the engineering release of PDK 0.5 was shared with our lead customers"
+    },
+    {
+        "title": "Factory Underutilization",
+        "query": [
+            "What is your factory utilization % & when do you expect it to get back to healthy levels?"
+        ],
+        "sentences": [
+            "Factory underload charges impacted Q422 results by >200 basis points",
+            "Expect MUP to peak in Q123 (>500 basis points) and return to healthy levels in 2H23"
+        ],
+        "output": "Factory underload charges impacted Q422 results by 220 basis points growing to 400 basis points (adjusted for 8 year useful life) in Q123.  We do expect utilization to improve through the year"
+    },
+    {
+        "title": "AXG Reorg Implications",
+        "query": [
+            "You just announced a reorg where AXG will be folded into CCG and DCAI.  This comes just 1 year after you broke it out in its own segment for transparency.  How will this impact the CCG and DCAI GM% and OM%?  Are you still committed to the graphics business."
+        ],
+        "sentences": [
+            "Absolutely committed to the graphics business both client and datacenter",
+            "Single voice to the customer; increased accountability to the BUs, aligned to common markets",
+            "Bring AI Si assets under one roof  Graphics, Habana, FPGAs,xPUetc",
+            "Closer collaboration; leverage CCG leadership products and AXG IP blocks"
+        ],
+        "output": "We are absolutely committed to the graphics business.  Reorganizing back into CCG and DCAI will enable a single voice to the customer.  Which is actually something our customers asked for.  They were confused by the prior structure where they had to talk to multiple different groups to get one solution.  This brings our  AI Si assets under one roof  Graphics, Habana,xPUetc"
+    },
+    {
+        "title": "DCAI not making $ and Comp getting stronger",
+        "query": [
+            "DCAI used to a profit machine for the company but now barely breaking even.  And your competition is just getting strong.  What are you doing to address this?"
+        ],
+        "sentences": [
+            "OM down given high fixed cost business & ramping new process (I7)",
+            "Investing in process/product leadership same time as macro headwinds",
+            "Fixing cost structure through internal foundry & $8B-$10B cost savings",
+            "Execution improving - SPR launched, EMR/SRF/GNR on track",
+            "Better products drives better ASP, MSS, and margins. SPR ASP up",
+            "SPR leads in broad range of real-world workloads and stronger in high growth segments (AI, security, networking)"
+        ],
+        "output": "We have a very high fixed cost business & are ramping new process (Intel 7).  Additionally we have significant macro headwindsand are in our  investment phase.  We are addressing cost structure through our $3B cost reduction in 2023 and $8B-$10B by 2025. Our execution is improving - Sapphire launched, and Emerald, Sierra and Granite are all on track.  These better products will drives better ASP, MSS, and margins. Sapphire  ASP much higher than prior generations.  Sapphire  leads in real-world workloads and stronger in high growth segments."
+    },
+    {
+        "title": "How should we model financials in the saddle?",
+        "query": [
+            "At analyst day last year, you shared Intels short term (2023/2024) and longer term (2025/2026) metrics.  Do you have an update to those?"
+        ],
+        "sentences": [
+            "Long term guardrails from investor day still valid at higher revenue levels.",
+            "High fixed cost biz",
+            "Revenue is MOST important"
+        ],
+        "output": "In the near term, our net CapEx at/below 35%, GM% will depend on the macro issues and  OpEx will be around $19.6B.  Longer term, net CapEx will be at 25%, GM 54-58%, OpEx 25-27% and Adjusted FCF at 20%"
+    },
+    {
+        "title": "Have you achieved the $3B in committed 23 savings",
+        "query": [
+            "Are you still tracking to the cost reduction targets?"
+        ],
+        "sentences": [
+            "$2b = OpEx, $1B in COGS",
+            "On track",
+            "$x in SGA; $x in portfolio decisions; $x in ",
+            "No impacts to TD",
+            "Execution remains on track"
+        ],
+        "output": "We are executing well towards the $3B & $8-10B cost targets.  The UL accounting deprecation change will be incremental to this.  The cost targets are $2B in OpEx and $1B in COS.  The Opex breakdown is 40% HW/SW dev efficiency, 30% SG&A, 20% biz units, incl IFS/MBLY growth.  The $1B COS breakdown is largely from optimizing fab loadings and tool utilization and  reduce start-up costs.  Longer term, we plan on achieving $8B-$10B per year savings by 2025."
+    },
+    {
+        "title": "How do I know execution issues behind you?",
+        "query": [
+            "Execution issues have been Intels Achilles heel.  How do we know execution issues are behind you?"
+        ],
+        "sentences": [
+            "5 nodes/4 yrs on track",
+            "20A/18A test chips + Nvidia Ramp-C",
+            "SPR launched, EMR sampling/power on, GNR on track to 24, running multiple OS, SRF on track; PSG record revenue",
+            "RPL launch, MTL launch 2H, Lunar Lake first silicon taped out  24 prod",
+            "NEX IPU E2000 on Mt Evans, RPL P&S, ADL N & SPR"
+        ],
+        "output": "We acknowledge the historical execution issues but are excited about progress we have made to turn that round.  5 nodes/4 yrs is on track to ahead.  In IFS, we previously announced Mediatek as a customer and this qrt announced a leading edge Intel 3 customers, and have multiple test chipts on Intel 20A and Intel 18A.  In DCAI, we launched Sapphire, Emerald is sampling and Granite rapids is running multiple OS.  In CCG, Raptor Lake launched, Meteor Lake will launch in the second half and Lunar Lake first silicon taped out."
+    },
+    {
+        "title": "5 nodes, 4 years update",
+        "query": [
+            "What is the status on 5 nodes in 4 years?"
+        ],
+        "sentences": [
+            "All nodes on track to ahead of goals",
+            "Intel 4 is manufacturing ready w/ yield & performance on track",
+            "On Intel 3, taped out Meteor Lake, Granite & Sierra",
+            "Intel 20A and 18A are demonstrating yields on, or ahead of schedule",
+            "On track to regaining transistor & power performance leadership by 2025"
+        ],
+        "output": "All nodes on track or ahead of goals.  Intel 4 is manufacturing ready w/ yield & performance on track.  Intel 3, continues to show great health and is on track.  Intel 20A & 18A, internal & potential foundry customer test chips, taped out with silicon running in the fab.  We are on  track to regain transistor & power performance leadership by 2025"
+    },
+    {
+        "title": "US/EU CHIPS application status",
+        "query": [
+            "What is the status on Chips act?"
+        ],
+        "sentences": [
+            "CHIPS Acts are critical to closing cost gap between US/EU & Asia",
+            "In Commerces hands to do the final rulemaking.",
+            "We expect we'll see $ this year.  Meantime, we continue to invest",
+            "EU: Environment has changed significantly since deal originally announced (Inflationary pressures, war in Ukraine)",
+            "Germany: committed; but incentives need to be competitive"
+        ],
+        "output": "CHIPS Acts funds are critical to closing cost gap between US/EU & Asia.  Details have yet to be announced from the Commerce dept on how funds will be allocated but we expect to hear details shortly.  We expect we'll see $ this year and meantime, we continue to invest.  In Europe, the environment has changed significantly since the German Fab deal was originally announced.  Inflationary pressures including power, tooling cost and labor have increased the cost of the fab significantly.  We are committed but incentives needed to make fab competitive"
+    },
+    {
+        "title": "IFS is critical, proof-points/customers needed",
+        "query": [
+            "When expect to announce an IFS whale customers?"
+        ],
+        "sentences": [
+            "Traction and confidence in IFS business continues to grow.",
+            "Lifetime deal value of greater than $4B",
+            "Active pipeline of engagements with 7 out of the 10 largest foundry customers",
+            "Taped-out 11 of 43 customer and ecosystem test chips ",
+            "Continued progress on Intel 18A - shared engineering release of PDK 0.5 with our lead customers and expect to have the formal release in the next few weeks."
+        ],
+        "output": "Traction and confidence in IFS business continues to grow.  We just announced a leading edge Intel 3 customers in this earnings.  We have lifetime deal value of greater than $4B and have engagements with 7 out of the 10 largest foundry customers.  We taped-out 11 of 43 customer and ecosystem test chips (60% on leading edge).  Progress on Intel 18A continues and the engngineering release of PDK 0.5 shared with our lead customers"
+    }
+]
