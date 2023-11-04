@@ -36,9 +36,7 @@ namespace AttestClient {
     // checks where we are sending the request
     std::stringstream stream;
     if (Utils::case_insensitive_compare(attestation_type, "maa")) {
-      stream << "{\"quote\":\"" << encoded_quote
-             << "\",\"runtimeData\":{\"data\":\""
-             << encoded_claims << "\",\"dataType\":\"JSON\"}}";
+      stream << "{\"quote\":\"" << encoded_quote << "\"}";
     }
     else if (Utils::case_insensitive_compare(attestation_type, "amber")) {
       std::string api_key_header = "x-api-key:" + config.api_key;
