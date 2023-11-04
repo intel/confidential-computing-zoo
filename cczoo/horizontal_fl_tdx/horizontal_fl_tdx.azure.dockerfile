@@ -83,7 +83,6 @@ RUN git clone  --recurse-submodules -b ${TF_VERSION} https://github.com/tensorfl
 # Setup grpc patch
 # RA-TLS backend is selected in bazel/ratls.bzl
 COPY azure/grpc_ratls.azure.patch ${TF_BUILD_PATH}/third_party/grpc/grpc_ratls.patch
-COPY azure/azure_tdx_config.json /etc
 
 # Apply TensorFlow patch
 COPY azure/tf_v2.6.azure.diff ${TF_BUILD_PATH}/tf_v2.6.diff
@@ -103,6 +102,7 @@ COPY hfl-tensorflow /hfl-tensorflow
 RUN wget -q https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz
 
 COPY sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf
+COPY azure/azure_tdx_config.json /etc
 COPY luks_tools /luks_tools
 
 # Disable apport
