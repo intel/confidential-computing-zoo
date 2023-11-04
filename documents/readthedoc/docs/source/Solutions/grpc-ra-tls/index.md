@@ -74,7 +74,9 @@ http_proxy=http://proxyserver:port https_proxy=http://proxyserver:port ./build_d
 
 2. Start example RA-TLS Enhanced gRPC server.
 
-Modify the Networking settings of the Azure DCesv5 VM (designated as the gRPC server) to add an inbound port rule for TCP port 8500. From the server VM, start the gRPC RA-TLS container. From the container, modify `/etc/azure_tdx_config.json` to specify your [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html) API key: `"api_key": "your project amber api key"`.
+Modify the Networking settings of the Azure DCesv5 VM (the VM designated as the gRPC server) to add an inbound port rule for TCP port 8500.
+
+From the server VM, start the gRPC RA-TLS container:
 
 ```bash
 cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/azure_tdx
@@ -82,8 +84,28 @@ image_id=grpc-ra-tls:azure_tdx_latest
 container_id=$(./start_container.sh ${image_id})
 container_ipaddr=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${container_id})
 docker exec -it -e container_ipaddr=${container_ipaddr} ${container_id} bash
+```
 
-vi /etc/azure_tdx_config.json
+From the container, modify `/etc/azure_tdx_config.json` to configure the attestation verifier service parameters.
+
+To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/azure_tdx_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your project amber api key"`:
+
+```bash
+{
+  "attestation_url": "https://api.projectamber.intel.com/appraisal/v1/attest",
+  "attestation_provider": "amber",
+  "api_key": "your project amber api key"
+}
+```
+
+To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/azure-attestation), modify `/etc/azure_tdx_config.json` as follows (an API key is not required):
+
+```bash
+{
+  "attestation_url": "https://sharedeus2e.eus2e.attest.azure.net/attest/TdxVm?api-version=2023-04-01-preview",
+  "attestation_provider": "maa",
+  "api_key": ""
+}
 ```
 
 Run the C++ server OR the Python server:
@@ -106,7 +128,7 @@ python3 server.py --host=${container_ipaddr}:8500 &
 
 3. Start example RA-TLS Enhanced gRPC client.
 
-From an Azure DCesv5 VM designated as the client, start the gRPC RA-TLS container, specifying the server VM's public IP address (replace `x.x.x.x`). From the container, modify `/etc/azure_tdx_config.json` to specify your [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html) API key: `"api_key": "your project amber api key"`.
+From an Azure DCesv5 VM designated as the client, start the gRPC RA-TLS container, specifying the server VM's public IP address (replace `x.x.x.x`):
 
 ```bash
 cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/azure_tdx
@@ -114,8 +136,28 @@ image_id=grpc-ra-tls:azure_tdx_latest
 server_public_ipaddr=x.x.x.x
 container_id=$(./start_container.sh ${image_id})
 docker exec -it -e server_public_ipaddr=${server_public_ipaddr} ${container_id} bash
+```
 
-vi /etc/azure_tdx_config.json
+From the container, modify `/etc/azure_tdx_config.json` to configure the attestation verifier service parameters.
+
+To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/azure_tdx_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your project amber api key"`:
+
+```bash
+{
+  "attestation_url": "https://api.projectamber.intel.com/appraisal/v1/attest",
+  "attestation_provider": "amber",
+  "api_key": "your project amber api key"
+}
+```
+
+To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/azure-attestation), modify `/etc/azure_tdx_config.json` as follows (an API key is not required):
+
+```bash
+{
+  "attestation_url": "https://sharedeus2e.eus2e.attest.azure.net/attest/TdxVm?api-version=2023-04-01-preview",
+  "attestation_provider": "maa",
+  "api_key": ""
+}
 ```
 
 Run the C++ client OR the Python client:
