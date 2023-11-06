@@ -36,7 +36,7 @@ struct argparser {
     const char* config;
     std::string server_address;
     argparser() {
-        server_address = getarg("localhost:70051", "-host", "--host");
+        server_address = getarg("localhost:8500", "-host", "--host");
         config = getarg("dynamic_config.json", "-cfg", "--config");
     };
 };

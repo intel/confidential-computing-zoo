@@ -72,5 +72,3 @@ generate_json server client
 generate_json client server
 
 mv ${RUNTIME_TMP_PATH} ${RUNTIME_PATH}
-
-kill -9 `pgrep -f gramine`

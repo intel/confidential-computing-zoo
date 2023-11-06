@@ -26,7 +26,7 @@ import ratls_pb2_grpc
 
 class Greeter(ratls_pb2_grpc.GreeterServicer):
     def SayHello(self, request, context):
-        return ratls_pb2.HelloReply(message='Hello, %s!' % request.name)
+        return ratls_pb2.HelloReply(message='Hello %s' % request.name)
 
 def serve(args):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
@@ -46,7 +46,7 @@ def command_arguments():
         '--host',
         type=str,
         required=False,
-        default='localhost:50051',
+        default='localhost:8500',
         help='The server socket address.'
     )
     parser.add_argument(
