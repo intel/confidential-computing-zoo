@@ -16,22 +16,27 @@
 
 set -e
 
-if  [ -n "$1" ] ; then
-    name=$1
-else
-    name=ps0
+function usage() {
+    echo -e "Usage: $0 NAME IMAGE_ID [PCCS_IP]"
+    echo -e "  NAME       Container name;"
+    echo -e "                For example: ps0"
+    echo -e "  IMAGE_ID   Container image ID;"
+    echo -e "  PCCS_IP    Optional PCCS IP address;"
+}
+
+
+if [ "$#" -lt 2 ]; then
+    usage
+    exit 1
 fi
 
-if  [ -n "$2" ] ; then
-    ip_addr=$2
+name=${1}
+image_id=${2}
+
+if  [ -n "$3" ] ; then
+    ip_addr=$3
 else
     ip_addr=127.0.0.1
-fi
-
-if  [ ! -n "$3" ] ; then
-    tag=ali_tdx_latest
-else
-    tag=$3
 fi
 
 docker run -it \
@@ -47,5 +52,5 @@ docker run -it \
     --add-host=pa.com:127.0.0.1 \
     --add-host=pb.com:127.0.0.1 \
     --add-host=pccs.service.com:${ip_addr} \
-    horizontal_fl:${tag} \
+    ${image_id} \
     bash

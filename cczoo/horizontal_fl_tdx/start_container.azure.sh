@@ -14,25 +14,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -ex
+#!/bin/bash
+set -e
 
-if  [ -n "$1" ] ; then
-    VIRTUAL_FS=$1
-else
-    VIRTUAL_FS=/root/vfs
+function usage() {
+    echo -e "Usage: $0 NAME IMAGE_ID"
+    echo -e "  NAME       Container name;"
+    echo -e "                For example: ps0"
+    echo -e "  IMAGE_ID   Container image ID;"
+}
+
+
+if [ "$#" -lt 2 ]; then
+    usage
+    exit 1
 fi
-echo ${VIRTUAL_FS}
 
-# create virtual volume
-truncate -s 1G ${VIRTUAL_FS}
+name=${1}
+image_id=${2}
 
-export LOOP_DEVICE=$(losetup -f)
-echo ${LOOP_DEVICE}
-
-# bind loop device to virtual volume
-losetup ${LOOP_DEVICE} ${VIRTUAL_FS}
-
-# encrypt loop device in luks format, press "YES"
-cryptsetup --debug -y -v luksFormat -s 512 -c aes-xts-plain64 ${LOOP_DEVICE}
-
-echo "LOOP_DEVICE=${LOOP_DEVICE}"
+docker run -it \
+    --privileged=true \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --name=${name} \
+    -v /home:/home/host-home \
+    -v /dev:/dev \
+    --net=host \
+    ${image_id} \
+    bash
