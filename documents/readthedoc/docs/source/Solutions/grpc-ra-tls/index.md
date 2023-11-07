@@ -43,13 +43,16 @@ client and server both need to generate certificates and verify each other.
 
 
 ## Prerequisites
+
 ### Docker Engine
+
 Docker Engine is an open-source containerization technology for building and containerizing your applications.
 Please follow this [guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script)
 to install Docker engine. It is recommended to use a data disk of at least 128GB for the docker daemon data directory. This [guide](https://docs.docker.com/config/daemon/#daemon-data-directory) describes how to configure the docker daemon data directory. If behind a proxy server, please refer to this [guide](https://docs.docker.com/config/daemon/systemd/) for configuring the docker daemon proxy settings.
 
 ### CCZoo Source:
-```
+
+```bash
    git clone https://github.com/intel/confidential-computing-zoo.git
    cczoo_base_dir=$PWD/confidential-computing-zoo
 ```
@@ -61,14 +64,15 @@ to install Docker engine. It is recommended to use a data disk of at least 128GB
 ### Azure (TDX)
 
 1. Build container.
+
 ```
 cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/azure_tdx
 ./build_docker_image.sh
 ```
 
-NOTE: To specify the proxy server, set the `http_proxy` and `https_proxy` variables prior to the call to build_docker_image.sh, for example:
+NOTE: To specify the proxy server, set the `http_proxy` and `https_proxy` variables prior to the call to `build_docker_image.sh`, for example:
       
-```
+```bash
 http_proxy=http://proxyserver:port https_proxy=http://proxyserver:port ./build_docker_image.sh
 ```
 
@@ -163,27 +167,30 @@ To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/
 Run the C++ client OR the Python client:
 
 For C++:
+
 ```bash
 cd /grpc/v1.38.1/examples/cpp/ratls/build
 ./client --host=${server_public_ipaddr}:8500
 ```
-Observe the following expected output: `Greeter received: Hello a Hello b`
+Observe the following expected output: `Greeter received: Hello a Hello b`.
     
 For Python:
+
 ```bash
 cd /grpc/v1.38.1/examples/python/ratls/build
 python3 client.py --host=${server_public_ipaddr}:8500
 ```
-Observe the following expected output: `Greeter received: Hello a Hello b`
+Observe the following expected output: `Greeter received: Hello a Hello b`.
 
 ### Other Cloud Deployments (TDX)
 
-The following steps for for cloud deployments other than Azure. Please refer to `cczoo/grpc-ra-tls/tdx/README.md` for more details.
+The following steps are for cloud deployments other than Azure. Please refer to [cczoo/grpc-ra-tls/tdx/README.md](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/grpc-ra-tls/tdx/README.md) for more details.
 
 1. Build container.
 
-First, build the base container. Refer to `cczoo/common/docker/tdx/README.md` for more details.
-```
+First, build the base container. Refer to [cczoo/common/docker/tdx/README.md](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/common/docker/tdx/README.md) for more details.
+
+```bash
 cd ${cczoo_base_dir}/cczoo/common/docker/tdx
 base_image=centos:8
 image_tag=tdx-dev:dcap1.15-centos8-latest
@@ -191,6 +198,7 @@ image_tag=tdx-dev:dcap1.15-centos8-latest
 ```
 
 Then build the RA-TLS Enhanced gRPC container:
+
 ```bash
 cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/tdx
 base_image=tdx-dev:dcap1.15-centos8-latest
@@ -213,7 +221,7 @@ image_tag=grpc-ratls-dev:tdx-dcap1.15-centos8-latest
 /root/start_aesm_service.sh
 ```
 
-3. Build and run the example gRPC server/client (C++)
+3. Build and run the example gRPC server/client (C++).
 
 ```bash
 cd ${GRPC_PATH}/examples/cpp/ratls
@@ -230,7 +238,7 @@ pkill python3
 ./client
 ```
 
-4. Build and run the example gRPC server/client (Python)
+4. Build and run the example gRPC server/client (Python).
 
 ```bash
 cd ${GRPC_PATH}/examples/python/ratls
@@ -255,52 +263,58 @@ python3 -u ./client.py
 
 1. Configure Azure DCsv3 VM.
 
-From an Azure DCsv3 VM, run the following script to install the Intel SGX DCAP dependencies and the Azure DCAP Client:
-```
+From an Azure DCsv3 VM, run the following script to install the Intel SGX DCAP dependencies and the Azure DCAP client:
+
+```bash
 cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/gramine
 sudo ./setup_azure_vm.sh
 ```
 
 Verify the Intel Architectural Enclave Service Manager is active (running):
-``` 
+
+```bash
 sudo systemctl status aesmd
 ```
 
 2. Build base container.
 
-```
+```bash
 cd ${cczoo_base_dir}/cczoo/common/docker/gramine
 ./build_docker_image.azure.sh
 ```
-NOTE: To specify the proxy server, set the `http_proxy` and `https_proxy` variables prior to the call to build_docker_image.azure.sh, for example:
+
+NOTE: To specify the proxy server, set the `http_proxy` and `https_proxy` variables prior to the call to `build_docker_image.azure.sh`, for example:
       
-```
+```bash
 http_proxy=http://proxyserver:port https_proxy=http://proxyserver:port ./build_docker_image.azure.sh
 ```
 
-3. Build the RA-TLS Enhanced gRPC container. Replace `<BASE_IMAGE>` with the name:tag of the base container built from step 2, for example, `gramine-sgx-dev-azure:latest`
-```
+3. Build the RA-TLS Enhanced gRPC container. Replace `<BASE_IMAGE>` with the `name:tag` of the base container built from step 2, for example, `gramine-sgx-dev-azure:latest`.
+
+```bash
 cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/gramine
 ./build_docker_image.azure.sh <BASE_IMAGE>
 ```
-NOTE: To specify the proxy server, set the `http_proxy` and `https_proxy` variables prior to the call to build_docker_image.azure.sh, for example:
-      
-```
+
+NOTE: To specify the proxy server, set the `http_proxy` and `https_proxy` variables prior to the call to `build_docker_image.azure.sh`, for example:
+ 
+```bash
 http_proxy=http://proxyserver:port https_proxy=http://proxyserver:port ./build_docker_image.azure.sh <BASE_IMAGE>
 ```
 
 4. Start the RA-TLS Enhanced gRPC container.
 
-From the Azure DCsv3 VM, start the container. Replace `<IMAGE_ID>` with the image ID of the grpc-ratls-dev-azure container. 
+From the Azure DCsv3 VM, start the container. Replace `<IMAGE_ID>` with the image ID of the `grpc-ratls-dev-azure` container.
 
 ```bash
 cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/gramine
 ./start_container.azure.sh <IMAGE_ID>
 ```
 
-5. Build and run the example gRPC server/client (C++)
+5. Build and run the example gRPC server/client (C++).
 
 From the RA-TLS Enhanced gRPC container:
+
 ```bash
 cd ${GRAMINEDIR}/CI-Examples/grpc/cpp/ratls
 ./build.sh
@@ -308,11 +322,12 @@ pkill loader
 ./run.sh server &
 ./run.sh client
 ```
-Observe the following expected output: `Greeter received: Hello a Hello b`
+Observe the following expected output: `Greeter received: Hello a Hello b`.
 
-6. Build and run the example gRPC server/client (Python)
+6. Build and run the example gRPC server/client (Python).
 
 From the RA-TLS Enhanced gRPC container:
+
 ```bash
 cd ${GRAMINEDIR}/CI-Examples/grpc/python/ratls
 ./build.sh
@@ -320,15 +335,18 @@ pkill loader
 ./run.sh server &
 ./run.sh client
 ```
-Observe the following expected output: `Greeter received: Hello a Hello b`
+
+Observe the following expected output: `Greeter received: Hello a Hello b`.
 
 ### Other Cloud Deployments (Gramine)
-The following steps are for cloud deployments other than Azure. Please refer to `cczoo/grpc-ra-tls/gramine/README.md` for more details.
+
+The following steps are for cloud deployments other than Azure. Please refer to [cczoo/grpc-ra-tls/gramine/README.md](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/grpc-ra-tls/gramine/README.md) for more details.
 
 1. Build container.
 
 First, build the base container:
-```
+
+```bash
 cd ${cczoo_base_dir}/cczoo/common/docker/gramine
 base_image=ubuntu:20.04
 image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
@@ -336,6 +354,7 @@ image_tag=gramine-sgx-dev:v1.2-ubuntu20.04-latest
 ```
 
 Then build the RA-TLS Enhanced gRPC container:
+
 ```bash
 cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/gramine
 base_image=gramine-sgx-dev:v1.2-ubuntu20.04-latest
@@ -353,9 +372,10 @@ image_tag=grpc-ratls-dev:graminev1.2-ubuntu20.04-latest
 /root/start_aesm_service.sh
 ```
 
-3. Build and run the example gRPC server/client (C++)
+3. Build and run the example gRPC server/client (C++).
 
 From the RA-TLS Enhanced gRPC container:
+
 ```bash
 cd ${GRAMINEDIR}/CI-Examples/grpc/cpp/ratls
 ./build.sh
@@ -363,11 +383,13 @@ pkill loader
 ./run.sh server &
 ./run.sh client
 ```
-Observe the following expected output: `Greeter received: Hello a Hello b`
 
-4. Build and run the example gRPC server/client (Python)
+Observe the following expected output: `Greeter received: Hello a Hello b`.
+
+4. Build and run the example gRPC server/client (Python).
 
 From the RA-TLS Enhanced gRPC container:
+
 ```bash
 cd ${GRAMINEDIR}/CI-Examples/grpc/python/ratls
 ./build.sh
@@ -375,14 +397,16 @@ pkill loader
 ./run.sh server &
 ./run.sh client
 ```
-Observe the following expected output: `Greeter received: Hello a Hello b`
+
+Observe the following expected output: `Greeter received: Hello a Hello b`.
 
 ## RA-TLS Enhanced gRPC for SGX (Occlum)
 
-[Occlum](https://github.com/occlum/occlum) is a memory-safe, multi-process library OS (LibOS) for Intel SGX. As a LibOS, it enables legacy applications to run on SGX with little or even no modifications of source code, thus protecting the confidentiality and integrity of user workloads transparently.
+[Occlum](https://github.com/occlum/occlum) is a memory-safe, multi-process library OS (LibOS) for Intel SGX. As a LibOS, it enables legacy applications to run on SGX with little to no modifications of source code, thus protecting the confidentiality and integrity of user workloads transparently.
 
-1. First, build the base container. Please refer to `cczoo/common/docker/occlum/README.md` for more details.
-```
+1. First, build the base container. Please refer to [cczoo/common/docker/occlum/README.md](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/common/docker/occlum/README.md) for more details.
+
+```bash
 docker pull occlum/occlum:0.26.3-ubuntu20.04
 cd ${cczoo_base_dir}/cczoo/common/docker/occlum
 base_image=occlum/occlum:0.26.3-ubuntu20.04
@@ -391,6 +415,7 @@ image_tag=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
 ```
 
 Then build the RA-TLS Enhanced gRPC container:
+
 ```bash
 cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/occlum
 base_image=occlum-sgx-dev:0.26.3-ubuntu20.04-latest
@@ -399,6 +424,7 @@ image_tag=grpc-ratls-dev:occlum0.26.3-ubuntu20.04-latest
 ```
 
 2. Start the RA-TLS Enhanced gRPC container.
+
 ```bash
 cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/occlum
 
@@ -410,7 +436,7 @@ image_tag=grpc-ratls-dev:occlum0.26.3-ubuntu20.04-latest
 3. Build and run the example gRPC server/client.
 
 [LibRATS](https://github.com/inclavare-containers/librats) is optional to replace the
-default RA-TLS SDK which is to generate and verify hardware quotes.
+default RA-TLS SDK for generating and verifying hardware quotes.
 
 ```bash
 export SGX_RA_TLS_SDK=LIBRATS
@@ -431,7 +457,7 @@ cd ${OCCLUM_PATH}/demos/ra_tls
 
 ## Information About SGX Measurements
 
-The json template `cczoo/grpc-ra-tls/grpc/common/dynamic_config.json` is used to store the expected SGX measurement values of the remote application.
+The json template [cczoo/grpc-ra-tls/grpc/common/dynamic_config.json](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/grpc-ra-tls/grpc/common/dynamic_config.json) is used to store the expected SGX measurement values of the remote application.
 This file is loaded during the example RA-TLS Enhanced gRPC server/client initialization.
 
 ```json
@@ -450,25 +476,27 @@ This file is loaded during the example RA-TLS Enhanced gRPC server/client initia
     ],
 }
 ```
-The mr_enclave and mr_signer values are automatically parsed by `cczoo/grpc-ra-tls/gramine/CI-Examples/grpc/cpp/ratls/build.sh` (`get_env()` and `generate_json()`).
+
+The `mr_enclave` and `mr_signer` values are automatically parsed by [cczoo/grpc-ra-tls/gramine/CI-Examples/grpc/cpp/ratls/build.sh](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/grpc-ra-tls/gramine/CI-Examples/grpc/cpp/ratls/build.sh) (`get_env()` and `generate_json()`).
 
 
 ## How to develop the gRPC applications with RA-TLS
 
-If you are familiar with gRPC TLS development, the only difference is using `SGX credentials` APIs to
- replace `insecure credentials` APIs.
+RA-TLS development is similar to gRPC TLS development, with the exception of `SGX credentials` APIs to replace `insecure credentials` APIs.
 
-Please refer to the examples for makefile and build script modifications.
+Please refer to the following examples for makefile and build script modifications.
 
 ### C++
 
 #### Credentials Verify Options
-- Two-way RA-TLS: GRPC_RA_TLS_TWO_WAY_VERIFICATION
-- One-Way RA-TLS (Verify Server): GRPC_RA_TLS_SERVER_VERIFICATION
-- One-Way RA-TLS (Verify Client): GRPC_RA_TLS_CLIENT_VERIFICATION
+
+- Two-way RA-TLS: `GRPC_RA_TLS_TWO_WAY_VERIFICATION`
+- One-Way RA-TLS (Verify Server): `GRPC_RA_TLS_SERVER_VERIFICATION`
+- One-Way RA-TLS (Verify Client): `GRPC_RA_TLS_CLIENT_VERIFICATION`
 
 #### Server Side
-Refer to `cczoo/grpc-ra-tls/grpc/v1.38.1/examples/cpp/ratls/server.cc` as an example.
+
+Refer to [cczoo/grpc-ra-tls/grpc/v1.38.1/examples/cpp/ratls/server.cc](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/grpc-ra-tls/grpc/v1.38.1/examples/cpp/ratls/server.cc) as an example.
 
 ```c++
 std::shared_ptr<grpc::ServerCredentials> creds = nullptr;
@@ -480,7 +508,8 @@ if (sgx) {
 ```
 
 #### Client Side
-Refer to `cczoo/grpc-ra-tls/grpc/v1.38.1/examples/cpp/ratls/client.cc` as an example.
+
+Refer to [cczoo/grpc-ra-tls/grpc/v1.38.1/examples/cpp/ratls/client.cc](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/grpc-ra-tls/grpc/v1.38.1/examples/python/ratls/client.py) as an example.
 
 ```c++
 std::shared_ptr<grpc::ChannelCredentials> creds = nullptr;
@@ -494,12 +523,14 @@ if (sgx) {
 ### Python
 
 #### Credentials Verify Options
-- Two-way RA-TLS: verify_option="two-way"
-- One-Way RA-TLS (Verify Server): verify_option="server"
-- One-Way RA-TLS (Verify Client): verify_option="client"
+
+- Two-way RA-TLS: `verify_option="two-way"`
+- One-Way RA-TLS (Verify Server): `verify_option="server"`
+- One-Way RA-TLS (Verify Client): `verify_option="client"`
 
 #### Server Side
-Refer to `cczoo/grpc-ra-tls/grpc/v1.38.1/examples/python/ratls/server.py` as an example.
+
+Refer to [cczoo/grpc-ra-tls/grpc/v1.38.1/examples/python/ratls/server.py](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/grpc-ra-tls/grpc/v1.38.1/examples/python/ratls/server.py) as an example.
 
 ```python
 if sgx:
@@ -510,7 +541,8 @@ else:
 ```
 
 #### Client Side
-Refer to `cczoo/grpc-ra-tls/grpc/v1.38.1/examples/python/ratls/client.py` as an example.
+
+Refer to [cczoo/grpc-ra-tls/grpc/v1.38.1/examples/python/ratls/client.py](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/grpc-ra-tls/grpc/v1.38.1/examples/python/ratls/client.py) as an example.
 
 ```python
 if sgx:
@@ -532,23 +564,23 @@ Cloud. It builds security-enhanced instance families [g7t, c7t, r7t](https://hel
 based on Intel® SGX technology to provide a trusted and confidential environment
 with a higher security level.
 
-The configuration of the ECS instance as blow:
+The following is the configuration of the ECS instance:
 
 - Instance Type  : [g7t](https://help.aliyun.com/document_detail/108490.htm#section-bew-6jv-c0k).
 - Instance Kernel: 4.19.91-24
 - Instance OS    : Alibaba Cloud Linux 2.1903
 - Instance Encrypted Memory: 32G
 - Instance vCPU  : 16
-- Instance SGX PCCS Server Addr: [sgx-dcap-server.cn-hangzhou.aliyuncs.com](https://help.aliyun.com/document_detail/208095.html)
+- Instance SGX PCCS Server: [sgx-dcap-server.cn-hangzhou.aliyuncs.com](https://help.aliyun.com/document_detail/208095.html)
 
 ***Notice***: Please replace server link in `sgx_default_qcnl.conf` included in the Dockerfile with Aliyun PCCS server address.
 
 ### 2. Tencent Cloud
 
-Tencent Cloud Virtual Machine (CVM) provide one instance named [M6ce](https://cloud.tencent.com/document/product/213/11518#M6ce),
+Tencent Cloud Virtual Machine (CVM) provides one instance named [M6ce](https://cloud.tencent.com/document/product/213/11518#M6ce),
 which supports Intel® SGX encrypted computing technology.
 
-The configuration of the M6ce instance as blow:
+The following is the configuration of the M6ce instance:
 
 - Instance Type  : [M6ce.4XLARGE128](https://cloud.tencent.com/document/product/213/11518#M6ce)
 - Instance Kernel: 5.4.119-19-0009.1
@@ -564,7 +596,7 @@ The configuration of the M6ce instance as blow:
 ByteDance Cloud (Volcengine SGX Instances) provides the instance named `ebmg2t`,
 which supports Intel® SGX encrypted computing technology.
 
-The configuration of the ebmg2t instance as blow:
+The following is the configuration of the ebmg2t instance:
 
 - Instance Type  : `ecs.ebmg2t.32xlarge`.
 - Instance Kernel: kernel-5.15
@@ -579,7 +611,7 @@ The configuration of the ebmg2t instance as blow:
 
 Microsoft Azure [DCsv3-series](https://docs.microsoft.com/en-us/azure/virtual-machines/dcv3-series) instances support Intel® SGX confidential computing technology.
 
-The following is the configuration of the DCsv3-series instance used:
+The following is the configuration of the DCsv3-series instance:
 
 - Instance Type  : Standard_DC16s_v3
 - Instance Kernel: 6.2.0-1014-azure 
@@ -589,7 +621,7 @@ The following is the configuration of the DCsv3-series instance used:
 
 Microsoft Azure [DCesv5-series](https://azure.microsoft.com/en-us/updates/confidential-vms-with-intel-tdx-dcesv5-ecesv5/) instances support Intel® TDX confidential computing technology.
 
-The following is the configuration of the DCesv5-series instance used:
+The following is the configuration of the DCesv5-series instance:
 
 - Instance Type  : Standard_DC16es_v5
 - Instance Kernel: 6.2.0-1015-azure
@@ -597,3 +629,4 @@ The following is the configuration of the DCesv5-series instance used:
 - Instance vCPU  : 16
   
 ***Notice:*** Azure DCesv5-series instances were used under private preview.
+
