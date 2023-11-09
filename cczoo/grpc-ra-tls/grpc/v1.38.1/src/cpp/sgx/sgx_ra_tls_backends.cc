@@ -78,7 +78,7 @@ std::vector<std::string> ra_tls_generate_key_cert(int is_dummy) {
         return gramine_generate_key_cert();
 #elif defined(SGX_RA_TLS_OCCLUM_BACKEND)
         return occlum_generate_key_cert();
-#elif defined(SGX_RA_TLS_TDX_BACKEND) || defined(SGX_RA_TLS_AZURE_TDX_BACKEND)
+#elif defined(SGX_RA_TLS_TDX_BACKEND) || defined(SGX_RA_TLS_AZURE_TDX_BACKEND) || defined(SGX_RA_TLS_GCP_TDX_BACKEND)
         return tdx_generate_key_cert();
 #elif defined(SGX_RA_TLS_DUMMY_BACKEND)
         return dummy_generate_key_cert();
@@ -120,7 +120,7 @@ void ra_tls_verify_init() {
     gramine_verify_init();
 #elif defined(SGX_RA_TLS_OCCLUM_BACKEND)
     occlum_verify_init();
-#elif defined(SGX_RA_TLS_TDX_BACKEND) || defined(SGX_RA_TLS_AZURE_TDX_BACKEND)
+#elif defined(SGX_RA_TLS_TDX_BACKEND) || defined(SGX_RA_TLS_AZURE_TDX_BACKEND) || defined(SGX_RA_TLS_GCP_TDX_BACKEND)
     tdx_verify_init();
 #elif defined(SGX_RA_TLS_DUMMY_BACKEND)
     dummy_verify_init();
@@ -140,7 +140,7 @@ int ra_tls_verify_certificate(const char *der_crt, size_t len) {
     return gramine_verify_cert(der_crt, len);
 #elif defined(SGX_RA_TLS_OCCLUM_BACKEND)
     return occlum_verify_cert(der_crt, len);
-#elif defined(SGX_RA_TLS_TDX_BACKEND) || defined(SGX_RA_TLS_AZURE_TDX_BACKEND)
+#elif defined(SGX_RA_TLS_TDX_BACKEND) || defined(SGX_RA_TLS_AZURE_TDX_BACKEND) || defined(SGX_RA_TLS_GCP_TDX_BACKEND)
     return tdx_verify_cert(der_crt, len);
 #elif defined(SGX_RA_TLS_DUMMY_BACKEND)
     return dummy_verify_cert(der_crt, len);
@@ -152,7 +152,7 @@ ra_tls_measurement ra_tls_parse_measurement(const char *der_crt, size_t len) {
     return gramine_parse_measurement(der_crt, len);
 #elif defined(SGX_RA_TLS_OCCLUM_BACKEND)
     return occlum_parse_measurement(der_crt, len);
-#elif defined(SGX_RA_TLS_TDX_BACKEND) || defined(SGX_RA_TLS_AZURE_TDX_BACKEND)
+#elif defined(SGX_RA_TLS_TDX_BACKEND) || defined(SGX_RA_TLS_AZURE_TDX_BACKEND) || defined(SGX_RA_TLS_GCP_TDX_BACKEND)
     return tdx_parse_measurement(der_crt, len);
 #elif defined(SGX_RA_TLS_DUMMY_BACKEND)
     return dummy_parse_measurement(der_crt, len);

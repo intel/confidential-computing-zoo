@@ -66,6 +66,9 @@ elseif(SGX_RA_TLS_BACKEND STREQUAL "TDX")
 elseif(SGX_RA_TLS_BACKEND STREQUAL "AZURE_TDX")
   message("SGX_RA_TLS_AZURE_TDX_BACKEND is defined")
   add_definitions(-DSGX_RA_TLS_AZURE_TDX_BACKEND)
+elseif(SGX_RA_TLS_BACKEND STREQUAL "GCP_TDX")
+  message("SGX_RA_TLS_GCP_TDX_BACKEND is defined")
+  add_definitions(-DSGX_RA_TLS_GCP_TDX_BACKEND)
 elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
   message("SGX_RA_TLS_DUMMY_BACKEND is defined")
   add_definitions(-DSGX_RA_TLS_DUMMY_BACKEND)
@@ -2877,6 +2880,9 @@ elseif(SGX_RA_TLS_BACKEND STREQUAL "AZURE_TDX")
   target_link_libraries(grpc++
     azguestattestation
     curl
+  )
+elseif(SGX_RA_TLS_BACKEND STREQUAL "AZURE_TDX")
+  target_link_libraries(grpc++
   )
 elseif(SGX_RA_TLS_BACKEND STREQUAL "DUMMY")
   target_link_libraries(grpc++
