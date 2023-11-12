@@ -86,6 +86,7 @@ RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
 
 COPY grpc/common ${GRPC_VERSION_PATH}
 COPY grpc/${GRPC_VERSION} ${GRPC_VERSION_PATH}
+COPY grpc/common/gcp_tdx_config.json /etc
 
 # Install Python dependencies
 RUN pip3 install --upgrade --no-cache-dir \

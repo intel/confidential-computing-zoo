@@ -1,0 +1,5 @@
+{  
+  "attest_cmd": "attest -out ~/quote.dat",
+  "verify_cmd": "check -in ~/quote.dat -inform bin -verbosity 10",
+  "quote_location": "~/quote.dat"
+}

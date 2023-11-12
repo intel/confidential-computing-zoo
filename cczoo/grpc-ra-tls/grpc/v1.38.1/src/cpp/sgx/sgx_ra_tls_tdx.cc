@@ -39,8 +39,9 @@
 
 #ifdef SGX_RA_TLS_GCP_TDX_BACKEND
 #include <fstream>
-#include <vector>
 #include <iostream>
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 using namespace std;
 typedef unsigned char BYTE;
 #endif
@@ -74,17 +75,6 @@ static void tdx_gen_report_data(uint8_t *reportdata) {
     }
 }
 
-/*
-std::vector<BYTE> readFile(const char* filename)
-{
-    // open the file:
-    std::basic_ifstream<BYTE> file(filename, std::ios::binary);
-
-    // read the data:
-    return std::vector<BYTE>((std::istreambuf_iterator<BYTE>(file)),
-                              std::istreambuf_iterator<BYTE>());
-}
-*/
 
 #ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
 static int tdx_generate_quote(
@@ -156,10 +146,36 @@ static int tdx_generate_quote(
  static int tdx_generate_quote(
          uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash) {
 
-   int ret = -1;
+    int ret = -1;
 
-   try {
-    uint8_t ret_code = system("attest -out ~/quote.dat");
+    std::string config_filename = "/etc/gcp_tdx_config.json";
+
+    // set attestation request based on config file
+    std::ifstream config_file(config_filename);
+    json config;
+    if (config_file.is_open()) {
+      config = json::parse(config_file);
+      config_file.close();
+    } else {
+        grpc_fprintf(stderr, "Failed to open config file\n\n");
+        return(ret);
+    }
+
+    std::string attest_cmd;
+    if (!config.contains("attest_cmd")) {
+      grpc_fprintf(stderr, "Attest cmd is missing\n\n");
+      return(ret);
+    }
+    attest_cmd = config["attest_cmd"];
+
+    std::string quote_location;
+    if (!config.contains("quote_location")) {
+      grpc_fprintf(stderr, "quote location is missing\n\n");
+      return(ret);
+    }
+    quote_location = config["quote_location"];
+    try {
+    uint8_t ret_code = system(attest_cmd.c_str());
 
     if (ret_code == 0) {
         cout << "attest command executed successfully" << endl;
@@ -173,14 +189,13 @@ static int tdx_generate_quote(
     if (WEXITSTATUS(ret_code) == 0x0) {
           
     // decode quote to raw bytes
+    // open the file:
+    std::basic_ifstream<BYTE> file(quote_location, std::ios::binary);
 
-    // open the file
-    const char* filename = "~/quote.dat"
-    std::basic_ifstream<BYTE> file(filename, std::ios::binary);
-
-    // read the data
+    // read the data:
     std::vector<unsigned char> quote_bytes = std::vector<BYTE>((std::istreambuf_iterator<BYTE>(file)),
                               std::istreambuf_iterator<BYTE>());
+
 
     quote_size = quote_bytes.size();
     *quote_buf = (uint8_t *)realloc(*quote_buf, quote_size+SHA256_DIGEST_LENGTH);
@@ -189,12 +204,13 @@ static int tdx_generate_quote(
     quote_size += SHA256_DIGEST_LENGTH;
 
     print_hex_dump("tdx_generate_quote: TDX quote data\n", " ", *quote_buf, quote_size);
+    
+     }
     }
-   }
-   catch (std::exception &e) {
+    catch (std::exception &e) {
      cout << "Exception occured. Details - " << e.what() << endl;
      return(0);
-   }
+    }
 
    return ret;
  };
@@ -351,15 +367,34 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
 #elif SGX_RA_TLS_GCP_TDX_BACKEND
 int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
    int ret = -1;
+   std::string config_filename = "/etc/gcp_tdx_config.json";
 
-   try {
-    uint8_t ret_code = system("check -in ~/quote.dat -inform bin -verbosity 10");
+    // set attestation request based on config file
+    std::ifstream config_file(config_filename);
+    json config;
+    if (config_file.is_open()) {
+      config = json::parse(config_file);
+      config_file.close();
+    } else {
+        grpc_fprintf(stderr, "Failed to open config file\n\n");
+        return(ret);
+    }
+
+    std::string verify_cmd;
+    if (!config.contains("verify_cmd")) {
+      grpc_fprintf(stderr, "verify cmd is missing\n\n");
+      return(ret);
+    }
+    verify_cmd = config["verify_cmd"];
+
+    try {
+    uint8_t ret_code = system(verify_cmd.c_str());
 
     if (ret_code == 0) {
-	cout << "check command executed successfully\n" << endl;
+	cout << "verify command executed successfully\n" << endl;
     }
     else {
-	cout << "check command execution failed or returned "
+	cout << "verify command execution failed or returned "
         "non-zero: " << ret_code << endl;
 	return(ret);
     }
