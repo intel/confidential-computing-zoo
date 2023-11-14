@@ -194,7 +194,7 @@ export VIRTUAL_FS=/root/vfs
 ./create_encrypted_vfs.sh ${VIRTUAL_FS}
 ```
 
-Replace `<loop device>` with the loop device name provided by `create_encrypted_vfs.sh` (for example, `\dev\loop0`).
+Replace `<loop device>` with the loop device name provided by `create_encrypted_vfs.sh` (for example, `/dev/loop0`).
 Replace `<role>` with the role of the container (either `ps0`, `worker0`, or `worker1`).
 
 ```bash
@@ -208,7 +208,7 @@ Format the block device as ext4. Enter the passphrase when prompted to decrypt t
 ./mount_encrypted_vfs.sh ${LOOP_DEVICE} format ${ROLE}
 ```
 
-Mount the encrypted volume. Enter the passphrase from earlier when prompted.
+Remount the encrypted volume. Enter the passphrase from earlier when prompted.
 
 ```bash
 ./unmount_encrypted_vfs.sh ${ROLE}
@@ -219,7 +219,7 @@ Mount the encrypted volume. Enter the passphrase from earlier when prompted.
 
 Run the training script from each container.
 
-From the parameter server container:
+From the parameter server (`ps0`) container:
 
 ```bash
 cd /hfl-tensorflow
