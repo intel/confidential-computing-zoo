@@ -16,7 +16,7 @@
  *
  */
 
-#if defined(SGX_RA_TLS_TDX_BACKEND) || defined (SGX_RA_TLS_AZURE_TDX_BACKEND)
+#if defined(SGX_RA_TLS_TDX_BACKEND) || defined (SGX_RA_TLS_AZURE_TDX_BACKEND) || defined (SGX_RA_TLS_GCP_TDX_BACKEND)
 
 #include <grpcpp/security/sgx/sgx_ra_tls_backends.h>
 #include <grpcpp/security/sgx/sgx_ra_tls_impl.h>
@@ -35,6 +35,16 @@
 #include "azure_tdx/Logger.h"
 #include "azure_tdx/AttestClient.h"
 #include "azure_tdx/HttpClient.h"
+#endif
+
+#ifdef SGX_RA_TLS_GCP_TDX_BACKEND
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <sstream>
+#include <vector>
+using namespace std;
+typedef unsigned char BYTE;
 #endif
 
 #ifdef SGX_RA_TLS_TDX_BACKEND
@@ -65,6 +75,7 @@ static void tdx_gen_report_data(uint8_t *reportdata) {
         reportdata[i] = rand();
     }
 }
+
 
 #ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
 static int tdx_generate_quote(
@@ -132,6 +143,78 @@ static int tdx_generate_quote(
 
   return ret;
 };
+#elif SGX_RA_TLS_GCP_TDX_BACKEND
+ static int tdx_generate_quote(
+         uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash) {
+
+   int ret = -1;
+
+
+   try {
+   
+   std::ostringstream attest_cmd;
+   attest_cmd << "attest" << " -out quote1.dat";
+   std::string attest_cmd_with_hash = attest_cmd.str();	   
+   cout << attest_cmd_with_hash << endl;
+   uint8_t ret_code = system(attest_cmd_with_hash.c_str());
+
+   if (ret_code == 0) {
+        cout << "attest command executed successfully" << endl;
+    }
+   else {
+        cout << "attest command execution failed or returned "
+        "non-zero: " << ret_code << endl;
+        return(0);
+    }
+
+    if (WEXITSTATUS(ret_code) == 0x0) {
+
+    // Open the .dat file in binary mode
+    std::ifstream file("quote1.dat", std::ios::binary);
+
+    // Check if the file is opened successfully
+    if (!file.is_open()) {
+        std::cerr << "Error opening file" << std::endl;
+        return 1;
+    }
+
+    // Seek to the end of the file to determine its size
+    file.seekg(0, std::ios::end);
+    std::streampos fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    // Create a vector to hold the data
+    std::vector<unsigned char> data(fileSize);
+
+    // Read the data from the file into the vector
+    file.read(reinterpret_cast<char*>(data.data()), fileSize);
+
+    // Check if the read operation was successful
+    if (!file) {
+        std::cerr << "Error reading file" << std::endl;
+        return 1;
+    }
+
+    // Close the file
+    file.close();
+
+    quote_size = data.size();
+    cout << "quote_size " << quote_size << endl;
+    *quote_buf = (uint8_t *)realloc(*quote_buf, quote_size+SHA256_DIGEST_LENGTH);
+    memcpy(*quote_buf, (uint8_t *)data.data(), quote_size);
+    memcpy((*quote_buf)+quote_size, hash, SHA256_DIGEST_LENGTH);
+    quote_size += SHA256_DIGEST_LENGTH;
+
+    print_hex_dump("tdx_generate_quote: TDX quote data\n", " ", *quote_buf, quote_size);
+    }
+   }
+   catch (std::exception &e) {
+     cout << "Exception occured. Details - " << e.what() << endl;
+     return(0);
+   }
+
+   return ret;
+ };
 #else
 static int tdx_generate_quote(
         uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash) {
@@ -281,7 +364,61 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
     cout << "Exception occured. Details - " << e.what() << endl;
     return(1);
   }
-}
+};
+#elif SGX_RA_TLS_GCP_TDX_BACKEND
+int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
+   int ret = -1;
+   std::ofstream file("extract_quote.dat", std::ios::binary);
+
+    // Check if the file is opened successfully
+    if (!file.is_open()) {
+        std::cerr << "Error opening file" << std::endl;
+        return 1;
+    }
+
+    // Write the data to the file
+    file.write(reinterpret_cast<const char*>(quote_buf), quote_size);
+
+    // Check if the write operation was successful
+    if (!file) {
+        std::cerr << "Error writing to file" << std::endl;
+        return 1;
+    }
+
+    // Close the file
+    file.close();
+
+
+   std::string verify_cmd = "check -in extract_quote.dat -verbosity 10";
+   try {
+    uint8_t ret_code = system(verify_cmd.c_str());
+
+    if (ret_code == 0) {
+	cout << "verify command executed successfully\n" << endl;
+    }
+    else {
+	cout << "verify command execution failed or returned "
+        "non-zero: " << ret_code << endl;
+	return(ret);
+    }
+    
+    if (WEXITSTATUS(ret_code) == 0x0) {
+	cout << "quote verified\n" << endl;
+        return(0);
+    }
+    else {
+	cout << "quote not verified\n" << endl;
+        return(ret);
+    }
+
+   }
+   catch (std::exception &e) {
+     cout << "Exception occured. Details - " << e.what() << endl;
+     return(1);
+   }
+
+   return ret;
+ };
 #else
 int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
     bool use_qve = false;

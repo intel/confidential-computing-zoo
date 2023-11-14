@@ -66,7 +66,7 @@ int occlum_verify_cert(const char *der_crt, size_t len);
 
 ra_tls_measurement occlum_parse_measurement(const char *der_crt, size_t len);
 
-#elif defined(SGX_RA_TLS_TDX_BACKEND) || defined(SGX_RA_TLS_AZURE_TDX_BACKEND)
+#elif defined(SGX_RA_TLS_TDX_BACKEND) || defined(SGX_RA_TLS_AZURE_TDX_BACKEND) || defined(SGX_RA_TLS_GCP_TDX_BACKEND)
 
 std::vector<std::string> tdx_generate_key_cert();
 
