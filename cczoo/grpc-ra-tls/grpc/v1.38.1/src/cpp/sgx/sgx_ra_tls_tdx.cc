@@ -42,6 +42,7 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <iomanip>
 #include <vector>
 using namespace std;
 typedef unsigned char BYTE;
@@ -76,6 +77,16 @@ static void tdx_gen_report_data(uint8_t *reportdata) {
     }
 }
 
+static void deleteFiles(const std::vector<std::string>& filenames) {
+    // Loop through the array of filenames and delete each file
+    for (const std::string& filename : filenames) {
+        if (std::remove(filename.c_str()) != 0) {
+            perror("Error deleting file");
+        } else {
+            printf("File successfully deleted: %s\n", filename.c_str());
+        }
+    }
+}
 
 #ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
 static int tdx_generate_quote(
@@ -148,12 +159,19 @@ static int tdx_generate_quote(
          uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash) {
 
    int ret = -1;
-
-
+  
+   // Converting hash to hex format 
    try {
-   
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+
+    for (size_t i = 0; i < quote_size+SHA256_DIGEST_LENGTH; ++i) {
+        oss << std::setw(2) << static_cast<int>(hash[i]);
+    }
+
+   // Forming the quote creation command that takes hash as an input
    std::ostringstream attest_cmd;
-   attest_cmd << "attest" << " -out quote1.dat";
+   attest_cmd << "attest -in " << oss.str() << " -out quote.dat";
    std::string attest_cmd_with_hash = attest_cmd.str();	   
    cout << attest_cmd_with_hash << endl;
    uint8_t ret_code = system(attest_cmd_with_hash.c_str());
@@ -167,10 +185,19 @@ static int tdx_generate_quote(
         return(0);
     }
 
-    if (WEXITSTATUS(ret_code) == 0x0) {
+   // Removing extra padding to decrease size
+   const char* sed_cmd = "sed \"$ s/\\x00*$//\" quote.dat > truncated_quote.dat";
+   uint8_t status = system(sed_cmd);
+
+   if (status != 0) {
+        std::cerr << "Error executing sed command." << std::endl;
+        return(0);
+    }
+
+    if (WEXITSTATUS(status) == 0x0) {
 
     // Open the .dat file in binary mode
-    std::ifstream file("quote1.dat", std::ios::binary);
+    std::ifstream file("truncated_quote.dat", std::ios::binary);
 
     // Check if the file is opened successfully
     if (!file.is_open()) {
@@ -184,6 +211,7 @@ static int tdx_generate_quote(
     file.seekg(0, std::ios::beg);
 
     // Create a vector to hold the data
+    cout << fileSize << endl;
     std::vector<unsigned char> data(fileSize);
 
     // Read the data from the file into the vector
@@ -200,10 +228,8 @@ static int tdx_generate_quote(
 
     quote_size = data.size();
     cout << "quote_size " << quote_size << endl;
-    *quote_buf = (uint8_t *)realloc(*quote_buf, quote_size+SHA256_DIGEST_LENGTH);
+    *quote_buf = (uint8_t *)realloc(*quote_buf, quote_size);
     memcpy(*quote_buf, (uint8_t *)data.data(), quote_size);
-    memcpy((*quote_buf)+quote_size, hash, SHA256_DIGEST_LENGTH);
-    quote_size += SHA256_DIGEST_LENGTH;
 
     print_hex_dump("tdx_generate_quote: TDX quote data\n", " ", *quote_buf, quote_size);
     }
@@ -368,6 +394,7 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
 #elif SGX_RA_TLS_GCP_TDX_BACKEND
 int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
    int ret = -1;
+   std::vector<std::string> fileArray = {"quote.dat", "extract_quote.dat", "truncated_quote.dat"};
    std::ofstream file("extract_quote.dat", std::ios::binary);
 
     // Check if the file is opened successfully
@@ -388,8 +415,7 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
     // Close the file
     file.close();
 
-
-   std::string verify_cmd = "check -in extract_quote.dat -verbosity 10";
+    std::string verify_cmd = "check -in extract_quote.dat -verbosity 10";
    try {
     uint8_t ret_code = system(verify_cmd.c_str());
 
@@ -399,25 +425,31 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
     else {
 	cout << "verify command execution failed or returned "
         "non-zero: " << ret_code << endl;
+	deleteFiles(fileArray);
 	return(ret);
     }
     
     if (WEXITSTATUS(ret_code) == 0x0) {
 	cout << "quote verified\n" << endl;
+	deleteFiles(fileArray);
         return(0);
     }
     else {
 	cout << "quote not verified\n" << endl;
+	deleteFiles(fileArray);
         return(ret);
     }
 
    }
    catch (std::exception &e) {
      cout << "Exception occured. Details - " << e.what() << endl;
+     deleteFiles(fileArray);
      return(1);
    }
-
+ 
+   deleteFiles(fileArray);
    return ret;
+
  };
 #else
 int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
@@ -527,17 +559,12 @@ int tdx_verify_cert(const char *der_crt, size_t len) {
         goto out;
     }
 
-    ret = tdx_verify_quote(quote_buf, quote_size-SHA256_DIGEST_LENGTH);
+    ret = tdx_verify_quote(quote_buf, quote_size);
     if (ret != 0) {
         grpc_printf("verify quote failed.\n");
         goto out;
     }
 
-    ret = verify_pubkey_hash(x509, quote_buf+quote_size-SHA256_DIGEST_LENGTH, SHA256_DIGEST_LENGTH);
-    if (ret != 0) {
-        grpc_printf("verify the public key hash failed.\n");
-        goto out;
-    }
 
     // ret = verify_measurement((const char *)&p_rep_body->mr_enclave,
     //                          (const char *)&p_rep_body->mr_signer,
