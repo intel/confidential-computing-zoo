@@ -182,6 +182,82 @@ python3 client.py --host=${server_public_ipaddr}:8500
 ```
 Observe the following expected output: `Greeter received: Hello a Hello b`.
 
+### Google Cloud (TDX)
+
+1. Build container.
+
+```
+cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/gcp_tdx
+./build_docker_image.sh
+```
+
+NOTE: To specify the proxy server, set the `http_proxy` and `https_proxy` variables prior to the call to `build_docker_image.sh`, for example:
+      
+```bash
+http_proxy=http://proxyserver:port https_proxy=http://proxyserver:port ./build_docker_image.sh
+```
+
+2. Start example RA-TLS Enhanced gRPC server.
+
+Modify the Networking settings of the Google Cloud VM (the VM designated as the gRPC server) to add an inbound port rule for TCP port 8500.
+
+From the server VM, start the gRPC RA-TLS container:
+
+```bash
+cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/gcp_tdx
+image_id=grpc-ra-tls:gcp_tdx_latest
+container_id=$(./start_container.sh ${image_id})
+container_ipaddr=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${container_id})
+docker exec -it -e container_ipaddr=${container_ipaddr} ${container_id} bash
+```
+Run the C++ server OR the Python server:
+
+For C++:
+```bash
+cd /grpc/v1.38.1/examples/cpp/ratls/build
+pkill server
+pkill python3
+./server --host=${container_ipaddr}:8500 &
+```
+
+For Python:
+```bash
+cd /grpc/v1.38.1/examples/python/ratls/build
+pkill server
+pkill python3
+python3 server.py --host=${container_ipaddr}:8500 &
+```
+
+3. Start example RA-TLS Enhanced gRPC client.
+
+From a Google Cloud designated as the client, start the gRPC RA-TLS container, specifying the server VM's public IP address (replace `x.x.x.x`):
+
+```bash
+cd ${cczoo_base_dir}/cczoo/grpc-ra-tls/gcp_tdx
+image_id=grpc-ra-tls:gcp_tdx_latest
+server_public_ipaddr=x.x.x.x
+container_id=$(./start_container.sh ${image_id})
+docker exec -it -e server_public_ipaddr=${server_public_ipaddr} ${container_id} bash
+```
+
+Run the C++ client OR the Python client:
+
+For C++:
+
+```bash
+cd /grpc/v1.38.1/examples/cpp/ratls/build
+./client --host=${server_public_ipaddr}:8500
+```
+Observe the following expected output: `Greeter received: Hello a Hello b`.
+    
+For Python:
+
+```bash
+cd /grpc/v1.38.1/examples/python/ratls/build
+python3 client.py --host=${server_public_ipaddr}:8500
+```
+Observe the following expected output: `Greeter received: Hello a Hello b`.
+
 ### Other Cloud Deployments (TDX)
 
 The following steps are for cloud deployments other than Azure. Please refer to [cczoo/grpc-ra-tls/tdx/README.md](https://github.com/intel/confidential-computing-zoo/blob/main/cczoo/grpc-ra-tls/tdx/README.md) for more details.
