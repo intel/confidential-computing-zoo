@@ -275,6 +275,8 @@ if BUILD_WITH_SGX_RA_TLS:
         EXTRA_ENV_LINK_ARGS += ' -ltdx_attest -lsgx_dcap_quoteverify -lsgx_urts -DSGX_RA_TLS_TDX_BACKEND'
     elif SGX_RA_TLS_BACKEND == "AZURE_TDX":
         EXTRA_ENV_LINK_ARGS += ' -lazguestattestation -lcurl -DSGX_RA_TLS_AZURE_TDX_BACKEND'
+    elif SGX_RA_TLS_BACKEND == "GCP_TDX":
+        EXTRA_ENV_LINK_ARGS += ' -DSGX_RA_TLS_GCP_TDX_BACKEND'
     elif SGX_RA_TLS_BACKEND == "DUMMY":
         EXTRA_ENV_LINK_ARGS += ' -DSGX_RA_TLS_DUMMY_BACKEND'
     else:
@@ -419,6 +421,8 @@ if BUILD_WITH_SGX_RA_TLS:
         DEFINE_MACROS += (('SGX_RA_TLS_TDX_BACKEND', 1),)
     elif SGX_RA_TLS_BACKEND == "AZURE_TDX":
         DEFINE_MACROS += (('SGX_RA_TLS_AZURE_TDX_BACKEND', 1),)
+    elif SGX_RA_TLS_BACKEND == "GCP_TDX":
+        DEFINE_MACROS += (('SGX_RA_TLS_GCP_TDX_BACKEND', 1),)
     elif SGX_RA_TLS_BACKEND == "DUMMY":
         DEFINE_MACROS += (('SGX_RA_TLS_DUMMY_BACKEND', 1),)
     else:
