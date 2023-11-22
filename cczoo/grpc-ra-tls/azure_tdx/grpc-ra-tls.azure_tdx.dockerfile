@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # required for bazel setup
         unzip \
 # required for Azure confidential-computing-cvm-guest-attestation
-        libjsoncpp-dev libboost-all-dev libssl1.1 \
+        libjsoncpp-dev libboost-all-dev libssl1.1 tpm2-tools \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Azure confidential-computing-cvm-guest-attestation

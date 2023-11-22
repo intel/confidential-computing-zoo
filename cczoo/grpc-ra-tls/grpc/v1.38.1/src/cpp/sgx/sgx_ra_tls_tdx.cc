@@ -35,6 +35,7 @@
 #include "azure_tdx/Logger.h"
 #include "azure_tdx/AttestClient.h"
 #include "azure_tdx/HttpClient.h"
+#include "boost/algorithm/hex.hpp"
 #endif
 
 #ifdef SGX_RA_TLS_GCP_TDX_BACKEND
@@ -94,6 +95,9 @@ static void deleteFiles(const std::vector<std::string>& filenames) {
 }
 
 #ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
+// input:  uint8_t *hash
+// output: uint8_t **quote_buf
+// output: uint32_t &quote_size
 static int tdx_generate_quote(
         uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash) {
 
@@ -105,7 +109,7 @@ static int tdx_generate_quote(
 
     // Initialize attestation client
     if (!Initialize(log_handle, &attestation_client)) {
-      grpc_fprintf(stderr, "Failed to create attestation client object\n\n");
+      grpc_fprintf(stderr, "Error: Failed to create attestation client object\n\n");
       Uninitialize();
       return(ret);
     }
@@ -113,6 +117,38 @@ static int tdx_generate_quote(
 
     auto start = high_resolution_clock::now();
 
+    // Check if vTPM NV index for user-data exists.
+    std::string tpm_nvreadpublic_cmd = "tpm2_nvreadpublic 0x01400002 > /dev/null 2>&1";
+    uint8_t ret_code = system(tpm_nvreadpublic_cmd.c_str());
+    if (ret_code != 0) {
+        // Create NV index, since it doesn't exist.
+        std::string tpm_nvdefine_cmd = "tpm2_nvdefine -C o 0x01400002 -s 64";
+        uint8_t ret_code = system(tpm_nvdefine_cmd.c_str());
+        if (ret_code != 0) {
+            cout << "Error: Failed to create NV index." << endl;
+            return(ret);
+        }
+    }
+
+    // Convert hash to hex string.
+    std::ostringstream user_data;
+    user_data << std::hex << std::setfill('0');
+    for (size_t i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+        user_data << std::setw(2) << static_cast<int>(hash[i]);
+    }
+
+    // Write hash as user-data to vTPM before retrieving evidence.
+    // This adds the hash as user-data to the TPM report runtime data and
+    // binds the hash to the TD report/quote.
+    std::ostringstream tpm_write_cmd;
+    tpm_write_cmd << "echo " << user_data.str() << " | xxd -r -p | tpm2_nvwrite -C o 0x1400002 -i -";
+    ret_code = system(tpm_write_cmd.str().c_str());
+    if (ret_code != 0) {
+        cout << "Error: Failed to write user-data to TPM, ret_code = " << ret_code << endl;
+        return(ret);
+    }
+
+    // Retrieve evidence from vTPM.
     unsigned char *evidence = nullptr;
     result = attestation_client->GetHardwarePlatformEvidence(&evidence);
 
@@ -120,7 +156,7 @@ static int tdx_generate_quote(
     duration<double, std::milli> elapsed = stop - start;
 
     if (result.code_ != attest::AttestationResult::ErrorCode::SUCCESS) {
-      grpc_fprintf(stderr, "Failed to get quote\n\n");
+      grpc_fprintf(stderr, "Error: Failed to get quote\n\n");
       Uninitialize();
       return(ret);
     }
@@ -134,35 +170,48 @@ static int tdx_generate_quote(
     std::string encoded_quote = json_response["quote"];
     if (encoded_quote.empty()) {
       result.code_ = attest::AttestationResult::ErrorCode::ERROR_EMPTY_TD_QUOTE;
-      result.description_ = std::string("Empty Quote received from IMDS Quote Endpoint");
+      result.description_ = std::string("Error: Empty Quote received from IMDS Quote Endpoint");
       Uninitialize();
       return(ret);
     }
 
-    // decode the base64url encoded quote to raw bytes
+    std::string encoded_claims = json_response["runtimeData"]["data"];
+    if (encoded_claims.empty()) {
+      result.code_ = attest::AttestationResult::ErrorCode::ERROR_EMPTY_TD_QUOTE;
+      result.description_ = std::string("Error: Empty Claims received from IMDS Quote Endpoint");
+      Uninitialize();
+      return(ret);
+    }
+
+    // decode the base64url encoded quote and claims to raw bytes
     std::vector<unsigned char> quote_bytes = Utils::base64url_to_binary(encoded_quote);
+    std::vector<unsigned char> claims_bytes = Utils::base64url_to_binary(encoded_claims);
 
     quote_size = quote_bytes.size();
-    *quote_buf = (uint8_t *)realloc(*quote_buf, quote_size+SHA256_DIGEST_LENGTH);
-    memcpy(*quote_buf, (uint8_t *)quote_bytes.data(), quote_size);
-    memcpy((*quote_buf)+quote_size, hash, SHA256_DIGEST_LENGTH);
-    quote_size += SHA256_DIGEST_LENGTH;
+    uint32_t claims_size = claims_bytes.size();
+    *quote_buf = (uint8_t *)realloc(*quote_buf, quote_size + claims_size + 8);
+    memcpy(*quote_buf, (uint8_t *)&quote_size, 4);
+    memcpy(*quote_buf + 4, (uint8_t *)&claims_size, 4);
+    memcpy(*quote_buf + 8, (uint8_t *)quote_bytes.data(), quote_size);
+    memcpy(*quote_buf + 8 + quote_size, (uint8_t *)claims_bytes.data(), claims_size);
 
-    print_hex_dump("tdx_generate_quote: TDX quote data\n", " ", *quote_buf, quote_size);
+    quote_size += claims_size + 8;
+
+    print_hex_dump("tdx_generate_quote: TDX quote and claims data\n", " ", *quote_buf, quote_size);
 
     Uninitialize();
 
     ret = 1; // success
   }
   catch (std::exception &e) {
-    cout << "Exception occured. Details - " << e.what() << endl;
+    cout << "Error: Exception occured. Details - " << e.what() << endl;
     return(ret);
   }
 
   return(ret);
 };
 
-int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
+int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size, uint8_t **hash_buf) {
   int ret = -1; // error
 
   try {
@@ -175,13 +224,13 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
       config = json::parse(config_file);
       config_file.close();
     } else {
-        grpc_fprintf(stderr, "Failed to open config file\n\n");
+        grpc_fprintf(stderr, "Error: Failed to open config file\n\n");
         return(ret);
     }
 
     std::string attestation_url;
     if (!config.contains("attestation_url")) {
-      grpc_fprintf(stderr, "Attestation_url is missing\n\n");
+      grpc_fprintf(stderr, "Error: attestation_url is missing\n\n");
       return(ret);
     }
     attestation_url = config["attestation_url"];
@@ -198,14 +247,14 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
 
     std::string provider;
     if (!config.contains("attestation_provider")) {
-      grpc_fprintf(stderr, "Attestation_provider is missing\n\n");
+      grpc_fprintf(stderr, "Error: attestation_provider is missing\n\n");
       return(ret);
     }
     provider = config["attestation_provider"];
 
     if (!Utils::case_insensitive_compare(provider, "amber") &&
         !Utils::case_insensitive_compare(provider, "maa")) {
-      grpc_fprintf(stderr, "Attestation provider was incorrect\n\n");
+      grpc_fprintf(stderr, "Error: attestation_provider is invalid\n\n");
       return(ret);
     }
 
@@ -222,18 +271,17 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
 
     // if attesting with Amber, we need to make sure an API token was provided
     if (api_key.empty() && Utils::case_insensitive_compare(provider, "amber")) {
-      grpc_fprintf(stderr, "Attestation endpoint \"api_key\" value missing\n\n");
+      grpc_fprintf(stderr, "Error: Attestation endpoint \"api_key\" value missing\n\n");
       return(ret);
     }
 
-    print_hex_dump("tdx_verify_quote: TDX quote data\n", " ", quote_buf, quote_size);
+    print_hex_dump("\nInfo: Received: TDX quote and claims data\n", " ", quote_buf, quote_size);
 
-    std::vector<unsigned char> quote_vector(quote_buf, quote_buf + quote_size);
+    uint32_t q_size = *(uint32_t*)quote_buf;
+    uint32_t claims_size = *(uint32_t*)(quote_buf + 1);
+    std::vector<unsigned char> quote_vector(quote_buf + 8, quote_buf + 8 + q_size);
     std::string encoded_quote = Utils::binary_to_base64url(quote_vector);
-
-    // For now, pass empty claim
-    std::string json_claims = "{}";
-    std::vector<unsigned char> claims_vector(json_claims.begin(), json_claims.end());
+    std::vector<unsigned char> claims_vector(quote_buf + 8 + q_size, quote_buf + quote_size);
     std::string encoded_claims = Utils::binary_to_base64url(claims_vector);
 
     HttpClient http_client;
@@ -250,50 +298,84 @@ int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
     duration<double, std::milli> token_elapsed = stop - start;
 
     if (jwt_token.empty()) {
-      fprintf(stderr, "Empty token received\n");
+      fprintf(stderr, "Error: Empty token received\n");
       return(ret);
     }
 
-    grpc_printf("Info: App: Verification completed successfully.\n");
+    // Parse TEE-specific claims from JSON Web Token
+    std::vector<std::string> tokens;
+    boost::split(tokens, jwt_token, [](char c) {return c == '.'; });
+    if (tokens.size() < 3) {
+      fprintf(stderr, "Error: Invalid JWT token\n");
+      return(ret);
+    }
+
+    json attestation_claims = json::parse(Utils::base64_decode(tokens[1]));
+    try {
+        int indent = 4;
+        cout << "Info: Attestation claims:\n" << attestation_claims.dump(indent) << endl;
+
+        std::string user_data;
+        if (Utils::case_insensitive_compare(provider, "maa"))
+            user_data = attestation_claims["x-ms-runtime"]["user-data"].get<std::string>();
+        else if (Utils::case_insensitive_compare(provider, "amber"))
+            user_data = attestation_claims["amber_report_data"].get<std::string>();
+
+        // Return the public key hash from user-data.
+        std::string unhex_user_data = boost::algorithm::unhex(user_data);
+        std::vector<unsigned char> hash_vector(unhex_user_data.begin(), unhex_user_data.end());
+        *hash_buf = (uint8_t *)realloc(*hash_buf, SHA256_DIGEST_LENGTH);
+        memcpy(*hash_buf, (uint8_t *)hash_vector.data(), SHA256_DIGEST_LENGTH);
+        print_hex_dump("\nInfo: Public key hash from user-data:\n", " ", *hash_buf, SHA256_DIGEST_LENGTH);
+    }
+    catch (...) {
+        fprintf(stderr, "Error: JWT missing TD report custom data\n");
+        return(ret);
+    }
+
+    grpc_printf("Info: Quote verification completed successfully.\n");
 
     ret = 0; // success
   }
   catch (std::exception &e) {
-    cout << "Exception occured. Details - " << e.what() << endl;
+    cout << "Error: Exception occured. Details - " << e.what() << endl;
     return(ret);
   }
 
   return(ret);
 };
 
+// input: const char *der_crt
+// input: size_t len
 int tdx_verify_cert(const char *der_crt, size_t len) {
     int ret = 0;
     uint32_t quote_size = 0;
     uint8_t *quote_buf = nullptr;
+    uint8_t *hash_buf = nullptr;
 
     BIO *bio = BIO_new(BIO_s_mem());
     BIO_write(bio, der_crt, len);
     X509 *x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
     if (!x509) {
-        grpc_printf("parse the crt failed.\n");
+        grpc_printf("Error: Failed to parse certificate.\n");
         goto out;
     }
 
     ret = parse_quote(x509, &quote_buf, quote_size);
     if (ret != 0) {
-        grpc_printf("parse quote failed.\n");
+        grpc_printf("Error: Failed to parse quote.\n");
         goto out;
     }
 
-    ret = tdx_verify_quote(quote_buf, quote_size-SHA256_DIGEST_LENGTH);
+    ret = tdx_verify_quote(quote_buf, quote_size, &hash_buf);
     if (ret != 0) {
-        grpc_printf("verify quote failed.\n");
+        grpc_printf("Error: Failed to verify quote.\n");
         goto out;
     }
 
-    ret = verify_pubkey_hash(x509, quote_buf+quote_size-SHA256_DIGEST_LENGTH, SHA256_DIGEST_LENGTH);
+    ret = verify_pubkey_hash(x509, hash_buf, SHA256_DIGEST_LENGTH);
     if (ret != 0) {
-        grpc_printf("verify the public key hash failed.\n");
+        grpc_printf("Error: Failed to verify public key hash.\n");
         goto out;
     }
 
