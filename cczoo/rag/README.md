@@ -14,8 +14,6 @@ docker pull intelcczoo/rag-llm:ui
 
 Or you can compile Docker images locally:
 
-**Notice: Please contact siyuan.hui@intel.com to obtain the dcap package required to build Docker image.**
-
 ```bash
 # clone the repo
 git clone https://github.com/intel/confidential-computing-zoo.git

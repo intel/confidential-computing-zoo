@@ -25,14 +25,13 @@ RUN apt-get update \
         vim \
         jq
 
-RUN tar -zxvf dcap-20230406.tar.gz \
-    && cd dcap-20230406/Ubuntu22.04 \
-    && tar -zxvf sgx_debian_local_repo.tar.gz \
+RUN wget https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/distro/ubuntu22.04-server/sgx_debian_local_repo.tgz \
+    && wget https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/distro/ubuntu22.04-server/sgx_linux_x64_sdk_2.21.100.1.bin \
+    && tar -zxvf sgx_debian_local_repo.tgz \
     && mkdir -p /opt/intel \
-    && mv sgx_debian_local_repo sgx_linux_x64_sdk_*.bin libsgx_dcap_quoteverify.so /opt/intel/ \
+    && mv sgx_debian_local_repo sgx_linux_x64_sdk_*.bin /opt/intel/ \
     && echo "deb [trusted=yes arch=amd64] file:/opt/intel/sgx_debian_local_repo jammy main" > /etc/apt/sources.list.d/sgx_debian_local_repo.list \
-    && cd - \
-    && rm -rf dcap-20230406.tar.gz dcap-20230406
+    && rm -rf sgx_debian_local_repo.tgz
 
 RUN apt-get update \
     && apt-get install -y \
