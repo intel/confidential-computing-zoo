@@ -45,17 +45,11 @@ RUN apt-get update \
     && apt-get install -y \
         libsgx-dcap-quote-verify \
         libsgx-dcap-quote-verify-dev \
-        libsgx-ae-qve \
-    && mv -f /opt/intel/libsgx_dcap_quoteverify.so /usr/lib/x86_64-linux-gnu/libsgx_dcap_quoteverify.so.1.12.103.3
-
-RUN cd /opt/intel \
-    && git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git \
-    && cd SGXDataCenterAttestationPrimitives \
-    && git checkout 6f77ba8f153e7cecd8da3cf65a0f1bb0cdc1f638
+        libsgx-ae-qve
 
 COPY configs /
-RUN chmod +x /opt/intel/sgx_linux_x64_sdk_2.19.90.3.bin \
-    && /install_sgxsdk.sh /opt/intel/sgx_linux_x64_sdk_2.19.90.3.bin
+RUN chmod +x /opt/intel/sgx_linux_x64_sdk_2.21.100.1.bin \
+    && /install_sgxsdk.sh /opt/intel/sgx_linux_x64_sdk_2.21.100.1.bin
 ENV INTEL_SGXSDK_INCLUDE=/opt/intel/sgxsdk/include
 
 # cmake tool chain
