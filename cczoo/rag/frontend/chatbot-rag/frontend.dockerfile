@@ -27,15 +27,13 @@ COPY configs/config.toml /root/.streamlit/
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir streamlit streamlit-chat matplotlib pyyaml grpcio==1.38.1 grpcio-tools==1.38.1
 
-ENV DCAP_VERSION=TDX/MVP/2023ww15
-RUN tar -zxvf dcap-20230406.tar.gz \
-    && cd dcap-20230406/Ubuntu22.04 \
-    && tar -zxvf sgx_debian_local_repo.tar.gz \
+RUN wget https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/distro/ubuntu22.04-server/sgx_debian_local_repo.tgz \
+    && wget https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/distro/ubuntu22.04-server/sgx_linux_x64_sdk_2.21.100.1.bin \
+    && tar -zxvf sgx_debian_local_repo.tgz \
     && mkdir -p /opt/intel \
-    && mv sgx_debian_local_repo sgx_linux_x64_sdk_*.bin libsgx_dcap_quoteverify.so /opt/intel/ \
+    && mv sgx_debian_local_repo sgx_linux_x64_sdk_*.bin /opt/intel/ \
     && echo "deb [trusted=yes arch=amd64] file:/opt/intel/sgx_debian_local_repo jammy main" > /etc/apt/sources.list.d/sgx_debian_local_repo.list \
-    && cd - \
-    && rm -rf dcap-20230406.tar.gz dcap-20230406
+    && rm -rf sgx_debian_local_repo.tgz
 
 RUN apt-get update \
     && apt-get install -y \
@@ -49,17 +47,11 @@ RUN apt-get update \
     && apt-get install -y \
         libsgx-dcap-quote-verify \
         libsgx-dcap-quote-verify-dev \
-        libsgx-ae-qve \
-    && mv -f /opt/intel/libsgx_dcap_quoteverify.so /usr/lib/x86_64-linux-gnu/libsgx_dcap_quoteverify.so.1.12.103.3
-
-RUN cd /opt/intel \
-    && git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git \
-    && cd SGXDataCenterAttestationPrimitives \
-    && git checkout 6f77ba8f153e7cecd8da3cf65a0f1bb0cdc1f638
+        libsgx-ae-qve
 
 COPY ra_configs /
-RUN chmod +x /opt/intel/sgx_linux_x64_sdk_2.19.90.3.bin \
-    && /install_sgxsdk.sh /opt/intel/sgx_linux_x64_sdk_2.19.90.3.bin
+RUN chmod +x /opt/intel/sgx_linux_x64_sdk_2.21.100.1.bin \
+    && /install_sgxsdk.sh /opt/intel/sgx_linux_x64_sdk_2.21.100.1.bin
 ENV INTEL_SGXSDK_INCLUDE=/opt/intel/sgxsdk/include
 
 # cmake tool chain
