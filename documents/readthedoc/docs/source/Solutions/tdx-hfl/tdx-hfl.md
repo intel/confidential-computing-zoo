@@ -113,6 +113,28 @@ cd ${cczoo_base_dir}/cczoo/horizontal_fl_tdx
 ./start_container.azure.sh <role> <image_id>
 ```
 
+#### Google Cloud Deployments
+
+For Google Cloud deployments:
+
+```bash
+cd ${cczoo_base_dir}/cczoo/horizontal_fl_tdx
+./build_docker_image.sh gcp
+```
+
+NOTE: To specify the proxy server, set the `proxy_server` variable prior to the call to `build_docker_image.sh`. For example:
+      
+```bash
+proxy_server=http://proxyserver:port ./build_docker_image.sh gcp
+```
+
+Start three containers (`ps0`, `worker0`, `worker1`). Replace `<role>` with the role of the container (either `ps0`, `worker0`, or `worker1`). Replace `<image_id>` with the image ID of the container built from the previous step.
+
+```bash
+cd ${cczoo_base_dir}/cczoo/horizontal_fl_tdx
+./start_container.gcp.sh <role> <image_id>
+```
+
 #### Default Cloud Deployments
 
 For cloud deployments other than on Azure:
@@ -179,6 +201,10 @@ To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/
   "api_key": ""
 }
 ```
+
+#### Google Cloud Deployments
+
+For Google Cloud deployments, it is not necessary to configure any attestation parameters.
 
 #### Default Cloud Deployments
 

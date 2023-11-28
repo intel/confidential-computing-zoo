@@ -19,7 +19,7 @@ set -e
 function usage() {
     echo -e "Usage: $0 BUILDTYPE [TAG]"
     echo -e "  BUILDTYPE      build type;"
-    echo -e "                   BUILDTYPE is 'azure' or 'default'"
+    echo -e "                   BUILDTYPE is 'azure','gcp', or 'default'"
     echo -e "  TAG            docker tag suffix;"
     echo -e "                   docker tag is BUILDTYPE_TAG;"
     echo -e "                   TAG default is 'latest'"
@@ -32,7 +32,7 @@ if [ "$#" -lt 1 ]; then
 fi
 
 build_type=$1
-if  [ "$1" != "azure" ] && [ "$1" != "default" ]; then
+if  [ "$1" != "azure" ] && [ "$1" != "gcp" ] && [ "$1" != "default" ]; then
     usage
     exit 1
 fi
