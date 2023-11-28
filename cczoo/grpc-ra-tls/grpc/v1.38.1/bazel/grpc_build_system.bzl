@@ -175,7 +175,7 @@ def grpc_ratls_library(
     elif backend == "AZURE_TDX":
         flags += ["-DSGX_RA_TLS_AZURE_TDX_BACKEND=1", "-lazguestattestation", "-lcurl"]
     elif backend == "GCP_TDX":
-        flags += ["-DSGX_RA_TLS_GCP_TDX_BACKEND=1"]
+        flags += ["-DSGX_RA_TLS_GCP_TDX_BACKEND=1", "-lcurl"]
     else:
         flags += ["-DSGX_RA_TLS_DUMMY_BACKEND=1"]
         pass

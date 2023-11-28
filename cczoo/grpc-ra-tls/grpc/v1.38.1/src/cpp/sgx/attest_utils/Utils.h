@@ -11,6 +11,13 @@
 #define AMBER_API_KEY_NAME "AMBER_API_KEY"
 
 namespace Utils {
+    inline std::string base64_encode(const std::string& data) {
+        using namespace boost::archive::iterators;
+        using It = base64_from_binary<transform_width<std::string::const_iterator, 6, 8>>;
+        auto tmp = std::string(It(std::begin(data)), It(std::end(data)));
+        return tmp.append((3 - data.size() % 3) % 3, '=');
+    }
+
     inline std::string base64_decode(const std::string& data) {
         using namespace boost::archive::iterators;
         using It = transform_width<binary_from_base64<std::string::const_iterator>, 8, 6>;

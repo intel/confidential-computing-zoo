@@ -90,19 +90,19 @@ container_ipaddr=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAd
 docker exec -it -e container_ipaddr=${container_ipaddr} ${container_id} bash
 ```
 
-From the container, modify `/etc/azure_tdx_config.json` to configure the attestation verifier service parameters.
+From the container, modify `/etc/attest_config.json` to configure the attestation verifier service parameters.
 
-To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/azure_tdx_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your project amber api key"`:
+To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/attest_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your intel trust authority api key"`:
 
 ```bash
 {
-  "attestation_url": "https://api.projectamber.intel.com/appraisal/v1/attest",
-  "attestation_provider": "amber",
-  "api_key": "your project amber api key"
+  "attestation_url": "https://api.trustauthority.intel.com/appraisal/v1/attest",
+  "attestation_provider": "ita",
+  "api_key": "your intel trust authority api key"
 }
 ```
 
-To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/azure-attestation), modify `/etc/azure_tdx_config.json` as follows (an API key is not required):
+To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/azure-attestation), modify `/etc/attest_config.json` as follows (an API key is not required):
 
 ```bash
 {
@@ -142,19 +142,19 @@ container_id=$(./start_container.sh ${image_id})
 docker exec -it -e server_public_ipaddr=${server_public_ipaddr} ${container_id} bash
 ```
 
-From the container, modify `/etc/azure_tdx_config.json` to configure the attestation verifier service parameters.
+From the container, modify `/etc/attest_config.json` to configure the attestation verifier service parameters.
 
-To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/azure_tdx_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your project amber api key"`:
+To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/attest_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your intel trust authority api key"`:
 
 ```bash
 {
-  "attestation_url": "https://api.projectamber.intel.com/appraisal/v1/attest",
-  "attestation_provider": "amber",
-  "api_key": "your project amber api key"
+  "attestation_url": "https://api.trustauthority.intel.com/appraisal/v1/attest",
+  "attestation_provider": "ita",
+  "api_key": "your intel trust authority api key"
 }
 ```
 
-To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/azure-attestation), modify `/etc/azure_tdx_config.json` as follows (an API key is not required):
+To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/azure-attestation), modify `/etc/attest_config.json` as follows (an API key is not required):
 
 ```bash
 {
@@ -210,6 +210,19 @@ container_id=$(./start_container.sh ${image_id})
 container_ipaddr=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${container_id})
 docker exec -it -e container_ipaddr=${container_ipaddr} ${container_id} bash
 ```
+
+From the container, modify `/etc/attest_config.json` to configure the attestation verifier service parameters.
+
+To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/attest_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your intel trust authority api key"`:
+
+```bash
+{
+  "attestation_url": "https://api.trustauthority.intel.com/appraisal/v1/attest",
+  "attestation_provider": "ita",
+  "api_key": "your intel trust authority api key"
+}
+```
+
 Run the C++ server OR the Python server:
 
 For C++:
@@ -238,6 +251,18 @@ image_id=grpc-ra-tls:gcp_tdx_latest
 server_public_ipaddr=x.x.x.x
 container_id=$(./start_container.sh ${image_id})
 docker exec -it -e server_public_ipaddr=${server_public_ipaddr} ${container_id} bash
+```
+
+From the container, modify `/etc/attest_config.json` to configure the attestation verifier service parameters.
+
+To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/attest_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your intel trust authority api key"`:
+
+```bash
+{
+  "attestation_url": "https://api.trustauthority.intel.com/appraisal/v1/attest",
+  "attestation_provider": "ita",
+  "api_key": "your intel trust authority api key"
+}
 ```
 
 Run the C++ client OR the Python client:

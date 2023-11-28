@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libtdx-attest libtdx-attest-dev \
 # required for bazel setup
         unzip \
-# required for Azure confidential-computing-cvm-guest-attestation
+# required for attestation client
         libjsoncpp-dev libboost-all-dev libssl1.1 tpm2-tools \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -74,7 +74,7 @@ RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
 
 COPY grpc/common ${GRPC_VERSION_PATH}
 COPY grpc/${GRPC_VERSION} ${GRPC_VERSION_PATH}
-COPY grpc/common/azure_tdx_config.json /etc
+COPY grpc/common/attest_config.json /etc
 
 # Install Python dependencies
 RUN pip3 install --upgrade --no-cache-dir \
