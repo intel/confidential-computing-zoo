@@ -46,6 +46,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libtdx-attest libtdx-attest-dev \
 # required for bazel setup
         unzip \
+# required for attesation client
+        libboost-all-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -87,18 +89,15 @@ RUN wget https://go.dev/dl/go1.20.10.linux-amd64.tar.gz \
 && tar -C /usr/local -xzf go1.20.10.linux-amd64.tar.gz
 ENV PATH "/usr/local/go/bin:${PATH}"
 
-WORKDIR /
-RUN git clone https://github.com/google/go-tdx-guest
-WORKDIR /go-tdx-guest
+# Patch and build go-tdx-guest tools
+ENV GO_TDX_GUEST_ROOT=/go-tdx-guest
+WORKDIR ${GO_TDX_GUEST_ROOT}
+RUN git clone https://github.com/google/go-tdx-guest ${GO_TDX_GUEST_ROOT}
 RUN git checkout a4967e4b97948af7099e037644fca8370d6cd9e9
-
+COPY go-tdx-guest/client ${GO_TDX_GUEST_ROOT}/client
 WORKDIR /go-tdx-guest/tools/attest
 RUN go build attest.go
 ENV PATH=$PATH:/go-tdx-guest/tools/attest
-
-WORKDIR /go-tdx-guest/tools/check
-RUN go build check.go
-ENV PATH=$PATH:/go-tdx-guest/tools/check
 
 # Build and install TensorFlow
 WORKDIR ${TF_BUILD_PATH}
@@ -112,7 +111,7 @@ WORKDIR /hfl-tensorflow
 COPY hfl-tensorflow /hfl-tensorflow
 RUN wget -q https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz
 
-COPY sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf
+COPY attest_config.json /etc
 COPY luks_tools /luks_tools
 
 # Disable apport
