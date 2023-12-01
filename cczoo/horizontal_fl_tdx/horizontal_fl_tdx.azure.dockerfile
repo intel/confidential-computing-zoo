@@ -46,8 +46,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libtdx-attest libtdx-attest-dev \
 # required for bazel setup
         unzip \
-# required for Azure confidential-computing-cvm-guest-attestation
-        libjsoncpp-dev libboost-all-dev libssl1.1 \
+# required for attestation client
+        libjsoncpp-dev libboost-all-dev libssl1.1 tpm2-tools \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Azure confidential-computing-cvm-guest-attestation
@@ -101,8 +101,7 @@ WORKDIR /hfl-tensorflow
 COPY hfl-tensorflow /hfl-tensorflow
 RUN wget -q https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz && tar -xvzf cifar-10-binary.tar.gz
 
-COPY sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf
-COPY azure/azure_tdx_config.json /etc
+COPY attest_config.json /etc
 COPY luks_tools /luks_tools
 
 # Disable apport

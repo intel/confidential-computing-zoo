@@ -180,19 +180,19 @@ From each container, configure attestation parameters.
 
 #### Azure Deployments
 
-From each container, modify `/etc/azure_tdx_config.json` to configure the attestation verifier service parameters.
+From each container, modify `/etc/attest_config.json` to configure the attestation verifier service parameters.
 
-To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/azure_tdx_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your project amber api key"`:
+To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/attest_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your intel trust authority api key"`:
 
 ```bash
 {
-  "attestation_url": "https://api.projectamber.intel.com/appraisal/v1/attest",
-  "attestation_provider": "amber",
-  "api_key": "your project amber api key"
+  "attestation_url": "https://api.trustauthority.intel.com/appraisal/v1/attest",
+  "attestation_provider": "ita",
+  "api_key": "your intel trust authority api key"
 }
 ```
 
-To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/azure-attestation), modify `/etc/azure_tdx_config.json` as follows (an API key is not required):
+To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/azure-attestation), modify `/etc/attest_config.json` as follows (an API key is not required):
 
 ```bash
 {
@@ -204,7 +204,17 @@ To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/
 
 #### Google Cloud Deployments
 
-For Google Cloud deployments, it is not necessary to configure any attestation parameters.
+From each container, modify `/etc/attest_config.json` to configure the attestation verifier service parameters.
+
+To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/attest_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your intel trust authority api key"`:
+
+```bash
+{
+  "attestation_url": "https://api.trustauthority.intel.com/appraisal/v1/attest",
+  "attestation_provider": "ita",
+  "api_key": "your intel trust authority api key"
+}
+```
 
 #### Default Cloud Deployments
 

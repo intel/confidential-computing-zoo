@@ -35,16 +35,15 @@ RUN wget https://go.dev/dl/go1.20.10.linux-amd64.tar.gz \
 && tar -C /usr/local -xzf go1.20.10.linux-amd64.tar.gz
 ENV PATH "/usr/local/go/bin:${PATH}"
 
-WORKDIR /
-RUN git clone https://github.com/google/go-tdx-guest
+# Patch and build go-tdx-guest tools
+ENV GO_TDX_GUEST_ROOT=/go-tdx-guest
+WORKDIR ${GO_TDX_GUEST_ROOT}
+RUN git clone https://github.com/google/go-tdx-guest ${GO_TDX_GUEST_ROOT}
+RUN git checkout a4967e4b97948af7099e037644fca8370d6cd9e9
+COPY go-tdx-guest/client ${GO_TDX_GUEST_ROOT}/client
 WORKDIR /go-tdx-guest/tools/attest
 RUN go build attest.go
 ENV PATH=$PATH:/go-tdx-guest/tools/attest
-
-WORKDIR /go-tdx-guest/tools/check
-RUN go build check.go
-ENV PATH=$PATH:/go-tdx-guest/tools/check
-
 
 WORKDIR /dcap
 RUN wget https://download.01.org/intel-sgx/sgx-dcap/1.19/linux/distro/ubuntu20.04-server/sgx_debian_local_repo.tgz \
@@ -62,6 +61,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libtdx-attest libtdx-attest-dev \
 # required for bazel setup
         unzip \
+# required for attesation client
+        libboost-all-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 
@@ -84,6 +85,7 @@ RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
 
 COPY grpc/common ${GRPC_VERSION_PATH}
 COPY grpc/${GRPC_VERSION} ${GRPC_VERSION_PATH}
+COPY grpc/common/attest_config.json /etc
 
 # Install Python dependencies
 RUN pip3 install --upgrade --no-cache-dir \

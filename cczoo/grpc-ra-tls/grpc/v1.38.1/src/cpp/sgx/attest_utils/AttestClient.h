@@ -36,16 +36,18 @@ namespace AttestClient {
     // checks where we are sending the request
     std::stringstream stream;
     if (Utils::case_insensitive_compare(attestation_type, "maa")) {
-      stream << "{\"quote\":\"" << encoded_quote << "\"}";
+      stream << "{\"quote\":\"" << encoded_quote
+             << "\",\"runtimeData\":{\"data\":\""
+             << encoded_claims << "\",\"dataType\":\"JSON\"}}";
     }
-    else if (Utils::case_insensitive_compare(attestation_type, "amber")) {
+    else if (Utils::case_insensitive_compare(attestation_type, "ita")) {
       std::string api_key_header = "x-api-key:" + config.api_key;
       headers.push_back(api_key_header.c_str());
       stream << "{\"quote\":\"" << Utils::base64url_to_base64(encoded_quote) << "\"";
 
-      // if (!encoded_claims.empty()) {
-      //   stream << ",\"user_data\":\"" << Utils::base64url_to_base64(encoded_claims) << "\"";
-      // }
+      if (!encoded_claims.empty()) {
+        stream << ",\"runtime_data\":\"" << Utils::base64url_to_base64(encoded_claims) << "\"";
+      }
       stream << "}";
     }
     else {

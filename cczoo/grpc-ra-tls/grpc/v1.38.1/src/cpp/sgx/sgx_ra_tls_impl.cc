@@ -175,6 +175,7 @@ int verify_pubkey_hash(X509 *x509, uint8_t *pubkey_hash, uint32_t hash_size) {
     SHA256_Final(hash, &sha256);
 
     // grpc_printf("hash size: %u, %u, %u\n", hash_size, sizeof(hash), sizeof(pubkey_hash));
+    print_hex_dump("\nInfo: Public key hash from X509 cert:\n", " ", hash, hash_size);
 
     ret = memcmp(hash, pubkey_hash, hash_size);
     return ret;
