@@ -33,7 +33,7 @@ def run(args):
     user_a = stub.SayHello(ratls_pb2.HelloRequest(name='a'))
     user_b = stub.SayHello(ratls_pb2.HelloRequest(name='b'))
 
-    print("Greeter client received: ", user_a.message, user_b.message)
+    print("Greeter received:", user_a.message, user_b.message)
 
     channel.close()
 
@@ -44,7 +44,7 @@ def command_arguments():
         '--host',
         type=str,
         required=False,
-        default='localhost:50051',
+        default='localhost:8500',
         help='The server socket address.'
     )
     parser.add_argument(

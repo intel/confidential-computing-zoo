@@ -1,0 +1,32 @@
+From 623f39f5cd3612930c5b0b454c6effaf07c503d4 Mon Sep 17 00:00:00 2001
+From: "Wang, Yi A" <yi.a.wang@intel.com>
+Date: Mon, 15 May 2023 01:46:02 -0700
+Subject: [PATCH 5/5] add ipex pipeline optimization
+
+Signed-off-by: Wang, Yi A <yi.a.wang@intel.com>
+---
+ haystack/nodes/prompt/invocation_layer/hugging_face.py | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/haystack/nodes/prompt/invocation_layer/hugging_face.py b/haystack/nodes/prompt/invocation_layer/hugging_face.py
+index ad3eb829..aad462dc 100644
+--- a/haystack/nodes/prompt/invocation_layer/hugging_face.py
++++ b/haystack/nodes/prompt/invocation_layer/hugging_face.py
+@@ -133,6 +133,14 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
+         # create the transformer pipeline
+         self.pipe: Pipeline = pipeline(**pipeline_kwargs)
+ 
++        if kwargs.get("use_ipex") is True:
++            from optimum.intel import inference_mode as ipex_inference_mode
++
++            with ipex_inference_mode(
++                self.pipe, dtype=pipeline_kwargs["torch_dtype"], jit=True
++            ) as optimum_intel_generator:
++                self.pipe = optimum_intel_generator
++
+         # This is how the default max_length is determined for Text2TextGenerationPipeline shown here
+         # https://huggingface.co/transformers/v4.6.0/_modules/transformers/pipelines/text2text_generation.html
+         # max_length must be set otherwise HFLocalInvocationLayer._ensure_token_limit will fail.
+-- 
+2.31.1
+

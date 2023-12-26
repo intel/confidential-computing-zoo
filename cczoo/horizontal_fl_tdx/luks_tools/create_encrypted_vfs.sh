@@ -34,3 +34,5 @@ losetup ${LOOP_DEVICE} ${VIRTUAL_FS}
 
 # encrypt loop device in luks format, press "YES"
 cryptsetup --debug -y -v luksFormat -s 512 -c aes-xts-plain64 ${LOOP_DEVICE}
+
+echo "LOOP_DEVICE=${LOOP_DEVICE}"

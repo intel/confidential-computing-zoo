@@ -98,7 +98,7 @@ std::vector<std::string> generate_key_cert(
     }
 
     int nid = OBJ_create("1.2.840.113741.1", RA_TLS_SHORT_NAME, RA_TLS_LONG_NAME);
-    ASN1_OBJECT* obj = OBJ_nid2obj(nid);
+    const ASN1_OBJECT* obj = OBJ_nid2obj(nid);
     ASN1_OCTET_STRING* data = ASN1_OCTET_STRING_new();
     ASN1_OCTET_STRING_set(data, quote_buf, quote_size);
 

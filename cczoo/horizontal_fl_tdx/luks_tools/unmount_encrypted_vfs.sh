@@ -17,18 +17,10 @@
 set -ex
 
 if  [ -n "$1" ] ; then
-    VIRTUAL_FS=$1
-else
-    VIRTUAL_FS=/root/vfs
-fi
-echo ${VIRTUAL_FS}
-
-if  [ -n "$2" ] ; then
-    FS_DIR=$2
+    FS_DIR=$1
 else
     FS_DIR=model
 fi
 
-umount /hfl-tensorflow/${FS_DIR} || true
-# fuser -cuk /mnt/${FS_DIR} || true
-cryptsetup luksClose /dev/mapper/${FS_DIR} || true
+umount /hfl-tensorflow/model || { echo 'umount failed' ; exit 1; }
+cryptsetup luksClose /dev/mapper/${FS_DIR} || { echo 'luksClose operation failed' ; exit 1; }

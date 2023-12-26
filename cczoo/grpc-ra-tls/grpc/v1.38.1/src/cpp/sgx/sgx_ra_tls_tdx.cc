@@ -16,29 +16,57 @@
  *
  */
 
-#ifdef SGX_RA_TLS_TDX_BACKEND
-
-#define devname "/dev/tdx-attest"
+#if defined(SGX_RA_TLS_TDX_BACKEND) || defined (SGX_RA_TLS_AZURE_TDX_BACKEND) || defined (SGX_RA_TLS_GCP_TDX_BACKEND)
 
 #include <grpcpp/security/sgx/sgx_ra_tls_backends.h>
 #include <grpcpp/security/sgx/sgx_ra_tls_impl.h>
-
 #include <stdio.h>
 #include <vector>
 #include <string>
 #include <assert.h>
 #include <fstream>
 #include <cstring>
-#include "sgx_urts.h"
 
+#ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
+#include <azguestattestation1/AttestationClient.h>
+#include <nlohmann/json.hpp>
+#include <chrono>
+#include "azure_tdx/Utils.h"
+#include "azure_tdx/Logger.h"
+#include "azure_tdx/AttestClient.h"
+#include "azure_tdx/HttpClient.h"
+#endif
+
+#ifdef SGX_RA_TLS_GCP_TDX_BACKEND
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <sstream>
+#include <iomanip>
+#include <vector>
+using namespace std;
+typedef unsigned char BYTE;
+#endif
+
+#ifdef SGX_RA_TLS_TDX_BACKEND
+#include "sgx_urts.h"
+#endif
 
 namespace grpc {
 namespace sgx {
 
+#include <tdx_attest.h>
+
+#ifdef SGX_RA_TLS_TDX_BACKEND
 #include <sgx_ql_quote.h>
 #include <sgx_dcap_quoteverify.h>
+#endif
 
-#include <tdx_attest.h>
+#ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
+using json = nlohmann::json;
+using namespace std;
+using namespace std::chrono;
+#endif
 
 const uint8_t g_att_key_id_list[256] = {0};
 
@@ -49,6 +77,413 @@ static void tdx_gen_report_data(uint8_t *reportdata) {
     }
 }
 
+void tdx_verify_init() {
+    generate_key_cert(dummy_generate_quote);
+};
+
+ra_tls_measurement tdx_parse_measurement(const char *der_crt, size_t len) {
+    // TODO
+    return ra_tls_measurement();
+}
+
+static void deleteFiles(const std::vector<std::string>& filenames) {
+    // Loop through the array of filenames and delete each file
+    for (const std::string& filename : filenames)
+        // Silently delete files
+        std::remove(filename.c_str());
+}
+
+#ifdef SGX_RA_TLS_AZURE_TDX_BACKEND
+static int tdx_generate_quote(
+        uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash) {
+
+  int ret = 0; // error
+
+  try {
+    AttestationClient *attestation_client = nullptr;
+    Logger *log_handle = new Logger();
+
+    // Initialize attestation client
+    if (!Initialize(log_handle, &attestation_client)) {
+      grpc_fprintf(stderr, "Failed to create attestation client object\n\n");
+      Uninitialize();
+      return(ret);
+    }
+    attest::AttestationResult result;
+
+    auto start = high_resolution_clock::now();
+
+    unsigned char *evidence = nullptr;
+    result = attestation_client->GetHardwarePlatformEvidence(&evidence);
+
+    auto stop = high_resolution_clock::now();
+    duration<double, std::milli> elapsed = stop - start;
+
+    if (result.code_ != attest::AttestationResult::ErrorCode::SUCCESS) {
+      grpc_fprintf(stderr, "Failed to get quote\n\n");
+      Uninitialize();
+      return(ret);
+    }
+
+    std::string quote_data;
+    quote_data = reinterpret_cast<char *>(evidence);
+
+    // Parses the returned json response
+    json json_response = json::parse(quote_data);
+
+    std::string encoded_quote = json_response["quote"];
+    if (encoded_quote.empty()) {
+      result.code_ = attest::AttestationResult::ErrorCode::ERROR_EMPTY_TD_QUOTE;
+      result.description_ = std::string("Empty Quote received from IMDS Quote Endpoint");
+      Uninitialize();
+      return(ret);
+    }
+
+    // decode the base64url encoded quote to raw bytes
+    std::vector<unsigned char> quote_bytes = Utils::base64url_to_binary(encoded_quote);
+
+    quote_size = quote_bytes.size();
+    *quote_buf = (uint8_t *)realloc(*quote_buf, quote_size+SHA256_DIGEST_LENGTH);
+    memcpy(*quote_buf, (uint8_t *)quote_bytes.data(), quote_size);
+    memcpy((*quote_buf)+quote_size, hash, SHA256_DIGEST_LENGTH);
+    quote_size += SHA256_DIGEST_LENGTH;
+
+    print_hex_dump("tdx_generate_quote: TDX quote data\n", " ", *quote_buf, quote_size);
+
+    Uninitialize();
+
+    ret = 1; // success
+  }
+  catch (std::exception &e) {
+    cout << "Exception occured. Details - " << e.what() << endl;
+    return(ret);
+  }
+
+  return(ret);
+};
+
+int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
+  int ret = -1; // error
+
+  try {
+    std::string config_filename = "/etc/azure_tdx_config.json";
+
+    // set attestation request based on config file
+    std::ifstream config_file(config_filename);
+    json config;
+    if (config_file.is_open()) {
+      config = json::parse(config_file);
+      config_file.close();
+    } else {
+        grpc_fprintf(stderr, "Failed to open config file\n\n");
+        return(ret);
+    }
+
+    std::string attestation_url;
+    if (!config.contains("attestation_url")) {
+      grpc_fprintf(stderr, "Attestation_url is missing\n\n");
+      return(ret);
+    }
+    attestation_url = config["attestation_url"];
+
+    std::string api_key;
+    if (config.contains("api_key")) {
+      api_key = config["api_key"];
+    }
+
+    bool metrics_enabled = false;
+    if (config.contains("enable_metrics")) {
+      metrics_enabled = config["enable_metrics"];
+    }
+
+    std::string provider;
+    if (!config.contains("attestation_provider")) {
+      grpc_fprintf(stderr, "Attestation_provider is missing\n\n");
+      return(ret);
+    }
+    provider = config["attestation_provider"];
+
+    if (!Utils::case_insensitive_compare(provider, "amber") &&
+        !Utils::case_insensitive_compare(provider, "maa")) {
+      grpc_fprintf(stderr, "Attestation provider was incorrect\n\n");
+      return(ret);
+    }
+
+    std::map<std::string, std::string> hash_type;
+    hash_type["maa"] = "sha256";
+    hash_type["amber"] = "sha512";
+
+    // check for user claims
+    std::string client_payload;
+    json user_claims = config["claims"];
+    if (!user_claims.is_null()) {
+      client_payload = user_claims.dump();
+    }
+
+    // if attesting with Amber, we need to make sure an API token was provided
+    if (api_key.empty() && Utils::case_insensitive_compare(provider, "amber")) {
+      grpc_fprintf(stderr, "Attestation endpoint \"api_key\" value missing\n\n");
+      return(ret);
+    }
+
+    print_hex_dump("tdx_verify_quote: TDX quote data\n", " ", quote_buf, quote_size);
+
+    std::vector<unsigned char> quote_vector(quote_buf, quote_buf + quote_size);
+    std::string encoded_quote = Utils::binary_to_base64url(quote_vector);
+
+    // For now, pass empty claim
+    std::string json_claims = "{}";
+    std::vector<unsigned char> claims_vector(json_claims.begin(), json_claims.end());
+    std::string encoded_claims = Utils::binary_to_base64url(claims_vector);
+
+    HttpClient http_client;
+    AttestClient::Config attestation_config = {
+        attestation_url,
+        provider,
+        encoded_quote,
+        encoded_claims,
+        api_key};
+
+    auto start = high_resolution_clock::now();
+    std::string jwt_token = AttestClient::VerifyEvidence(attestation_config, http_client);
+    auto stop = high_resolution_clock::now();
+    duration<double, std::milli> token_elapsed = stop - start;
+
+    if (jwt_token.empty()) {
+      fprintf(stderr, "Empty token received\n");
+      return(ret);
+    }
+
+    grpc_printf("Info: App: Verification completed successfully.\n");
+
+    ret = 0; // success
+  }
+  catch (std::exception &e) {
+    cout << "Exception occured. Details - " << e.what() << endl;
+    return(ret);
+  }
+
+  return(ret);
+};
+
+int tdx_verify_cert(const char *der_crt, size_t len) {
+    int ret = 0;
+    uint32_t quote_size = 0;
+    uint8_t *quote_buf = nullptr;
+
+    BIO *bio = BIO_new(BIO_s_mem());
+    BIO_write(bio, der_crt, len);
+    X509 *x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+    if (!x509) {
+        grpc_printf("parse the crt failed.\n");
+        goto out;
+    }
+
+    ret = parse_quote(x509, &quote_buf, quote_size);
+    if (ret != 0) {
+        grpc_printf("parse quote failed.\n");
+        goto out;
+    }
+
+    ret = tdx_verify_quote(quote_buf, quote_size-SHA256_DIGEST_LENGTH);
+    if (ret != 0) {
+        grpc_printf("verify quote failed.\n");
+        goto out;
+    }
+
+    ret = verify_pubkey_hash(x509, quote_buf+quote_size-SHA256_DIGEST_LENGTH, SHA256_DIGEST_LENGTH);
+    if (ret != 0) {
+        grpc_printf("verify the public key hash failed.\n");
+        goto out;
+    }
+
+    // ret = verify_measurement((const char *)&p_rep_body->mr_enclave,
+    //                          (const char *)&p_rep_body->mr_signer,
+    //                          (const char *)&p_rep_body->isv_prod_id,
+    //                          (const char *)&p_rep_body->isv_svn);
+
+out:
+    BIO_free(bio);
+    return ret;
+}
+#endif // SGX_RA_TLS_AZURE_TDX_BACKEND
+
+#ifdef SGX_RA_TLS_GCP_TDX_BACKEND
+static int tdx_generate_quote(
+         uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash) {
+
+  int ret = 0; // error
+
+  try {
+    // Converting hash to hex format
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+
+    for (size_t i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+        oss << std::setw(2) << static_cast<int>(hash[i]);
+    }
+
+    // Forming the quote creation command that takes hash as an input
+    std::ostringstream attest_cmd;
+    attest_cmd << "attest -in " << oss.str() << " -out quote.dat";
+    std::string attest_cmd_with_hash = attest_cmd.str();
+    cout << attest_cmd_with_hash << endl;
+    uint8_t ret_code = system(attest_cmd_with_hash.c_str());
+
+    if (ret_code == 0) {
+        cout << "attest command executed successfully" << endl;
+    }
+    else {
+        cout << "attest command execution failed or returned "
+        "non-zero: " << ret_code << endl;
+        return(ret);
+    }
+
+    // Removing extra padding to decrease size
+    const char* sed_cmd = "sed \"$ s/\\x00*$//\" quote.dat > truncated_quote.dat";
+    uint8_t status = system(sed_cmd);
+    std::vector<std::string> fileArray = {"quote.dat"};
+    deleteFiles(fileArray);
+
+    if (status != 0) {
+        std::cerr << "Error executing sed command." << std::endl;
+	return(ret);
+    }
+
+    // Open the .dat file in binary mode
+    std::ifstream file("truncated_quote.dat", std::ios::binary);
+
+    // Check if the file is opened successfully
+    if (!file.is_open()) {
+        std::cerr << "Error opening file" << std::endl;
+        return(ret) ;
+    }
+
+    // Seek to the end of the file to determine its size
+    file.seekg(0, std::ios::end);
+    std::streampos fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    // Create a vector to hold the data
+    cout << fileSize << endl;
+    std::vector<unsigned char> data(fileSize);
+
+    // Read the data from the file into the vector
+    file.read(reinterpret_cast<char*>(data.data()), fileSize);
+
+    // Check if the read operation was successful
+    if (!file) {
+        std::cerr << "Error reading file" << std::endl;
+        return(ret);
+    }
+
+    // Close the file
+    file.close();
+    fileArray = {"truncated_quote.dat"};
+    deleteFiles(fileArray);
+
+    quote_size = data.size();
+    cout << "quote_size " << quote_size << endl;
+    *quote_buf = (uint8_t *)realloc(*quote_buf, quote_size);
+    memcpy(*quote_buf, (uint8_t *)data.data(), quote_size);
+
+    print_hex_dump("tdx_generate_quote: TDX quote data\n", " ", *quote_buf, quote_size);
+
+    ret = 1; // success
+  }
+  catch (std::exception &e) {
+    cout << "Exception occured. Details - " << e.what() << endl;
+    return(ret);
+  }
+
+  return(ret);
+};
+
+int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
+  int ret = -1; //error
+
+  try {
+    std::ofstream file("extract_quote.dat", std::ios::binary);
+
+    // Check if the file is opened successfully
+    if (!file.is_open()) {
+        std::cerr << "Error opening file" << std::endl;
+        return(ret);
+    }
+
+    // Write the data to the file
+    file.write(reinterpret_cast<const char*>(quote_buf), quote_size);
+
+    // Check if the write operation was successful
+    if (!file) {
+        std::cerr << "Error writing to file" << std::endl;
+        return(ret);
+    }
+
+    // Close the file
+    file.close();
+
+    std::string verify_cmd = "check -in extract_quote.dat -verbosity 10";
+    uint8_t ret_code = system(verify_cmd.c_str());
+    std::vector<std::string> fileArray = {"extract_quote.dat"};
+    deleteFiles(fileArray);
+
+    if (ret_code != 0) {
+        cout << "verify command execution failed or returned "
+        "non-zero: " << ret_code << endl;
+	cout << "quote verification failed\n" << endl;
+        return(ret);
+    }
+
+    cout << "quote verified\n" << endl;
+    ret = 0; // success
+   }
+   catch (std::exception &e) {
+     cout << "Exception occured. Details - " << e.what() << endl;
+     return(ret);
+   }
+
+   return ret;
+};
+
+int tdx_verify_cert(const char *der_crt, size_t len) {
+    int ret = 0;
+    uint32_t quote_size = 0;
+    uint8_t *quote_buf = nullptr;
+
+    BIO *bio = BIO_new(BIO_s_mem());
+    BIO_write(bio, der_crt, len);
+    X509 *x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+    if (!x509) {
+        grpc_printf("parse the crt failed.\n");
+        goto out;
+    }
+
+    ret = parse_quote(x509, &quote_buf, quote_size);
+    if (ret != 0) {
+        grpc_printf("parse quote failed.\n");
+        goto out;
+    }
+
+    ret = tdx_verify_quote(quote_buf, quote_size);
+    if (ret != 0) {
+        grpc_printf("verify quote failed.\n");
+        goto out;
+    }
+
+
+    // ret = verify_measurement((const char *)&p_rep_body->mr_enclave,
+    //                          (const char *)&p_rep_body->mr_signer,
+    //                          (const char *)&p_rep_body->isv_prod_id,
+    //                          (const char *)&p_rep_body->isv_svn);
+
+out:
+    BIO_free(bio);
+    return ret;
+}
+#endif // SGX_RA_TLS_GCP_TDX_BACKEND
+
+#ifdef SGX_RA_TLS_TDX_BACKEND
 static int tdx_generate_quote(
         uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash) {
     int ret = -1;
@@ -81,18 +516,6 @@ static int tdx_generate_quote(
 
     // printf("tdx_generate_quote, sizeof %d, quote_size %d\n", sizeof(*quote_buf), quote_size);
     return ret;
-};
-
-std::vector<std::string> tdx_generate_key_cert() {
-    return generate_key_cert(tdx_generate_quote);
-}
-
-int tdx_parse_quote(X509 *x509, uint8_t **quote, uint32_t &quote_size) {
-    return parse_quote(x509, quote, quote_size);
-};
-
-void tdx_verify_init() {
-    generate_key_cert(dummy_generate_quote);
 };
 
 int tdx_verify_quote(uint8_t *quote_buf, size_t quote_size) {
@@ -195,7 +618,7 @@ int tdx_verify_cert(const char *der_crt, size_t len) {
         goto out;
     }
 
-    ret = tdx_parse_quote(x509, &quote_buf, quote_size);
+    ret = parse_quote(x509, &quote_buf, quote_size);
     if (ret != 0) {
         grpc_printf("parse quote failed.\n");
         goto out;
@@ -222,13 +645,13 @@ out:
     BIO_free(bio);
     return ret;
 }
+#endif // SGX_RA_TLS_TDX_BACKEND
 
-ra_tls_measurement tdx_parse_measurement(const char *der_crt, size_t len) {
-    // TODO
-    return ra_tls_measurement();
+std::vector<std::string> tdx_generate_key_cert() {
+    return generate_key_cert(tdx_generate_quote);
 }
 
 } // namespace sgx
 } // namespace grpc
 
-#endif // SGX_RA_TLS_TDX_BACKEND
+#endif // SGX_RA_TLS_TDX_BACKEND || SGX_RA_TLS_AZURE_TDX_BACKEND
