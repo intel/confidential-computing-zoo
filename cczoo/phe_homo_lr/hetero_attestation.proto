@@ -1,0 +1,93 @@
+syntax = "proto3"; 
+package attestation;
+
+message RunStatus {
+  bool error = 1;
+  string msg = 2;
+}
+
+message RegisterNodeRequest {
+  string node_id = 1;
+  bytes csr_content = 2;
+}
+
+message RegisterNodeResponse {
+  string node_id = 1;
+  bytes node_cert = 2;
+  bytes ca_cert = 3;
+  RunStatus status = 4;
+}
+
+message HeteroAttestationRequest {
+  string attest_id = 1;
+  bytes nonce = 2;
+  string node_id = 3;
+  bytes report = 4;
+}
+
+message HeteroAttestationResponse {
+  string verify_result = 1;
+  string tee_proof = 2;
+  string signature = 3;
+  bytes nonce = 4;
+  RunStatus status = 5;
+}
+
+message TeeAttestationRequest {
+  string tee_proof = 1;
+  bytes nonce = 2;
+  string platform = 3;
+  string policy = 4;
+  string tee_node_id = 5;
+  string attest_id = 6;
+  string challenger_node_id = 7;
+  bytes tee_node_cert = 8;
+}
+
+message TeeAttestationResponse {
+  string verify_result = 1;
+  string platform = 2;
+  bytes ca_cert = 3; 
+  string service_digest = 4;
+  bytes nonce = 5;
+  RunStatus status = 6;
+}
+
+message InnerVerifyRequest {
+  string proof = 1;
+  string policy = 2;
+  bytes public_key = 3;
+}
+
+message InnerVerifyResponse {
+  bool verify_result = 1;
+}
+
+message TargetInfoRequest {
+  string name = 1; 
+}
+
+message TargetInfoResponse {
+  bytes qe_target_info = 1;
+}
+
+service CenterService {
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse); 
+  rpc VerifyTeeProof(TeeAttestationRequest) returns (TeeAttestationResponse);
+};
+
+service VerifyService {
+  rpc Verify(InnerVerifyRequest) returns (InnerVerifyResponse);
+};
+
+service TeeNodeService {
+  rpc IssueRemoteAttestation(HeteroAttestationRequest) returns (HeteroAttestationResponse);
+};
+
+service TransmitService {
+  rpc TransmitAttestationRequest(HeteroAttestationRequest) returns (HeteroAttestationResponse);
+};
+
+service TargetInfoService {
+  rpc GetQETargetInfo(TargetInfoRequest) returns (TargetInfoResponse);
+};

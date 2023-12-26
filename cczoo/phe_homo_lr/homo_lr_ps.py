@@ -16,12 +16,19 @@
 import pickle
 import argparse
 import grpc
+import os
+import sys
+import secrets
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor as Executor
 from ipcl_python import PaillierKeypair
 import homo_lr_pb2
 import homo_lr_pb2_grpc
+from hetero_attestation_pb2 import TargetInfoRequest
+from hetero_attestation_pb2 import TargetInfoResponse
+from hetero_attestation_pb2 import HeteroAttestationRequest
+import hetero_attestation_pb2_grpc
 
 class HomoLRHost(object):
   def __init__(self, key_length, worker_num, secure):
@@ -125,16 +132,81 @@ def parse_dataset(dataset):
   y = data_array[:, 1].astype('int32')
   return x, y
 
+class HeteroAttestationTransmit(hetero_attestation_pb2_grpc.TransmitService):
+    def TransmitAttestationRequest(self, request):
+        # 1.Request the qe_target_info. 
+        channel = grpc.insecure_channel("172.21.1.64:40070")
+        stub = hetero_attestation_pb2_grpc.TargetInfoServiceStub(channel)
+        target_info_request = TargetInfoRequest(name = "homo_lr_in_gramine")
+        target_info_response = stub.GetQETargetInfo(target_info_request)
+        target_info = target_info_response.qe_target_info
+
+        # 2.Generate SGX report.
+        fd = os.open("/dev/attestation/target_info", os.O_WRONLY)
+        os.write(fd, target_info)
+        
+        nonce = secrets.token_bytes(nbytes = 10)
+        print(nonce.hex(), file = sys.stderr, flush = True)
+
+        fd = os.open("/dev/attestation/user_report_data", os.O_WRONLY)
+        os.write(fd, nonce)
+        
+        fd = os.open("/dev/attestation/report", os.O_RDONLY)
+        report = os.read(fd, 432)
+
+        # 3.Issue quote generation and verificatin to SGX node service.
+        request.report = report
+        stub = hetero_attestation_pb2_grpc.TeeNodeServiceStub()
+        response = stub.IssueRemoteAttestation(request)
+
+        # 4.Return verification result without any check.
+        return response
+
+# def run_attestation():
+#     # 1.Request the qe_target_info. 
+#     channel = grpc.insecure_channel("172.21.1.64:40070")
+#     stub = hetero_attestation_pb2_grpc.TargetInfoServiceStub(channel)
+#     target_info_request = TargetInfoRequest(name = "homo_lr_in_gramine")
+#     target_info_response = stub.GetQETargetInfo(target_info_request)
+#     target_info = target_info_response.qe_target_info
+# 
+#     # 2.Generate SGX report.
+#     fd = os.open("/dev/attestation/target_info", os.O_WRONLY)
+#     os.write(fd, target_info)
+#     
+#     nonce = secrets.token_bytes(nbytes = 10)
+#     print(nonce.hex(), file = sys.stderr, flush = True)
+# 
+#     fd = os.open("/dev/attestation/user_report_data", os.O_WRONLY)
+#     os.write(fd, nonce)
+#     
+#     fd = os.open("/dev/attestation/report", os.O_RDONLY)
+#     report = os.read(fd, 432)
+# 
+#     # 3.Issue quote generation and verificatin to SGX node service.
+#     request = HeteroAttestationRequest(attest_id = "test", 
+#                                        nonce = "test".encode("utf-8"), 
+#                                        node_id = "gramine", 
+#                                        report = report)
+#     stub = hetero_attestation_pb2_grpc.TeeNodeServiceStub(channel)
+#     response = stub.IssueRemoteAttestation(request)
+#     print(response, file = sys.stderr, flush = True)
+
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  parser.add_argument('--key-length', type=int, default=1024, help='Bit length of PHE key')
-  parser.add_argument('--worker-num', type=int, required=True, help='The numbers of workers in HFL')
-  parser.add_argument('--validate-set', help='CSV format validation data')
-  parser.add_argument('--secure', default=True, help='Enable PHE or not')
-  args = parser.parse_args()
-  server = grpc.server(Executor(max_workers=10))
-  servicer = AggregateServicer(args.key_length, args.worker_num, args.validate_set, args.secure)
-  homo_lr_pb2_grpc.add_HostServicer_to_server(servicer, server)
-  server.add_insecure_port('[::]:50051')
-  server.start()
-  server.wait_for_termination()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--key-length', type=int, default=1024, help='Bit length of PHE key')
+    parser.add_argument('--worker-num', type=int, required=True, help='The numbers of workers in HFL')
+    parser.add_argument('--validate-set', help='CSV format validation data')
+    parser.add_argument('--secure', default=True, help='Enable PHE or not')
+    args = parser.parse_args()
+    
+    server = grpc.server(Executor(max_workers=10))
+    servicer = AggregateServicer(args.key_length, args.worker_num, args.validate_set, args.secure)
+    homo_lr_pb2_grpc.add_HostServicer_to_server(servicer, server)
+
+    servicer = HeteroAttestationTransmit()
+    hetero_attestation_pb2_grpc.add_TransmitServiceServicer_to_server(servicer, server)
+
+    server.add_insecure_port('[::]:50051')
+    server.start()
+    server.wait_for_termination()

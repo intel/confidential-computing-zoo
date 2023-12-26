@@ -5,7 +5,7 @@ loader.preload = "file:{{ gramine.libos }}" # for compatibility with v1.0
 loader.entrypoint = "file:{{ gramine.libos }}"
 libos.entrypoint = "{{ entrypoint }}"
 
-loader.log_level = "{{ log_level }}"
+loader.log_level = "error"
 
 loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}:./"
 loader.env.PYTHONPATH = { passthrough = true }
@@ -16,37 +16,48 @@ loader.pal_internal_mem_size = "200M"
 
 sys.enable_sigterm_injection = true
 
-fs.mount.lib.type = "chroot"
-fs.mount.lib.path = "/lib"
-fs.mount.lib.uri = "file:{{ gramine.runtimedir() }}"
+fs.mounts = [
+  {type = "chroot", uri = "file:{{ gramine.runtimedir() }}", path = "/lib"},
+  {type = "chroot", uri = "file:{{ arch_libdir }}", path = "{{ arch_libdir }}"},
+  {type = "chroot", uri = "file:/usr", path ="/usr"},
+  {type = "chroot", uri = "file:{{ python.stdlib }}", path ="{{ python.stdlib }}"},
+  {type = "chroot", uri = "file:{{ python.distlib}}", path ="{{ python.distlib}}"},
+  {type = "chroot", uri = "file:/tmp", path ="/tmp"},
+  {type = "chroot", uri = "file:/etc", path ="/etc"},
+  {type = "chroot", uri = "file:/homo_lr", path ="/root/confidential-computing-zoo/cczoo/phe_homo_lr"}
+]
 
-fs.mount.lib2.type = "chroot"
-fs.mount.lib2.path = "{{ arch_libdir }}"
-fs.mount.lib2.uri = "file:{{ arch_libdir }}"
+# fs.mount.lib.type = "chroot"
+# fs.mount.lib.path = "/lib"
+# fs.mount.lib.uri = "file:{{ gramine.runtimedir() }}"
 
-fs.mount.usr.type = "chroot"
-fs.mount.usr.path = "/usr"
-fs.mount.usr.uri = "file:/usr"
+# fs.mount.lib2.type = "chroot"
+# fs.mount.lib2.path = "{{ arch_libdir }}"
+# fs.mount.lib2.uri = "file:{{ arch_libdir }}"
 
-fs.mount.pyhome.type = "chroot"
-fs.mount.pyhome.path = "{{ python.stdlib }}"
-fs.mount.pyhome.uri = "file:{{ python.stdlib }}"
+# fs.mount.usr.type = "chroot"
+# fs.mount.usr.path = "/usr"
+# fs.mount.usr.uri = "file:/usr"
 
-fs.mount.pydisthome.type = "chroot"
-fs.mount.pydisthome.path = "{{ python.distlib }}"
-fs.mount.pydisthome.uri = "file:{{ python.distlib }}"
+# fs.mount.pyhome.type = "chroot"
+# fs.mount.pyhome.path = "{{ python.stdlib }}"
+# fs.mount.pyhome.uri = "file:{{ python.stdlib }}"
 
-fs.mount.tmp.type = "chroot"
-fs.mount.tmp.path = "/tmp"
-fs.mount.tmp.uri = "file:/tmp"
+# fs.mount.pydisthome.type = "chroot"
+# fs.mount.pydisthome.path = "{{ python.distlib }}"
+# fs.mount.pydisthome.uri = "file:{{ python.distlib }}"
 
-fs.mount.etc.type = "chroot"
-fs.mount.etc.path = "/etc"
-fs.mount.etc.uri = "file:/etc"
+# fs.mount.tmp.type = "chroot"
+# fs.mount.tmp.path = "/tmp"
+# fs.mount.tmp.uri = "file:/tmp"
 
-fs.mount.homo_lr.type = "chroot"
-fs.mount.homo_lr.path = "/homo_lr"
-fs.mount.homo_lr.uri = "file:/homo_lr"
+# fs.mount.etc.type = "chroot"
+# fs.mount.etc.path = "/etc"
+# fs.mount.etc.uri = "file:/etc"
+
+# fs.mount.homo_lr.type = "chroot"
+# fs.mount.homo_lr.path = "/homo_lr"
+# fs.mount.homo_lr.uri = "file:/homo_lr"
 
 sgx.debug = true
 sgx.nonpie_binary = true
@@ -64,10 +75,15 @@ sgx.trusted_files = [
   "file:{{ python.distlib }}/",
   "file:/etc/mime.types",
   "file:homo_lr_ps.py",
+  "file:homo_lr_worker.py",
   "file:homo_lr_pb2.py",
   "file:homo_lr_pb2_grpc.py",
   "file:breast_homo_test.csv",
+  "file:breast_homo_guest.csv",
+  "file:breast_homo_host.csv",
   "file:/homo_lr/ipcl-python/",
+  "file:hetero_attestation_pb2.py",
+  "file:hetero_attestation_pb2_grpc.py",
 ]
 
 sgx.allowed_files = [

@@ -14,17 +14,21 @@
 # limitations under the License.
 
 import os
+import sys
 import pickle
 import argparse
 import grpc
 import numpy as np
 import pandas as pd
-from concurrent.futures import ProcessPoolExecutor as Executor
+from concurrent.futures import ThreadPoolExecutor as Executor
 import homo_lr_pb2
 import homo_lr_pb2_grpc
+import multiprocessing as mp
+from hetero_attestation_pb2 import HeteroAttestationRequest
+import hetero_attestation_pb2_grpc
 
 CPU_COUNTS = os.cpu_count()
-PARTITIONS = min(4, CPU_COUNTS)
+PARTITIONS = min(1, CPU_COUNTS)
 
 class HomoLRWorker(object):
   def __init__(self, id, ip, epochs, alpha,
@@ -61,7 +65,7 @@ class HomoLRWorker(object):
       self.aggregate_model()
       if i % 10 == 0:
         acc, loss = self.validate()
-        print('iter: {}  acc: {:.3f}  loss: {:.3f}'.format(i, acc, loss))
+        print('iter: {}  acc: {:.3f}  loss: {:.3f}'.format(i, acc, loss), file=sys.stderr, flush=True)
 
   def compute_gradient(self, x, y):
     m = x.shape[1]
@@ -122,6 +126,10 @@ def parse_dataset(dataset):
   x = data_array[:, 2:]
   y = data_array[:, 1].astype('int32')
   return x, y
+
+def verify_parameter_server(peer_addr):
+    pass     
+
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
