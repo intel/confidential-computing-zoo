@@ -133,7 +133,7 @@ def parse_dataset(dataset):
   return x, y
 
 class HeteroAttestationTransmit(hetero_attestation_pb2_grpc.TransmitService):
-    def TransmitAttestationRequest(self, request):
+    def TransmitAttestationRequest(self, request, response):
         # 1.Request the qe_target_info. 
         channel = grpc.insecure_channel("172.21.1.64:40070")
         stub = hetero_attestation_pb2_grpc.TargetInfoServiceStub(channel)
@@ -156,7 +156,7 @@ class HeteroAttestationTransmit(hetero_attestation_pb2_grpc.TransmitService):
 
         # 3.Issue quote generation and verificatin to SGX node service.
         request.report = report
-        stub = hetero_attestation_pb2_grpc.TeeNodeServiceStub()
+        stub = hetero_attestation_pb2_grpc.TeeNodeServiceStub(channel)
         response = stub.IssueRemoteAttestation(request)
 
         # 4.Return verification result without any check.
@@ -197,7 +197,7 @@ if __name__ == '__main__':
     parser.add_argument('--key-length', type=int, default=1024, help='Bit length of PHE key')
     parser.add_argument('--worker-num', type=int, required=True, help='The numbers of workers in HFL')
     parser.add_argument('--validate-set', help='CSV format validation data')
-    parser.add_argument('--secure', default=True, help='Enable PHE or not')
+    parser.add_argument('--secure', default=False, help='Enable PHE or not')
     args = parser.parse_args()
     
     server = grpc.server(Executor(max_workers=10))

@@ -18,6 +18,7 @@ import sys
 import pickle
 import argparse
 import grpc
+import secrets
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor as Executor
@@ -26,6 +27,7 @@ import homo_lr_pb2_grpc
 import multiprocessing as mp
 from hetero_attestation_pb2 import HeteroAttestationRequest
 import hetero_attestation_pb2_grpc
+from issue_attestation import HeteroAttestationIssuer
 
 CPU_COUNTS = os.cpu_count()
 PARTITIONS = min(1, CPU_COUNTS)
@@ -127,9 +129,16 @@ def parse_dataset(dataset):
   y = data_array[:, 1].astype('int32')
   return x, y
 
-def verify_parameter_server(peer_addr):
-    pass     
 
+def verify_parameter_server(peer_addr, worker_id):
+    nonce = secrets.token_bytes(10)
+    issuer = HeteroAttestationIssuer("/key/ca_cert", 
+                                   "attest_ps_from_worker_{}".format(worker_id), 
+                                   "gramine_worker_{}".format(worker_id), 
+                                   peer_addr, nonce)
+    if not issuer.IssueHeteroAttestation():
+        raise RuntimeError("Parameter server is not trusted.")
+    
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
@@ -139,8 +148,11 @@ if __name__ == '__main__':
   parser.add_argument('--epochs', type=int, default=100, help='Epochs')
   parser.add_argument('--alpha', type=float, default=0.01, help='Alpha for regularization')
   parser.add_argument('--learning-rate', type=float, default=0.15)
-  parser.add_argument('--secure', type=bool, default=True, help='Enable PHE or not')
+  parser.add_argument('--secure', type=bool, default=False, help='Enable PHE or not')
   args = parser.parse_args()
+
+  verify_parameter_server("127.0.0.1:50051", args.id)
+
 
   worker = HomoLRWorker(args.id, args.host_ip, args.epochs,
                         args.alpha, args.learning_rate, args.secure)

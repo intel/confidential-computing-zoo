@@ -25,6 +25,7 @@ fs.mounts = [
   {type = "chroot", uri = "file:/tmp", path ="/tmp"},
   {type = "chroot", uri = "file:/etc", path ="/etc"},
   {type = "chroot", uri = "file:/homo_lr", path ="/root/confidential-computing-zoo/cczoo/phe_homo_lr"}
+  {type = "chroot", uri = "file:/key", path ="/key"}
 ]
 
 # fs.mount.lib.type = "chroot"
@@ -84,6 +85,7 @@ sgx.trusted_files = [
   "file:/homo_lr/ipcl-python/",
   "file:hetero_attestation_pb2.py",
   "file:hetero_attestation_pb2_grpc.py",
+  "file:issue_attestation.py",
 ]
 
 sgx.allowed_files = [
@@ -98,4 +100,5 @@ sgx.allowed_files = [
   "file:/tmp",
   "file:/usr/local/lib/python3.8/",
   "file:/usr/lib/python3.8/",
+  "file:/key/"
 ]
