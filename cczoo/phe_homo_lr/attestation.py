@@ -9,7 +9,9 @@ from hetero_attestation_pb2 import HeteroAttestationResponse
 from hetero_attestation_pb2 import TeeAttestationRequest
 from hetero_attestation_pb2 import TeeAttestationResponse
 from hetero_attestation_pb2 import RunStatus
-from hetero_attestation_pb2_grpc import TeeNodeService 
+from hetero_attestation_pb2 import TargetInfoRequest
+from hetero_attestation_pb2 import TargetInfoResponse
+from hetero_attestation_pb2_grpc import TeeNodeService
 import hetero_attestation_pb2_grpc
 
 from cryptography import x509
@@ -29,8 +31,47 @@ from datetime import datetime, timedelta
 import logging
 logging.basicConfig(level=logging.DEBUG,
                     format="[%(asctime)s][%(name)s][%(levelname)s] %(message)s",
-                    datefmt = '%Y-%m-%d  %H:%M:%S %a'
-                    )
+                    datefmt='%Y-%m-%d  %H:%M:%S %a')
+
+
+class HeteroAttestationTransmit(hetero_attestation_pb2_grpc.TransmitService):
+    def __init__(self, tee_node_addr):
+        self.tee_node_addr = tee_node_addr
+        self.num_attestation = 0
+
+    def TransmitAttestationRequest(self, request, response):
+        # 1.Request the qe_target_info.
+        channel = grpc.insecure_channel(self.tee_node_addr)
+        stub = hetero_attestation_pb2_grpc.TargetInfoServiceStub(channel)
+        target_info_request = TargetInfoRequest(name="homo_lr_in_gramine")
+        target_info_response = stub.GetQETargetInfo(target_info_request)
+        target_info = target_info_response.qe_target_info
+
+        # 2.Generate SGX report.
+        fd = os.open("/dev/attestation/target_info", os.O_WRONLY)
+        os.write(fd, target_info)
+
+        nonce = secrets.token_bytes(nbytes=10)
+        print(nonce.hex(), file=sys.stderr, flush=True)
+
+        fd = os.open("/dev/attestation/user_report_data", os.O_WRONLY)
+        os.write(fd, nonce)
+
+        fd = os.open("/dev/attestation/report", os.O_RDONLY)
+        report = os.read(fd, 432)
+
+        # 3.Issue quote generation and verificatin to SGX node service.
+        request.report = report
+        stub = hetero_attestation_pb2_grpc.TeeNodeServiceStub(channel)
+        response = stub.IssueRemoteAttestation(request)
+
+        # 4.Return verification result without any check.
+        self.num_attestation = self.num_attestation + 1
+        return response
+
+    def GetAttestationCount():
+        return self.num_attestation
+
 
 class HeteroAttestationIssuer:
     def __init__(self, ca_cert_path, attest_id, node_id, tee_node_addr, nonce):
@@ -60,13 +101,14 @@ class HeteroAttestationIssuer:
         channel = grpc.insecure_channel(self.tee_node_addr)
         stub = hetero_attestation_pb2_grpc.TransmitServiceStub(channel)
 
-        request = HeteroAttestationRequest(attest_id = self.attest_id,
-                                           nonce = self.nonce,
-                                           node_id = self.node_id)
+        request = HeteroAttestationRequest(attest_id=self.attest_id,
+                                           nonce=self.nonce,
+                                           node_id=self.node_id)
 
         response = stub.TransmitAttestationRequest(request)
         if response.status.error == True:
-            logging.error(f"Error from {self.tee_node_addr}: {response.status.msg}")
+            logging.error(
+                f"Error from {self.tee_node_addr}: {response.status.msg}")
             return False
 
         proof = response.tee_proof

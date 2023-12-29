@@ -13,150 +13,204 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import sys
+import time
 import pickle
 import argparse
 import grpc
 import secrets
+import threading
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor as Executor
 import homo_lr_pb2
 import homo_lr_pb2_grpc
 import multiprocessing as mp
-from hetero_attestation_pb2 import HeteroAttestationRequest
+
 import hetero_attestation_pb2_grpc
-from issue_attestation import HeteroAttestationIssuer
+from attestation import HeteroAttestationTransmit
+from attestation import HeteroAttestationIssuer
 
 CPU_COUNTS = os.cpu_count()
 PARTITIONS = min(1, CPU_COUNTS)
 
+logging.basicConfig(level=logging.DEBUG,
+                    format="[%(asctime)s][%(name)s][%(levelname)s] %(message)s",
+                    datefmt='%Y-%m-%d  %H:%M:%S %a')
+
+
 class HomoLRWorker(object):
-  def __init__(self, id, ip, epochs, alpha,
-               learning_rate, secure):
-    self.id = id
-    self.grpc_channel = ip + ':50051'
-    self.pool = Executor()
-    self.epochs = epochs
-    self.alpha = alpha
-    self.learning_rate = learning_rate
-    self.iter_n = 0
-    self.secure = secure
-    self.w = None
-    if secure:
-      self.pub_key = self.get_pubkey()
-    else:
-      self.pub_key = None
+    def __init__(self, id, ip, epochs, alpha,
+                 learning_rate, secure):
+        self.id = id
+        self.grpc_channel = ip + ':50051'
+        self.pool = Executor()
+        self.epochs = epochs
+        self.alpha = alpha
+        self.learning_rate = learning_rate
+        self.iter_n = 0
+        self.secure = secure
+        self.w = None
+        if secure:
+            self.pub_key = self.get_pubkey()
+        else:
+            self.pub_key = None
 
-  def fit(self, x, y):
-    m = x.shape[0]
-    x = np.concatenate((np.ones((m,1)),x), axis = 1)
-    n = x.shape[1]
-    x = x.T
-    if self.secure:
-      enc_one = self.pub_key.encrypt(1)
-      self.w = np.array([enc_one] * n)
-    else:
-      self.w = np.ones((n,))
-    y = y.reshape(1,-1)
-    for i in range(self.epochs):
-      self.iter_n = i
-      grad = self.compute_gradient(x, y)
-      self.updated_model(grad)
-      self.aggregate_model()
-      if i % 10 == 0:
-        acc, loss = self.validate()
-        print('iter: {}  acc: {:.3f}  loss: {:.3f}'.format(i, acc, loss), file=sys.stderr, flush=True)
+    def fit(self, x, y):
+        m = x.shape[0]
+        x = np.concatenate((np.ones((m, 1)), x), axis=1)
+        n = x.shape[1]
+        x = x.T
+        if self.secure:
+            enc_one = self.pub_key.encrypt(1)
+            self.w = np.array([enc_one] * n)
+        else:
+            self.w = np.ones((n,))
+        y = y.reshape(1, -1)
+        for i in range(self.epochs):
+            self.iter_n = i
+            grad = self.compute_gradient(x, y)
+            self.updated_model(grad)
+            self.aggregate_model()
+            if i % 10 == 0:
+                acc, loss = self.validate()
+                print('iter: {}  acc: {:.3f}  loss: {:.3f}'.format(
+                    i, acc, loss), file=sys.stderr, flush=True)
 
-  def compute_gradient(self, x, y):
-    m = x.shape[1]
-    y_pred = None
+    def compute_gradient(self, x, y):
+        m = x.shape[1]
+        y_pred = None
 
-    if self.secure:   # Use multi-process
-      bs = m // PARTITIONS # batch size for a partition
-      futures = [self.pool.submit(np.dot, self.w, x[:, i*bs:(i+1)*bs]) for i in range(PARTITIONS)]
-      futures.append(self.pool.submit(np.dot, self.w, x[:, PARTITIONS*bs:]))
-      result = futures[0].result()
-      for i in range(1, len(futures)):
-        result = np.concatenate((result, futures[i].result()), axis=0)
-      y_pred = self.sigmoid_taylor_expand(result)
-    else:
-      y_pred = self.sigmoid(np.dot(self.w, x))
-    grad = np.dot((y_pred - y), x.T) / m
-    return grad
+        if self.secure:   # Use multi-process
+            bs = m // PARTITIONS  # batch size for a partition
+            futures = [self.pool.submit(
+                np.dot, self.w, x[:, i*bs:(i+1)*bs]) for i in range(PARTITIONS)]
+            futures.append(self.pool.submit(
+                np.dot, self.w, x[:, PARTITIONS*bs:]))
+            result = futures[0].result()
+            for i in range(1, len(futures)):
+                result = np.concatenate((result, futures[i].result()), axis=0)
+            y_pred = self.sigmoid_taylor_expand(result)
+        else:
+            y_pred = self.sigmoid(np.dot(self.w, x))
+        grad = np.dot((y_pred - y), x.T) / m
+        return grad
 
-  def sigmoid(self, x):
-      return 1 / (1 + np.exp(-x))
+    def sigmoid(self, x):
+        return 1 / (1 + np.exp(-x))
 
-  def sigmoid_taylor_expand(self, x):
-      return (0.5 + 0.25 * x)
+    def sigmoid_taylor_expand(self, x):
+        return (0.5 + 0.25 * x)
 
-  def updated_model(self, grad):
-    learning_rate = self.learning_rate / np.sqrt(1 + self.iter_n)
-    grad = grad + self.alpha * self.w
-    self.w = self.w - learning_rate * grad
+    def updated_model(self, grad):
+        learning_rate = self.learning_rate / np.sqrt(1 + self.iter_n)
+        grad = grad + self.alpha * self.w
+        self.w = self.w - learning_rate * grad
 
-  def validate(self):
-    with grpc.insecure_channel(self.grpc_channel) as channel:
-      stub = homo_lr_pb2_grpc.HostStub(channel)
-      response = stub.Validate(homo_lr_pb2.Empty())
-      return response.acc, response.loss
+    def validate(self):
+        with grpc.insecure_channel(self.grpc_channel) as channel:
+            stub = homo_lr_pb2_grpc.HostStub(channel)
+            response = stub.Validate(homo_lr_pb2.Empty())
+            return response.acc, response.loss
 
-  def get_pubkey(self):
-    with grpc.insecure_channel(self.grpc_channel) as channel:
-      stub = homo_lr_pb2_grpc.HostStub(channel)
-      response = stub.GetPubKey(homo_lr_pb2.KeyRequest(id=self.id))
-      key = pickle.loads(response.key)
-      return key
+    def get_pubkey(self):
+        with grpc.insecure_channel(self.grpc_channel) as channel:
+            stub = homo_lr_pb2_grpc.HostStub(channel)
+            response = stub.GetPubKey(homo_lr_pb2.KeyRequest(id=self.id))
+            key = pickle.loads(response.key)
+            return key
 
-  def aggregate_model(self):
-    with grpc.insecure_channel(self.grpc_channel) as channel:
-      stub = homo_lr_pb2_grpc.HostStub(channel)
-      weights_pb = pickle.dumps(self.w)
-      response = stub.AggregateModel(homo_lr_pb2.WeightsRequest(id=self.id, iter_n=self.iter_n, weights=weights_pb))
-      self.w = pickle.loads(response.updated_weights)
+    def aggregate_model(self):
+        with grpc.insecure_channel(self.grpc_channel) as channel:
+            stub = homo_lr_pb2_grpc.HostStub(channel)
+            weights_pb = pickle.dumps(self.w)
+            response = stub.AggregateModel(homo_lr_pb2.WeightsRequest(
+                id=self.id, iter_n=self.iter_n, weights=weights_pb))
+            self.w = pickle.loads(response.updated_weights)
 
-  def finish(self):
-    self.pool.shutdown()
-    with grpc.insecure_channel(self.grpc_channel) as channel:
-      stub = homo_lr_pb2_grpc.HostStub(channel)
-      stub.Finish(homo_lr_pb2.Empty())
+    def finish(self):
+        self.pool.shutdown()
+        with grpc.insecure_channel(self.grpc_channel) as channel:
+            stub = homo_lr_pb2_grpc.HostStub(channel)
+            stub.Finish(homo_lr_pb2.Empty())
+
 
 def parse_dataset(dataset):
-  data_array = pd.read_csv(dataset).to_numpy()
-  x = data_array[:, 2:]
-  y = data_array[:, 1].astype('int32')
-  return x, y
+    data_array = pd.read_csv(dataset).to_numpy()
+    x = data_array[:, 2:]
+    y = data_array[:, 1].astype('int32')
+    return x, y
 
 
-def verify_parameter_server(peer_addr, worker_id):
+def verify_party(peer_addr, peer_name, attest_id, node_id):
     nonce = secrets.token_bytes(10)
-    issuer = HeteroAttestationIssuer("/key/ca_cert", 
-                                   "attest_ps_from_worker_{}".format(worker_id), 
-                                   "gramine_worker_{}".format(worker_id), 
-                                   peer_addr, nonce)
+    issuer = HeteroAttestationIssuer("/key/ca_cert",
+                                     attest_id, node_id,
+                                     peer_addr, nonce)
     if not issuer.IssueHeteroAttestation():
-        raise RuntimeError("Parameter server is not trusted.")
-    
+        raise RuntimeError("{} is not trusted.".format(peer_name))
+    else:
+        logging.info("{} is trusted.".format(peer_name))
+
+
+def run_attestation_service(tee_node_addr, worker_id, stop_signal, port):
+    server = grpc.server(Executor(max_workers=10))
+    servicer = HeteroAttestationTransmit(tee_node_addr)
+    hetero_attestation_pb2_grpc.add_TransmitServiceServicer_to_server(
+        servicer, server)
+    server.add_insecure_port('[::]:{}'.format(port))
+    server.start()
+
+    while not stop_signal:
+        time.sleep(1)
+
+    time.sleep(5)
+    server.stop()
+    logging.info("Attestation service exits.")
+
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  parser.add_argument('--train-set', required=True, help='CSV format training data')
-  parser.add_argument('--host-ip', required=True, help='Parameter server IP for gRPC communication')
-  parser.add_argument('--id', type=int, help='Worker ID')
-  parser.add_argument('--epochs', type=int, default=100, help='Epochs')
-  parser.add_argument('--alpha', type=float, default=0.01, help='Alpha for regularization')
-  parser.add_argument('--learning-rate', type=float, default=0.15)
-  parser.add_argument('--secure', type=bool, default=False, help='Enable PHE or not')
-  args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--train-set', required=True,
+                        help='CSV format training data')
+    parser.add_argument('--host-ip', required=True,
+                        help='Parameter server IP for gRPC communication')
+    parser.add_argument('--id', type=int, help='Worker ID')
+    parser.add_argument('--epochs', type=int, default=100, help='Epochs')
+    parser.add_argument('--alpha', type=float, default=0.01,
+                        help='Alpha for regularization')
+    parser.add_argument('--learning-rate', type=float, default=0.15)
+    parser.add_argument('--secure', type=bool,
+                        default=False, help='Enable PHE or not')
+    args = parser.parse_args()
 
-  verify_parameter_server("127.0.0.1:50051", args.id)
+    stop_signal = False
+    attestation_thread = threading.Thread(
+        target=run_attestation_service,
+        args=("172.21.1.65:40070", args.id, stop_signal, "{}".format(args.id + 60050)))
 
+    # Verify parameter server.
+    verify_party("172.21.1.64:50051", "parameter_server",
+                 "attest_from_{}".format(args.id),
+                 "gramine_party_{}".foramt(args.id))
 
-  worker = HomoLRWorker(args.id, args.host_ip, args.epochs,
-                        args.alpha, args.learning_rate, args.secure)
-  x, y = parse_dataset(args.train_set)
-  worker.fit(x, y)
-  worker.finish()
+    # Verify another worker.
+    if args.id == 1:
+        verify_party("172.21.1.65:60052", "party_2",
+                     "RA_from_gramine_party_{}".format(args.id),
+                     "gramine_party_{}".foramt(args.id))
+    else:
+        verify_party("172.21.1.65:60051", "party_1",
+                     "RA_from_gramine_party_{}".format(args.id),
+                     "gramine_party_{}".foramt(args.id))
 
+    worker = HomoLRWorker(args.id, args.host_ip, args.epochs,
+                          args.alpha, args.learning_rate, args.secure)
+    x, y = parse_dataset(args.train_set)
+    worker.fit(x, y)
+    worker.finish()
+
+    stop_signal = True
+    attestation_thread.join()
