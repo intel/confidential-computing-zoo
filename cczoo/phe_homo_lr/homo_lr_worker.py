@@ -29,10 +29,12 @@ from concurrent.futures import ThreadPoolExecutor as Executor
 import homo_lr_pb2
 import homo_lr_pb2_grpc
 import multiprocessing as mp
-
 import hetero_attestation_pb2_grpc
+from homo_lr_common import verify_party
+from homo_lr_common import parse_config
 from attestation import HeteroAttestationTransmit
-from attestation import HeteroAttestationIssuer
+from homo_lr_common import verify_party
+from homo_lr_common import parse_config
 
 CPU_COUNTS = os.cpu_count()
 PARTITIONS = min(1, CPU_COUNTS)
@@ -150,35 +152,6 @@ def parse_dataset(dataset):
     return x, y
 
 
-def check_peer_alive(peer_addr, peer_name, retry_time):
-    while True:
-        try:
-            channel = grpc.insecure_channel(peer_addr)
-            stub = homo_lr_pb2_grpc.HostStub(channel)
-
-            request = homo_lr_pb2.Empty()
-            response = stub.Alive(request)
-        except Exception as e:
-            time.sleep(retry_time)
-            logging.info(f"Peer {peer_name} is not online.")
-            continue
-        
-        logging.info(f"Peer {peer_name} is online.")
-        break
-
-
-def verify_party(peer_addr, peer_name, attest_id, node_id):
-    check_peer_alive(peer_addr, peer_name, 5)
-    nonce = secrets.token_bytes(10)
-    issuer = HeteroAttestationIssuer("/key/ca_cert",
-                                     attest_id, node_id,
-                                     peer_addr, nonce)
-    if not issuer.IssueHeteroAttestation():
-        raise RuntimeError("{} is not trusted.".format(peer_name))
-    else:
-        logging.info("{} is trusted.".format(peer_name))
-
-
 def run_attestation_service(server, tee_node_addr, worker_id, port):
     servicer = HeteroAttestationTransmit(tee_node_addr)
     hetero_attestation_pb2_grpc.add_TransmitServiceServicer_to_server(
@@ -207,27 +180,31 @@ if __name__ == '__main__':
     parser.add_argument('--learning-rate', type=float, default=0.15)
     parser.add_argument('--secure', type=bool,
                         default=False, help='Enable PHE or not')
+    parser.add_argument('--config', required=True, help="Party config file path.")
     args = parser.parse_args()
 
-    server = grpc.server(Executor(max_workers=10))
+    config = parse_config(args.config)
 
+    server = grpc.server(Executor(max_workers=10))
     attestation_thread = threading.Thread(
         target=run_attestation_service,
-        args=(server, "172.21.1.65:40070", args.id, "{}".format(args.id + 60050)))
+        args=(server, config["attestation_service"], args.id, 
+              "{}".format(args.id + 60050)))
     attestation_thread.start()
 
     # Verify parameter server.
-    verify_party("172.21.1.64:50051", "parameter_server",
+    verify_party(config["party_service"]["ps"], 
+                 "parameter_server",
                  "attest_from_{}".format(args.id),
                  "gramine_party_{}".format(args.id))
 
     # Verify another worker.
     if args.id == 1:
-        verify_party("172.21.1.65:60052", "party_2",
+        verify_party(config["party_service"]["2"], "party_2",
                      "RA_from_gramine_party_{}".format(args.id),
                      "gramine_party_{}".format(args.id))
     else:
-        verify_party("172.21.1.65:60051", "party_1",
+        verify_party(config["party_service"]["1"], "party_1",
                      "RA_from_gramine_party_{}".format(args.id),
                      "gramine_party_{}".format(args.id))
 

@@ -29,9 +29,9 @@ import homo_lr_pb2
 import homo_lr_pb2_grpc
 import hetero_attestation_pb2_grpc
 import logging
-
 from attestation import HeteroAttestationTransmit
-from attestation import HeteroAttestationIssuer
+from homo_lr_common import parse_config
+from homo_lr_common import verify_party
 
 logging.basicConfig(level=logging.DEBUG,
                     format="[%(asctime)s][%(name)s][%(levelname)s] %(message)s",
@@ -147,43 +147,13 @@ def parse_dataset(dataset):
     y = data_array[:, 1].astype('int32')
     return x, y
 
-def check_peer_alive(peer_addr, peer_name, retry_time):
-    while True:
-        try:
-            channel = grpc.insecure_channel(peer_addr)
-            stub = homo_lr_pb2_grpc.HostStub(channel)
-
-            request = homo_lr_pb2.Empty()
-            response = stub.Alive(request)
-        except Exception as e:
-            time.sleep(retry_time)
-            logging.info(f"Peer {peer_name} is not online.")
-            continue
-
-        logging.info(f"Peer {peer_name} is online.")
-        break
-
-
-def verify_party(peer_addr, peer_name, attest_id, node_id):
-    check_peer_alive(peer_addr, peer_name, 5)
-    nonce = secrets.token_bytes(10)
-    issuer = HeteroAttestationIssuer("/key/ca_cert",
-                                     attest_id, node_id,
-                                     peer_addr, nonce)
-
-    if not issuer.IssueHeteroAttestation():
-        raise RuntimeError("{} is not trusted.".format(peer_name))
-    else:
-        logging.info("{} is trusted.".format(peer_name))
-
-
-def run_server(args):
+def run_server(args, attestation_service):
     server = grpc.server(Executor(max_workers=10))
     servicer = AggregateServicer(
         args.key_length, args.worker_num, args.validate_set, args.secure, server)
     homo_lr_pb2_grpc.add_HostServicer_to_server(servicer, server)
 
-    servicer = HeteroAttestationTransmit("172.21.1.64:40070")
+    servicer = HeteroAttestationTransmit(attestation_service)
     hetero_attestation_pb2_grpc.add_TransmitServiceServicer_to_server(
         servicer, server)
 
@@ -199,14 +169,18 @@ if __name__ == '__main__':
                         help='The numbers of workers in HFL')
     parser.add_argument('--validate-set', help='CSV format validation data')
     parser.add_argument('--secure', default=False, help='Enable PHE or not')
+    parser.add_argument('--config', required=True, help="Party config file path.")
     args = parser.parse_args()
 
-    verify_party("172.21.1.65:60051", "party_1",
+    config = parse_config(args.config)
+
+    verify_party(config["party_service"]["1"], "party_1",
                  "RA_from_gramine_ps", "ps_in_gramine")
-    verify_party("172.21.1.65:60052", "party_1",
+    verify_party(config["party_service"]["2"], "party_2",
                  "RA_from_gramine_ps", "ps_in_gramine")
 
-    thread = threading.Thread(target=run_server, args=(args,))
+    thread = threading.Thread(target=run_server, 
+                              args=(args, config["attestation_service"]))
     thread.start()
     
     thread.join()

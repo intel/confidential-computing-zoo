@@ -86,6 +86,10 @@ sgx.trusted_files = [
   "file:hetero_attestation_pb2.py",
   "file:hetero_attestation_pb2_grpc.py",
   "file:attestation.py",
+  "file:homo_lr_common.py",
+  "file:ps.json",
+  "file:worker_1.json",
+  "file:worker_2.json",
 ]
 
 sgx.allowed_files = [
