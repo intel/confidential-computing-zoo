@@ -85,7 +85,7 @@ sgx.trusted_files = [
   "file:/homo_lr/ipcl-python/",
   "file:hetero_attestation_pb2.py",
   "file:hetero_attestation_pb2_grpc.py",
-  "file:issue_attestation.py",
+  "file:attestation.py",
 ]
 
 sgx.allowed_files = [

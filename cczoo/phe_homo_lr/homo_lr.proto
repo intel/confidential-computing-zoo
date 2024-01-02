@@ -26,6 +26,7 @@ service Host {
   rpc AggregateModel (WeightsRequest) returns (WeightsReply) {}
   rpc Validate (Empty) returns (ValidateReply) {}
   rpc Finish (Empty) returns (Empty) {}
+  rpc Alive(Empty) returns (Empty) {}
 }
 
 message KeyRequest {

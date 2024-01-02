@@ -1,6 +1,7 @@
 import grpc
 import os
 import sys
+import secrets
 
 from hetero_attestation_pb2 import RegisterNodeRequest
 from hetero_attestation_pb2 import RegisterNodeResponse
@@ -104,7 +105,7 @@ class HeteroAttestationIssuer:
         request = HeteroAttestationRequest(attest_id=self.attest_id,
                                            nonce=self.nonce,
                                            node_id=self.node_id)
-
+        
         response = stub.TransmitAttestationRequest(request)
         if response.status.error == True:
             logging.error(

@@ -21,6 +21,7 @@ import pickle
 import argparse
 import grpc
 import secrets
+import logging
 import threading
 import numpy as np
 import pandas as pd
@@ -39,6 +40,11 @@ PARTITIONS = min(1, CPU_COUNTS)
 logging.basicConfig(level=logging.DEBUG,
                     format="[%(asctime)s][%(name)s][%(levelname)s] %(message)s",
                     datefmt='%Y-%m-%d  %H:%M:%S %a')
+
+
+class AliveServicer(homo_lr_pb2_grpc.HostServicer):
+    def Alive(self, request, context):
+        return homo_lr_pb2.Empty()
 
 
 class HomoLRWorker(object):
@@ -144,7 +150,25 @@ def parse_dataset(dataset):
     return x, y
 
 
+def check_peer_alive(peer_addr, peer_name, retry_time):
+    while True:
+        try:
+            channel = grpc.insecure_channel(peer_addr)
+            stub = homo_lr_pb2_grpc.HostStub(channel)
+
+            request = homo_lr_pb2.Empty()
+            response = stub.Alive(request)
+        except Exception as e:
+            time.sleep(retry_time)
+            logging.info(f"Peer {peer_name} is not online.")
+            continue
+        
+        logging.info(f"Peer {peer_name} is online.")
+        break
+
+
 def verify_party(peer_addr, peer_name, attest_id, node_id):
+    check_peer_alive(peer_addr, peer_name, 5)
     nonce = secrets.token_bytes(10)
     issuer = HeteroAttestationIssuer("/key/ca_cert",
                                      attest_id, node_id,
@@ -155,19 +179,18 @@ def verify_party(peer_addr, peer_name, attest_id, node_id):
         logging.info("{} is trusted.".format(peer_name))
 
 
-def run_attestation_service(tee_node_addr, worker_id, stop_signal, port):
-    server = grpc.server(Executor(max_workers=10))
+def run_attestation_service(server, tee_node_addr, worker_id, port):
     servicer = HeteroAttestationTransmit(tee_node_addr)
     hetero_attestation_pb2_grpc.add_TransmitServiceServicer_to_server(
         servicer, server)
+
+    alive_servicer = AliveServicer()
+    homo_lr_pb2_grpc.add_HostServicer_to_server(alive_servicer, server)
+
     server.add_insecure_port('[::]:{}'.format(port))
     server.start()
+    server.wait_for_termination()
 
-    while not stop_signal:
-        time.sleep(1)
-
-    time.sleep(5)
-    server.stop()
     logging.info("Attestation service exits.")
 
 
@@ -186,31 +209,33 @@ if __name__ == '__main__':
                         default=False, help='Enable PHE or not')
     args = parser.parse_args()
 
-    stop_signal = False
+    server = grpc.server(Executor(max_workers=10))
+
     attestation_thread = threading.Thread(
         target=run_attestation_service,
-        args=("172.21.1.65:40070", args.id, stop_signal, "{}".format(args.id + 60050)))
+        args=(server, "172.21.1.65:40070", args.id, "{}".format(args.id + 60050)))
+    attestation_thread.start()
 
     # Verify parameter server.
     verify_party("172.21.1.64:50051", "parameter_server",
                  "attest_from_{}".format(args.id),
-                 "gramine_party_{}".foramt(args.id))
+                 "gramine_party_{}".format(args.id))
 
     # Verify another worker.
     if args.id == 1:
         verify_party("172.21.1.65:60052", "party_2",
                      "RA_from_gramine_party_{}".format(args.id),
-                     "gramine_party_{}".foramt(args.id))
+                     "gramine_party_{}".format(args.id))
     else:
         verify_party("172.21.1.65:60051", "party_1",
                      "RA_from_gramine_party_{}".format(args.id),
-                     "gramine_party_{}".foramt(args.id))
+                     "gramine_party_{}".format(args.id))
 
     worker = HomoLRWorker(args.id, args.host_ip, args.epochs,
                           args.alpha, args.learning_rate, args.secure)
     x, y = parse_dataset(args.train_set)
     worker.fit(x, y)
     worker.finish()
-
-    stop_signal = True
+    
+    server.stop(5)
     attestation_thread.join()
