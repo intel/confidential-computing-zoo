@@ -111,7 +111,7 @@ If you enable remote attestation, please modify the `dynamic_config.json` file i
 You can obtain the hash values of the fields to be verified in the current container environment by executing `/usr/bin/tdx_report_parser`.
 
 #### Add data to the dataset
-If you use ElasticSearch as the storage, you can edit data in `data.json` then execute the following command in the backend service container:
+If you use ElasticSearch as the storage, you can edit data in `data/data.json` then execute the following command in the backend service container:
 
 ```bash
 python3 generate_db.py
