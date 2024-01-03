@@ -1,0 +1,144 @@
+diff --git a/tools/sgx/ra-tls/ra_tls.h b/tools/sgx/ra-tls/ra_tls.h
+index cc3e83ec..0b14749f 100644
+--- a/tools/sgx/ra-tls/ra_tls.h
++++ b/tools/sgx/ra-tls/ra_tls.h
+@@ -30,6 +30,11 @@
+ #define RA_TLS_CERT_TIMESTAMP_NOT_BEFORE "RA_TLS_CERT_TIMESTAMP_NOT_BEFORE"
+ #define RA_TLS_CERT_TIMESTAMP_NOT_AFTER  "RA_TLS_CERT_TIMESTAMP_NOT_AFTER"
+ 
++#define RA_TLS_CERT_SIGNATURE_ALGO "RA_TLS_CERT_SIGNATURE_ALGO"
++#define RA_TLS_CERT_SIGNATURE_ALGO_RSA "RSA"
++#define RA_TLS_CERT_SIGNATURE_ALGO_ECDSA "ECDSA"
++#define RA_TLS_CERT_SIGNATURE_ALGO_DEFAULT RA_TLS_CERT_SIGNATURE_ALGO_ECDSA
++
+ typedef enum {
+     RA_TLS_ATTESTATION_SCHEME_UNKNOWN = 0,
+     RA_TLS_ATTESTATION_SCHEME_EPID    = 1,
+diff --git a/tools/sgx/ra-tls/ra_tls.map b/tools/sgx/ra-tls/ra_tls.map
+index 552b52b0..02925db6 100644
+--- a/tools/sgx/ra-tls/ra_tls.map
++++ b/tools/sgx/ra-tls/ra_tls.map
+@@ -1,5 +1,5 @@
+ RA_TLS {
+-    global: ra_tls_set_measurement_callback; ra_tls_verify_callback_der; ra_tls_verify_callback_extended_der; ra_tls_create_key_and_crt_der;
++    global: ra_tls_set_measurement_callback; ra_tls_verify_callback_der; ra_tls_verify_callback_extended_der; ra_tls_create_key_and_crt_der; ra_tls_create_key_and_crt;
+     local: *;
+ };
+ 
+diff --git a/tools/sgx/ra-tls/ra_tls_attest.c b/tools/sgx/ra-tls/ra_tls_attest.c
+index e45b95ff..19066ed6 100644
+--- a/tools/sgx/ra-tls/ra_tls_attest.c
++++ b/tools/sgx/ra-tls/ra_tls_attest.c
+@@ -26,6 +26,7 @@
+ #include <mbedtls/ecp.h>
+ #include <mbedtls/entropy.h>
+ #include <mbedtls/pk.h>
++#include <mbedtls/rsa.h>
+ #include <mbedtls/sha256.h>
+ #include <mbedtls/x509_crt.h>
+ 
+@@ -36,6 +37,22 @@
+ #define CERT_TIMESTAMP_NOT_BEFORE_DEFAULT "20010101000000"
+ #define CERT_TIMESTAMP_NOT_AFTER_DEFAULT  "20301231235959"
+ 
++
++static bool env_equal(const char* name, const char* value, const char* default_val) {
++    const char* env = getenv(name);
++    const char* env_val = env ? env : default_val;
++    if (env_val) {
++        if (value && strcmp(env_val, value) == 0) {
++            return true;
++        }
++    } else {
++        if (value == NULL) {
++            return true;
++        }
++    }
++    return false;
++}
++
+ static ssize_t rw_file(const char* path, uint8_t* buf, size_t len, bool do_write) {
+     ssize_t bytes = 0;
+     ssize_t ret = 0;
+@@ -213,6 +230,11 @@ static int create_key_and_crt(mbedtls_pk_context* key, mbedtls_x509_crt* crt, ui
+     uint8_t* output_buf = NULL;
+     size_t output_buf_size = 16 * 1024; /* enough for any X.509 certificate */
+ 
++    bool is_rsa_algo = env_equal(
++            RA_TLS_CERT_SIGNATURE_ALGO,
++            RA_TLS_CERT_SIGNATURE_ALGO_RSA,
++            RA_TLS_CERT_SIGNATURE_ALGO_DEFAULT);
++
+     output_buf = malloc(output_buf_size);
+     if (!output_buf) {
+         ret = MBEDTLS_ERR_X509_ALLOC_FAILED;
+@@ -224,14 +246,27 @@ static int create_key_and_crt(mbedtls_pk_context* key, mbedtls_x509_crt* crt, ui
+     if (ret < 0)
+         goto out;
+ 
+-    ret = mbedtls_pk_setup(key, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY));
+-    if (ret < 0)
+-        goto out;
++    if (is_rsa_algo) {
++        ret = mbedtls_pk_setup(key, mbedtls_pk_info_from_type(MBEDTLS_PK_RSA));
++        if (ret < 0)
++            goto out;
+ 
+-    ret = mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, mbedtls_pk_ec(*key), mbedtls_ctr_drbg_random,
+-                              &ctr_drbg);
+-    if (ret < 0)
+-        goto out;
++        mbedtls_rsa_init(mbedtls_pk_rsa(*key));
++
++        ret = mbedtls_rsa_gen_key(mbedtls_pk_rsa(*key), mbedtls_ctr_drbg_random, &ctr_drbg,
++                                RSA_PUB_3072_KEY_LEN, RSA_PUB_EXPONENT);
++        if (ret < 0)
++            goto out;
++    } else {
++        ret = mbedtls_pk_setup(key, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY));
++        if (ret < 0)
++            goto out;
++
++        ret = mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, mbedtls_pk_ec(*key), mbedtls_ctr_drbg_random,
++                                &ctr_drbg);
++        if (ret < 0)
++            goto out;
++    }
+ 
+     ret = create_x509(key, &writecrt);
+     if (ret < 0)
+diff --git a/tools/sgx/ra-tls/ra_tls_common.h b/tools/sgx/ra-tls/ra_tls_common.h
+index b5ea32c4..0f52c4ae 100644
+--- a/tools/sgx/ra-tls/ra_tls_common.h
++++ b/tools/sgx/ra-tls/ra_tls_common.h
+@@ -18,7 +18,10 @@
+ #include "sgx_attest.h"
+ 
+ #define SHA256_DIGEST_SIZE       32
+-#define PUB_KEY_SIZE_MAX         128 /* enough for the only currently supported algo (ECDSA-384) */
++#define RSA_PUB_3072_KEY_LEN     3072
++#define RSA_PUB_3072_KEY_DER_LEN 422
++#define RSA_PUB_EXPONENT         65537
++#define PUB_KEY_SIZE_MAX         512
+ #define IAS_REQUEST_NONCE_LEN    32
+ 
+ #define OID(N) \
+diff --git a/tools/sgx/ra-tls/ra_tls_verify_common.c b/tools/sgx/ra-tls/ra_tls_verify_common.c
+index a3de82ea..66f6c46a 100644
+--- a/tools/sgx/ra-tls/ra_tls_verify_common.c
++++ b/tools/sgx/ra-tls/ra_tls_verify_common.c
+@@ -185,10 +185,10 @@ int find_oid_in_cert_extensions(const uint8_t* exts, size_t exts_size, const uin
+ 
+ /*! calculate sha256 over public key from \p crt and copy it into \p sha */
+ static int sha256_over_crt_pk(mbedtls_x509_crt* crt, uint8_t* sha) {
+-    mbedtls_ecp_keypair* key = mbedtls_pk_ec(crt->pk);
+-    if (key == NULL || key->MBEDTLS_PRIVATE(grp).id != MBEDTLS_ECP_DP_SECP384R1) {
+-        return MBEDTLS_ERR_PK_BAD_INPUT_DATA;
+-    }
++    // mbedtls_ecp_keypair* key = mbedtls_pk_ec(crt->pk);
++    // if (key == NULL || key->MBEDTLS_PRIVATE(grp).id != MBEDTLS_ECP_DP_SECP384R1) {
++    //     return MBEDTLS_ERR_PK_BAD_INPUT_DATA;
++    // }
+ 
+     uint8_t pk_der[PUB_KEY_SIZE_MAX] = {0};
+ 

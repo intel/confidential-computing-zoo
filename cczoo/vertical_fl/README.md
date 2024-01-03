@@ -18,29 +18,24 @@
 
 ### 1. Download source code
 
-Download the [Fedlearner source code](https://github.com/bytedance/fedlearner/tree/fix_dev_sgx):
+Download the [CCZOO source code](https://github.com/intel/confidential-computing-zoo):
 
 ```
+git clone https://github.com/intel/confidential-computing-zoo
 cd cczoo/vertical_fl
-git clone -b fix_dev_sgx https://github.com/bytedance/fedlearner.git vertical_fl
-cd vertical_fl
-git checkout 75e8043
-cd ..
-./apply_overlay.sh
-cd vertical_fl
 ```
 
-### 2. Build Docker image                                    
+### 2. Build Docker image
 
 `build_dev_docker_image.sh` provides the parameter `proxy_server` to specify the network proxy. `build_dev_docker_image.sh` also accepts an optional argument to specify the docker image tag.
 
 For deployments on Microsoft Azure:
 ```
-AZURE=1 ./sgx/build_dev_docker_image.sh
+AZURE=1 ./build_dev_docker_image.sh
 ```
 For other cloud deployments:
 ```
-./sgx/build_dev_docker_image.sh
+./build_dev_docker_image.sh
 ```
 
 Example of built image:
@@ -57,7 +52,7 @@ Start the leader and follower containers:
 ```
 docker run -itd --name=fedlearner_leader --restart=unless-stopped -p 50051:50051 \
     --device=/dev/sgx_enclave:/dev/sgx/enclave --device=/dev/sgx_provision:/dev/sgx/provision fedlearner-sgx-dev:latest bash
-    
+
 docker run -itd --name=fedlearner_follower --restart=unless-stopped -p 50052:50052 \
     --device=/dev/sgx_enclave:/dev/sgx/enclave --device=/dev/sgx_provision:/dev/sgx/provision fedlearner-sgx-dev:latest bash
 ```

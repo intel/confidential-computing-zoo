@@ -1,0 +1,98 @@
+libos.entrypoint = "{{ entrypoint }}"
+libos.check_invalid_pointers = false
+
+loader.entrypoint = "file:{{ gramine.libos }}"
+loader.log_level = "{{ log_level }}"
+# loader.log_file = ""
+
+loader.insecure__use_cmdline_argv = true
+loader.insecure__use_host_env = true
+
+loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/usr/local{{ arch_libdir }}:/usr{{ arch_libdir }}:/lib:{{ arch_libdir }}"
+loader.env.HOME = "{{ env.HOME }}"
+loader.env.LC_ALL = "C"
+# loader.env.LD_PRELOAD = "libsecret_prov_attest.so"
+# loader.env.SECRET_PROVISION_CONSTRUCTOR = "1"
+# loader.env.SECRET_PROVISION_SET_KEY = "default"
+# loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "/ca.crt"
+# loader.env.SECRET_PROVISION_SERVERS = "localhost:4433"
+
+loader.pal_internal_mem_size = "200M"
+
+sys.enable_sigterm_injection = true
+sys.stack.size = "2M"
+
+fs.mounts = [
+  { path = "{{ entrypoint }}", uri = "file:{{ entrypoint }}" },
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+  { path = "/usr", uri = "file:/usr" },
+  { path = "/etc", uri = "file:/etc" },
+  # don't use /proc in tf
+  # { path = "/proc", uri = "file:/proc" },
+  { type = "tmpfs", path = "/tmp" },
+{% for path in python.get_sys_path(entrypoint) %}
+  { path = "{{ path }}", uri = "file:{{ path }}" },
+{% endfor %}
+  { path = "/root/.keras/keras.json", uri = "file:/root/.keras/keras.json" },
+  # { path = "/model", uri = "file:model", type = "encrypted", key_name = "default" },
+  # { path = "/ca.crt", uri = "file:ca.crt" },
+]
+# fs.insecure__keys.default = "ffeeddccbbaa99887766554433221100"
+
+# Note that Gramine also creates an internal
+# thread for handling inter-process communication (IPC), and potentially another
+# thread for asynchronous events. Therefore, the actual number of threads that
+# the application can create is (sgx.thread_num - 2).
+
+sgx.debug = false
+sgx.remote_attestation = "dcap"
+sgx.nonpie_binary = true
+sgx.enable_stats = false
+sgx.preheat_enclave = false
+sgx.enclave_size = "16G"
+sgx.insecure__rpc_thread_num = 0
+sgx.max_threads = {{ '1' if env.get('EDMM', '0') == '1' else '512' }}
+sgx.edmm_enable = {{ 'true' if env.get('EDMM', '0') == '1' else 'false' }}
+
+# sgx.require_avx = true
+# sgx.require_avx512 = true
+# sgx.require_amx = true
+
+sgx.trusted_files = [
+  "file:{{ entrypoint }}",
+  "file:{{ gramine.libos }}",
+  "file:{{ gramine.runtimedir() }}/",
+  "file:{{ arch_libdir }}/",
+  "file:/usr{{ arch_libdir }}/",
+  "file:/usr/local{{ arch_libdir }}/",
+{% for path in python.get_sys_path(entrypoint) %}
+  "file:{{ path }}{{ '/' if path.is_dir() else '' }}",
+{% endfor %}
+  "file:/etc/ssl/certs/ca-certificates.crt",
+  "file:/etc/default/apport",
+  "file:/etc/mime.types",
+  "file:train.py",
+]
+
+sgx.allowed_files = [
+  "file:/usr/lib/ssl/openssl.cnf",
+  "file:/usr/bin/ld",
+  "file:/usr/bin/gcc",
+  "file:/usr/bin/objdump",
+  "file:/etc/ethers",
+  "file:/etc/hosts",
+  "file:/etc/group",
+  "file:/etc/passwd",
+  "file:/etc/ld.so.conf",
+  "file:/etc/gai.conf",
+  "file:/etc/host.conf",
+  "file:/etc/resolv.conf",
+  "file:/etc/nsswitch.conf",
+  "file:/etc/sgx_default_qcnl.conf",
+  "file:/proc/stat",
+  "file:/tmp/",
+  "file:data/",
+  "file:model/",
+  "file:/root/.keras/keras.json",
+]
