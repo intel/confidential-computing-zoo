@@ -8,7 +8,7 @@ commit_id=fd25106c883bba36a4f5276792f024d4622130b3
 
 docker build \
     -f ${dockerfile} . \
-    -t appliedmlwf/rag-llm:release \
+    -t intelcczoo/tdx-rag:backend \
     --network=host \
     --build-arg http_proxy=${http_proxy} \
     --build-arg https_proxy=${https_proxy} \

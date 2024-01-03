@@ -1,0 +1,53 @@
+version: 1.15.1
+components:
+- name: DocumentStore
+  type: FAISSDocumentStore
+  params:
+    faiss_index_path: /home/rag_data/faiss-index-so.faiss
+    faiss_config_path: /home/rag_data/faiss-index-so.json
+- name: Retriever
+  type: DensePassageRetriever
+  params:
+    document_store: DocumentStore    # params can reference other components defined in the YAML
+    top_k: 5
+    query_embedding_model: "/home/rag_data/dpr-question_encoder-single-nq-base"
+    passage_embedding_model: "/home/rag_data/dpr-ctx_encoder-single-nq-base"
+    max_seq_len_query: 64
+    max_seq_len_passage: 256
+    batch_size: 16
+    embed_title: True
+    use_fast_tokenizers: True
+- name: Reranker
+  params:
+    batch_size: 32
+    model_name_or_path: /home/rag_data/ms-marco-MiniLM-L-12-v2
+    top_k: 1
+    use_gpu: false
+  type: SentenceTransformersRanker
+- name: PModel
+  params:
+    model_name_or_path: /home/rag_data/Llama-2-7b-chat-hf
+    use_gpu: false
+    model_kwargs:
+      task_name: text-generation
+      torch_dtype: torch.bfloat16
+      use_ipex: True
+  type: PromptModel
+- name: Prompter
+  params:
+    model_name_or_path: PModel
+    default_prompt_template: question-answering
+  type: PromptNode
+
+pipelines:
+- name: query
+  nodes:
+  - inputs:
+    - Query
+    name: Retriever
+  - inputs:
+    - Retriever
+    name: Reranker
+  - inputs:
+    - Reranker
+    name: Prompter

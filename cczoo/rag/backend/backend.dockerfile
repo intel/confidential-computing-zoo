@@ -111,6 +111,6 @@ RUN cd confidential-computing-zoo/utilities/tdx/tdx_report_parser \
     && make \
     && cp tdx_report.out /usr/bin/tdx_report_parser
 
-RUN pip3 install optimum-intel urllib3==2.0.4
+RUN pip3 install optimum-intel urllib3==2.0.4 mysqlclient==2.2.0
 
 EXPOSE 8000

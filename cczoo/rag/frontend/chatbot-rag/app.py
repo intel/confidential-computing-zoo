@@ -41,36 +41,24 @@ set_state_if_absent("generated", [DEFAULT_QUESTION_AT_STARTUP])
 set_state_if_absent("past", [DEFAULT_ANSWER_AT_STARTUP])
 st.title("Build Trustworthy and Confidential LLM (RAG) Inference with Intel® TDX Shield")
 
-st.sidebar.image("./images/Intel.png")
 st.sidebar.markdown("<h1>Options</h1>", unsafe_allow_html=True)
-prompt_name = st.sidebar.radio("Choose a prompt:", ("General", "Fleet"))
+prompt_name = st.sidebar.radio("Choose a prompt:", ("General", "Other"))
 counter_placeholder = st.sidebar.empty()
-#counter_placeholder.write(f"Total cost of this conversation: ${st.session_state['total_cost']:.5f}")
 clear_button = st.sidebar.button("Restart Conversation", key="clear")
 
 model_type = "llama2"
 
 def generate_prompt(prompt_name):
-    if prompt_name == "Fleet":
-        PROMPT_TEXT = """Below is an instruction that describes a task, paired with an input that \
-            provides further context. Write response that appropriately completes the request.
+    PROMPT_TEXT = """Below is an instruction that describes a task, paired with an input that provides further context. Write response that appropriately completes the request.
 
-        ### Instruction:
-        Suppose you are a professional computer engineer at Intel. Paraphrase the context as a detailed summary.
+    ### Instruction:
+    Suppose you are a professional computer engineer. Paraphrase the context as a detailed summary to answer the question: {join(documents)}.
 
-        ### Input:
-        {join(documents)}
+    ### Input:
+    context: {' - '.join([d.meta['answer'] for d in documents])};
 
-        ### Answer:"""
-        custom_prompt = PROMPT_TEXT
-    elif prompt_name == "General":
-        PROMPT_TEXT = """Suppose you are a system debug agent at Intel, please answer the question. Question: {query}; Answer:"""
-        #custom_prompt = create_prompt_template(NAME, PROMPT_TEXT, OUTPUT_PARSER)
-        custom_prompt = PROMPT_TEXT
-    else:
-        PROMPT_TEXT = """Suppose you are a system debug agent at Intel, please answer the question. Question: {query}; Answer:"""
-        #custom_prompt = create_prompt_template(NAME, PROMPT_TEXT, OUTPUT_PARSER)
-        custom_prompt = PROMPT_TEXT
+    ### Answer:"""
+    custom_prompt = PROMPT_TEXT
     return custom_prompt
 
 custom_prompt = generate_prompt(prompt_name)
@@ -111,26 +99,20 @@ response_container = st.container()
 container = st.container()
 
 prompt = [
-        "Why is Intel pursuing a formalized advanced services offering for its Xeon-based processors?",
-        "What are the specific capabilities that are included as part of advanced services for Intel® Xeon® Processors?",
-        "With the introduction of advanced services, will my support level change?",
-        "Are the services and capabilities included in advanced services exclusive to a particular CSP customer or will they be offered to other customers?",
-        "What is the advanced services business model?",
-        "Will new platforms be Added/ Removed to advanced services during a subscription period?",
-        "Can new capabilities be added to the list if they are not on there?",
-        "What is the SLA for production signed patch for debug? Does this have a bearing on issue resolution SLA?",
-        "What is the SLA for delivery of fleet enhancement features? When is the credit used - at the time of request or at the time of delivery?",
-        "Is fleet service scope be applicable for non-POR post TTM changes?",
-        "If Intel has another major event, similar to that in 2018, will Intel provide servicing to the platform?",
-        "Are credits applicable to advanced debug functions and fleet management software functions?",
-        ]
+    "What is artificial intelligence?",
+    "Explain the working principle of blockchain technology.",
+    "Introduce recent applications of artificial intelligence.",
+    "Explain the basic principles of deep learning.",
+    "Explain the difference between supervised learning and unsupervised learning in machine learning.",
+    "What are the potential applications of artificial intelligence in the field of education?",
+]
 
 placeholder = random.choice(prompt)
 
 with container:
     with st.form(key='my_form', clear_on_submit=True):
         print("call container")
-        user_input = st.text_area("You:", key='input', placeholder="Ask a random fleet question", height=100)
+        user_input = st.text_area("You:", key='input', placeholder="Ask a random question", height=100)
         submit_button = st.form_submit_button(label='Send')
         if submit_button:
             if user_input:
@@ -148,7 +130,7 @@ if st.session_state['generated']:
                 st.markdown(f"""
                             <div class="container">
                                 {bot_image}
-                                <p class='answer'> Hi, I'm Data Center Cluster Fleet Service Agent, how can I help you? </p>
+                                <p class='answer'> Hi, I'm a professional computer engineer, how can I help you? </p>
                             </div>
                             """, 
                             unsafe_allow_html=True)
@@ -185,6 +167,7 @@ if st.session_state['generated']:
                             # then strip out any empty strings
                             report.append(resp.decode('utf-8', 'ignore'))
                             result = "".join(report).strip()
+                            result = result.replace('\n', '<br>')
                             st.markdown(f"""
                                         <div class="container">
                                            {bot_image}
