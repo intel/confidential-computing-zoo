@@ -7,7 +7,7 @@ import time
 logging.basicConfig(format="%(levelname)s - %(name)s -  %(message)s", level=logging.WARNING)
 logging.getLogger("haystack").setLevel(logging.INFO)
 
-pipeline = Pipeline.load_from_yaml(Path("rag.yaml"))
+pipeline = Pipeline.load_from_yaml(Path("rag_mysql.yaml"))
 start=time.time()
 PROMPT_TEXT = """Below is an instruction that describes a task, paired with an input that provides further context. Write response that appropriately completes the request.
 
