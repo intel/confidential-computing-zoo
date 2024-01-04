@@ -71,7 +71,7 @@ elif [ "$SERVICE_NAME" == 'backend' ]; then
        -e https_proxy=${https_proxy} \
        -e no_proxy=${no_proxy} \
        -e API_PROTOCOL=${API_PROTOCOL} \
-       -e PIPELINE_YAML_PATH=/home/user/workspace/rag_db.yaml \
+       -e PIPELINE_YAML_PATH=/home/user/workspace/rag_mysql.yaml \
        -e ENABLE_OPTIMUM_INTEL=False \
        -e QUERY_PIPELINE_NAME=query \
        -e ONEDNN_MAX_CPU_ISA=AVX512_CORE_BF16 \
