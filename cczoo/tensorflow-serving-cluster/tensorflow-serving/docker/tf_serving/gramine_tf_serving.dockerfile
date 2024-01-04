@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,11 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 ENV GRAMINEDIR=/gramine
 ENV ISGX_DRIVER_PATH=${GRAMINEDIR}/driver
-ENV SGX_SIGNER_KEY=${GRAMINEDIR}/Pal/src/host/Linux-SGX/signer/enclave-key.pem
 ENV WORK_BASE_PATH=${GRAMINEDIR}/CI-Examples/tensorflow-serving-cluster/tensorflow-serving
 ENV MODEL_BASE_PATH=${WORK_BASE_PATH}/models
 ENV MODEL_NAME=model
@@ -26,9 +25,8 @@ ENV SGX=1
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
-
 # Enable it to disable debconf warning
-# RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
 
 # Add steps here to set up dependencies
 RUN apt-get update \
@@ -43,6 +41,7 @@ RUN apt-get update \
         libcurl4-openssl-dev \
         libprotobuf-c-dev \
         protobuf-c-compiler \
+        protobuf-compiler \
         python3.7 \
         python3-protobuf \
         python3-pip \
@@ -57,18 +56,20 @@ RUN apt-get update \
         ninja-build \
         wget \
         curl \
+        nasm \
     && apt-get install -y --no-install-recommends apt-utils
 
-RUN ln -sf /usr/bin/python3.7 /usr/bin/python3
-RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55'
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+RUN python3 -B -m pip install 'toml>=0.10' 'meson>=0.55' cryptography pyelftools
 
-RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/intel-sgx.list \
+RUN echo "deb [trusted=yes arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | tee /etc/apt/sources.list.d/intel-sgx.list \
     && wget -qO - https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | apt-key add -
 
 RUN apt-get update
 
 # Add TensorFlow Serving distribution URI as a package source
-RUN echo "deb [trusted=yes arch=amd64] http://storage.googleapis.com/tensorflow-serving-apt stable tensorflow-model-server tensorflow-model-server-universal" | tee /etc/apt/sources.list.d/tensorflow-serving.list \
+# Specify 2.8.0 which is the latest version compatible with the glibc version in Ubuntu 18.04
+RUN echo "deb [trusted=yes arch=amd64] http://storage.googleapis.com/tensorflow-serving-apt testing tensorflow-model-server-2.8.0" | tee /etc/apt/sources.list.d/tensorflow-serving.list \
     && curl https://storage.googleapis.com/tensorflow-serving-apt/tensorflow-serving.release.pub.gpg | apt-key add -
 
 RUN apt-get update
@@ -76,46 +77,54 @@ RUN apt-get update
 # Install SGX PSW
 RUN apt-get install -y libsgx-pce-logic libsgx-ae-qve libsgx-quote-ex libsgx-qe3-logic sgx-aesm-service
 
-# Install DCAP
+# Install SGX DCAP
 RUN apt-get install -y libsgx-dcap-ql-dev libsgx-dcap-default-qpl libsgx-dcap-quote-verify-dev
 
 # Clone Gramine and Init submodules
+ARG GRAMINE_VERSION=v1.3.1
 RUN git clone https://github.com/gramineproject/gramine.git ${GRAMINEDIR} \
     && cd ${GRAMINEDIR} \
-    && git checkout c662f63bba76736e6d5122a866da762efd1978c1
-
+    && git checkout ${GRAMINE_VERSION}
 
 # Create SGX driver for header files
 RUN git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git ${ISGX_DRIVER_PATH} \
     && cd ${ISGX_DRIVER_PATH} \
     && git checkout DCAP_1.11
 
-RUN openssl genrsa -3 -out ${SGX_SIGNER_KEY} 3072
-
 # Build Gramine
-RUN cd ${GRAMINEDIR} && pwd && meson setup build/ --buildtype=debug -Dsgx=enabled -Ddcap=enabled -Dsgx_driver="dcap1.10" -Dsgx_driver_include_path="/gramine/driver/driver/linux/include" \
+RUN cd ${GRAMINEDIR} && pwd && meson setup build/ --buildtype=release -Dsgx=enabled -Ddcap=enabled -Dsgx_driver="dcap1.10" -Dsgx_driver_include_path="/gramine/driver/driver/linux/include" \
     && ninja -C build/ \
     && ninja -C build/ install
-
+RUN gramine-sgx-gen-private-key
 
 # Install the latest tensorflow-model-server
-RUN apt-cache madison "tensorflow-model-server"
-RUN apt-get install -y tensorflow-model-server
+# RUN apt-cache madison "tensorflow-model-server"
+# RUN apt-get install -y tensorflow-model-server
+
+ARG TF_SERVING_PKGNAME=tensorflow-model-server
+ARG TF_SERVING_VERSION=2.6.2
+RUN curl -LO https://storage.googleapis.com/tensorflow-serving-apt/pool/${TF_SERVING_PKGNAME}-${TF_SERVING_VERSION}/t/${TF_SERVING_PKGNAME}/${TF_SERVING_PKGNAME}_${TF_SERVING_VERSION}_all.deb \
+    && apt-get install -y ./${TF_SERVING_PKGNAME}_${TF_SERVING_VERSION}_all.deb
 
 # Clean apt cache
 RUN apt-get clean all
 
 # Build Secret Provision
+ENV RA_TYPE=dcap
 RUN cd ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov \
-    && make dcap 
+    && make app ${RA_TYPE} RA_TYPE=${RA_TYPE}
+
+COPY ca.crt ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl
 
 WORKDIR ${WORK_BASE_PATH}
 
-RUN cp ${GRAMINEDIR}/build/Pal/src/host/Linux-SGX/tools/ra-tls/libsecret_prov_attest.so . \
-    && cp -R ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/certs .
+RUN cp ${GRAMINEDIR}/build/tools/sgx/ra-tls/libsecret_prov_attest.so . \
+    && cp -R ${GRAMINEDIR}/CI-Examples/ra-tls-secret-prov/ssl .
 
 COPY Makefile .
 COPY tensorflow_model_server.manifest.template .
+RUN make SGX=${SGX} RA_TYPE=${RA_TYPE} -j `nproc` | grep "mr_enclave\|mr_signer\|isv_prod_id\|isv_svn" | tee -a enclave.mr
+
 COPY tf_serving_entrypoint.sh /usr/bin
 COPY sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf
 
@@ -128,4 +137,3 @@ EXPOSE 8501
 RUN chmod +x /usr/bin/tf_serving_entrypoint.sh
 RUN cat /etc/sgx_default_qcnl.conf
 ENTRYPOINT ["/usr/bin/tf_serving_entrypoint.sh"]
-

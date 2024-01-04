@@ -1,0 +1,74 @@
+# Basic template
+
+app.capi_target = "ccp.tencentcloudapi.com"
+app.kms_target = "kms.tencentcloudapi.com"
+
+loader.entrypoint = "file:{{ gramine.libos }}"
+
+libos.entrypoint = "tensorflow_model_server"
+
+loader.log_level = "error"
+# # Read application arguments directly from the command line. Don't use this on production!
+loader.insecure__use_cmdline_argv = true
+#
+# # Environment variables for Python
+loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:/lib/x86_64-linux-gnu:/usr/lib:/usr/lib/x86_64-linux-gnu:./"
+# # Allow for injecting SIGTERM signal from the host.
+sys.enable_sigterm_injection = true
+#
+
+
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "/lib/x86_64-linux-gnu", uri = "file:/lib/x86_64-linux-gnu" },
+  { path = "/ssl", uri = "file:/ssl" },
+  { path = "/usr/lib/x86_64-linux-gnu", uri = "file:/usr/lib/x86_64-linux-gnu" },
+  { path = "/etc", uri = "file:/etc" },
+  { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
+  { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
+  { path = "/models/resnet50-v15-fp32/1/saved_model.pb", uri = "file:models/resnet50-v15-fp32/1/saved_model.pb", type = "encrypted" },
+]
+
+sgx.enclave_size = "4G"
+#
+# # Gramine creates stacks of 256KB by default. It is not enough for SciPy/NumPy
+# # packages, e.g., libopenblas dependency assumes more than 512KB-sized stacks.
+sys.stack.size = "4M"
+#
+# # Set the maximum number of enclave threads. For SGX v1, the number of enclave
+# # TCSes must be specified during signing, so the application cannot use more
+# # threads than the number of TCSes. Note that Gramine also creates an internal
+# # thread for handling inter-process communication (IPC), and potentially another
+# # thread for asynchronous events. Therefore, the actual number of threads that
+# # the application can create is (sgx.thread_num - 2).
+sgx.thread_num = 400
+
+sgx.nonpie_binary = true
+
+loader.pal_internal_mem_size = "200M"
+
+sgx.ra_client_spid = ""
+
+# SGX Attestation
+sgx.remote_attestation = "dcap"
+loader.env.LD_PRELOAD = "libsecret_prov_attest.so"
+loader.env.SECRET_PROVISION_CONSTRUCTOR = "1"
+loader.env.SECRET_PROVISION_SET_KEY = "default"
+loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "/ssl/ca.crt"
+loader.env.SECRET_PROVISION_SERVERS = "attestation.service.com:4433"
+
+sgx.trusted_files = [
+  "file:{{ gramine.libos }}",
+  "file:{{ gramine.runtimedir() }}/",
+  "file:{{ python.distlib }}/",
+  "file:/usr/lib/x86_64-linux-gnu/",
+  "file:/lib/x86_64-linux-gnu/",
+  "file:/ssl/",
+  "file:/ssl/ca.crt",
+  "file:/usr/bin/tensorflow_model_server"
+]
+
+
+sgx.allowed_files = [
+  "file:/",
+]

@@ -1,11 +1,14 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
-# Add steps here to set up dependencies
+# Disable debconf warning
+RUN ["/bin/bash", "-c", "set -o pipefail && echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections"]
+
+# Install dependencies
 RUN apt-get update \
-    && apt-get install -y \
+    && apt-get install -y --no-install-recommends \
         autoconf \
         bison \
         build-essential \
@@ -17,7 +20,7 @@ RUN apt-get update \
         libgl1-mesa-glx \
         libprotobuf-c-dev \
         protobuf-c-compiler \
-        python3.7 \
+        python3 \
         python3-protobuf \
         python3-pip \
         python3-dev \
@@ -30,16 +33,17 @@ RUN apt-get update \
         ninja-build \
         wget \
         curl \
-    && apt-get install -y --no-install-recommends apt-utils
+        libglib2.0-0 \
+        apt-utils \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --upgrade pip
-RUN pip install django-model-utils
+RUN pip3 install --no-cache-dir --upgrade \
+    'pip==23.1.*' 'django-model-utils==4.3.*' 'wheel==0.40.*' 'django==4.2.*' 'jinja2==2.11.*' 'setuptools==65.5.*'
 
-RUN mkdir client
-RUN mkdir -p client/ssl_configure
-COPY requirements.txt client/
-RUN pip3 install -r client/requirements.txt
-COPY resnet_client_grpc.py client/
-COPY utils.py client/
-COPY ssl_configure client/ssl_configure
-
+WORKDIR /client
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+COPY resnet_client_grpc.py . 
+COPY utils.py .
+COPY run_inference.sh .

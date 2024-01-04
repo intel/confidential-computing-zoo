@@ -60,24 +60,29 @@ We encrypt models with cryptographic (wrap) key by using Protected-File mode in 
 
 - Ubuntu 18.04. This solution should work on other Linux distributions as well, but for simplicity we provide the steps for Ubuntu 18.04 only.
 
-- Docker Engine. Docker Engine is an open source containerization technology for building and containerizing your applications. In this solution, Gramine, Fedlearner, gRPC will be built in Docker images. Please follow [this guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script) to install Docker engine.
+- Docker Engine. Docker Engine is an open source containerization technology for building and containerizing your applications. In this solution, Gramine, Fedlearner, gRPC will be built in a Docker image. Please follow [this guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script) to install Docker Engine. The Docker daemon's storage location (/var/lib/docker for example) should have at least 32GB available.
 
-- SGX capable platform. Intel SGX Driver and SDK/PSW. You need a machine that supports Intel SGX and FLC/DCAP. Please follow [this guide](https://download.01.org/intel-sgx/latest/linux-latest/docs/) to install the Intel SGX driver and SDK/PSW. One way to verify SGX enabling status in your machine is to run [QuoteGeneration](https://github.com/intel/SGXDataCenterAttestationPrimitives/blob/master/QuoteGeneration) and [QuoteVerification](https://github.com/intel/SGXDataCenterAttestationPrimitives/blob/master/QuoteVerification) successfully.
+- CCZoo Vertical Federated Learning source package:
 
-Here, we will demonstrate how to run leader and follower from two containers.
+    ```shell
+    git clone https://github.com/intel/confidential-computing-zoo.git
+    ```
+- SGX capable platform. Intel SGX Driver and SDK/PSW. You need a machine that supports Intel SGX and FLC/DCAP. If the Intel SGX driver and SDK/PSW is already installed on your machine/VM, the following steps can be skipped. For example, the following steps are not necessary and can be skipped for Azure deployments.
 
-
+    Please follow [this guide](https://download.01.org/intel-sgx/latest/linux-latest/docs/) to install the Intel SGX driver and SDK/PSW. One way to verify SGX enabling status in your machine is to run [QuoteGeneration](https://github.com/intel/SGXDataCenterAttestationPrimitives/blob/master/QuoteGeneration) and [QuoteVerification](https://github.com/intel/SGXDataCenterAttestationPrimitives/blob/master/QuoteVerification) successfully.
 
 ## Executing Fedlearner in SGX
 
 ### 1. Download source code
 
-Download the [Fedlearner source code](https://github.com/bytedance/fedlearner/tree/fix_dev_sgx) which is a git submodule of CCZoo.
+Download the [Fedlearner source code](https://github.com/bytedance/fedlearner/tree/fix_dev_sgx):
 
 ```
-git submodule init
-git submodule update
 cd cczoo/vertical_fl
+git clone -b fix_dev_sgx https://github.com/bytedance/fedlearner.git vertical_fl
+cd vertical_fl
+git checkout 75e8043
+cd ..
 ./apply_overlay.sh
 cd vertical_fl
 ```
@@ -107,22 +112,11 @@ fedlearner-sgx-dev     latest      8c3c7a05f973        45 hours ago      15.2GB
 Start the leader and follower containers:
 
 ```
-docker run -itd \
-    --name=fedlearner_leader \
-    --restart=unless-stopped \
-    -p 50051:50051 \
-    --device=/dev/sgx_enclave:/dev/sgx/enclave \
-    --device=/dev/sgx_provision:/dev/sgx/provision \
-    fedlearner-sgx-dev:latest  \
-    bash
-docker run -itd \
-    --name=fedlearner_follower \
-    --restart=unless-stopped \
-    -p 50052:50052 \
-    --device=/dev/sgx_enclave:/dev/sgx/enclave \
-    --device=/dev/sgx_provision:/dev/sgx/provision \
-    fedlearner-sgx-dev:latest  \
-    bash
+docker run -itd --name=fedlearner_leader --restart=unless-stopped -p 50051:50051 \
+    --device=/dev/sgx_enclave:/dev/sgx/enclave --device=/dev/sgx_provision:/dev/sgx/provision fedlearner-sgx-dev:latest bash
+    
+docker run -itd --name=fedlearner_follower --restart=unless-stopped -p 50052:50052 \
+    --device=/dev/sgx_enclave:/dev/sgx/enclave --device=/dev/sgx_provision:/dev/sgx/provision fedlearner-sgx-dev:latest bash
 ```
 
 Take note of the container IP addresses for later steps:
@@ -168,6 +162,14 @@ Start the aesm service in both the leader and follower containers:
 
 ```
 /root/start_aesm_service.sh
+```
+
+Verify the aesm service is running in both the leader and follower containers:
+
+```
+# ps aux |grep aesm_service
+root          35  0.1  0.0 293004 16788 ?        Ssl  03:26   0:00 /opt/intel/sgx-aesm-service/aesm/aesm_service
+root          44  0.0  0.0  13220  1068 pts/1    S+   03:26   0:00 grep --color=auto aesm_service
 ```
 
 #### 4. Prepare data
@@ -223,11 +225,11 @@ dynamic_config.json:
 
 #### 6. Run the distributing training
 
-Start the training process in the follower container:
+Start the training process in the follower container, replacing XXX.XXX.XXX.XXX with the leader container IP address. For example:
 
 ```
 cd /gramine/CI-Examples/wide_n_deep
-peer_ip=REPLACE_WITH_LEADER_IP_ADDR
+peer_ip=XXX.XXX.XXX.XXX
 ./test-ps-sgx.sh follower $peer_ip
 ```
 
@@ -237,11 +239,11 @@ Wait until the follower training process is ready, when the following log is dis
 2022-10-12 02:53:47,002 [INFO]: waiting master ready... (fl_logging.py:95)
 ```
 
-Start the training process in the leader container:
+Start the training process in the leader container, replacing XXX.XXX.XXX.XXX with the follower container IP address. For example:
 
 ```
 cd /gramine/CI-Examples/wide_n_deep
-peer_ip=REPLACE_WITH_FOLLOWER_IP_ADDR
+peer_ip=XXX.XXX.XXX.XXX
 ./test-ps-sgx.sh leader $peer_ip
 ```
 

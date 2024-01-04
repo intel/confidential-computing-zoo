@@ -1,0 +1,5 @@
+car
+bicycle
+train
+cat
+dog

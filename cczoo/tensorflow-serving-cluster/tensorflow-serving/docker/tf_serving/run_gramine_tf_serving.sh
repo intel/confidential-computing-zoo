@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ function usage_help() {
     echo -e "  -s {ssl_config_file}"
     echo -e "  -a {attestation_hosts}"
     echo -e "       Format: '{attestation_domain_name}:{ip}'"
+    echo -e "  -b {azure_maa_prov_address}"
     echo -e "  -e {sgx_env}"
     echo -e "       SGX = sgx_env"
 }
@@ -41,14 +42,16 @@ session_parallelism=0
 parallel_num_threads=2
 file_system_poll_wait_seconds=5
 attestation_hosts="localhost:127.0.0.1"
+azure_maa_prov_address="https://sharedcus.cus.attest.azure.net"
 work_base_path=/gramine/CI-Examples/tensorflow-serving-cluster/tensorflow-serving
 isgx_driver_path=/gramine/driver
 http_proxy=""
 https_proxy=""
 no_proxy=""
+start_aesm_service=""
 
 # Override args
-while getopts "h?r:i:p:m:s:a:e:" OPT; do
+while getopts "h?r:i:p:m:s:a:b:e:" OPT; do
     case $OPT in
         h|\?)
             usage_help
@@ -74,6 +77,10 @@ while getopts "h?r:i:p:m:s:a:e:" OPT; do
             echo -e "Option $OPTIND, attestation_hosts = $OPTARG"
             attestation_hosts=$OPTARG
             ;;
+        b)
+            echo -e "Option $OPTIND, azure_maa_prov_address = $OPTARG"
+            azure_maa_prov_address=$OPTARG
+            ;;
         e)
             echo -e "Option $OPTIND, SGX = $OPTARG"
             SGX=$OPTARG
@@ -92,7 +99,7 @@ while getopts "h?r:i:p:m:s:a:e:" OPT; do
 done
 
 docker run \
-    -it \
+    -itd \
     --device /dev/sgx_enclave:/dev/sgx/enclave \
     --device /dev/sgx_provision:/dev/sgx/provision \
     --add-host=${attestation_hosts} \
@@ -116,5 +123,7 @@ docker run \
     -e OMP_NUM_THREADS=${parallel_num_threads} \
     -e MKL_NUM_THREADS=${parallel_num_threads} \
     -e file_system_poll_wait_seconds=${file_system_poll_wait_seconds} \
+    -e start_aesm_service=${start_aesm_service} \
+    -e RA_TLS_MAA_PROVIDER_URL=${azure_maa_prov_address} \
     ${image_id}
 

@@ -67,7 +67,7 @@ The configuration of the ECS instance as below:
     <tr>
       <td style="text-align: left;">PCCS Server
       </td>
-      <td><a href="https://help.aliyun.com/document_detail/208095.html">sgx-dcap-server.cn-hangzhou.aliyuncs.com</a>
+      <td><a href="https://help.aliyun.com/document_detail/208095.html">sgx-dcap-server-vpc.cn-hangzhou.aliyuncs.com</a>
       </td>
     </tr>
     <tr>
@@ -348,8 +348,11 @@ The following is the configuration of the DCsv3-series instance used:
 				<ul>
 					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/tensorflow-serving-cluster/index.html"><span>TensorFlow Serving Cluster PPML&nbsp;</span></a></li>
 					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/horizontal-federated-learning/hfl.html"><span>Horizontal Federated Learning&nbsp;</span></a></li>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/logistic-regression-inference-HE-SGX/index.html"><span>Secure Logistic Regression Inference with HE and Intel SGX&nbsp;</span></a></li>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html"><span>RA-TLS Enhanced gRPC&nbsp;</span></a></li>
 					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/vertical-federated-learning/vfl.html" target="_blank">Vertical Federated Learning</a></li>
-        </ul>
+					<li><a href="https://cczoo.readthedocs.io/en/latest/Solutions/psi/PSI.html" target="_blank">Private Set Intersection (PSI)</a></li>
+				</ul>
 			</td>
 		</tr>
 	</tbody>

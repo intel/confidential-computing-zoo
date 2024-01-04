@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: self-hosted-registry
+  labels:
+    app: self-hosted-registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: self-hosted-registry
+  template:
+    metadata:
+      labels:
+        app: self-hosted-registry
+    spec:
+      hostNetwork: true
+      volumes:
+      - name: certs-vol
+        hostPath:
+          path: /opt/registry/certs
+          type: Directory
+
+      containers:
+        - image: registry:2
+          name: self-hosted-registry
+          imagePullPolicy: IfNotPresent
+          env:
+          - name: REGISTRY_HTTP_TLS_CERTIFICATE
+            value: "/certs/domain.crt"
+          - name: REGISTRY_HTTP_TLS_KEY
+            value: "/certs/domain.key"
+          - name: REGISTRY_HTTP_ADDR
+            value: "0.0.0.0:443"
+          volumeMounts:
+          - name: certs-vol
+            mountPath: /certs
+    #nodeSelector:
+    #    node-role.kubernetes.io/master: "true"

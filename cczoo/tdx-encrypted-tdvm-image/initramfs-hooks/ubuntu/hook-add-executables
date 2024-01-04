@@ -1,0 +1,34 @@
+#!/bin/sh
+# This script should be in /etc/initramfs-tools/hooks
+
+PREREQ=""
+
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+	prereqs) echo "${PREREQS}"; exit 0;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+
+copy_exec /sbin/opening_disk.sh
+copy_exec /sbin/getting_key.sh
+
+
+# For RA
+copy_exec /etc/hosts
+copy_exec /usr/bin/ra-client
+copy_exec /usr/bin/roots.pem
+copy_exec /usr/bin/dynamic_config.json
+copy_exec /usr/lib/libsgx_urts.so.2
+copy_exec /usr/lib/libsgx_enclave_common.so.1
+
+# For Debug
+# copy_exec /usr/bin/nm
+# copy_exec /usr/bin/ldd
+# copy_exec /usr/lib/x86_64-linux-gnu/libbfd-2.30-113.el8.so
+

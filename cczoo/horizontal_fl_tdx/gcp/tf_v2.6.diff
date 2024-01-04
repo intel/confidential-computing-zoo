@@ -1,0 +1,218 @@
+diff --git a/tensorflow/core/distributed_runtime/rpc/grpc_channel.cc b/tensorflow/core/distributed_runtime/rpc/grpc_channel.cc
+index 8ffd8f1a8f1..15888c8efe5 100644
+--- a/tensorflow/core/distributed_runtime/rpc/grpc_channel.cc
++++ b/tensorflow/core/distributed_runtime/rpc/grpc_channel.cc
+@@ -36,6 +36,7 @@ limitations under the License.
+ #include "tensorflow/core/platform/thread_annotations.h"
+ #include "tensorflow/core/platform/types.h"
+ #include "tensorflow/core/util/device_name_utils.h"
++#include <grpcpp/security/sgx/sgx_ra_tls.h>
+
+ namespace tensorflow {
+
+@@ -144,8 +145,9 @@ Status NewHostPortGrpcChannel(const string& target,
+   TF_RETURN_IF_ERROR(ValidateHostPortPair(target));
+
+   ::grpc::ChannelArguments args = GetChannelArguments(rpc_options);
++  auto cred = ::grpc::sgx::TlsCredentials("dynamic_config.json", GRPC_RA_TLS_SERVER_VERIFICATION);
+   *channel_pointer = ::grpc::CreateCustomChannel(
+-      "dns:///" + target, ::grpc::InsecureChannelCredentials(), args);
++       "dns:///" + target, cred, args);
+   return Status::OK();
+ }
+
+diff --git a/tensorflow/core/distributed_runtime/rpc/grpc_server_lib.cc b/tensorflow/core/distributed_runtime/rpc/grpc_server_lib.cc
+index ae529290ade..2d0db0203c5 100644
+--- a/tensorflow/core/distributed_runtime/rpc/grpc_server_lib.cc
++++ b/tensorflow/core/distributed_runtime/rpc/grpc_server_lib.cc
+@@ -55,6 +55,7 @@ limitations under the License.
+ #include "tensorflow/core/profiler/rpc/profiler_service_impl.h"
+ #include "tensorflow/core/public/session_options.h"
+ #include "tensorflow/core/util/env_var.h"
++#include <grpcpp/security/sgx/sgx_ra_tls.h>
+
+ namespace tensorflow {
+
+@@ -516,9 +517,20 @@ const string GrpcServer::target() const {
+   return strings::StrCat("grpc://", host_name_, ":", bound_port_);
+ }
+
++std::shared_ptr<::grpc::ServerCredentials> GetCredentials() {
++    const char* secure = std::getenv("TF_GRPC_SGX_RA_TLS_ENABLE");
++    LOG(INFO) << "GetCredentials";
++    if (secure && strcmp(secure, "on") == 0) {
++        LOG(INFO) << "Secure mode: " << string(secure);
++        return ::grpc::sgx::TlsServerCredentials("dynamic_config.json", GRPC_RA_TLS_SERVER_VERIFICATION);
++    }
++    return ::grpc::InsecureServerCredentials();
++}
++
++
+ std::shared_ptr<::grpc::ServerCredentials> GrpcServer::GetServerCredentials(
+     const ServerDef& server_def) const {
+-  return ::grpc::InsecureServerCredentials();
++    return GetCredentials();
+ }
+
+ ChannelCreationFunction GrpcServer::GetChannelCreationFunction() const {
+diff --git a/tensorflow/core/distributed_runtime/rpc/grpc_util.cc b/tensorflow/core/distributed_runtime/rpc/grpc_util.cc
+index 98e05b64aad..cfa68f67f2f 100644
+--- a/tensorflow/core/distributed_runtime/rpc/grpc_util.cc
++++ b/tensorflow/core/distributed_runtime/rpc/grpc_util.cc
+@@ -16,6 +16,7 @@ limitations under the License.
+ #include "tensorflow/core/distributed_runtime/rpc/grpc_util.h"
+ #include "tensorflow/core/distributed_runtime/tensor_coding.h"
+ #include "tensorflow/core/lib/random/random.h"
++#include <grpcpp/security/sgx/sgx_ra_tls.h>
+
+ namespace tensorflow {
+
+diff --git a/tensorflow/tools/lib_package/BUILD b/tensorflow/tools/lib_package/BUILD
+index 65d63aa8480..adf8505a9ca 100644
+--- a/tensorflow/tools/lib_package/BUILD
++++ b/tensorflow/tools/lib_package/BUILD
+@@ -161,6 +161,7 @@ genrule(
+         "@nsync//:LICENSE",
+         "@png//:LICENSE",
+         "@snappy//:COPYING",
++       "@upb//:LICENSE",
+         "@zlib//:zlib.h",
+     ] + select({
+         "//tensorflow:android": [],
+@@ -233,6 +234,7 @@ genrule(
+         "@nsync//:LICENSE",
+         "@png//:LICENSE",
+         "@snappy//:COPYING",
++       "@upb//:LICENSE",
+         "@zlib//:zlib.h",
+     ] + select({
+         "//tensorflow:android": [],
+diff --git a/tensorflow/tools/pip_package/BUILD b/tensorflow/tools/pip_package/BUILD
+index 88fb5de60d6..017e8ec883b 100644
+--- a/tensorflow/tools/pip_package/BUILD
++++ b/tensorflow/tools/pip_package/BUILD
+@@ -227,6 +227,7 @@ filegroup(
+         "@zlib//:zlib.h",
+         "@clog//:LICENSE",
+         "@cpuinfo//:LICENSE",
++       "@upb//:LICENSE",
+     ] + select({
+         "//tensorflow:android": [],
+         "//tensorflow:ios": [],
+diff --git a/tensorflow/workspace2.bzl b/tensorflow/workspace2.bzl
+index 3e66023a149..924d855e924 100644
+--- a/tensorflow/workspace2.bzl
++++ b/tensorflow/workspace2.bzl
+@@ -562,22 +562,6 @@ def _tf_repositories():
+         },
+     )
+
+-    tf_http_archive(
+-        name = "com_google_protobuf",
+-        patch_file = "//third_party/protobuf:protobuf.patch",
+-        sha256 = "cfcba2df10feec52a84208693937c17a4b5df7775e1635c1e3baffc487b24c9b",
+-        strip_prefix = "protobuf-3.9.2",
+-        system_build_file = "//third_party/systemlibs:protobuf.BUILD",
+-        system_link_files = {
+-            "//third_party/systemlibs:protobuf.bzl": "protobuf.bzl",
+-            "//third_party/systemlibs:protobuf_deps.bzl": "protobuf_deps.bzl",
+-        },
+-        urls = [
+-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/protocolbuffers/protobuf/archive/v3.9.2.zip",
+-            "https://github.com/protocolbuffers/protobuf/archive/v3.9.2.zip",
+-        ],
+-    )
+-
+     tf_http_archive(
+         name = "nsync",
+         sha256 = "caf32e6b3d478b78cff6c2ba009c3400f8251f646804bcb65465666a9cea93c4",
+@@ -624,10 +608,10 @@ def _tf_repositories():
+     # WARNING: make sure ncteisen@ and vpai@ are cc-ed on any CL to change the below rule
+     tf_http_archive(
+         name = "com_github_grpc_grpc",
+-        sha256 = "b956598d8cbe168b5ee717b5dafa56563eb5201a947856a6688bbeac9cac4e1f",
+-        strip_prefix = "grpc-b54a5b338637f92bfcf4b0bc05e0f57a5fd8fadd",
++        sha256 = "f60e5b112913bf776a22c16a3053cc02cf55e60bf27a959fd54d7aaf8e2da6e8",
++        strip_prefix = "grpc-1.38.1",
+         system_build_file = "//third_party/systemlibs:grpc.BUILD",
+-        patch_file = "//third_party/grpc:generate_cc_env_fix.patch",
++        patch_file = "//third_party/grpc:grpc_ratls.patch",
+         system_link_files = {
+             "//third_party/systemlibs:BUILD": "bazel/BUILD",
+             "//third_party/systemlibs:grpc.BUILD": "src/compiler/BUILD",
+@@ -638,8 +622,8 @@ def _tf_repositories():
+             "//third_party/systemlibs:grpc.bazel.protobuf.bzl": "bazel/protobuf.bzl",
+         },
+         urls = [
+-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/grpc/grpc/archive/b54a5b338637f92bfcf4b0bc05e0f57a5fd8fadd.tar.gz",
+-            "https://github.com/grpc/grpc/archive/b54a5b338637f92bfcf4b0bc05e0f57a5fd8fadd.tar.gz",
++            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/grpc/grpc/archive/refs/tags/v1.38.1.tar.gz",
++            "https://github.com/grpc/grpc/archive/refs/tags/v1.38.1.tar.gz",
+         ],
+     )
+
+diff --git a/third_party/protobuf/protobuf.patch b/third_party/protobuf/protobuf.patch
+deleted file mode 100644
+index 8ce4a843759..00000000000
+--- a/third_party/protobuf/protobuf.patch
++++ /dev/null
+@@ -1,43 +0,0 @@
+-diff --git a/BUILD b/BUILD
+-index dbae719ff..87dc38470 100644
+---- a/BUILD
+-+++ b/BUILD
+-@@ -23,7 +23,7 @@ config_setting(
+- # ZLIB configuration
+- ################################################################################
+-
+--ZLIB_DEPS = ["@zlib//:zlib"]
+-+ZLIB_DEPS = ["@zlib"]
+-
+- ################################################################################
+- # Protobuf Runtime Library
+-@@ -143,6 +143,7 @@ cc_library(
+-     copts = COPTS,
+-     includes = ["src/"],
+-     linkopts = LINK_OPTS,
+-+    alwayslink = 1,
+-     visibility = ["//visibility:public"],
+- )
+-
+-@@ -213,6 +214,7 @@ cc_library(
+-     copts = COPTS,
+-     includes = ["src/"],
+-     linkopts = LINK_OPTS,
+-+    alwayslink = 1,
+-     visibility = ["//visibility:public"],
+-     deps = [":protobuf_lite"] + PROTOBUF_DEPS,
+- )
+-diff --git a/protobuf.bzl b/protobuf.bzl
+-index e0653321f..253d9cbb5 100644
+---- a/protobuf.bzl
+-+++ b/protobuf.bzl
+-@@ -84,7 +84,9 @@ def _proto_gen_impl(ctx):
+-
+-     for dep in ctx.attr.deps:
+-         import_flags += dep.proto.import_flags
+-         deps += dep.proto.deps
+-+    import_flags = depset(import_flags).to_list()
+-+    deps = depset(deps).to_list()
+-
+-     if not ctx.attr.gen_cc and not ctx.attr.gen_py and not ctx.executable.plugin:
+-         return struct(
+\ No newline at end of file
+diff --git a/third_party/py/python_configure.bzl b/third_party/py/python_configure.bzl
+index 2f75262ea9f..8cccdab5aaa 100644
+--- a/third_party/py/python_configure.bzl
++++ b/third_party/py/python_configure.bzl
+@@ -189,9 +189,7 @@ def _get_numpy_include(repository_ctx, python_bin):
+         [
+             python_bin,
+             "-c",
+-            "from __future__ import print_function;" +
+-            "import numpy;" +
+-            " print(numpy.get_include());",
++            "print('/usr/local/lib/python3.8/dist-packages/numpy/core/include');",
+         ],
+         error_msg = "Problem getting numpy include path.",
+         error_details = "Is numpy installed?",
