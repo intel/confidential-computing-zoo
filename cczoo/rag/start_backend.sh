@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright (c) 2023 Intel Corporation
 #
@@ -12,60 +13,47 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#!/bin/bash
 
-SERVICE_NAME="${1:-}"
+set -e
 
-[ "$2" == "ra" ] && REMOTE_ATTESTATION="grpc-ratls"
-
-function show_help {
-    echo "Usage: ./script.sh SERVICE_NAME [ra]"
-    echo ""
-    echo "Arguments:"
-    echo "  SERVICE_NAME  : Name of the service (db: Mysql, es: ElasticSearch, backend, backend_es, frontend)"
-    echo "  ra            : Enable remote attestation (optional)"
-    exit 1
+function usage() {
+    echo -e "Usage: $0 IMAGE_ID DB_TYPE RA"
+    echo -e "  IMAGE_ID       backend docker image ID;"
+    echo -e "  DB_TYPE        mysql: MySQL, es: Elasticsearch;"
+    echo -e "  RA             remote attestation. 0: disabled, 1: enabled"
 }
 
-if [ -z "$SERVICE_NAME" ]; then
-    echo -e "\nPlease specify the service name."
-    show_help
+
+if [ "$#" -lt 3 ]; then
+    usage
     exit 1
 fi
 
-if [ "$SERVICE_NAME" == 'db' ]; then
-    while [ "`docker ps -a |grep rag_db`" != "" ]
-        do
-            echo "Try to delete rag_db..."
-            docker rm -f rag_db || true
-            sleep 5s
-    done
-    echo -e "\nstart database container..."
-    docker run -d --name rag_db -p 3306:3306 -e MYSQL_ROOT_PASSWORD=123456 mysql:latest
-    while [ "`docker logs rag_db 2>&1 |grep 'port: 3306  MySQL'`" = "" ]
-        do
-            echo "Waiting for MySQL to start..."
-            sleep 5s
-    done
-    docker exec -it rag_db mysql -uroot -p123456 -h 127.0.0.1 -e "CREATE DATABASE rag CHARACTER SET UTF8mb3 COLLATE utf8_general_ci;"
-    echo "The MySQL container and the 'rag' database created successfully."
-elif [ "$SERVICE_NAME" == 'es' ]; then
-    if docker ps -a | grep -q "rag_db"; then
-        docker stop rag_db
-        docker rm rag_db
-    fi
-    echo -e "\nstart database container..."
-    docker run -it --name rag_db  --network host  --shm-size=8gb -e "discovery.type=single-node" \
-        -v $(pwd)/dataset:/usr/share/elasticsearch/data \
-        -e ES_JAVA_OPTS="-Xmx8g -Xms8g" elasticsearch:7.9.2
-elif [ "$SERVICE_NAME" == 'backend' ]; then
+image_id=$1
+
+db_type=$2
+if  [ "$2" != "mysql" ] && [ "$2" != "es" ]; then
+    usage
+    exit 1
+fi
+
+ra=$3
+if  [ "$3" != "0" ] && [ "$3" != "1" ]; then
+    usage
+    exit 1
+fi
+
+
+[ "$ra" == "1" ] && REMOTE_ATTESTATION="grpc-ratls"
+
+if [ "$db_type" == 'mysql' ]; then
     if docker ps -a | grep -q "tdx_rag_backend"; then
         docker stop tdx_rag_backend
         docker rm tdx_rag_backend
     fi
     rm -rf backend/pipelines/faiss-index-so.*
     echo -e "\nstart backend container..."
-    mv -n data/data.txt /home/encrypted_storage
+    cp -n data/data.txt /home/encrypted_storage
     docker run -itd --privileged --network host \
        -e http_proxy=${http_proxy} \
        -e https_proxy=${https_proxy} \
@@ -80,7 +68,7 @@ elif [ "$SERVICE_NAME" == 'backend' ]; then
        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
        -v /home/encrypted_storage:/home/rag_data/ \
        -v $(pwd)/backend/pipelines:/home/user/workspace \
-       --shm-size=64gb --name tdx_rag_backend intelcczoo/tdx-rag:backend /bin/bash
+       --shm-size=64gb --name tdx_rag_backend ${image_id} /bin/bash
     sleep 5
 
     # Add workaround for mysql 5.x
@@ -92,14 +80,14 @@ elif [ "$SERVICE_NAME" == 'backend' ]; then
     else
         docker exec -i tdx_rag_backend /bin/bash -c "gunicorn rest_api.application:app -b 0.0.0.0:80 -k uvicorn.workers.UvicornWorker --workers 1 --timeout 600"
     fi
-elif [ "$SERVICE_NAME" == 'backend_es' ]; then
+elif [ "$db_type" == 'es' ]; then
     if docker ps -a | grep -q "tdx_rag_backend"; then
         docker stop tdx_rag_backend
         docker rm tdx_rag_backend
     fi
     rm -rf backend/pipelines/faiss-index-so.*
     echo -e "\nstart backend container..."
-    mv -n data/data.txt /home/encrypted_storage
+    cp -n data/data.txt /home/encrypted_storage
     docker run -itd --privileged --network host \
        -e http_proxy=${http_proxy} \
        -e https_proxy=${https_proxy} \
@@ -114,7 +102,7 @@ elif [ "$SERVICE_NAME" == 'backend_es' ]; then
        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
        -v /home/encrypted_storage:/home/rag_data/ \
        -v $(pwd)/backend/pipelines:/home/user/workspace \
-       --shm-size=64gb --name tdx_rag_backend intelcczoo/tdx-rag:backend /bin/bash
+       --shm-size=64gb --name tdx_rag_backend ${image_id} /bin/bash
     sleep 5
 
     # Add workaround for mysql 5.x
@@ -126,26 +114,6 @@ elif [ "$SERVICE_NAME" == 'backend_es' ]; then
     else
         docker exec -i tdx_rag_backend /bin/bash -c "gunicorn rest_api.application:app -b 0.0.0.0:80 -k uvicorn.workers.UvicornWorker --workers 1 --timeout 600"
     fi
-elif [ "$SERVICE_NAME" == 'frontend' ]; then
-    if docker ps -a | grep -q "tdx_rag_frontend"; then
-        docker stop tdx_rag_frontend
-        docker rm tdx_rag_frontend
-    fi
-    echo -e "\nstart frontend container..."
-    docker run -itd --privileged --network host \
-        -e http_proxy=${http_proxy} \
-        -e https_proxy=${https_proxy} \
-        -e no_proxy=${no_proxy} \
-        -e API_PROTOCOL=${API_PROTOCOL} \
-        -e STREAMLIT_SERVER_PORT=8502 \
-        -e PYTHONWARNINGS=ignore \
-        -w /home/user/workspace \
-        -v /dev:/dev \
-        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
-        -v $(pwd)/frontend/chatbot-rag:/home/user/workspace \
-        --shm-size=64gb --name tdx_rag_frontend intelcczoo/tdx-rag:frontend /bin/bash
-    sleep 5
-    docker exec -i tdx_rag_frontend /bin/bash -c "streamlit run app.py"
 else
-    echo -e "\nplease specify the correct name of the service. Choose from one of the following: db, es, backend, backend_es or frontend. "
+    echo -e "\nInvalid db_type specified."
 fi

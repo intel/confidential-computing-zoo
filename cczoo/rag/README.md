@@ -3,127 +3,144 @@ This repo contains code to build various chatbot services using the state-of-the
 
 ## Getting Started 
 
-### 1. Prepare for Docker images
-You can download the Docker images from `docker.io`:
+### 1. Download CCZoo Source
+
+```bash
+git clone https://github.com/intel/confidential-computing-zoo.git
+cczoo_base_dir=$PWD/confidential-computing-zoo
+```
+
+### 2. Prepare Docker images
+
+Build the container images for the backend and frontend services:
+
+```bash
+cd ${cczoo_base_dir}/cczoo/rag
+./build-images.sh default
+```
+
+Optionally, download the container images from `docker.io`:
 
 ```bash
 docker pull intelcczoo/tdx-rag:backend
 docker pull intelcczoo/tdx-rag:frontend
 ```
 
-Or you can compile Docker images locally:
-
-```bash
-# clone the repo
-git clone https://github.com/intel/confidential-computing-zoo.git
-cd cczoo/rag
-./build-images.sh
+### 3. Setup Encrypted Storage
+If encrypted storage has previously been setup, mount the encrypted storage, replacing `<loop device>` with the loop device name previously associated with the encrypted storage (for example, `/dev/loop0`):
+```shell
+losetup <loop device> /home/vfs
+./mount_encrypted_vfs.sh <loop_device>
 ```
 
-### 2. Create encrypted partition
-Create an encrypted directory to store model files and document data to ensure data and privacy security.
-
-Create a LUKS block file and bind it to the idle loop device:
+Otherwise, create a LUKS encrypted volume for the model files. When prompted for confirmation, type `YES` (in all uppercase) and enter a passphrase at the prompt which will be used to decrypt the volume. Take note of the loop device name as displayed in the output from `create_encrypted_vfs.sh`.
 
 ```shell
-cd <workdir>/confidential-computing-zoo/cczoo/rag/luks_tools
+cd ${cczoo_base_dir}/cczoo/rag/luks_tools
 yum install -y cryptsetup
 VFS_SIZE=30G
-VIRTUAL_FS=/home/vfS
+VIRTUAL_FS=/home/vfs
 ./create_encrypted_vfs.sh ${VFS_SIZE} ${VIRTUAL_FS}
 ```
 
-According to the loop device number output by the above command (such as `/dev/loop0`), create the `LOOP_DEVICE` environment variable to bind the loop device:
+Replace `<loop device>` with the loop device name provided by `create_encrypted_vfs.sh` (for example, `/dev/loop0`).
 
 ```shell
-export LOOP_DEVICE=<the binded loop device>
+export LOOP_DEVICE=<loop device>
 ```
 
-On first execution, the block loop device needs to be formatted as ext4:
+Format the block device as ext4. Enter the passphrase when prompted to decrypt and mount the volume.
 
 ```shell
 mkdir /home/encrypted_storage
 ./mount_encrypted_vfs.sh ${LOOP_DEVICE} format
 ```
 
-### 3. Prepare for your data and backend models
+### 4. Download Backend Models
 
-By default we use:
+By default, the following models are used:
+- `Llama-2-7b-chat-hf` is used for the backend LLM
+- `ms-marco-MiniLM-L-12-v2` is used for the sorting model
+- `dpr-ctx_encoder-single-nq-base` and `dpr-question_encoder-single-nq-base` are used as encoder models
 
-- The sample content in `<workdir>/confidential-computing-zoo/cczoo/rag/data/data.txt` is used as document data;
+The sample content in `${cczoo_base_dir}/cczoo/rag/data/data.txt` is used as document data.
 
-- `Llama-2-7b-chat-hf` as backend LLM;
-- `ms-marco-MiniLM-L-12-v2` as a sorting model;
-- `dpr-ctx_encoder-single-nq-base` and `dpr-question_encoder-single-nq-base` as encoder models.
+Visit https://huggingface.co/meta-llama/Llama-2-7b-chat-hf and follow the instructions on the page to request access to the Llama-2-7b-chat-hf model. The instructions include requesting access from the Meta website, and then returning to the Hugging Face website to complete the `Access Llama 2 on Hugging Face` form.
 
-The steps to download the required model from the Hugging Face mirror website are as follows. If you want to use other models, you can also refer to the following steps:
+Download the models from the Hugging Face mirror, replacing `<HF_ACCESS_TOKEN>` with your Hugging Face access token:
 
 ```shell
 cd /home/encrypted_storage
 pip install -U huggingface_hub
 export HF_ENDPOINT=https://hf-mirror.com
-huggingface-cli download --resume-download --local-dir-use-symlinks False meta-llama/Llama-2-7b-chat-hf --local-dir Llama-2-7b-chat-hf
+huggingface-cli download --resume-download --local-dir-use-symlinks False meta-llama/Llama-2-7b-chat-hf --local-dir Llama-2-7b-chat-hf --token <HF_ACCESS_TOKEN>
 huggingface-cli download --resume-download --local-dir-use-symlinks False cross-encoder/ms-marco-MiniLM-L-12-v2 --local-dir ms-marco-MiniLM-L-12-v2
 huggingface-cli download --resume-download --local-dir-use-symlinks False facebook/dpr-ctx_encoder-single-nq-base --local-dir dpr-ctx_encoder-single-nq-base
 huggingface-cli download --resume-download --local-dir-use-symlinks False facebook/dpr-question_encoder-single-nq-base --local-dir dpr-question_encoder-single-nq-base
 ```
 
-### 4. Start the RAG service
+### 5. Start the Database Service Container
 
-#### start the database service container
-
-If you want to use MySQL as the storage:
+To use MySQL, replace `DB_TYPE` with `mysql`. To use Elasticsearch, replace `DB_TYPE` with `es`.
 
 ```bash
-cd <workdir>/confidential-computing-zoo/cczoo/rag
-./run.sh db
+cd ${cczoo_base_dir}/cczoo/rag
+./start_db.sh <DB_TYPE>
 ```
 
-If you want to use ElasticSearch as the storage:
+Wait for the database service startup to complete, indicated by the following log message:
+```bash
+'rag' database created successfully, database service IP address:
+X.X.X.X
+```
+
+To get the database container's IP address to be used to setup the backend service container in a later step:
+```bash
+docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' rag_db
+```
+
+### 6. Start the Backend Service Container
+
+Start the backend service container.
+Replace `IMAGE_ID` with the image ID of the backend service container image.
+Replace `DB_TYPE` with the database type started in the previous step - `mysql` for MySQL, `es` for Elasticsearch.
+Replace `RA` with `0` to disable remote attestation, `1` to enable remote attestation.
 
 ```bash
-cd <workdir>/confidential-computing-zoo/cczoo/rag
-./run.sh es
+cd ${cczoo_base_dir}/cczoo/rag
+./start_backend.sh <IMAGE_ID> <DB_TYPE> <RA>
 ```
 
-#### start the backend service container
+When prompted, enter the database container's IP address, the database username (default `root`), and the database password (default `123456`).
 
-If you use MySQL as the storage:
-
+Wait for the backend service startup to complete, indicated by the following log message:
 ```bash
-cd <workdir>/confidential-computing-zoo/cczoo/rag
-./run.sh backend
+[INFO] Application startup complete.
 ```
 
-If you use ElasticSearch as the storage:
-
-```bash
-cd <workdir>/confidential-computing-zoo/cczoo/rag
-./run.sh backend_es
-```
-
-During the execution of the script, the content in `data.txt` will be divided and stored in the database, and you need to enter the database IP address, database account, and database password according to the prompts.
-
-Open a new terminal and execute the following command:
+During the execution of the script, the content in `data.txt` will be divided and stored in the database.
 
 If you enable remote attestation, please modify the `dynamic_config.json` file in the frontend service and backend service containers and fill in the correct values.
 
 You can obtain the hash values of the fields to be verified in the current container environment by executing `/usr/bin/tdx_report_parser`.
 
-#### Add data to the dataset
-If you use ElasticSearch as the storage, you can edit data in `data/data.json` then execute the following command in the backend service container:
+### 7. Optionally Add Data To the Dataset
+If you used MySQL, from the backend service container, edit data in `/home/rag_data/data.txt`.
+
+If you used Elasticsearch, from the backend service container, edit data in `/home/rag_data/data.json` and then execute the following command:
 
 ```bash
 python3 generate_db.py
 ```
 
-If you use MySQL as the storage, you can edit data in `data/data.txt` directly.
+### 8. Start the Frontend Service Container
 
-#### Start the frontend service container
-In another new terminal execute the following command:
+Start the frontend service container.
+Replace `IMAGE_ID` with the image ID of the frontend service container image.
 
 ```bash
-./run.sh frontend
+cd ${cczoo_base_dir}/cczoo/rag
+./start_frontend.sh <IMAGE_ID>
 ```
 
 You should see messages similar to the following if the frontend service container is up:
@@ -132,17 +149,31 @@ You should see messages similar to the following if the frontend service contain
   You can now view your Streamlit app in your browser.
 
   Network URL: http://10.165.9.166:8502
-  External URL: http://<user_tdx_intance_ip>:8502
+  External URL: http://<user_tdx_instance_ip>:8502
 ```
 
-#### port forwarding
-In addition, you need to do a port forwarding in the TD environment. The command is as follows:
+### 9. Network Configuration
+
+Configure port forwarding between the host and TD guest:
 
 ```bash
 ssh -N -R <host_ip>:<host_port>:<guest_ip>:<guest_port> <host_user>@<host_server> -o TCPKeepAlive=yes
 ```
 
-In your local browser, open the Network URL `http://<host_server>:<host_port>` and ask questions.
+### 10. Test RAG Chatbot Demo
 
-For customized modifications and issues with the RAG framework, please refer to [Haystack](https://github.com/deepset-ai/haystack/tree/main).
+From a browser, access the RAG Chatbot Demo at `http://<frontend_ip>:<frontend_port>` and ask the chatbot questions.
 
+For more information about the RAG framework (customizations, known issues, etc.), please refer to [Haystack](https://github.com/deepset-ai/haystack/tree/main).
+
+### 11. Cleaning Up
+
+To clean up after this demo: Stop and remove the database, backend, and frontend containers. Remove the FAISS files. Unmount the encrpyted storage.
+
+```bash
+docker stop tdx_rag_frontend tdx_rag_backend rag_db
+docker rm tdx_rag_frontend tdx_rag_backend rag_db
+rm /home/encrypted_storage/faiss-index-so.faiss /home/encrypted_storage/faiss-index-so.json
+cd ${cczoo_base_dir}/cczoo/rag/luks_tools
+./unmount_encrypted_vfs.sh
+```
