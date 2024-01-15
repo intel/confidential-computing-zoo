@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE=gramine-sgx-dev:v1.2-ubuntu20.04-latest
+ARG BASE_IMAGE=gramine-sgx-dev:v1.6-ubuntu20.04-latest
 FROM ${BASE_IMAGE}
 
 # cmake tool chain
@@ -39,6 +39,7 @@ ENV BUILD_TYPE=Release
 ARG GRPC_VERSION=v1.38.1
 ARG GRPC_VERSION_PATH=${GRPC_ROOT}/${GRPC_VERSION}
 RUN git clone --recurse-submodules -b ${GRPC_VERSION} https://github.com/grpc/grpc ${GRPC_VERSION_PATH}
+RUN sed -i "s/std::max(SIGSTKSZ, 65536)/std::max<size_t>(SIGSTKSZ, 65536)/g" ${GRPC_PATH}/third_party/abseil-cpp/absl/debugging/failure_signal_handler.cc
 
 RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
 
@@ -57,8 +58,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY grpc/common ${GRPC_VERSION_PATH}
 COPY grpc/${GRPC_VERSION} ${GRPC_VERSION_PATH}
 COPY gramine/CI-Examples ${GRAMINEDIR}/CI-Examples
+
 WORKDIR ${GRAMINEDIR}/CI-Examples/grpc/cpp/ratls
 RUN ["/bin/bash", "-c", "build.sh"]
+
 WORKDIR ${GRAMINEDIR}/CI-Examples/grpc/python/ratls
 RUN ["/bin/bash", "-c", "build.sh"]
 
@@ -67,6 +70,12 @@ RUN apt-get clean all \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf ~/.cache/pip/* \
     && rm -rf /tmp/*
+
+ENV RA_TLS_CERT_SIGNATURE_ALGO=RSA
+ENV RA_TLS_ALLOW_HW_CONFIG_NEEDED=1
+ENV RA_TLS_ALLOW_SW_HARDENING_NEEDED=1
+# ENV RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1
+# ENV RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1
 
 # Workspace
 ENV WORK_SPACE_PATH=${GRAMINEDIR}/CI-Examples/grpc

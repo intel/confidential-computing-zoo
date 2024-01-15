@@ -20,7 +20,7 @@
 #define SGX_RA_TLS_IMPL_H
 
 #include <grpcpp/security/sgx/sgx_ra_tls_context.h>
-#include <grpcpp/security/sgx/sgx_ra_tls_utils.h>
+// #include <grpcpp/security/sgx/sgx_ra_tls_utils.h>
 
 namespace grpc {
 namespace sgx {
@@ -36,6 +36,8 @@ namespace sgx {
 extern const char * RA_TLS_SHORT_NAME;
 extern const char * RA_TLS_LONG_NAME;
 
+ra_tls_config parse_config_json(const char* file);
+
 std::vector<std::string> generate_key_cert(
     int (*generate_quote)(
         uint8_t **quote_buf, uint32_t &quote_size, uint8_t *hash));
@@ -44,8 +46,25 @@ int parse_quote(X509 *x509, uint8_t **quote, uint32_t &quote_size);
 
 int verify_pubkey_hash(X509 *x509, uint8_t *pubkey_hash, uint32_t hash_size);
 
+#ifdef SGX_RA_TLS_TDX_BACKEND
+
+int verify_measurement(const char* mr_seam,
+                       const char* mrsigner_seam,
+                       const char* mr_td,
+                       const char* mr_config_id,
+                       const char* mr_owner,
+                       const char* mr_owner_config,
+                       const char* rt_mr0,
+                       const char* rt_mr1,
+                       const char* rt_mr2,
+                       const char* rt_mr3);
+
+#else
+
 int verify_measurement(const char* mr_enclave, const char* mr_signer,
                        const char* isv_prod_id, const char* isv_svn);
+
+#endif
 
 } // namespace sgx
 } // namespace grpc

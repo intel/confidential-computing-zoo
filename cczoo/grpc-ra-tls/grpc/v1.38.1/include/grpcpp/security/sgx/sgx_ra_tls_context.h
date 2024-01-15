@@ -27,6 +27,9 @@
 #include <grpcpp/security/server_credentials.h>
 #include <grpcpp/security/sgx/sgx_ra_tls_utils.h>
 
+// Set 1 for strict security checks
+#define SGX_MESUREMENTS_MAX_SIZE 512
+
 #define CERT_KEY_MAX_SIZE 16000
 
 namespace grpc {
@@ -35,17 +38,43 @@ namespace sgx {
 class TlsAuthorizationCheck;
 
 struct ra_tls_measurement {
+#ifdef SGX_RA_TLS_TDX_BACKEND
+    char mr_seam[32];
+    char mrsigner_seam[32];
+    char mr_td[32];
+    char mr_config_id[32];
+    char mr_owner[32];
+    char mr_owner_config[32];
+    char rt_mr0[32];
+    char rt_mr1[32];
+    char rt_mr2[32];
+    char rt_mr3[32];
+#else
     char mr_enclave[32];
     char mr_signer[32];
     uint16_t isv_prod_id;
     uint16_t isv_svn;
+#endif
 };
 
 struct ra_tls_config {
+#ifdef SGX_RA_TLS_TDX_BACKEND
+    bool verify_mr_seam = true;
+    bool verify_mrsigner_seam = true;
+    bool verify_mr_td = true;
+    bool verify_mr_config_id = true;
+    bool verify_mr_owner = true;
+    bool verify_mr_owner_config = true;
+    bool verify_rt_mr0 = true;
+    bool verify_rt_mr1 = true;
+    bool verify_rt_mr2 = true;
+    bool verify_rt_mr3 = true;
+#else
     bool verify_mr_enclave  = true;
     bool verify_mr_signer   = true;
     bool verify_isv_prod_id = true;
     bool verify_isv_svn     = true;
+#endif
     std::vector<ra_tls_measurement> mrs;
 };
 

@@ -1,4 +1,4 @@
 *.deb
-*.prm
+*.rpm
 *.tar*
-grpc/grpc_ratls.patch
+*.patch

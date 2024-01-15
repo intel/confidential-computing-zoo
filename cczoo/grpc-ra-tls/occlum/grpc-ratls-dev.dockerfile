@@ -37,7 +37,8 @@ RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
 RUN pip3 install --upgrade pip \
-    && pip3 install -r ${GRPC_PATH}/requirements.txt
+    && pip3 install -r ${GRPC_PATH}/requirements.txt \
+    && pip3 install cython==0.29.36
 
 RUN apt-get update \
     && apt-get install -y lsb-release golang strace gdb ctags curl zip\

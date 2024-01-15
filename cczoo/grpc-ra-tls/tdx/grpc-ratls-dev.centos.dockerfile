@@ -45,7 +45,8 @@ RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
 # RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
 RUN pip3 install --upgrade pip \
-    && pip3 install -r ${GRPC_PATH}/requirements.txt
+    && pip3 install -r ${GRPC_PATH}/requirements.txt \
+    && pip3 install cython==0.29.36
 
 RUN yum makecache \
     && yum install -y golang strace gdb ctags curl zip \
@@ -60,3 +61,5 @@ COPY grpc/${GRPC_VERSION} ${GRPC_VERSION_PATH}
 # Workspace
 ENV WORK_SPACE_PATH=${GRPC_PATH}/examples/cpp/ratls
 WORKDIR ${WORK_SPACE_PATH}
+
+ENTRYPOINT ["/bin/bash", "-c", "sleep infinity"]

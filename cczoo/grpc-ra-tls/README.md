@@ -62,9 +62,9 @@ Intel SGX technology offers hardware-based memory encryption that isolates speci
  library OS Based on Intel SGX technology, designed to run a single application with minimal host
  requirements.
 
- - [Occlum](https://github.com/occlum/occlum) (In progress)
+ - [Occlum](https://github.com/occlum/occlum)
 
- - [TDX](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html) (TODO)
+ - [TDX](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html)
 
 ## Build and installation
 
@@ -108,9 +108,9 @@ images for developing the gRPC RA-TLS application.
         ```
         cd cczoo/common/docker/tdx
 
-        base_image=centos:8
         image_tag=tdx-dev:dcap1.15-centos8-latest
-        ./build_docker_image.sh ${base_image} ${image_tag}
+        docker_file=tdx-dev.centos.dockerfile
+        ./build_docker_image.sh ${image_tag} ${docker_file}
         ```
 
 2. Build gRPC RA-TLS docker image based on TEE docker image
@@ -158,9 +158,10 @@ images for developing the gRPC RA-TLS application.
 For saving the expected measurement values of remote application enclave, we create a json template
 as following. It is loaded in gRPC server or client initialization.
 
-Refer to `cczoo/grpc-ra-tls/grpc/common/dynamic_config.json`
+Refer to `cczoo/grpc-ra-tls/grpc/common/dynamic_config.<TEE TYPE>.json`
 
 ```json
+# dynamic_config.sgx.json
 {
     "verify_mr_enclave": "on",
     "verify_mr_signer": "on",
@@ -176,26 +177,43 @@ Refer to `cczoo/grpc-ra-tls/grpc/common/dynamic_config.json`
     ],
 }
 ```
-In Gramine examples, the mr_enclave and mr_signer are automatically parsed in `build.sh`.
+In Gramine examples, the `mr_enclave` and `mr_signer` are automatically parsed in 
+`cczoo/grpc-ra-tls/gramine/CI-Examples/grpc/cpp/ratls/build.sh`.
 
-Refer to `cczoo/grpc-ra-tls/gramine/CI-Examples/grpc/cpp/ratls/build.sh`
+For `isv_prod_id` and `isv_svn` value, please refer to the values defined in libOS configuration files.
+In Gramine, it is defined in the template file.
 
-```bash
-function get_env() {
-    gramine-sgx-get-token -s grpc.sig -o /dev/null | grep $1 | awk -F ":" '{print $2}' | xargs
-}
-
-function generate_json() {
-    cd ${RUNTIME_TMP_PATH}/$1
-    jq ' .sgx_mrs[0].mr_enclave = ''"'`get_env mr_enclave`'" | .sgx_mrs[0].mr_signer = ''"'`get_env
-    mr_signer`'" ' ${GRPC_PATH}/dynamic_config.json > ${RUNTIME_TMP_PATH}/$2/dynamic_config.json
-    cd -
+```json
+# dynamic_config.tdx.json
+{
+    "verify_mr_seam" : "off",
+    "verify_mrsigner_seam" : "off",
+    "verify_mr_td" : "on",
+    "verify_mr_config_id" : "off",
+    "verify_mr_owner" : "off",
+    "verify_mr_owner_config" : "off",
+    "verify_rt_mr0" : "on",
+    "verify_rt_mr1" : "on",
+    "verify_rt_mr2" : "on",
+    "verify_rt_mr3" : "off",
+    "tdx_mrs": [
+        {
+            "mr_seam" : "",
+            "mrsigner_seam" : "",
+            "mr_td" : "",
+            "mr_config_id" : "",
+            "mr_owner" : "",
+            "mr_owner_config" : "",
+            "rt_mr0" : "",
+            "rt_mr1" : "",
+            "rt_mr2" : "",
+            "rt_mr3" : ""
+        }
+    ]
 }
 ```
 
-For isv_prod_id and isv_svn value, please refer to the values defined in libOS configuration files.
-In Gramine, it is defined in the template file.
-
+Please refer to [tdx_report_parser](https://github.com/intel/confidential-computing-zoo/tree/main/utilities/tdx/tdx_report_parser) tool to get mrs in TDX VM.
 
 ## Run examples
 
@@ -296,9 +314,6 @@ In Gramine, it is defined in the template file.
     #start and enter the docker container
     image_tag=grpc-ratls-dev:tdx-dcap1.15-centos8-latest
     ./start_container.sh ${pccs_service_ip} ${image_tag}
-
-    #Run the aesm service
-    /root/start_aesm_service.sh
     ```
 
     Run the cpp example

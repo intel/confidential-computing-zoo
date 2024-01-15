@@ -15,9 +15,7 @@
 
 ################################# CONSTANTS ###################################
 
-THIS_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
-ENTRYPOINT ?= ""
 
 ifeq ($(DEBUG),1)
 GRAMINE_LOG_LEVEL = debug
@@ -25,10 +23,9 @@ else
 GRAMINE_LOG_LEVEL = error
 endif
 
-.PHONY: all
 all: grpc.manifest
 ifeq ($(SGX),1)
-all: grpc.manifest.sgx grpc.sig grpc.token
+all: grpc.manifest.sgx grpc.sig
 endif
 
 ################################ gRPC MANIFEST ###############################
@@ -40,22 +37,18 @@ grpc.manifest: grpc.manifest.template
 		-Darch_libdir=$(ARCH_LIBDIR) \
 		$< >$@
 
-grpc.manifest.sgx: grpc.manifest
+grpc.manifest.sgx grpc.sig: sgx_sign
+	@:
+
+.INTERMEDIATE: sgx_sign
+sgx_sign: grpc.manifest
 	gramine-sgx-sign \
 		--manifest $< \
-		--output $@
-
-grpc.sig: grpc.manifest.sgx
-
-grpc.token: grpc.sig
-	gramine-sgx-get-token --output $@ --sig $<
+		--output $<.sgx
 
 ################################## CLEANUP ####################################
 
-.PHONY: clean
 clean:
 	$(RM) *.token *.sig *.manifest.sgx *.manifest
-	$(RM) -r scripts/__pycache__
 
-.PHONY: distclean
 distclean: clean

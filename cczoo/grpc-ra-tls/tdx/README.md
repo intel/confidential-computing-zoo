@@ -20,18 +20,16 @@
 
 ## How to run gRPC examples
 
-1. start container in `TDX Guest OS`
+1. Get TDX report in `TDX VM`
 
-    Pull docker image in `TDX Guest OS`, and exec the following command:
+    Please refer to [tdx_report_parser](https://github.com/intel/confidential-computing-zoo/tree/main/utilities/tdx/tdx_report_parser).
+
+2. start container in `TDX VM`
+
+    Pull docker image in `TDX VM` and exec the following command:
 
     ```
     cczoo/grpc-ra-tls/tdx/start_container.sh ${pccs_service_ip} ${image_tag}
-    ```
-
-2. Start aesm service
-
-    ```
-    /root/start_aesm_service.sh
     ```
 
 3. build and run gRPC examples
@@ -48,6 +46,11 @@
         cd ${GRPC_PATH}/examples/cpp/ratls
         ./build.sh
         cd build
+        ```
+
+        Write TDX report into `dynamic_config.json`, then run.
+
+        ```
         ./server &
         ./client
         ```
@@ -60,6 +63,11 @@
         cd ${GRPC_PATH}/examples/python/ratls
         ./build.sh
         cd build
+        ```
+
+        Write TDX report into `dynamic_config.json`, then run.
+
+        ```
         python3 -u ./server.py &
         python3 -u ./client.py
         ```

@@ -25,6 +25,12 @@ if [ -z ${SGX_RA_TLS_BACKEND} ]; then
     export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
+if [ "${SGX_RA_TLS_BACKEND}" == "TDX" ]; then
+    cp ${GRPC_PATH}/dynamic_config.tdx.json ${GRPC_PATH}/dynamic_config.json
+else
+    cp ${GRPC_PATH}/dynamic_config.sgx.json ${GRPC_PATH}/dynamic_config.json
+fi
+
 cd ${GRPC_PATH}
 
 echo 'RA_TLS_BACKEND = "'${SGX_RA_TLS_BACKEND}'"' > ${GRPC_PATH}/bazel/ratls.bzl

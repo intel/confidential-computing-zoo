@@ -13,9 +13,7 @@ to do software development.
 
 Execute the following command to build this docker image:
 ```
-base_image=centos:8
 image_tag=tdx-dev:dcap1.15-centos8-latest
-./build_docker_image.sh ${base_image} ${image_tag}
+docker_file=tdx-dev.centos.dockerfile
+./build_docker_image.sh ${image_tag} ${docker_file}
 ```
-
-`centos:8` could be selected as base_image.
