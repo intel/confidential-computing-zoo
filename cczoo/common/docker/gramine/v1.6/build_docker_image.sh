@@ -16,20 +16,35 @@
 #!/bin/bash
 set -e
 
+function usage_help() {
+    echo -e "usage_help:"
+    echo -e '  ./build_docker_image.sh ${base_image} ${image_tag} ${build_type}'
+    echo -e "  {base_image}"
+    echo -e "       ubuntu:18.04 | ubuntu20.04"
+    echo -e "  {image_tag}"
+    echo -e "       customed image tag"
+    echo -e "  {docker_file}"
+    echo -e "       gramine-sgx-dev.ubuntu.dockerfile"
+}
+
+usage_help
+
 if  [ -n "$1" ] ; then
-    image_tag=$1
+    base_image=$1
 else
-    image_tag=tdx-dev:dcap1.19-ubuntu22.04-latest
-    # image_tag=tdx-dev:dcap1.16-ubuntu22.04-latest
-    # image_tag=tdx-dev:dcap1.15-centos8-latest
+    base_image=ubuntu:20.04
 fi
 
 if  [ -n "$2" ] ; then
-    docker_file=$2
+    image_tag=$2
 else
-    docker_file=tdx-dev.dcap1.19-ubuntu22.04.dockerfile
-    # docker_file=tdx-dev.dcap1.16-ubuntu22.04.dockerfile
-    # docker_file=tdx-dev.dcap1.15-centos8.dockerfile
+    image_tag=gramine-sgx-dev:v1.6-ubuntu20.04-latest
+fi
+
+if  [ -n "$3" ] ; then
+    docker_file=$3
+else
+    docker_file=gramine-sgx-dev.ubuntu.dockerfile
 fi
 
 # Use the host proxy as the default configuration, or specify a proxy_server
@@ -47,6 +62,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg no_proxy=${no_proxy} \
     --build-arg http_proxy=${http_proxy} \
     --build-arg https_proxy=${https_proxy} \
+    --build-arg base_image=${base_image} \
     -f ${docker_file} \
     -t ${image_tag} \
     .

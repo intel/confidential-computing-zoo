@@ -16,17 +16,17 @@
 set -e
 
 shopt -s expand_aliases
-alias logfilter="grep \"mr_enclave\|mr_signer\|isv_prod_id\|isv_svn\""
+alias logfilter="grep -v 'measured'"
 
 export EXP_PATH=${GRPC_PATH}/examples
 export EXP_PY_PATH=${EXP_PATH}/python/ratls
 
 function get_env() {
-    gramine-sgx-get-token -s python.sig -o /dev/null | grep $1 | awk -F ":" '{print $2}' | xargs
+    gramine-sgx-sigstruct-view --verbose --output-format=text python.sig | grep $1 | awk -F ":" '{print $2}' | xargs
 }
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE
+    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then

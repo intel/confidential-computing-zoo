@@ -21,9 +21,10 @@ loader.log_level = "{{ log_level }}"
 # loader.log_file = ""
 
 loader.insecure__use_cmdline_argv = true
-loader.insecure__use_host_env = false
+loader.insecure__use_host_env = true
 
-loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}:/usr/{{ arch_libdir }}"
+loader.env.LD_LIBRARY_PATH = "/usr/local{{ arch_libdir }}:/usr{{ arch_libdir }}:/lib:{{ arch_libdir }}"
+loader.env.HOME = "{{ env.HOME }}"
 loader.env.LC_ALL = "C"
 loader.env.GRPC_VERBOSITY = "ERROR"
 
@@ -35,17 +36,19 @@ sys.stack.size = "16M"
 fs.mounts = [
   { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
   { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
-  { path = "/etc", uri = "file:/etc" },
   { path = "/usr", uri = "file:/usr" },
-  { type = "tmpfs", path = "/var/tmp" },
+  { path = "/etc", uri = "file:/etc" },
+  { type = "tmpfs", path = "/tmp" },
 ]
 
 sgx.debug = false
-sgx.remote_attestation = true
-sgx.enable_stats = false
+sgx.remote_attestation = "dcap"
 sgx.nonpie_binary = true
+sgx.enable_stats = false
 sgx.enclave_size = "2G"
-sgx.thread_num = 16
+sgx.insecure__rpc_thread_num = 0
+sgx.max_threads = {{ '1' if env.get('EDMM', '0') == '1' else '16' }}
+sgx.edmm_enable = {{ 'true' if env.get('EDMM', '0') == '1' else 'false' }}
 
 # sgx.require_avx = true
 # sgx.require_avx512 = true
@@ -56,8 +59,11 @@ sgx.trusted_files = [
   "file:{{ gramine.libos }}",
   "file:{{ gramine.runtimedir() }}/",
   "file:{{ arch_libdir }}/",
-  "file:/usr/{{ arch_libdir }}/",
+  "file:/usr{{ arch_libdir }}/",
+  "file:/usr/local{{ arch_libdir }}/",
   "file:/etc/ssl/certs/ca-certificates.crt",
+  "file:/etc/default/apport",
+  "file:/etc/mime.types",
 ]
 
 sgx.allowed_files = [

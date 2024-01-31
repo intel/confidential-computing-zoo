@@ -69,7 +69,6 @@ ENV BUILD_TYPE=Release
 ARG GRPC_VERSION=v1.38.1
 ARG GRPC_VERSION_PATH=${GRPC_ROOT}/${GRPC_VERSION}
 RUN git clone --recurse-submodules -b ${GRPC_VERSION} https://github.com/grpc/grpc ${GRPC_VERSION_PATH}
-
 RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
 
 COPY grpc/common ${GRPC_VERSION_PATH}
@@ -90,7 +89,7 @@ RUN build.sh
 # Clean tmp files
 RUN apt-get clean all \
     && rm -rf /var/lib/apt/lists/* \
-    && rm -rf ~/.cache/pip/* \
+    && rm -rf ~/.cache/* \
     && rm -rf /tmp/*
 
 WORKDIR ${GRPC_PATH}/examples/cpp/ratls/build

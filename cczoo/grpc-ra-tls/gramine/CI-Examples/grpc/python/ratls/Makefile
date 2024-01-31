@@ -16,7 +16,6 @@
 ################################# CONSTANTS ###################################
 
 ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
-# ENTRYPOINT ?= $(realpath $(shell sh -c "command -v python3"))
 
 ifeq ($(DEBUG),1)
 GRAMINE_LOG_LEVEL = debug
@@ -27,18 +26,21 @@ endif
 .PHONY: all
 all: python.manifest
 ifeq ($(SGX),1)
-all: python.manifest.sgx python.sig python.token
+all: python.manifest.sgx python.sig
 endif
 
-################################ gRPC MANIFEST ###############################
+################################ fedlearner MANIFEST ###############################
 
 python.manifest: python.manifest.template
 	gramine-manifest \
-		-Dlog_level=$(GRAMINE_LOG_LEVEL) \
 		-Dentrypoint=$(realpath $(shell sh -c "command -v python3")) \
 		-Darch_libdir=$(ARCH_LIBDIR) \
-		$< >$@
+		-Dlog_level=$(GRAMINE_LOG_LEVEL) \
+		$< > $@
 
+# Make on Ubuntu <= 20.04 doesn't support "Rules with Grouped Targets" (`&:`),
+# for details on this workaround see
+# https://github.com/gramineproject/gramine/blob/e8735ea06c/CI-Examples/helloworld/Makefile
 python.manifest.sgx python.sig: sgx_sign
 	@:
 
@@ -48,15 +50,11 @@ sgx_sign: python.manifest
 		--manifest $< \
 		--output $<.sgx
 
-python.token: python.sig
-	gramine-sgx-get-token --output $@ --sig $<
-
 ################################## CLEANUP ####################################
 
 .PHONY: clean
 clean:
 	$(RM) *.token *.sig *.manifest.sgx *.manifest
-	$(RM) -r scripts/__pycache__
 
 .PHONY: distclean
 distclean: clean

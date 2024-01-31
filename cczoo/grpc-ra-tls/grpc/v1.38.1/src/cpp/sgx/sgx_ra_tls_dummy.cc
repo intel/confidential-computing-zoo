@@ -39,10 +39,7 @@ std::vector<std::string> dummy_generate_key_cert() {
 
 void dummy_verify_init() {
     struct ra_tls_config config;
-    config.verify_mr_enclave = false;
-    config.verify_mr_signer = false;
-    config.verify_isv_prod_id = false;
-    config.verify_isv_svn = false;
+    memset((void*)&config, 0, sizeof(config));
     _ctx_.cfg = config;
 };
 

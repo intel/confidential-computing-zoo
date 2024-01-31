@@ -15,12 +15,12 @@
 from libcpp.vector cimport vector as cppvector
 from libcpp.string cimport string as cppstring
 
-cdef extern from "grpcpp/security/sgx/sgx_ra_tls.h" namespace "grpc::sgx":
-  struct mrs_context:
+cdef extern from "grpcpp/security/sgx/sgx_ra_tls_context.h" namespace "grpc::sgx":
+  struct ra_tls_config:
     pass
 
 cdef extern from "grpcpp/security/sgx/sgx_ra_tls.h" namespace "grpc::sgx":
-  cdef void grpc_sgx_ra_tls_parse_config "grpc::sgx::ra_tls_parse_config"(mrs_context);
+  cdef void grpc_sgx_ra_tls_parse_config "grpc::sgx::ra_tls_parse_config"(ra_tls_config);
 
 cdef extern from "grpcpp/security/sgx/sgx_ra_tls.h" namespace "grpc::sgx":
   cdef void grpc_sgx_ra_tls_parse_config_json "grpc::sgx::ra_tls_parse_config"(const char *);

@@ -16,14 +16,14 @@
 set -e
 
 shopt -s expand_aliases
-alias logfilter="grep \"mr_enclave\|mr_signer\|isv_prod_id\|isv_svn\""
+alias logfilter="grep -v 'measured'"
 
 GRPC_EXP_PATH=${GRPC_PATH}/examples/cpp/attestation
 RUNTIME_TMP_PATH=/tmp/grpc_tmp_runtime
 RUNTIME_PATH=`pwd -P`/runtime
 
 function get_env() {
-    gramine-sgx-get-token -s grpc.sig -o /dev/null | grep $1 | awk -F ":" '{print $2}' | xargs
+    gramine-sgx-sigstruct-view --verbose --output-format=text grpc.sig | grep $1 | awk -F ":" '{print $2}' | xargs
 }
 
 function prepare_runtime() {
@@ -52,7 +52,7 @@ if [ -z ${BUILD_TYPE} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=OCCLUM # GRAMINE,OCCLUM,TDX,DUMMY
+    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then

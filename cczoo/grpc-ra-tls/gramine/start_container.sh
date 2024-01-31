@@ -17,15 +17,15 @@
 set -e
 
 if  [ -n "$1" ] ; then
-    ip_addr=$1
+    pccs_ip_addr=$1
 else
-    ip_addr=127.0.0.1
+    pccs_ip_addr=127.0.0.1
 fi
 
 if  [ -n "$2" ] ; then
     image_tag=$2
 else
-    image_tag=grpc-ratls-dev:graminev1.2-ubuntu20.04-latest
+    image_tag=grpc-ratls-dev:graminev1.6-ubuntu20.04-latest
 fi
 
 # Use the host proxy as the default configuration, or specify a proxy_server
@@ -41,11 +41,11 @@ docker run -it \
     --privileged=true \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
-    --add-host=pccs.service.com:${ip_addr} \
+    --add-host=pccs.service.com:${pccs_ip_addr} \
     --device=/dev/sgx_enclave:/dev/sgx/enclave \
     --device=/dev/sgx_provision:/dev/sgx/provision \
+    -v /home:/mnt/home \
     -v /var/run/aesmd/aesm.socket:/var/run/aesmd/host-aesm.socket \
-    -v /home:/home/host-home \
     -e no_proxy=${no_proxy} \
     -e http_proxy=${http_proxy} \
     -e https_proxy=${https_proxy} \

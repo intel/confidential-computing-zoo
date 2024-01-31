@@ -17,15 +17,24 @@
 set -e
 
 if  [ ! -n "$1" ] ; then
-    base_image=tdx-dev:dcap1.15-centos8-latest
+    base_image=tdx-dev:dcap1.19-ubuntu22.04-latest
+    # base_image=tdx-dev:dcap1.15-centos8-latest
 else
     base_image=$1
 fi
 
 if  [ ! -n "$2" ] ; then
-    image_tag=grpc-ratls-dev:tdx-dcap1.15-centos8-latest
+    image_tag=grpc-ratls-dev:tdx-dcap1.19-ubuntu22.04-latest
+    # image_tag=grpc-ratls-dev:tdx-dcap1.15-centos8-latest
 else
     image_tag=$2
+fi
+
+if  [ ! -n "$3" ] ; then
+    docker_file=grpc-ratls-dev.ubuntu.dockerfile
+    # docker_file=grpc-ratls-dev.centos.dockerfile
+else
+    docker_file=$3
 fi
 
 # Use the host proxy as the default configuration, or specify a proxy_server
@@ -44,7 +53,7 @@ DOCKER_BUILDKIT=0 docker build \
     --build-arg http_proxy=${http_proxy} \
     --build-arg https_proxy=${https_proxy} \
     --build-arg BASE_IMAGE=${base_image} \
-    -f grpc-ratls-dev.dockerfile \
+    -f ${docker_file} \
     -t ${image_tag} \
     ..
 

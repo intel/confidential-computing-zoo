@@ -24,8 +24,6 @@
 namespace grpc {
 namespace sgx {
 
-#include <mbedtls/config.h>
-#include <mbedtls/certs.h>
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/debug.h>
 #include <mbedtls/entropy.h>
@@ -41,32 +39,47 @@ namespace sgx {
 #include <mbedtls/rsa.h>
 
 std::vector<std::string> gramine_generate_key_cert() {
+    std::vector<std::string> key_cert;
+    unsigned char key_buffer[CERT_KEY_MAX_SIZE],
+                  cert_buffer[CERT_KEY_MAX_SIZE];
+    uint8_t *der_key = nullptr, *der_crt = nullptr;
+    size_t der_key_size, der_crt_size, olen;
+    std::string error = "";
+
+    mbedtls_x509_crt cert;
+    mbedtls_pk_context key;
+    mbedtls_ctr_drbg_context ctr_drbg;
+
+    mbedtls_x509_crt_init(&cert);
+    mbedtls_pk_init(&key);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+
     if (!_ctx_.attest_lib.get_handle()) {
         _ctx_.attest_lib.open("libra_tls_attest.so", RTLD_LAZY);
     }
 
-    auto ra_tls_create_key_and_crt =
-        reinterpret_cast<int (*)(mbedtls_pk_context*, mbedtls_x509_crt*)>(
-            _ctx_.attest_lib.get_func("ra_tls_create_key_and_crt"));
+    auto ra_tls_create_key_and_crt_der_f =
+        reinterpret_cast<int (*)(uint8_t**, size_t*, uint8_t**, size_t*)>(
+            _ctx_.attest_lib.get_func("ra_tls_create_key_and_crt_der"));
 
-    std::string error = "";
-    std::vector<std::string> key_cert;
-
-    mbedtls_x509_crt cert;
-    mbedtls_pk_context key;
-
-    mbedtls_x509_crt_init(&cert);
-    mbedtls_pk_init(&key);
-
-    int ret = (*ra_tls_create_key_and_crt)(&key, &cert);
+    int ret = (*ra_tls_create_key_and_crt_der_f)(&der_key, &der_key_size, &der_crt, &der_crt_size);
     if (ret != 0) {
-        error = "gramine_generate_key_cert->ra_tls_create_key_and_crt";
+        error = "ra_tls_get_key_cert->ra_tls_create_key_and_crt_der_f";
         goto out;
     }
 
-    unsigned char key_buffer[CERT_KEY_MAX_SIZE],
-                  cert_buffer[CERT_KEY_MAX_SIZE];
-    size_t olen;
+    ret = mbedtls_x509_crt_parse(&cert, (unsigned char*)der_crt, der_crt_size);
+    if (ret != 0) {
+        error = "ra_tls_get_key_cert->mbedtls_x509_crt_parse";
+        goto out;
+    }
+
+    ret = mbedtls_pk_parse_key(&key, (unsigned char*)der_key, der_key_size, /*pwd=*/NULL, 0,
+                                mbedtls_ctr_drbg_random, &ctr_drbg);
+    if (ret != 0) {
+        error = "ra_tls_get_key_cert->mbedtls_pk_parse_key";
+        goto out;
+    }
 
     ret = mbedtls_pk_write_key_pem(&key, key_buffer, CERT_KEY_MAX_SIZE);
     if (ret != 0) {
@@ -87,8 +100,11 @@ std::vector<std::string> gramine_generate_key_cert() {
     key_cert.emplace_back(std::string((char*) cert_buffer));
 
 out:
-    mbedtls_x509_crt_free(&cert);
     mbedtls_pk_free(&key);
+    mbedtls_x509_crt_free(&cert);
+    mbedtls_ctr_drbg_free(&ctr_drbg);
+    check_free(der_key);
+    check_free(der_crt);
 
     if (ret != 0) {
         throw std::runtime_error(

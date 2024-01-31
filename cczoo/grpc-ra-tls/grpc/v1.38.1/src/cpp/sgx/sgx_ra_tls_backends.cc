@@ -17,49 +17,10 @@
  */
 
 #include <grpcpp/security/sgx/sgx_ra_tls_backends.h>
+#include <grpcpp/security/sgx/sgx_ra_tls_impl.h>
 
 namespace grpc {
 namespace sgx {
-
-static ra_tls_config parse_config_json(const char* file) {
-    struct ra_tls_config cfg;
-
-    if (!check_file(file)) {
-        grpc_printf("could not to find and parse file!\n");
-    } else {
-        class json_engine sgx_json(file);
-        //grpc_printf("%s\n", sgx_json.print_item(sgx_json.get_handle()));
-
-        cfg.verify_mr_enclave = sgx_json.cmp_item(sgx_json.get_item(sgx_json.get_handle(), "verify_mr_enclave"), "on");
-        cfg.verify_mr_signer = sgx_json.cmp_item(sgx_json.get_item(sgx_json.get_handle(), "verify_mr_signer"), "on");
-        cfg.verify_isv_prod_id = sgx_json.cmp_item(sgx_json.get_item(sgx_json.get_handle(), "verify_isv_prod_id"), "on");
-        cfg.verify_isv_svn = sgx_json.cmp_item(sgx_json.get_item(sgx_json.get_handle(), "verify_isv_svn"), "on");
-
-        auto objs = sgx_json.get_item(sgx_json.get_handle(), "sgx_mrs");
-        auto obj_num = std::min(cJSON_GetArraySize(objs), SGX_MESUREMENTS_MAX_SIZE);
-
-        cfg.mrs = std::vector<ra_tls_measurement>(obj_num, ra_tls_measurement());
-        for (auto i = 0; i < obj_num; i++) {
-            auto obj = cJSON_GetArrayItem(objs, i);
-
-            auto mr_enclave = sgx_json.print_item(sgx_json.get_item(obj, "mr_enclave"));
-            memset(cfg.mrs[i].mr_enclave, 0, sizeof(cfg.mrs[i].mr_enclave));
-            hex_to_byte(mr_enclave+1, cfg.mrs[i].mr_enclave, sizeof(cfg.mrs[i].mr_enclave));
-
-            auto mr_signer = sgx_json.print_item(sgx_json.get_item(obj, "mr_signer"));
-            memset(cfg.mrs[i].mr_signer, 0, sizeof(cfg.mrs[i].mr_signer));
-            hex_to_byte(mr_signer+1, cfg.mrs[i].mr_signer, sizeof(cfg.mrs[i].mr_signer));
-
-            auto isv_prod_id = sgx_json.print_item(sgx_json.get_item(obj, "isv_prod_id"));
-            cfg.mrs[i].isv_prod_id = strtoul(isv_prod_id, nullptr, 10);
-
-            auto isv_svn = sgx_json.print_item(sgx_json.get_item(obj, "isv_svn"));
-            cfg.mrs[i].isv_svn = strtoul(isv_svn, nullptr, 10);
-        };
-    }
-
-    return cfg;
-}
 
 void ra_tls_parse_config(ra_tls_config cfg) {
     std::lock_guard<std::mutex> lock(_ctx_.mtx);
@@ -168,7 +129,7 @@ int TlsAuthorizationCheck::Schedule(grpc::experimental::TlsServerAuthorizationCh
 
     int ret = ra_tls_verify_certificate(der_crt, CERT_KEY_MAX_SIZE);
     if (ret != 0) {
-        grpc_printf("something went wrong while verifying quote!\n");
+        grpc_printf("something went wrong while verifying cert!\n");
         arg->set_success(0);
         arg->set_status(GRPC_STATUS_UNAUTHENTICATED);
     } else {
@@ -191,7 +152,7 @@ int ra_tls_auth_check_schedule(void* /* confiuser_data */,
 
     int ret = ra_tls_verify_certificate(der_crt, CERT_KEY_MAX_SIZE);
     if (ret != 0) {
-        grpc_printf("something went wrong while verifying quote!\n");
+        grpc_printf("something went wrong while verifying cert!\n");
         arg->success = 0;
         arg->status = GRPC_STATUS_UNAUTHENTICATED;
     } else {

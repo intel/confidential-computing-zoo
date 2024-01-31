@@ -2820,6 +2820,8 @@ add_library(grpc++
   src/cpp/sgx/sgx_ra_tls_gramine.cc
   src/cpp/sgx/sgx_ra_tls_occlum.cc
   src/cpp/sgx/sgx_ra_tls_tdx.cc
+  src/cpp/sgx/sgx_ra_tls_tdx_gcp.cc
+  src/cpp/sgx/sgx_ra_tls_tdx_azure.cc
   src/cpp/sgx/sgx_ra_tls_dummy.cc
   src/cpp/sgx/sgx_ra_tls_impl.cc
   src/cpp/sgx/sgx_ra_tls_utils.cc

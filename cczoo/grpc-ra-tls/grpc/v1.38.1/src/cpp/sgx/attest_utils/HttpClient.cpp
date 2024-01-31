@@ -4,6 +4,8 @@
 // </copyright>
 //-------------------------------------------------------------------------------------------------
 
+#if defined (SGX_RA_TLS_AZURE_TDX_BACKEND) || defined (SGX_RA_TLS_GCP_TDX_BACKEND)
+
 #include <math.h>
 #include <fstream>
 #include <iostream>
@@ -138,3 +140,5 @@ size_t HttpClient::WriteResponseCallback(void* contents, size_t size, size_t nme
 
     return contentsSize;
 }
+
+#endif

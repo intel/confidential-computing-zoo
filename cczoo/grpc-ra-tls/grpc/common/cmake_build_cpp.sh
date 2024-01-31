@@ -31,6 +31,12 @@ elif [ "${SGX_RA_TLS_SDK}" == "LIBRATS" ]; then
     ${GRPC_PATH}/build_librats_sdk.sh
 fi
 
+if [ "${SGX_RA_TLS_BACKEND}" == "TDX" ]; then
+    cp ${GRPC_PATH}/dynamic_config.tdx.json ${GRPC_PATH}/dynamic_config.json
+else
+    cp ${GRPC_PATH}/dynamic_config.sgx.json ${GRPC_PATH}/dynamic_config.json
+fi
+
 # build and install abseil library
 # https://abseil.io/docs/cpp/quickstart-cmake.html
 mkdir -p ${ABSEIL_PATH}/build

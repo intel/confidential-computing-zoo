@@ -24,9 +24,6 @@
 #include <grpcpp/security/sgx/sgx_ra_tls_options.h>
 #include <grpcpp/security/sgx/sgx_ra_tls_context.h>
 
-// Set 1 for strict security checks
-#define SGX_MESUREMENTS_MAX_SIZE 16
-
 namespace grpc {
 namespace sgx {
 
