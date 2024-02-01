@@ -116,4 +116,8 @@ RUN apt update && apt install -y default-libmysqlclient-dev pkg-config && pip3 i
 
 COPY attest_config/attest_config.json /etc
 
+WORKDIR /home/user
+COPY requirements.txt /home/user
+RUN pip3 install -r requirements.txt
+
 EXPOSE 8000
