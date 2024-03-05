@@ -70,12 +70,13 @@ elif [ "$SERVICE_NAME" == 'backend' ]; then
        -e http_proxy=${http_proxy} \
        -e https_proxy=${https_proxy} \
        -e no_proxy=${no_proxy} \
-       -e API_PROTOCOL=${API_PROTOCOL} \
+       -e API_PROTOCOL=${REMOTE_ATTESTATION} \
        -e PIPELINE_YAML_PATH=/home/user/workspace/rag_mysql.yaml \
        -e ENABLE_OPTIMUM_INTEL=False \
        -e QUERY_PIPELINE_NAME=query \
        -e ONEDNN_MAX_CPU_ISA=AVX512_CORE_BF16 \
        -e PYTHONWARNINGS=ignore \
+       -e TF_CPP_MIN_LOG_LEVEL=2 \
        -v /dev:/dev \
        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
        -v /home/encrypted_storage:/home/rag_data/ \
@@ -104,12 +105,13 @@ elif [ "$SERVICE_NAME" == 'backend_es' ]; then
        -e http_proxy=${http_proxy} \
        -e https_proxy=${https_proxy} \
        -e no_proxy=${no_proxy} \
-       -e API_PROTOCOL=${API_PROTOCOL} \
+       -e API_PROTOCOL=${REMOTE_ATTESTATION} \
        -e PIPELINE_YAML_PATH=/home/user/workspace/rag_es.yaml \
        -e ENABLE_OPTIMUM_INTEL=False \
        -e QUERY_PIPELINE_NAME=query \
        -e ONEDNN_MAX_CPU_ISA=AVX512_CORE_BF16 \
        -e PYTHONWARNINGS=ignore \
+       -e TF_CPP_MIN_LOG_LEVEL=2 \
        -v /dev:/dev \
        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
        -v /home/encrypted_storage:/home/rag_data/ \
@@ -136,7 +138,7 @@ elif [ "$SERVICE_NAME" == 'frontend' ]; then
         -e http_proxy=${http_proxy} \
         -e https_proxy=${https_proxy} \
         -e no_proxy=${no_proxy} \
-        -e API_PROTOCOL=${API_PROTOCOL} \
+        -e API_PROTOCOL=${REMOTE_ATTESTATION} \
         -e STREAMLIT_SERVER_PORT=8502 \
         -e PYTHONWARNINGS=ignore \
         -w /home/user/workspace \

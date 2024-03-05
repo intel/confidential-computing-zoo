@@ -16,7 +16,7 @@ with open("./images/bot.jpg", "rb") as f:
 
 bot_image = f'<img class="bot-img" src="data:image/jpg;base64,{base64_image}">'
 
-DEFAULT_QUESTION_AT_STARTUP = os.getenv("DEFAULT_QUESTION_AT_STARTUP", "Hi, I'm Data Center Cluster Fleet Service Agent, how can I help you?")
+DEFAULT_QUESTION_AT_STARTUP = os.getenv("DEFAULT_QUESTION_AT_STARTUP", "Hi, I'm a a professional computer engineer, how can I help you?")
 DEFAULT_ANSWER_AT_STARTUP = os.getenv("DEFAULT_ANSWER_AT_STARTUP", "Hi")
 
 def set_state_if_absent(key, value):
@@ -49,15 +49,24 @@ clear_button = st.sidebar.button("Restart Conversation", key="clear")
 model_type = "llama2"
 
 def generate_prompt(prompt_name):
-    PROMPT_TEXT = """Below is an instruction that describes a task, paired with an input that provides further context. Write response that appropriately completes the request.
+    PROMPT_TEXT = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
 
     ### Instruction:
-    Suppose you are a professional computer engineer. Paraphrase the context as a detailed summary to answer the question: {join(documents)}.
+    Suppose you are a professional computer engineer and a user has sent you a message, please reply to his message. 
 
     ### Input:
-    context: {' - '.join([d.meta['answer'] for d in documents])};
+    message: {query};
 
-    ### Answer:"""
+    ### Answer:
+
+    ### Notice:
+    We have the opportunity to refine the answer (only if needed) with some more context below.
+    ------------
+    {' - '.join([d.meta['answer'] for d in documents])}
+    ------------
+    Given the new context, refine the original answer to better answer the query. If the context isn't useful, return the original answer. Remember to write the final answer presented to the user after Refined Answer
+
+    ### Refined Answer:"""
     custom_prompt = PROMPT_TEXT
     return custom_prompt
 
