@@ -76,6 +76,7 @@ elif [ "$SERVICE_NAME" == 'backend' ]; then
        -e QUERY_PIPELINE_NAME=query \
        -e ONEDNN_MAX_CPU_ISA=AVX512_CORE_BF16 \
        -e PYTHONWARNINGS=ignore \
+       -e TF_CPP_MIN_LOG_LEVEL=2 \
        -v /dev:/dev \
        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
        -v /home/encrypted_storage:/home/rag_data/ \
@@ -110,6 +111,7 @@ elif [ "$SERVICE_NAME" == 'backend_es' ]; then
        -e QUERY_PIPELINE_NAME=query \
        -e ONEDNN_MAX_CPU_ISA=AVX512_CORE_BF16 \
        -e PYTHONWARNINGS=ignore \
+       -e TF_CPP_MIN_LOG_LEVEL=2 \
        -v /dev:/dev \
        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
        -v /home/encrypted_storage:/home/rag_data/ \
