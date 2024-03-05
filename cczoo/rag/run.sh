@@ -70,7 +70,7 @@ elif [ "$SERVICE_NAME" == 'backend' ]; then
        -e http_proxy=${http_proxy} \
        -e https_proxy=${https_proxy} \
        -e no_proxy=${no_proxy} \
-       -e API_PROTOCOL=${API_PROTOCOL} \
+       -e API_PROTOCOL=${REMOTE_ATTESTATION} \
        -e PIPELINE_YAML_PATH=/home/user/workspace/rag_mysql.yaml \
        -e ENABLE_OPTIMUM_INTEL=False \
        -e QUERY_PIPELINE_NAME=query \
@@ -105,7 +105,7 @@ elif [ "$SERVICE_NAME" == 'backend_es' ]; then
        -e http_proxy=${http_proxy} \
        -e https_proxy=${https_proxy} \
        -e no_proxy=${no_proxy} \
-       -e API_PROTOCOL=${API_PROTOCOL} \
+       -e API_PROTOCOL=${REMOTE_ATTESTATION} \
        -e PIPELINE_YAML_PATH=/home/user/workspace/rag_es.yaml \
        -e ENABLE_OPTIMUM_INTEL=False \
        -e QUERY_PIPELINE_NAME=query \
@@ -138,7 +138,7 @@ elif [ "$SERVICE_NAME" == 'frontend' ]; then
         -e http_proxy=${http_proxy} \
         -e https_proxy=${https_proxy} \
         -e no_proxy=${no_proxy} \
-        -e API_PROTOCOL=${API_PROTOCOL} \
+        -e API_PROTOCOL=${REMOTE_ATTESTATION} \
         -e STREAMLIT_SERVER_PORT=8502 \
         -e PYTHONWARNINGS=ignore \
         -w /home/user/workspace \
