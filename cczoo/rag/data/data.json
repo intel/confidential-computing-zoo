@@ -1,0 +1,38 @@
+[
+    {
+        "content": "What is artificial intelligence?",
+        "meta": {
+            "answer": "Artificial intelligence is a computer system that simulates human intelligent behavior. It includes abilities such as learning, reasoning, problem-solving, and language understanding."
+        }
+    },
+    {
+        "content": "Explain the working principle of blockchain technology.",
+        "meta": {
+            "answer": "Blockchain is a distributed database technology that ensures the immutability and transparency of data by storing it in continuous areas called blocks and linking these blocks using encryption."
+        }
+    },
+    {
+        "content": "Introduce recent applications of artificial intelligence.",
+        "meta": {
+            "answer": "Recently, artificial intelligence has made significant progress in areas such as medical diagnostics, autonomous driving, natural language processing, and image recognition."
+        }
+    },
+    {
+        "content": "Explain the basic principles of deep learning.",
+        "meta": {
+            "answer": "Deep learning is a machine learning method that mimics the structure of the human brain's neural network. It involves hierarchical learning through multiple layers of neurons to recognize and predict complex patterns."
+        }
+    },
+    {
+        "content": "Explain the difference between supervised learning and unsupervised learning in machine learning.",
+        "meta": {
+            "answer": "Supervised learning involves learning from labeled training data, while unsupervised learning learns patterns and relationships without labels."
+        }
+    },
+    {
+        "content": "What are the potential applications of artificial intelligence in the field of education?",
+        "meta": {
+            "answer": "Artificial intelligence in education can be applied to personalized learning, intelligent tutoring, and student progress monitoring, enhancing the effectiveness and efficiency of education."
+        }
+    }
+]

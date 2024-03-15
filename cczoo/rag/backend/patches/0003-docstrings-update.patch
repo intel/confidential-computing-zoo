@@ -1,0 +1,86 @@
+From 7c4ab3c87a1b6ea76a5c11493bb88ade2bd3d4e6 Mon Sep 17 00:00:00 2001
+From: Darja Fokina <daria.f93@gmail.com>
+Date: Thu, 1 Jun 2023 15:22:56 +0200
+Subject: [PATCH 3/5] docstrings update
+
+---
+ haystack/nodes/prompt/prompt_node.py   | 10 +++++-----
+ rest_api/rest_api/controller/search.py |  2 +-
+ test/prompt/test_prompt_node.py        | 12 ++++++------
+ 3 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/haystack/nodes/prompt/prompt_node.py b/haystack/nodes/prompt/prompt_node.py
+index a1edc895..9d8a2f96 100644
+--- a/haystack/nodes/prompt/prompt_node.py
++++ b/haystack/nodes/prompt/prompt_node.py
+@@ -282,12 +282,12 @@ class PromptNode(BaseComponent):
+                 - prompt template yaml: Uses the prompt template specified by the given YAML.
+                 - prompt text: Uses a copy of the default prompt template with the given prompt text.
+         :param generation_kwargs: The generation_kwargs are used to customize text generation for the underlying pipeline.
+-        :param stream: whether the PromptNode enables the token streaming mode. You can assign a stream_handler to
++        :param stream: Enables or disables token streaming mode. You can assign a `stream_handler` to
+         handle these streaming tokens.
+-        :param return_iterator: whether the PromptNode output includes a streaming iterator of TextIteratorStreamer.
+-        If True, the run() function run in non-blocked mode and return a iterator in output['iterator'].
+-        :param stream_handler: a customized stream handler of TokenStreamingHandler to handle the token streaming.
+-        if return_iterator is True, stream_handler is not support.
++        :param return_iterator: Includes a streaming iterator of the TextIteratorStreamer in output.
++            If set to True, the run() function runs in an unblocked mode and returns an iterator in output['iterator'].
++        :param stream_handler: A customized stream handler of TokenStreamingHandler.
++            If `return_iterator` is True, `stream_handler` is not supported.
+         """
+         # prompt_collector is an empty list, it's passed to the PromptNode that will fill it with the rendered prompts,
+         # so that they can be returned by `run()` as part of the pipeline's debug output.
+diff --git a/rest_api/rest_api/controller/search.py b/rest_api/rest_api/controller/search.py
+index 4126c8ba..e50efd35 100644
+--- a/rest_api/rest_api/controller/search.py
++++ b/rest_api/rest_api/controller/search.py
+@@ -69,7 +69,7 @@ def query_streaming(request: QueryRequest):
+         iterator = _get_streaming_iterator(query_pipeline, request)
+         if iterator == None:
+             raise HTTPException(
+-                status_code=501, detail="The pipeline cannot support the streaming mode. The PromptNode is not found!"
++                status_code=501, detail="The pipeline cannot support streaming mode. The PromptNode is not found!"
+             )
+         return StreamingResponse(iterator, media_type="text/event-stream")
+ 
+diff --git a/test/prompt/test_prompt_node.py b/test/prompt/test_prompt_node.py
+index e873ba05..13b9d57e 100644
+--- a/test/prompt/test_prompt_node.py
++++ b/test/prompt/test_prompt_node.py
+@@ -200,8 +200,8 @@ def test_invalid_template_params(mock_model, mock_prompthub):
+ @patch("haystack.nodes.prompt.prompt_node.PromptModel")
+ def test_prompt_node_streaming_iterator_on_call(mock_model):
+     """
+-    Verifies that invoke function of PromptNode receives the corrected arguments,
+-    when calling PromptNode with stream and return_iterator is True
++    Verifies that invoke function of PromptNode receives the corrected arguments
++    when calling PromptNode with stream and return_iterator is True.
+     """
+     node = PromptNode()
+     node.prompt_model = mock_model
+@@ -215,8 +215,8 @@ def test_prompt_node_streaming_iterator_on_call(mock_model):
+ @pytest.mark.unit
+ def test_prompt_node_hf_model_streaming_iterator_output():
+     """
+-    Verifies PromptNode output when constructing PromptNode with return_iterator and stream of model_kwargs is True,
+-    the returned output should be a iterator of transformers.generation.streamers.TextIteratorStreamer.
++    Verifies PromptNode output when constructing PromptNode with return_iterator and stream of model_kwargs is True.
++    The returned output should be an iterator of transformers.generation.streamers.TextIteratorStreamer.
+     """
+     pn = PromptNode(model_kwargs={"stream": True, "return_iterator": True})
+     iterator = pn("What is the capital of Germany?")[0]
+@@ -229,8 +229,8 @@ def test_prompt_node_hf_model_streaming_iterator_output():
+ @pytest.mark.unit
+ def test_prompt_node_hf_model_pipeline_with_streaming_mode():
+     """
+-    Verifies PromptNode output when constructing PromptNode with return_iterator and stream of model_kwargs is True,
+-    the returned output should be a iterator of transformers.generation.streamers.TextIteratorStreamer.
++    Verifies PromptNode output when constructing PromptNode with return_iterator and stream of model_kwargs is True.
++    The returned output should be an iterator of transformers.generation.streamers.TextIteratorStreamer.
+     """
+     node = PromptNode(output_variable="result")
+     pipe = Pipeline()
+-- 
+2.31.1
+

@@ -1,0 +1,58 @@
+version: 1.15.1
+components:
+- name: Store
+  params:
+    host: localhost
+    index: document
+    port: 9200
+    search_fields: ["title", "questions"]
+  type: ElasticsearchDocumentStore
+- name: Retriever
+  params:
+    document_store: Store
+    top_k: 5
+  type: BM25Retriever
+- name: Reranker
+  params:
+    batch_size: 32
+    model_name_or_path: /home/user/ms-marco-MiniLM-L-12-v2
+    top_k: 3
+    use_gpu: false
+  type: SentenceTransformersRanker
+- name: Shaper
+  params:
+    func: "join_documents"
+    inputs:
+      documents: "documents"
+    outputs: ["documents"]
+  type: Shaper
+- name: PModel
+  params:
+    model_name_or_path: /home/user/Llama-2-7b-chat-hf
+    use_gpu: false
+    model_kwargs:
+      task_name: text-generation
+      torch_dtype: torch.bfloat16
+      use_ipex: True
+  type: PromptModel
+- name: Prompter
+  params:
+    model_name_or_path: PModel
+    default_prompt_template: question-answering
+  type: PromptNode
+
+pipelines:
+- name: query
+  nodes:
+  - inputs:
+    - Query
+    name: Retriever
+  - inputs:
+    - Retriever
+    name: Reranker
+  - inputs:
+    - Reranker
+    name: Shaper
+  - inputs:
+    - Shaper
+    name: Prompter

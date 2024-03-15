@@ -1,0 +1,70 @@
+.stButton>button {
+  color: #FFFFFF;
+  background-color: #0071C5;
+}
+
+.stButton>button:focus {
+  color: #FFFFFF;
+  border-color: #0071C5;
+  box-shadow: #0071C5;
+}
+
+p.answer {
+  font-family: Intel Clear; 
+  display: inline-block;
+  background-color: #F0F2F6;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 5px 20px;
+  max-width: 70%;
+  white-space: pre-line;
+}
+
+p.question {
+  text-align: left; 
+  font-family: Intel Clear; 
+  display: inline-block;
+  background-color: #bcdafa;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 5px 20px;
+  max-width: 72%;
+  white-space: pre-line
+}
+
+img.user-img {
+  border: 1px solid transparent;
+  border-radius: 50%;
+  height: 3rem;
+  width: 3rem;
+  margin: 0;
+}
+
+
+img.bot-img {
+  position: top;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  height: 3.5rem;
+  width: 3.5rem;
+  margin: 0;
+}
+
+div.container {
+  display: flex;
+  height: auto;
+  margin: 0;
+  width: 100%;
+  float: left;
+}
+
+div.container-user {
+  display: flex;
+  height: auto;
+  margin: 0;
+  width: 100%;
+  flex-direction: row-reverse;
+  float: right;
+}

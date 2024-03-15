@@ -1,0 +1,17 @@
+Question: What is artificial intelligence?
+Answer: Artificial intelligence is a computer system that simulates human intelligent behavior. It includes abilities such as learning, reasoning, problem-solving, and language understanding.
+
+Question: Explain the working principle of blockchain technology.
+Answer: Blockchain is a distributed database technology that ensures the immutability and transparency of data by storing it in continuous areas called blocks and linking these blocks using encryption.
+
+Question: Introduce recent applications of artificial intelligence.
+Answer: Recently, artificial intelligence has made significant progress in areas such as medical diagnostics, autonomous driving, natural language processing, and image recognition.
+
+Question: Explain the basic principles of deep learning.
+Answer: Deep learning is a machine learning method that mimics the structure of the human brain's neural network. It involves hierarchical learning through multiple layers of neurons to recognize and predict complex patterns.
+
+Question: Explain the difference between supervised learning and unsupervised learning in machine learning.
+Answer: Supervised learning involves learning from labeled training data, while unsupervised learning learns patterns and relationships without labels.
+
+Question: What are the potential applications of artificial intelligence in the field of education?
+Answer: Artificial intelligence in education can be applied to personalized learning, intelligent tutoring, and student progress monitoring, enhancing the effectiveness and efficiency of education.

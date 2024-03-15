@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+message Request {
+    string msg = 1;
+}
+
+message Response {
+    string msg = 1;
+}
+
+service Query {
+    rpc UnaryStream (Request) returns (stream Response) {}
+    rpc Status (Request) returns (Response) {}
+}
