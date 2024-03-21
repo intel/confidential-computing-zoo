@@ -1,0 +1,99 @@
+From 0a2c4cc2ef430c2764ac106f0290c9df1baba26a Mon Sep 17 00:00:00 2001
+From: yuanwu <yuan.wu@intel.com>
+Date: Mon, 22 May 2023 04:34:49 -0400
+Subject: [PATCH 2/5] fix: promptNode pipeline with default parameters cannot
+ work
+
+* When running pipeline with default prameters, the prompt template is
+None, the prompt should be the query.
+
+* Add promptNode streaming iterator test.
+
+* Add then unit test for pipeline streaming mode test.
+
+Signed-off-by: yuanwu <yuan.wu@intel.com>
+---
+ haystack/nodes/prompt/prompt_node.py |  2 +-
+ test/prompt/test_prompt_node.py      | 53 ++++++++++++++++++++++++++++
+ 2 files changed, 54 insertions(+), 1 deletion(-)
+
+diff --git a/haystack/nodes/prompt/prompt_node.py b/haystack/nodes/prompt/prompt_node.py
+index c43edc5d..a1edc895 100644
+--- a/haystack/nodes/prompt/prompt_node.py
++++ b/haystack/nodes/prompt/prompt_node.py
+@@ -324,7 +324,7 @@ class PromptNode(BaseComponent):
+         if stream_handler:
+             invocation_context["stream_handler"] = stream_handler
+ 
+-        results = self(prompt_collector=prompt_collector, **invocation_context)
++        results = self(query, prompt_collector=prompt_collector, **invocation_context)
+ 
+         prompt_template_resolved: PromptTemplate = invocation_context.pop("prompt_template")
+ 
+diff --git a/test/prompt/test_prompt_node.py b/test/prompt/test_prompt_node.py
+index 0d518be4..e873ba05 100644
+--- a/test/prompt/test_prompt_node.py
++++ b/test/prompt/test_prompt_node.py
+@@ -196,6 +196,59 @@ def test_invalid_template_params(mock_model, mock_prompthub):
+         node.prompt("question-answering-per-document", some_crazy_key="Berlin is the capital of Germany.")
+ 
+ 
++@pytest.mark.unit
++@patch("haystack.nodes.prompt.prompt_node.PromptModel")
++def test_prompt_node_streaming_iterator_on_call(mock_model):
++    """
++    Verifies that invoke function of PromptNode receives the corrected arguments,
++    when calling PromptNode with stream and return_iterator is True
++    """
++    node = PromptNode()
++    node.prompt_model = mock_model
++    node("Irrelevant prompt", stream=True, return_iterator=True)
++    # Verify model has been constructed with expected model_kwargs
++    mock_model.invoke.assert_called_once()
++    assert mock_model.invoke.call_args_list[0].kwargs["stream"] == True
++    assert mock_model.invoke.call_args_list[0].kwargs["return_iterator"] == True
++
++
++@pytest.mark.unit
++def test_prompt_node_hf_model_streaming_iterator_output():
++    """
++    Verifies PromptNode output when constructing PromptNode with return_iterator and stream of model_kwargs is True,
++    the returned output should be a iterator of transformers.generation.streamers.TextIteratorStreamer.
++    """
++    pn = PromptNode(model_kwargs={"stream": True, "return_iterator": True})
++    iterator = pn("What is the capital of Germany?")[0]
++    answer = ""
++    for token in iterator:
++        answer += token
++    assert "berlin" in answer.casefold()
++
++
++@pytest.mark.unit
++def test_prompt_node_hf_model_pipeline_with_streaming_mode():
++    """
++    Verifies PromptNode output when constructing PromptNode with return_iterator and stream of model_kwargs is True,
++    the returned output should be a iterator of transformers.generation.streamers.TextIteratorStreamer.
++    """
++    node = PromptNode(output_variable="result")
++    pipe = Pipeline()
++    pipe.add_node(component=node, name="prompt_node", inputs=["Query"])
++    query = "What is the capital of Germany?"
++    param = {"prompt_node": {"stream": True, "return_iterator": True}}
++    # test non-blocked streaming iterator mode.
++    iterator = pipe.run(query=query, params=param)["iterator"][0]
++    answer = ""
++    for token in iterator:
++        answer += token
++    assert "berlin" in answer.casefold()
++    param = {"prompt_node": {"stream": True}}
++    # test blocked streaming mode.
++    result = pipe.run(query=query, params=param)
++    assert "berlin" in result["result"][0].casefold()
++
++
+ @pytest.mark.skip
+ @pytest.mark.integration
+ @pytest.mark.parametrize("prompt_model", ["hf", "openai", "azure"], indirect=True)
+-- 
+2.31.1
+

@@ -1,0 +1,106 @@
+From 774c468283eb3138f86ff926bf2068f5c1ba221e Mon Sep 17 00:00:00 2001
+From: "Lin, Fanli" <fanli.lin@intel.com>
+Date: Thu, 6 Jul 2023 18:44:33 -0700
+Subject: [PATCH 4/5] demo workaround
+
+---
+ .../prompt/invocation_layer/hugging_face.py   | 44 ++++++++++++++-----
+ 1 file changed, 34 insertions(+), 10 deletions(-)
+
+diff --git a/haystack/nodes/prompt/invocation_layer/hugging_face.py b/haystack/nodes/prompt/invocation_layer/hugging_face.py
+index d4b1b051..ad3eb829 100644
+--- a/haystack/nodes/prompt/invocation_layer/hugging_face.py
++++ b/haystack/nodes/prompt/invocation_layer/hugging_face.py
+@@ -22,6 +22,9 @@ with LazyImport(message="Run 'pip install farm-haystack[inference]'") as torch_a
+         GenerationConfig,
+         Pipeline,
+         TextIteratorStreamer,
++        AutoTokenizer,
++        StoppingCriteria,
++        StoppingCriteriaList,
+     )
+     from transformers.pipelines import get_task
+     from haystack.modeling.utils import initialize_device_settings  # pylint: disable=ungrouped-imports
+@@ -163,11 +166,16 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
+         # and the model (prefer model instance over model_name_or_path str identifier)
+         model = kwargs.get("model") or kwargs.get("model_name_or_path")
+ 
++        remote_code = kwargs.get("trust_remote_code", False)
++        tokenizer = kwargs.get("tokenizer", model)
++        if remote_code == True:
++            tokenizer = AutoTokenizer.from_pretrained(tokenizer, trust_remote_code=True)
++
+         pipeline_kwargs = {
+             "task": kwargs.get("task", None),
+             "model": model,
+             "config": kwargs.get("config", None),
+-            "tokenizer": kwargs.get("tokenizer", None),
++            "tokenizer": tokenizer,
+             "feature_extractor": kwargs.get("feature_extractor", None),
+             "revision": kwargs.get("revision", None),
+             "use_auth_token": kwargs.get("use_auth_token", None),
+@@ -194,7 +202,7 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
+         """
+         output: List[Dict[str, str]] = []
+         stop_words = kwargs.pop("stop_words", None)
+-        top_k = kwargs.pop("top_k", None)
++        top_k = kwargs.get("top_k", None)
+         # either stream is True (will use default handler) or stream_handler is provided for custom handler
+         stream = kwargs.get("stream", self.stream)
+         stream_handler = kwargs.get("stream_handler", self.stream_handler)
+@@ -221,6 +229,13 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
+                     "do_sample",
+                     "num_return_sequences",
+                     "max_length",
++                    "temperature",
++                    "eos_token_id",
++                    "pad_token_id",
++                    "stopping_criteria",
++                    "use_cache",
++                    "top_p",
++                    "top_k",
+                 ]
+                 if key in kwargs
+             }
+@@ -239,8 +254,17 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
+                 model_input_kwargs["return_full_text"] = False
+                 model_input_kwargs["max_new_tokens"] = self.max_length
+             if stop_words:
+-                sw = StopWordsCriteria(tokenizer=self.pipe.tokenizer, stop_words=stop_words, device=self.pipe.device)
+-                model_input_kwargs["stopping_criteria"] = StoppingCriteriaList([sw])
++
++                class StopOnTokens(StoppingCriteria):
++                    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
++                        for stop_id in [0, 50278]:
++                            if input_ids[0][-1] == stop_id:
++                                return True
++                        return False
++
++                model_input_kwargs["stopping_criteria"] = StoppingCriteriaList([StopOnTokens()])
++                # sw = StopWordsCriteria(tokenizer=self.pipe.tokenizer, stop_words=stop_words, device=self.pipe.device)
++                # model_input_kwargs["stopping_criteria"] = StoppingCriteriaList([sw])
+             if top_k:
+                 model_input_kwargs["num_return_sequences"] = top_k
+                 if "num_beams" not in model_input_kwargs or model_input_kwargs["num_beams"] < top_k:
+@@ -267,12 +291,12 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
+             output = self.pipe(prompt, **model_input_kwargs)
+         generated_texts = [o["generated_text"] for o in output if "generated_text" in o]
+ 
+-        if stop_words:
+-            # Although HF generates text until stop words are encountered unfortunately it includes the stop word
+-            # We want to exclude it to be consistent with other invocation layers
+-            for idx, _ in enumerate(generated_texts):
+-                for stop_word in stop_words:
+-                    generated_texts[idx] = generated_texts[idx].replace(stop_word, "").strip()
++        # if stop_words:
++        # Although HF generates text until stop words are encountered unfortunately it includes the stop word
++        # We want to exclude it to be consistent with other invocation layers
++        #    for idx, _ in enumerate(generated_texts):
++        #        for stop_word in stop_words:
++        #            generated_texts[idx] = generated_texts[idx].replace(stop_word, "").strip()
+         return generated_texts
+ 
+     def _ensure_token_limit(self, prompt: Union[str, List[Dict[str, str]]]) -> Union[str, List[Dict[str, str]]]:
+-- 
+2.31.1
+
