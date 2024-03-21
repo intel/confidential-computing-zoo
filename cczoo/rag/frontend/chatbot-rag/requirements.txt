@@ -1,0 +1,8 @@
+st-annotated-text
+markdown
+pandas
+networkx
+pyvis
+numpy
+matplotlib
+altair<5
