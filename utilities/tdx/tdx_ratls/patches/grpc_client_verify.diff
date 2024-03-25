@@ -1,0 +1,80 @@
+diff --git a/examples/cpp/ratls/client.cc b/examples/cpp/ratls/client.cc
+index 62dca4578c..097014f56c 100644
+--- a/examples/cpp/ratls/client.cc
++++ b/examples/cpp/ratls/client.cc
+@@ -70,7 +70,7 @@ void run_client() {
+     argparser args;
+ 
+     auto cred = grpc::sgx::TlsCredentials(
+-                    args.config, GRPC_RA_TLS_TWO_WAY_VERIFICATION);
++                    args.config, GRPC_RA_TLS_CLIENT_VERIFICATION);
+     auto channel = grpc::CreateChannel(args.server_address, cred);
+ 
+     GreeterClient greeter(channel);
+diff --git a/examples/cpp/ratls/server.cc b/examples/cpp/ratls/server.cc
+index bdbef2ef1d..a9c23270a0 100644
+--- a/examples/cpp/ratls/server.cc
++++ b/examples/cpp/ratls/server.cc
+@@ -62,7 +62,7 @@ void RunServer() {
+     grpc::ServerBuilder builder;
+ 
+     auto creds = grpc::sgx::TlsServerCredentials(
+-                    args.config, GRPC_RA_TLS_TWO_WAY_VERIFICATION);
++                    args.config, GRPC_RA_TLS_CLIENT_VERIFICATION);
+     GPR_ASSERT(creds.get() != nullptr);
+ 
+     builder.AddListeningPort(args.server_address, creds);
+diff --git a/src/cpp/sgx/sgx_ra_tls_impl.cc b/src/cpp/sgx/sgx_ra_tls_impl.cc
+index 1a3995989a..808c6e708b 100644
+--- a/src/cpp/sgx/sgx_ra_tls_impl.cc
++++ b/src/cpp/sgx/sgx_ra_tls_impl.cc
+@@ -103,7 +103,8 @@ std::vector<std::string> generate_key_cert(
+ 
+     ret = generate_quote(&quote_buf, quote_size, hash);
+     if (ret == 0) {
+-        grpc_printf("generate quote failed!\n");
++        // grpc_printf("generate quote failed!\n");
++        grpc_printf("not detected a TDX TEE!\n");
+     }
+ 
+     int nid = OBJ_create("1.2.840.113741.1", RA_TLS_SHORT_NAME, RA_TLS_LONG_NAME);
+@@ -198,6 +199,8 @@ ra_tls_config parse_config_json(const char* file) {
+         grpc_printf("could not to find and parse file!\n");
+     } else {
+         class json_engine tdx_json(file);
++        grpc_printf("load config json if need to verify remote endpoint.\n");
++
+         grpc_printf("%s\n", tdx_json.print_item(tdx_json.get_handle()));
+ 
+         cfg.verify_mr_seam = tdx_json.cmp_item(tdx_json.get_item(tdx_json.get_handle(), "verify_mr_seam"), "on");
+@@ -348,7 +351,7 @@ int verify_measurement(const char* mr_seam,
+             grpc_printf("  |- mrsigner_seam  :  %s\n", byte_to_hex(mrsigner_seam, 32).c_str());
+         };
+         if (_ctx_.cfg.verify_mr_td) {
+-            grpc_printf("  |- mr_td     :  %s\n", byte_to_hex(mr_td, 32).c_str());
++            grpc_printf("  |- mr_td          :  %s\n", byte_to_hex(mr_td, 32).c_str());
+         };
+         if (_ctx_.cfg.verify_mr_config_id) {
+             grpc_printf("  |- mr_config_id   :  %s\n", byte_to_hex(mr_config_id, 32).c_str());
+diff --git a/src/cpp/sgx/sgx_ra_tls_tdx.cc b/src/cpp/sgx/sgx_ra_tls_tdx.cc
+index 6f988a4e99..ee9963e28f 100644
+--- a/src/cpp/sgx/sgx_ra_tls_tdx.cc
++++ b/src/cpp/sgx/sgx_ra_tls_tdx.cc
+@@ -95,7 +95,7 @@ static int tdx_generate_quote(
+     // print_hex_dump("TDX report data\n", " ", report_data.d, sizeof(report_data.d));
+ 
+     if (TDX_ATTEST_SUCCESS != tdx_att_get_report(&report_data, &tdx_report)) {
+-        grpc_fprintf(stderr, "failed to get the report.\n");
++        // grpc_fprintf(stderr, "failed to get the report.\n");
+         ret = 0;
+     }
+     // print_hex_dump("TDX report\n", " ", tdx_report.d, sizeof(tdx_report.d));
+@@ -103,7 +103,7 @@ static int tdx_generate_quote(
+     // https://github.com/intel/SGXDataCenterAttestationPrimitives/blob/dcap_1.15_reproducible/QuoteGeneration/quote_wrapper/tdx_attest/tdx_attest.c#L179
+     if (TDX_ATTEST_SUCCESS != tdx_att_get_quote(&report_data, NULL, 0, &selected_att_key_id,
+         quote_buf, &quote_size, 0)) {
+-        grpc_fprintf(stderr, "failed to get the quote.\n");
++        // grpc_fprintf(stderr, "failed to get the quote.\n");
+         ret = 0;
+     }
+     // print_hex_dump("TDX quote data\n ", *quote_buf, quote_size);
