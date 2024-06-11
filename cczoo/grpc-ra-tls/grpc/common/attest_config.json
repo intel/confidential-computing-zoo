@@ -1,0 +1,5 @@
+{
+  "attestation_url": "https://api.trustauthority.intel.com/appraisal/v1/attest",
+  "attestation_provider": "ita",
+  "api_key": ""
+}

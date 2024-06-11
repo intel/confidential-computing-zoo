@@ -172,6 +172,10 @@ def grpc_ratls_library(
     elif backend == "TDX":
         flags += ["-DSGX_RA_TLS_TDX_BACKEND=1", "-ltdx_attest", "-lsgx_dcap_quoteverify", "-lsgx_urts"]
         includes += ["/opt/intel/sgxsdk/include"]
+    elif backend == "AZURE_TDX":
+        flags += ["-DSGX_RA_TLS_AZURE_TDX_BACKEND=1", "-lazguestattestation", "-lcurl"]
+    elif backend == "GCP_TDX":
+        flags += ["-DSGX_RA_TLS_GCP_TDX_BACKEND=1", "-lcurl"]
     else:
         flags += ["-DSGX_RA_TLS_DUMMY_BACKEND=1"]
         pass

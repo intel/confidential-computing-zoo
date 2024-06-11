@@ -16,29 +16,37 @@
 
 set -e
 
-if  [ ! -n "$1" ] ; then
-    base_image=centos:8
-else
-    base_image=$1
+function usage() {
+    echo -e "Usage: $0 BUILDTYPE [TAG]"
+    echo -e "  BUILDTYPE      build type;"
+    echo -e "                   BUILDTYPE is 'azure','gcp', or 'default'"
+    echo -e "  TAG            docker tag suffix;"
+    echo -e "                   docker tag is BUILDTYPE_TAG;"
+    echo -e "                   TAG default is 'latest'"
+}
+
+
+if [ "$#" -lt 1 ]; then
+    usage
+    exit 1
+fi
+
+build_type=$1
+if  [ "$1" != "azure" ] && [ "$1" != "gcp" ] && [ "$1" != "default" ]; then
+    usage
+    exit 1
 fi
 
 if  [ ! -n "$2" ] ; then
-    tag=ali_tdx_latest
+    tag=latest
 else
     tag=$2
 fi
 
-# You can remove build-arg http_proxy and https_proxy if your network doesn't need it
-# no_proxy="localhost,127.0.0.0/1"
-# proxy_server="" # your http proxy server
-
 DOCKER_BUILDKIT=0 docker build \
-    -f horizontal_fl.dockerfile . \
-    -t horizontal_fl:${tag} \
+    -f horizontal_fl_tdx.${build_type}.dockerfile . \
+    -t horizontal_fl_tdx:${build_type}_${tag} \
     --network=host \
     --build-arg http_proxy=${proxy_server} \
     --build-arg https_proxy=${proxy_server} \
     --build-arg no_proxy=${no_proxy} \
-    --build-arg WORKLOAD=${workload} \
-    --build-arg BASE_IMAGE=${base_image} \
-

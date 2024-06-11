@@ -1,29 +1,20 @@
-# Linux Stack for Intel TDX Overview
+# Global OSVs Support for Intel TDX
 
-Intel provides [tdx-tools](https://github.com/intel/tdx-tools) to keep evolving along with kernel version. It supports kernel 5.15, kernel 5.19 and kernel 6.2. The Linux Stack for Intel TDX helps to:
+The global OSVs below build early access to Intel TDX technology while the respective upstream communities iterate through the review process.
 
-- Build individual component's package or install pre-build binaries on IaaS host or create PaaS guest image for quick evaluation
-- Generate the patch set for deep dive in source code level
-- Test, hack and debug the TDX technology based on PyCloudStack framework
-- Dump guest VM measurement and generate TD quote report for TDX E2E attestation
-- Measured boot and Secure boot for TDX guest VM
+These communities provide the documentations and scripts to enable TDX functionality both as a guest (VM) and as a hypervisor (host) capable of running isolated guests on hardware with Intel TDX support.
 
-Linux Stack for Intel&reg; TDX includes the components in
-below diagram:
+Users can deploy TDX stack with selected distribution to the TDX-capable platform quickly.
 
-![TDX Stack Architecture](img/tdx_stack_arch_1.5.png)
+| OSV    | Version            | Link                                                         |
+| ------ | ------------------ | ------------------------------------------------------------ |
+| SUSE   | openSUSE Leap 15.5 | Setting up a DEMO TDX Host Hypervisor on SLES 15-SP5 and openSUSE Leap 15.5: <https://github.com/SUSE/tdx-demo/blob/main/INSTALL-SLES-15-SP5.md> |
+| CentOS | CentOS 9 Stream    | Virtualization Special Interest Group: <https://sigs.centos.org/virt/tdx/> |
+| Ubuntu | Ubuntu 23.10       | <https://github.com/canonical/tdx>                           |
 
-| Name | Stack | Description |
-| -- | -- | -- |
-| TDX Kernel | Host + Guest | Linux kernel for TDX |
-| TDX Qemu-KVM | Host | Qemu VMM for TDX |
-| TDX SEAM Module | Host | TDX Secure Arbitration Module |
-| TDX Migration | Host | Migration TD for live migration |
-| [TDX Libvirt](https://github.com/intel/libvirt-tdx) | Host | The modified libvirt to create TDX guest domain via Qemu |
-| [TDVF](https://github.com/tianocore/edk2) | Host | The modified OVMF(Open Source Virtual Firmware) to support TDX guest boot like page accept, TDX measurement |
-| [TDX Grub2](https://github.com/intel/grub-tdx) | Guest | The modified grub for guest VM to support TDX measurement |
-| [TDX shim](https://github.com/intel/shim-tdx) | Guest | The modified shim for guest VM to support TDX measurement |
+For Intel TDX stack repo, please visit:	
+- https://github.com/intel/tdx-linux
+- https://github.com/intel/tdx/wiki/Tests
 
-Please refer to [Quick Start](https://github.com/intel/tdx-tools/blob/main/README.md#3-getting-started) to build TDX Linux Stack, including Host kernel, Guest kernel and other components.
 
-You can deploy the built TDX linux stack components in a platform with TDX enabled CPU and IFWI.
+

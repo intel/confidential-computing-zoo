@@ -61,7 +61,7 @@ mkdir -p /home/tdvm && cd /home/tdvm
 docker pull intelcczoo/encrypted-tdvm-img:ubuntu-luks
 docker run -d --name "encrypted-image-demo" intelcczoo/encrypted-tdvm-img:ubuntu-luks
 docker cp encrypted-image-demo:/home/ref-td-guest-ubuntu-22.04-img.zip .
-unzip ref-td-guest-ubuntu-22.04-img.zipp && rm ref-td-guest-ubuntu-22.04-img.zip
+unzip ref-td-guest-ubuntu-22.04-img.zip && rm ref-td-guest-ubuntu-22.04-img.zip
 ```
 
 `Note:` If you choose to use self-built tdvm image as original reference image, please install the packages in the reference image which will provide dependent libraries for remote attestation client:

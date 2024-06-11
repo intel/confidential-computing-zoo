@@ -37,7 +37,6 @@ if  [ "$2" = "format" ]; then
     mkfs.ext4 /dev/mapper/${FS_DIR}
 fi
 
-mount /dev/mapper/${FS_DIR} /hfl-tensorflow/${FS_DIR}
+mount /dev/mapper/${FS_DIR} /hfl-tensorflow/model
 
-ls /hfl-tensorflow/${FS_DIR}
-
+df -h /hfl-tensorflow/model

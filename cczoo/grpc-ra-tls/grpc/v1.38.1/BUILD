@@ -307,9 +307,15 @@ GRPCXX_RA_TLS_HDRS = [
     "include/grpcpp/security/sgx/sgx_ra_tls_impl.h",
     "include/grpcpp/security/sgx/sgx_ra_tls_log.h",
     "include/grpcpp/security/sgx/sgx_ra_tls_utils.h",
+    "src/cpp/sgx/attest_utils/AttestClient.h",
+    "src/cpp/sgx/attest_utils/Utils.h",
+    "src/cpp/sgx/attest_utils/Logger.h",
+    "src/cpp/sgx/attest_utils/HttpClient_I.h",
+    "src/cpp/sgx/attest_utils/HttpClient.h",
 ]
 
 GRPCXX_RA_TLS_SRCS = [
+    "src/cpp/sgx/attest_utils/HttpClient.cpp",
     "src/cpp/sgx/cJSON.c",
     "src/cpp/sgx/sgx_ra_tls_credentials.cc",
     "src/cpp/sgx/sgx_ra_tls_options.cc",

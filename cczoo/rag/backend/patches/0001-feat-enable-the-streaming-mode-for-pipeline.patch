@@ -1,0 +1,302 @@
+From 9213c33cfda9bb60f9f99f19ef33fdb6067789b2 Mon Sep 17 00:00:00 2001
+From: yuanwu <yuan.wu@intel.com>
+Date: Thu, 18 May 2023 23:31:39 -0400
+Subject: [PATCH 1/5] feat: enable the streaming mode for pipeline
+
+* Add the paramters in PromptNode.run() to support running the pipeline
+  in streaming mode.
+
+* PromptNode.run() return iterator of TextIteratorStreamer when prompt node runs
+  with stream=True and return_iterator=True.
+
+* Add the streaming interface for rest_api
+
+Signed-off-by: yuanwu <yuan.wu@intel.com>
+---
+ .../prompt/invocation_layer/hugging_face.py   | 20 ++++++-
+ haystack/nodes/prompt/prompt_node.py          | 59 ++++++++++++++++---
+ rest_api/rest_api/controller/search.py        | 38 +++++++++++-
+ 3 files changed, 106 insertions(+), 11 deletions(-)
+
+diff --git a/haystack/nodes/prompt/invocation_layer/hugging_face.py b/haystack/nodes/prompt/invocation_layer/hugging_face.py
+index f7728b53..d4b1b051 100644
+--- a/haystack/nodes/prompt/invocation_layer/hugging_face.py
++++ b/haystack/nodes/prompt/invocation_layer/hugging_face.py
+@@ -1,6 +1,7 @@
+ from typing import Optional, Union, List, Dict, Any
+ import logging
+ import os
++from threading import Thread
+ 
+ from haystack.nodes.prompt.invocation_layer import PromptModelInvocationLayer, TokenStreamingHandler
+ from haystack.nodes.prompt.invocation_layer.handlers import DefaultTokenStreamingHandler
+@@ -20,6 +21,7 @@ with LazyImport(message="Run 'pip install farm-haystack[inference]'") as torch_a
+         PreTrainedTokenizerFast,
+         GenerationConfig,
+         Pipeline,
++        TextIteratorStreamer,
+     )
+     from transformers.pipelines import get_task
+     from haystack.modeling.utils import initialize_device_settings  # pylint: disable=ungrouped-imports
+@@ -104,6 +106,7 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
+         # save stream settings and stream_handler for pipeline invocation
+         self.stream_handler = kwargs.get("stream_handler", None)
+         self.stream = kwargs.get("stream", False)
++        self.return_iterator = kwargs.get("return_iterator", False)
+ 
+         # save generation_kwargs for pipeline invocation
+         self.generation_kwargs = kwargs.get("generation_kwargs", {})
+@@ -177,6 +180,10 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
+         }
+         return pipeline_kwargs
+ 
++    def _run_pipe_task(self, prompt, model_input_kwargs):
++        output = self.pipe(prompt, **model_input_kwargs)
++        logger.debug("The final output: %s", output)
++
+     def invoke(self, *args, **kwargs):
+         """
+         It takes a prompt and returns a list of generated texts using the local Hugging Face transformers model
+@@ -191,7 +198,9 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
+         # either stream is True (will use default handler) or stream_handler is provided for custom handler
+         stream = kwargs.get("stream", self.stream)
+         stream_handler = kwargs.get("stream_handler", self.stream_handler)
++        return_iterator = kwargs.get("return_iterator", self.return_iterator)
+         stream = stream or stream_handler is not None
++
+         if kwargs and "prompt" in kwargs:
+             prompt = kwargs.pop("prompt")
+ 
+@@ -245,8 +254,15 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
+                 model_input_kwargs["max_length"] = self.max_length
+ 
+             if stream:
+-                stream_handler: TokenStreamingHandler = stream_handler or DefaultTokenStreamingHandler()
+-                model_input_kwargs["streamer"] = HFTokenStreamingHandler(self.pipe.tokenizer, stream_handler)
++                if return_iterator:
++                    iterator = TextIteratorStreamer(self.pipe.tokenizer, skip_prompt=True)
++                    model_input_kwargs["streamer"] = iterator
++                    thread = Thread(target=self._run_pipe_task, args=[prompt, model_input_kwargs])
++                    thread.start()
++                    return iterator
++                else:
++                    stream_handler: TokenStreamingHandler = stream_handler or DefaultTokenStreamingHandler()
++                    model_input_kwargs["streamer"] = HFTokenStreamingHandler(self.pipe.tokenizer, stream_handler)
+ 
+             output = self.pipe(prompt, **model_input_kwargs)
+         generated_texts = [o["generated_text"] for o in output if "generated_text" in o]
+diff --git a/haystack/nodes/prompt/prompt_node.py b/haystack/nodes/prompt/prompt_node.py
+index a5e8be2f..c43edc5d 100644
+--- a/haystack/nodes/prompt/prompt_node.py
++++ b/haystack/nodes/prompt/prompt_node.py
+@@ -8,11 +8,12 @@ from haystack.schema import Document, MultiLabel
+ from haystack.telemetry import send_event
+ from haystack.nodes.prompt.prompt_model import PromptModel
+ from haystack.nodes.prompt.prompt_template import PromptTemplate
++from haystack.nodes.prompt.invocation_layer.handlers import TokenStreamingHandler
+ from haystack.lazy_imports import LazyImport
+ 
+ with LazyImport(message="Run 'pip install farm-haystack[inference]'") as torch_import:
+     import torch
+-
++    from transformers import TextIteratorStreamer
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -49,6 +50,7 @@ class PromptNode(BaseComponent):
+     """
+ 
+     outgoing_edges: int = 1
++    OUTPUT_VARIABLE_ITERATOR: str = "iterator"
+ 
+     def __init__(
+         self,
+@@ -155,6 +157,7 @@ class PromptNode(BaseComponent):
+ 
+         # kwargs override model kwargs
+         kwargs = {**self._prepare_model_kwargs(), **kwargs}
++        is_iterator = False
+         template_to_fill = self.get_prompt_template(prompt_template)
+         if template_to_fill:
+             # prompt template used, yield prompts from inputs args
+@@ -165,10 +168,15 @@ class PromptNode(BaseComponent):
+                 prompt_collector.append(prompt)
+                 logger.debug("Prompt being sent to LLM with prompt %s and kwargs %s", prompt, kwargs_copy)
+                 output = self.prompt_model.invoke(prompt, **kwargs_copy)
+-                results.extend(output)
+-
+-            kwargs["prompts"] = prompt_collector
+-            results = template_to_fill.post_process(results, **kwargs)
++                if isinstance(output, TextIteratorStreamer):
++                    is_iterator = True
++                    results.append(output)
++                else:
++                    results.extend(output)
++
++            if not is_iterator:
++                kwargs["prompts"] = prompt_collector
++                results = template_to_fill.post_process(results, **kwargs)
+         else:
+             # straightforward prompt, no templates used
+             for prompt in list(args):
+@@ -177,7 +185,11 @@ class PromptNode(BaseComponent):
+                 prompt_collector.append(prompt)
+                 logger.debug("Prompt being sent to LLM with prompt %s and kwargs %s ", prompt, kwargs_copy)
+                 output = self.prompt_model.invoke(prompt, **kwargs_copy)
+-                results.extend(output)
++                if isinstance(output, TextIteratorStreamer):
++                    is_iterator = True
++                    results.append(output)
++                else:
++                    results.extend(output)
+         return results
+ 
+     @property
+@@ -242,6 +254,9 @@ class PromptNode(BaseComponent):
+         invocation_context: Optional[Dict[str, Any]] = None,
+         prompt_template: Optional[Union[str, PromptTemplate]] = None,
+         generation_kwargs: Optional[Dict[str, Any]] = None,
++        stream: Optional[bool] = None,
++        return_iterator: Optional[bool] = None,
++        stream_handler: Optional[TokenStreamingHandler] = None,
+     ) -> Tuple[Dict, str]:
+         """
+         Runs the PromptNode on these input parameters. Returns the output of the prompt model.
+@@ -267,6 +282,12 @@ class PromptNode(BaseComponent):
+                 - prompt template yaml: Uses the prompt template specified by the given YAML.
+                 - prompt text: Uses a copy of the default prompt template with the given prompt text.
+         :param generation_kwargs: The generation_kwargs are used to customize text generation for the underlying pipeline.
++        :param stream: whether the PromptNode enables the token streaming mode. You can assign a stream_handler to
++        handle these streaming tokens.
++        :param return_iterator: whether the PromptNode output includes a streaming iterator of TextIteratorStreamer.
++        If True, the run() function run in non-blocked mode and return a iterator in output['iterator'].
++        :param stream_handler: a customized stream handler of TokenStreamingHandler to handle the token streaming.
++        if return_iterator is True, stream_handler is not support.
+         """
+         # prompt_collector is an empty list, it's passed to the PromptNode that will fill it with the rendered prompts,
+         # so that they can be returned by `run()` as part of the pipeline's debug output.
+@@ -294,6 +315,15 @@ class PromptNode(BaseComponent):
+         if generation_kwargs:
+             invocation_context.update(generation_kwargs)
+ 
++        if stream != None:
++            invocation_context["stream"] = stream
++
++        if return_iterator != None:
++            invocation_context["return_iterator"] = return_iterator
++
++        if stream_handler:
++            invocation_context["stream_handler"] = stream_handler
++
+         results = self(prompt_collector=prompt_collector, **invocation_context)
+ 
+         prompt_template_resolved: PromptTemplate = invocation_context.pop("prompt_template")
+@@ -303,6 +333,9 @@ class PromptNode(BaseComponent):
+         except:
+             output_variable = "results"
+ 
++        if stream and return_iterator:
++            output_variable = PromptNode.OUTPUT_VARIABLE_ITERATOR
++
+         invocation_context[output_variable] = results
+         invocation_context["prompts"] = prompt_collector
+         final_result: Dict[str, Any] = {output_variable: results, "invocation_context": invocation_context}
+@@ -318,6 +351,9 @@ class PromptNode(BaseComponent):
+         documents: Optional[Union[List[Document], List[List[Document]]]] = None,
+         invocation_contexts: Optional[List[Dict[str, Any]]] = None,
+         prompt_templates: Optional[List[Union[str, PromptTemplate]]] = None,
++        stream: Optional[bool] = None,
++        return_iterator: Optional[bool] = None,
++        stream_handler: Optional[TokenStreamingHandler] = None,
+     ):
+         """
+         Runs PromptNode in batch mode.
+@@ -352,8 +388,17 @@ class PromptNode(BaseComponent):
+         ):
+             prompt_template = self.get_prompt_template(self.default_prompt_template)
+             output_variable = self.output_variable or prompt_template.output_variable or "results"
++            if stream and return_iterator:
++                output_variable = PromptNode.OUTPUT_VARIABLE_ITERATOR
++
+             results = self.run(
+-                query=query, documents=docs, invocation_context=invocation_context, prompt_template=prompt_template
++                query=query,
++                documents=docs,
++                invocation_context=invocation_context,
++                prompt_template=prompt_template,
++                stream=stream,
++                return_iterator=return_iterator,
++                stream_handler=stream_handler,
+             )[0]
+             all_results[output_variable].append(results[output_variable])
+             all_results["invocation_contexts"].append(results["invocation_context"])
+diff --git a/rest_api/rest_api/controller/search.py b/rest_api/rest_api/controller/search.py
+index abdeebe1..4126c8ba 100644
+--- a/rest_api/rest_api/controller/search.py
++++ b/rest_api/rest_api/controller/search.py
+@@ -5,15 +5,16 @@ import time
+ import json
+ 
+ from pydantic import BaseConfig
+-from fastapi import FastAPI, APIRouter
++from fastapi import FastAPI, APIRouter, HTTPException
++from fastapi.responses import StreamingResponse
+ import haystack
+ from haystack import Pipeline
++from haystack.nodes.prompt import PromptNode
+ 
+ from rest_api.utils import get_app, get_pipelines
+ from rest_api.config import LOG_LEVEL
+ from rest_api.schema import QueryRequest, QueryResponse
+ 
+-
+ logging.getLogger("haystack").setLevel(LOG_LEVEL)
+ logger = logging.getLogger("haystack")
+ 
+@@ -58,6 +59,21 @@ def query(request: QueryRequest):
+         return result
+ 
+ 
++@router.post("/query-streaming", response_model=StreamingResponse)
++def query_streaming(request: QueryRequest):
++    """
++    This streaming endpoint receives the question as a string and allows the requester to set
++    additional parameters that will be passed on to the Haystack pipeline.
++    """
++    with concurrency_limiter.run():
++        iterator = _get_streaming_iterator(query_pipeline, request)
++        if iterator == None:
++            raise HTTPException(
++                status_code=501, detail="The pipeline cannot support the streaming mode. The PromptNode is not found!"
++            )
++        return StreamingResponse(iterator, media_type="text/event-stream")
++
++
+ def _process_request(pipeline, request) -> Dict[str, Any]:
+     start_time = time.time()
+ 
+@@ -74,3 +90,21 @@ def _process_request(pipeline, request) -> Dict[str, Any]:
+         json.dumps({"request": request, "response": result, "time": f"{(time.time() - start_time):.2f}"}, default=str)
+     )
+     return result
++
++
++def _get_streaming_iterator(pipeline, request=None):
++    params = request.params or {}
++    components = pipeline.components
++    node_name = None
++    iterator = None
++    for name in components.keys():
++        if isinstance(components[name], PromptNode):
++            node_name = name
++
++    if node_name != None:
++        streaming_param = {"stream": True, "return_iterator": True}
++        params[node_name].update(streaming_param)
++        # only one streaming iterator is support for rest_api
++        iterator = pipeline.run(query=request.query, params=params)["iterator"][0]
++
++    return iterator
+-- 
+2.31.1
+

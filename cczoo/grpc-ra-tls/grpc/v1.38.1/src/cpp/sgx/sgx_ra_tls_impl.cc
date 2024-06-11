@@ -98,7 +98,7 @@ std::vector<std::string> generate_key_cert(
     }
 
     int nid = OBJ_create("1.2.840.113741.1", RA_TLS_SHORT_NAME, RA_TLS_LONG_NAME);
-    ASN1_OBJECT* obj = OBJ_nid2obj(nid);
+    const ASN1_OBJECT* obj = OBJ_nid2obj(nid);
     ASN1_OCTET_STRING* data = ASN1_OCTET_STRING_new();
     ASN1_OCTET_STRING_set(data, quote_buf, quote_size);
 
@@ -175,6 +175,7 @@ int verify_pubkey_hash(X509 *x509, uint8_t *pubkey_hash, uint32_t hash_size) {
     SHA256_Final(hash, &sha256);
 
     // grpc_printf("hash size: %u, %u, %u\n", hash_size, sizeof(hash), sizeof(pubkey_hash));
+    print_hex_dump("\nInfo: Public key hash from X509 cert:\n", " ", hash, hash_size);
 
     ret = memcmp(hash, pubkey_hash, hash_size);
     return ret;

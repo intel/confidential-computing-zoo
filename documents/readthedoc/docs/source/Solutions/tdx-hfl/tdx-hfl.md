@@ -1,207 +1,331 @@
 # Horizontal Federated Learning with Intel TDX
 
-This solution presents a framework for developing a PPML(Privacy-Preserving Machine Learning) solution based on TensorFlow - Horizontal Federated Learning with Intel TDX.
+This solution presents a framework for developing a PPML (Privacy-Preserving Machine Learning) solution based on TensorFlow - Horizontal Federated Learning with Intel TDX.
+
 
 ## Introduction
 
-How to ensure the privacy of participants in the distributed training process of deep neural networks is a current hot topic. Federated learning can solve the problem to a certain extent. In horizontal federated learning, each participant uses its own local data for algorithm iteration and only uploads gradient information instead of raw data, which guarantees data privacy to a large extent.
+Federated learning is particularly relevant to deep neural networks, enabling the security of participants in distributed training processes. With horizontal federated learning, each participant uses it's own local data for algorithm iteration and instead of raw data, only uploads gradient information to better guarantee data privacy.
 
-The commonly used encryption method in federated learning is Homomorphic Encryption(HE). In addition to HE, trusted execution environment (TEE) technology uses plaintext for calculation and uses a trusted computing base to ensure security. Intel TDX technology is a concrete realization of TEE technology. In this horizontal federated learning solution, we adopted a privacy protection computing solution based on Intel TDX technology.
+The commonly used encryption method in federated learning is Homomorphic Encryption (HE). In addition to HE, trusted execution environment (TEE) technology uses plaintext for calculation with a trusted computing base to ensure security. Intel TDX technology is a concrete realization of TEE technology. In this horizontal federated learning solution, we adopted a privacy protection computing solution based on Intel TDX technology.
 
-This solution mainly include the following three aspects: 
--	RA-TLS enhanced gRPC - The RA-TLS technology is integrated in the gRPC framework to ensure the security of data transmission and enable remote verification technology.
--	Federated training – Propose a federated training solution based on Intel TDX and RA-TLS technology.
--	Model Protection – Using LUKS to protect model confidentiality and integrity during model training and model transfer. 
+This solution includes the following core components: 
 
-## Privacy protection
-In this solution, privacy protection is provided in the following aspects:
+- RA-TLS enhanced gRPC – The RA-TLS technology is integrated in the gRPC framework to ensure the security of data transmission and enable remote verification technology.
+- Federated training – Propose a federated training solution based on Intel TDX and RA-TLS technology.
+- Model Protection – Using LUKS encryption to protect model confidentiality and integrity during model training and model transfer. 
 
-### Runtime security using Intel TDX
+
+## Privacy Protection
+
+In this solution, privacy protection is provided in the following aspects.
+
+### Runtime Security Using Intel TDX
+
 Intel TDX technology offers hardware-based memory encryption that isolates specific application code and data in memory. Intel TDX allows user-level code to allocate private regions of memory based on a TD (Trust Domain) environment.
 
-Intel TDX also helps protect against SW attacks even if OS/drivers/BIOS/VMM/SMM are compromised and helps increase protections for secrets even when attacker has full control of platform.
+Intel TDX also helps protect against SW attacks even if OS/drivers/BIOS/VMM/SMM are compromised and helps increase protections for secrets even when an attacker has full control of a compromised platform.
 
-In the training phase of federated learning, the gradient information is stored inside the TD. Intel TDX provides assurance that no unauthorized access or memory snooping of the TD occurs to prevent leakage of gradient and model information.
+In the training phase of federated learning, the gradient information is stored inside the TD. Intel TDX provides assurance that no unauthorized access or memory snooping of the TD can occur which prevents leakage of gradient and model information.
 
-### Encrypted transmission and remote attestation
-We use the Remote Attestation with Transport Layer Security (RA-TLS) of Intel TDX technology to ensure security during transmission. This technology combines TLS technology and remote attestation technology. RA-TLS uses TEE as the hardware root of trust. The certificate and private key are generated in the TD and are not stored on the disk. Therefore, participants cannot obtain the certificate and private key in plain text, preventing the man-in-the-middle attacks. In this federated learning solution, RA-TLS is used to ensure the encrypted transmission of gradient information.
+### Encrypted Transmission with Remote Attestation
 
-For more information about RA-TLS, please refer to the relevant [documentation](https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html)and [code](https://github.com/intel/confidential-computing-zoo/tree/main/cczoo/grpc-ra-tls).
+We use the Remote Attestation with Transport Layer Security (RA-TLS) of Intel TDX technology to ensure security during transmission. This technology combines TLS technology and remote attestation technology. RA-TLS uses TEE as the hardware root of trust. The certificate and private key are generated in the TD and are not stored on the disk. Therefore, participants cannot obtain the certificate and private key in plain text, preventing man-in-the-middle attacks. In this federated learning solution, RA-TLS is used to ensure the encrypted transmission of gradient information.
 
-### Model at-rest security 
-We use the LUKS storage service to encrypt the model generated during the training process, to protect the model from being acquired by malicious hosts and only visible in the TD. Therefore, safe storage of the model is achieved. In addition, we use the Trusted machine with LUKS Secrets to obtain the model in TD through RA-TLS technology. Therefore, the safe migration of the model is achieved.
+For more information about RA-TLS, please refer to the relevant [documentation](https://cczoo.readthedocs.io/en/latest/Solutions/grpc-ra-tls/index.html) and [code](https://github.com/intel/confidential-computing-zoo/tree/main/cczoo/grpc-ra-tls).
+
+### Model At-Rest Security 
+
+The model generated during the training process is encrypted in a LUKS storage volume only visible in the TD to protect it from being acquired by malicious hosts. Additionally, the Trusted machine containing LUKS Secrets is used to obtain the model from the TD through the use of RA-TLS technology for safe migration.
+
 
 ## Workflow
-In the training process, each worker uses local data in its TD to complete a round of training, and then sends the gradient information in the backpropagation process to the parameter server through the RA-TLS technology, and then the parameter server completes the gradient aggregation and update network parameters, and then send the updated parameters to each worker. The workflow is as follows:
+
+In the training process, each worker uses local data in its TD and sends the gradient information in the backpropagation process to the parameter server with RA-TLS technology. The parameter server completes the gradient aggregation and updates network parameters, then sends the updated parameters to each worker. The following is an illustration of this workflow:
 
 ![](images/tdx_hfl.svg)
 
 The training phase can be divided into the following steps:
 
-&emsp;&ensp;**①** Using Intel TDX technology, the training program of the participants runs in different TDs. Create encrypted model directory on LUKS storage system and prepare LUKS decryption service.
+&emsp;&ensp;**①** Using Intel TDX technology, the training program of each participant runs in different TDs. Each TD creates an encrypted model directory on LUKS storage volume and prepares a LUKS decryption service.
 
 &emsp;&ensp;**②** Workers calculate gradient information based on local data in the TD.
 
-&emsp;&ensp;**③** Workers send gradient to parameter server through RA-TLS enhanced gRPC.
+&emsp;&ensp;**③** Workers send gradient information to a parameter server through RA-TLS enhanced gRPC.
 
-&emsp;&ensp;**④** Parameter server performs gradient aggregation and updates global model parameters.
+&emsp;&ensp;**④** The parameter server performs gradient aggregation and updates global model parameters.
 
-&emsp;&ensp;**⑤** Parameter server sends model parameters to workers.
+&emsp;&ensp;**⑤** The parameter server sends model parameters to workers.
 
 &emsp;&ensp;**⑥** Workers update local model parameters.
 
-&emsp;&ensp;**⑦** Repeat steps **②**-**⑥** until the end of training. Finally, the training model directory is transmitted to the remote trusted node and finally decrypted.
+&emsp;&ensp;**⑦** Steps **②** to **⑥** are repeated until the end of training. Finally, the training model directory is transmitted to the remote trusted node and decrypted.
 
-## Horizontal federated training execution
-We provide an image classification training task and it uses the cifar-10 dataset to train the ResNet network.
 
-### Requirements
+## Horizontal Federated Training Execution
 
-- Intel TDX software stack
-- Docker
+This reference solution trains the ResNet-50 image classification model using the CIFAR-10 dataset.
+
+### Prerequisites
+
+- Intel TDX capable systems/VMs.
+- Docker Engine. Docker Engine is an open-source containerization technology for building and containerizing your applications. Please refer to [this docker installation guide for Ubuntu](https://docs.docker.com/engine/install/ubuntu/#install-using-the-convenience-script)
+  to install Docker engine. It is recommended to use a data disk of at least 128GB for the docker daemon data directory. You may refer to [this docker daemon guide](https://docs.docker.com/config/daemon/#daemon-data-directory) to configure the data directory. If behind a proxy server, please refer to [this docker daemon guide for systemd](https://docs.docker.com/config/daemon/systemd/) for configuring proxy settings.
+- CCZoo source downloaded to each TD VM:
+
+```bash
+    git clone https://github.com/intel/confidential-computing-zoo.git
+    cczoo_base_dir=$PWD/confidential-computing-zoo
+```
 
 ### Configuration
 
-- framework: TensorFlow 2.6.0
-- model: ResNet-50
-- dataset: Cifar-10
-- ps num: 1
-- worker num: 2
-- container num: 3
+- Framework: TensorFlow 2.6.0
+- Model: ResNet-50
+- Dataset: CIFAR-10
+- Parameter Server num: 1
+- Worker num: 2
+- Total containers: 3
 
-### Download source code
-In TDVM, download the code used in this practice:
-```shell
-git clone https://github.com/intel/confidential-computing-zoo.git
-cd confidential-computing-zoo/cczoo/horizontal_fl_tdx/
+### Build and Start Containers
+
+Build the container image on the TD VM(s). Alternatively, the container image can be built on any system and then transferred to the TD VMs.
+
+#### Azure Deployments
+
+For Azure deployments:
+
+```bash
+cd ${cczoo_base_dir}/cczoo/horizontal_fl_tdx
+./build_docker_image.sh azure
 ```
 
-### Build Docker image
-```shell
-./build_docker_image.sh
+NOTE: To specify the proxy server, set the `proxy_server` variable prior to the call to `build_docker_image.sh`. For example:
+      
+```bash
+proxy_server=http://proxyserver:port ./build_docker_image.sh azure
 ```
 
-### Start Docker container
+Start three containers (`ps0`, `worker0`, `worker1`). Replace `<role>` with the role of the container (either `ps0`, `worker0`, or `worker1`). Replace `<image_id>` with the image ID of the container built from the previous step.
 
-Start three containers (ps0, worker0, worker1).
-
-```shell
-./start_container.sh <ps0/worker0/worker1>
+```bash
+cd ${cczoo_base_dir}/cczoo/horizontal_fl_tdx
+./start_container.azure.sh <role> <image_id>
 ```
+
+#### Google Cloud Deployments
+
+For Google Cloud deployments:
+
+```bash
+cd ${cczoo_base_dir}/cczoo/horizontal_fl_tdx
+./build_docker_image.sh gcp
+```
+
+NOTE: To specify the proxy server, set the `proxy_server` variable prior to the call to `build_docker_image.sh`. For example:
+      
+```bash
+proxy_server=http://proxyserver:port ./build_docker_image.sh gcp
+```
+
+Start three containers (`ps0`, `worker0`, `worker1`). Replace `<role>` with the role of the container (either `ps0`, `worker0`, or `worker1`). Replace `<image_id>` with the image ID of the container built from the previous step.
+
+```bash
+cd ${cczoo_base_dir}/cczoo/horizontal_fl_tdx
+./start_container.gcp.sh <role> <image_id>
+```
+
+#### Default Cloud Deployments
+
+For cloud deployments other than on Azure:
+
+```bash
+cd ${cczoo_base_dir}/cczoo/horizontal_fl_tdx
+./build_docker_image.sh default
+```
+
+NOTE: To specify the proxy server, set the `proxy_server` variable prior to the call to `build_docker_image.sh`. For example:
+      
+```bash
+proxy_server=http://proxyserver:port ./build_docker_image.sh
+```
+
 ***Notice:*** 
-If you are using non-production version Intel CPU, please replace the `/usr/lib64/libsgx_dcap_quoteverify.so` file with non-production version.
+If you are using non-production version Intel CPU, please modify the Dockerfile to replace `/usr/lib64/libsgx_dcap_quoteverify.so` with the non-production version.
 
-### Configure node network address
-If running in the cloud, please modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud and ignore the `<PCCS ip addr>` parameter.
+Start three containers (ps0, worker0, worker1). Replace `<role>` with the role of the container (either `ps0`, `worker0`, or `worker1`). Replace `<image_id>` with the image ID of the container built from the previous step.
 
-In the case of deploying different distributed nodes on multiple VMs, you can configure the distributed node IP address by modifying the `train.py` training script in the `/hfl-tensorflow` directory in the Docker container:
+```bash
+cd ${cczoo_base_dir}/cczoo/horizontal_fl_tdx
+./start_container.sh <role> <image_id>
+```
 
-```shell
+### Configure Node Network Addresses
+
+If running in an environment with distributed nodes (for example, each container is running on a separate VM), configure the node IP addresses by modifying `/hfl-tensorflow/train.py` in each container:
+
+```bash
 tf.app.flags.DEFINE_string("ps_hosts", "['localhost:60002']", "ps hosts")
 tf.app.flags.DEFINE_string("worker_hosts", "['localhost:61002','localhost:61003']", "worker hosts")
 ```
 
 ***Notice:***
 
-1. You need to modify the `localhost` fields in the above code segment to the IP address of the VMs where the training script is actually deployed.
+1. You need to replace the `localhost` fields in the above code snippet with the IP address of the VMs where the training script is deployed.
 2. Make sure that the port number configured on the current node has been enabled on the corresponding VM.
 
-### Create encrypted directories
-In the Docker environment of each computing node, an encrypted directory needs to be created to store model files to ensure the security of the model files.
+### Configure Attestation Parameters
 
-Execute the following commands in each of the three Docker environments:
+From each container, configure attestation parameters.
 
-create luks block file and bind it to a idle loop device:
+#### Azure Deployments
 
-```shell
+From each container, modify `/etc/attest_config.json` to configure the attestation verifier service parameters.
+
+To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/attest_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your intel trust authority api key"`:
+
+```bash
+{
+  "attestation_url": "https://api.trustauthority.intel.com/appraisal/v1/attest",
+  "attestation_provider": "ita",
+  "api_key": "your intel trust authority api key"
+}
+```
+
+To use [Microsoft Azure Attestation](https://azure.microsoft.com/en-us/products/azure-attestation), modify `/etc/attest_config.json` as follows (an API key is not required):
+
+```bash
+{
+  "attestation_url": "https://sharedeus2e.eus2e.attest.azure.net/attest/TdxVm?api-version=2023-04-01-preview",
+  "attestation_provider": "maa",
+  "api_key": ""
+}
+```
+
+#### Google Cloud Deployments
+
+From each container, modify `/etc/attest_config.json` to configure the attestation verifier service parameters.
+
+To use [Intel Trust Authority](https://www.intel.com/content/www/us/en/security/trust-authority.html), modify `/etc/attest_config.json` as follows, specifying your Intel Trust Authority API key: `"api_key": "your intel trust authority api key"`:
+
+```bash
+{
+  "attestation_url": "https://api.trustauthority.intel.com/appraisal/v1/attest",
+  "attestation_provider": "ita",
+  "api_key": "your intel trust authority api key"
+}
+```
+
+#### Default Cloud Deployments
+
+For other cloud deployments, in all three containers, modify the `PCCS server address` in the `sgx_default_qcnl.conf` file and fill in the PCCS address of the cloud. Ignore the `<PCCS ip addr>` parameter.
+
+### Create Encrypted Storage
+
+For each container, create a LUKS encrypted volume for the model files. When prompted for confirmation, type `YES` (in all uppercase) and enter a passphrase at the prompt which will be used to decrypt the volume. Take note of the loop device name as displayed in the output from `create_encrypted_vfs.sh`.
+
+```bash
 cd /luks_tools
-VIRTUAL_FS=/root/vfs
+export VIRTUAL_FS=/root/vfs
 ./create_encrypted_vfs.sh ${VIRTUAL_FS}
 ```
 
-According to the loop device number (such as `\dev\loop0`) output by the above command, create the LOOP_DEVICE environment variable to bind the loop device:
+Replace `<loop device>` with the loop device name provided by `create_encrypted_vfs.sh` (for example, `/dev/loop0`).
+Replace `<role>` with the role of the container (either `ps0`, `worker0`, or `worker1`).
 
-```shell
-export LOOP_DEVICE=<the binded loop device>
+```bash
+export LOOP_DEVICE=<loop device>
+export ROLE=<role>
 ```
 
-The block loop device needs to be formatted to ext4 for the first execution.
+Format the block device as ext4. Enter the passphrase when prompted to decrypt the volume.
 
-```shell
-./mount_encrypted_vfs.sh ${LOOP_DEVICE} format
+```bash
+./mount_encrypted_vfs.sh ${LOOP_DEVICE} format ${ROLE}
 ```
 
-Mount by password:
+Remount the encrypted volume. Enter the passphrase from earlier when prompted.
 
-```shell
-./unmount_encrypted_vfs.sh ${VIRTUAL_FS}
-./mount_encrypted_vfs.sh ${LOOP_DEVICE} notformat
+```bash
+./unmount_encrypted_vfs.sh ${ROLE}
+./mount_encrypted_vfs.sh ${LOOP_DEVICE} noformat ${ROLE}
 ```
 
-### Run the training scripts
-Run the script for the corresponding job in each Docker container.
+### Run Training Scripts
 
-Docker container 1:
+Run the training script from each container.
 
-```shell
+From the parameter server (`ps0`) container:
+
+```bash
 cd /hfl-tensorflow
 ./test-tdx.sh ps0
 ```
 
-Docker container 2:
+From the `worker0` container:
 
-```shell
+```bash
 cd /hfl-tensorflow
 ./test-tdx.sh worker0
 ```
 
-Docker container 3:
+From the `worker1` container:
 
-```shell
+```bash
 cd /hfl-tensorflow
 ./test-tdx.sh worker1
 ```
 
-You can see the training log information from the workers' terminals to confirm that the training is running normally.
+Review the training log information from the workers' terminals to confirm that the training is running normally.
 
-At the beginning of training, two-by-two remote verification between nodes will be performed. Only after the remote verification is passed can the training continue. After successful remote attestation, the terminal will output the following:
+At the beginning of training, remote attestation between the nodes will be performed. Only after the remote attestation succeeds can the training begin. After successful remote attestation, the terminal will output the following:
 
-```shell
-Info: tdx_qv_get_quote_supplemental_data_size successfully returned.
-Info: App: tdx_qv_verify_quote successfully returned.
+```bash
 Info: App: Verification completed successfully.
 ```
 
 The model files generated during training will be saved in the `model` folder. In this example, the information related to variable values is stored in `model/model.ckpt-data` of `ps0`, and the information related to the computational graph structure is stored in `model/model.ckpt-meta` of `worker0`.
 
-Unmount after training is complete:
+Training is completed when both worker containers display the following output: `Optimization finished`.
 
-```shell
+After training is complete, unmount the LUKS volume on each container. Replace `<role>` with the role of the container (either `ps0`, `worker0`, or `worker1`). 
+
+```bash
+export ROLE=<role>
 cd /luks_tools
-./unmount_encrypted_vfs.sh ${VIRTUAL_FS}
+./unmount_encrypted_vfs.sh ${ROLE}
 ```
 
-### Get model files on trusted node
-After transferring the LUKS encrypted partition (`/root/vfs`) to the customer's trusted environment, decrypt it in the trusted node and obtain the model file.
+### Transfer Encrypted Model Files to Trusted Node
 
-If the path of the encrypted partition in the trusted node is `/root/vfs`, the command to decrypt and obtain the model file is as follows:
+Transfer the LUKS encrypted partition (`/root/vfs`) of the `ps0` and `worker0` containers to a trusted node. (The VM's `/home` directory is mounted to each container at `/home/host-home` to facilitate the file transfer for demonstration purposes).
 
-```shell
-VIRTUAL_FS=/root/vfs
+From the trusted node, as the `root` user, decrypt the LUKS volume. Replace `<path to vfs file>` with the path to the vfs file.
+
+```bash
+export VIRTUAL_FS=<path to vfs file>
 export LOOP_DEVICE=$(losetup -f)
 losetup ${LOOP_DEVICE} ${VIRTUAL_FS}
 cryptsetup luksOpen ${LOOP_DEVICE} model
-mkdir /root/model
+mkdir -p /root/model
 mount /dev/mapper/model /root/model
 ```
 
-Finally, the decrypted model file is obtained on the trusted node:
+The decrypted model files can now be obtained on the trusted node:
 
-```shell
-ls /root/model
+```bash
+ls -l /root/model
+```
+
+When done examining the model files, unmount the LUKS partition:
+
+```bash
+umount /root/model
+cryptsetup luksClose /dev/mapper/model
 ```
 
 ---
+
 ## Cloud Deployment
 
 ### 1. Aliyun ECS
@@ -210,10 +334,23 @@ ls /root/model
 an IaaS (Infrastructure as a Service) level cloud computing service provided by Alibaba
 Cloud. It builds eighth generation security-enhanced instance families based on Intel® TDX technology to provide a trusted and confidential environment with a higher security level.
 
-About how to build TDX confidential computing instance, please refer to the below links:
+To build a TDX confidential computing instance, please refer to the following links:
 
 Chinese version: https://www.alibabacloud.com/help/zh/elastic-compute-service/latest/build-a-tdx-confidential-computing-environment
 
 English version：https://www.alibabacloud.com/help/en/elastic-compute-service/latest/build-a-tdx-confidential-computing-environment
 
-***Notice:*** Ali TDX instance is under external public preview.
+***Notice:*** Ali TDX instances are under external public preview.
+
+### 2. Microsoft Azure
+
+Microsoft Azure [DCesv5-series](https://azure.microsoft.com/en-us/updates/confidential-vms-with-intel-tdx-dcesv5-ecesv5/) instances support Intel® TDX confidential computing technology.
+
+The following is the configuration of the DCesv5-series instance used:
+
+- Instance Type  : Standard_DC16es_v5
+- Instance Kernel: 6.2.0-1016-azure
+- Instance OS    : Ubuntu 22.04 LTS Gen 2 TDX
+
+***Notice:*** Azure DCesv5-series instances were used under private preview.
+

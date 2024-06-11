@@ -24,7 +24,7 @@ if [ -z ${BUILD_TYPE} ]; then
 fi
 
 if [ -z ${SGX_RA_TLS_BACKEND} ]; then
-    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,DUMMY
+    export SGX_RA_TLS_BACKEND=GRAMINE # GRAMINE,OCCLUM,TDX,AZURE_TDX,GCP_TDX,DUMMY
 fi
 
 if [ -z ${SGX_RA_TLS_SDK} ]; then
