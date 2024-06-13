@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [ branch0.1/grpc-ra-tls ]
 
+permissions:
+  contents: read
+
 jobs:
 
   build:
