@@ -44,6 +44,6 @@ RUN pip3 install --no-cache-dir --upgrade \
 WORKDIR /client
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
-COPY resnet_client_grpc.py . 
+COPY resnet_client_grpc.py .
 COPY utils.py .
 COPY run_inference.sh .

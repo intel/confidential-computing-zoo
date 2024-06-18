@@ -20,4 +20,9 @@ set -e
 cd ${WORK_BASE_PATH}/secret_prov_pf
 echo "Run Secret Prov Server!"
 
+export RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1
+export RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1
+export RA_TLS_ALLOW_SW_HARDENING_NEEDED=1
+export RA_TLS_ALLOW_HW_CONFIG_NEEDED=1
+
 LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libs stdbuf -o0  ./server_${RA_TYPE}
