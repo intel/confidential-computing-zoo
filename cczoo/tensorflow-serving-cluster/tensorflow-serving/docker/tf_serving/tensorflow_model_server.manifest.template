@@ -24,7 +24,6 @@ fs.mounts = [
   { path = "{{ python.stdlib }}", uri = "file:{{ python.stdlib }}" },
   { path = "{{ python.distlib }}", uri = "file:{{ python.distlib }}" },
   { path = "/models/resnet50-v15-fp32/1/saved_model.pb", uri = "file:models/resnet50-v15-fp32/1/saved_model.pb", type = "encrypted" },
-  { path = "/ssl.cfg", uri = "file:ssl.cfg", type = "encrypted" }
 ]
 
 sgx.enclave_size = "4G"
@@ -56,31 +55,23 @@ loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "ssl/ca.crt"
 loader.env.SECRET_PROVISION_SERVERS = "attestation.service.com:4433"
 
 sgx.trusted_files = [
-  "file:{{ gramine.libos }}",
+ "file:{{ gramine.libos }}",
   "file:{{ gramine.runtimedir() }}/",
+  "file:{{ arch_libdir }}/",
+  "file:/usr/{{ arch_libdir }}/",
+  "file:{{ python.stdlib }}/",
   "file:{{ python.distlib }}/",
-  "file:libstdc++.so.6",
-  "file:libgcc_s.so.1",
-  "file:/usr/lib/x86_64-linux-gnu/",
-  "file:/lib/x86_64-linux-gnu/",
-  "file:/lib/x86_64-linux-gnu/libgcc_s.so.1",
-  "file:/lib/x86_64-linux-gnu/libz.so.1",
-  "file:/lib/x86_64-linux-gnu/libcom_err.so.2",
-  "file:/lib/x86_64-linux-gnu/libkeyutils.so.1",
-  "file:libsecret_prov_attest.so",
+  "file:{{ python.get_path('stdlib', vars={'installed_base': '/usr/local'}) }}/",
+
   "file:ssl/ca.crt",
-  "file:tensorflow_model_server"
+  "file:tensorflow_model_server",
 ]
 
 
 sgx.allowed_files = [
-  "file:/etc/nsswitch.conf",
-  "file:/etc/ethers",
-  "file:/etc/hosts",
-  "file:/etc/group",
-  "file:/etc/passwd",
-  "file:/etc/gai.conf",
   "file:/etc/host.conf",
+  "file:/etc/hosts",
+  "file:/etc/nsswitch.conf",
   "file:/etc/resolv.conf",
-  "file:/tmp"
+  "file:ssl.cfg",
 ]

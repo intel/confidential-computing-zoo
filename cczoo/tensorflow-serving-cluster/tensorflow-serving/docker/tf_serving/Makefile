@@ -32,26 +32,12 @@ TF-SERVING_BUILD = Release
 endif
 
 .PHONY: all
-all: tensorflow_model_server.manifest tensorflow_model_server libgcc libstdc libcurl libz libcom
+all: tensorflow_model_server.manifest tensorflow_model_server
 
 ifeq ($(SGX),1)
 all: tensorflow_model_server.manifest.sgx tensorflow_model_server.sig tensorflow_model_server.token
 endif
 
-libgcc:
-	cp /lib/x86_64-linux-gnu/libgcc_s.so.1 .
-
-libstdc:
-	cp /usr/lib/x86_64-linux-gnu/libstdc++.so.6 .
-
-libcurl:
-	cp /usr/lib/x86_64-linux-gnu/libcurl.so.4 .
-
-libz:
-	cp /lib/x86_64-linux-gnu/libz.so.1 .
-
-libcom:
-	cp /lib/x86_64-linux-gnu/libcom_err.so.2 .
 
 tensorflow_model_server.manifest: tensorflow_model_server.manifest.template
 	gramine-manifest \
@@ -77,5 +63,5 @@ tensorflow_model_server:
 
 .PHONY: clean
 clean:
-	$(RM) *.manifest *.manifest.sgx *.token *.sig OUTPUT* *.PID tensorflow_model_server libgcc_s.so.1 libstdc++.so.6
+	$(RM) *.manifest *.manifest.sgx *.token *.sig OUTPUT* *.PID tensorflow_model_server 
 

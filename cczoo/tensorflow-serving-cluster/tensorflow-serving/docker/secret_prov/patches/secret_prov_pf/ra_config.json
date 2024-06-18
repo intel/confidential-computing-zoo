@@ -5,10 +5,10 @@
     "verify_isv_svn" : "on",
     "mrs": [
         {
-            "mr_enclave" : "",
-            "mr_signer" : "",
-            "isv_prod_id" : "0",
-            "isv_svn" : "0"
+            "mr_enclave":  "7de5ab70f2cd92cb7c0f9274befe3493470cec5a2bc7b2df2e224a614ec7fd90",
+            "mr_signer":   "b11a7be39a7ba685e1807f1d295d65bbd8ac5436da615f686312f34419786ae8",
+            "isv_prod_id": "0",
+            "isv_svn":     "0"
         }
     ]
 }
