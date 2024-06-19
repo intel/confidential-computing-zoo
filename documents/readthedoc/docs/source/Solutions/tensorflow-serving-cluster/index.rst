@@ -185,7 +185,7 @@ To deploy this service easily, we build and run this service in a container.
 authentication service, which relies on the quote-related authentication library
 provided by SGX DCAP. The certification service will obtain quote certification
 related data from Intel PCCS, such as TCB related information and CRL information.
-After successful verification of SGX enclave quote, the key stored in ``files/wrap-key``
+After successful verification of SGX enclave quote, the key stored in ``files/wrap_key``
 will be sent to the remote application.
 The remote application here is Gramine in the SGX environment.
 After the remote Gramine application gets the key, it will decrypt the encrypted model file.
@@ -453,7 +453,7 @@ the configuration option "sgx.protected_files.file_mode=file_name" is given, whi
 specifies the files to be protected by encryption.
 
 When TensorFlow Serving loads the model, the path to load the model is ``models/resnet50-v15-fp32/1/saved_model.pb``,
-and the encryption key is in ``files/wrap-key``. You can also customize the
+and the encryption key is in ``files/wrap_key``. You can also customize the
 128-bit password. According to the file path matching principle, the file path must
 be consistent with the one used during encryption.
 
@@ -461,7 +461,7 @@ Encrypt the model file::
 
    mkdir -p plaintext/
    mv models/resnet50-v15-fp32/1/saved_model.pb plaintext/
-   LD_LIBRARY_PATH=./libs ./gramine-sgx-pf-crypt encrypt -w files/wrap-key -i  plaintext/saved_model.pb -o  models/resnet50-v15-fp32/1/saved_model.pb
+   LD_LIBRARY_PATH=./libs ./gramine-sgx-pf-crypt encrypt -w files/wrap_key -i  plaintext/saved_model.pb -o  models/resnet50-v15-fp32/1/saved_model.pb
    tar -cvf models.tar models
 
 The encrypted model file is located at ``models/resnet50-v15-fp32/1/saved_model.pb``.
@@ -470,7 +470,7 @@ Encrypt ssl.cfg::
 
       mkdir -p plaintext/
       mv ssl_configure/ssl.cfg plaintext/
-      LD_LIBRARY_PATH=./libs ./gramine-sgx-pf-crypt encrypt -w files/wrap-key -i plaintext/ssl.cfg -o ssl.cfg
+      LD_LIBRARY_PATH=./libs ./gramine-sgx-pf-crypt encrypt -w files/wrap_key -i plaintext/ssl.cfg -o ssl.cfg
       mv ssl.cfg ssl_configure/
       tar -cvf ssl_configure.tar ssl_configure
       
@@ -801,7 +801,7 @@ Check pod info if the pod is not running::
 
     kubectl describe pod -n gramine-tf-serving gramine-tf-serving-deployment-548f95f46d-rx4w2
     
-Check the coredns setup if the TensorFlow Serving service is not ready. This can be caused when the TensorFlow Serving service is unable to obtain the wrap-key (used to decrypt the model file) from the Secret Provisioning Server container.
+Check the coredns setup if the TensorFlow Serving service is not ready. This can be caused when the TensorFlow Serving service is unable to obtain the wrap_key (used to decrypt the model file) from the Secret Provisioning Server container.
 
 
 3.10 Scale the TensorFlow Serving Service
