@@ -8,7 +8,7 @@ dockerfile=frontend.dockerfile
 
 DOCKER_BUILDKIT=0 docker build \
     -f ${dockerfile} . \
-    -t intelcczoo/rag-llm:ui \
+    -t intelcczoo/tdx-rag:frontend \
     --network=host \
     --build-arg http_proxy=${http_proxy} \
     --build-arg https_proxy=${https_proxy} \

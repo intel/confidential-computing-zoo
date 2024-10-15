@@ -16,7 +16,17 @@
 
 SERVICE_NAME="${1:-}"
 
-[ "$2" == "ra" ] && REMOTE_ATTESTATION="grpc-ratls"
+pccs_addr=127.0.0.1
+
+if [ "$2" == "ra" ]; then
+    REMOTE_ATTESTATION="grpc-ratls"
+    if [ -z "$3" ]; then
+        echo "Error: No PCCS address provided."
+        exit 1
+    else
+        pccs_addr="$3"
+    fi
+fi
 
 function show_help {
     echo "Usage: ./script.sh SERVICE_NAME [ra]"
@@ -24,6 +34,7 @@ function show_help {
     echo "Arguments:"
     echo "  SERVICE_NAME  : Name of the service (db: Mysql, es: ElasticSearch, backend, backend_es, frontend)"
     echo "  ra            : Enable remote attestation (optional)"
+    echo "  <ip addr>     : PCCS service address"
     exit 1
 }
 
@@ -64,8 +75,9 @@ elif [ "$SERVICE_NAME" == 'backend' ]; then
         docker rm tdx_rag_backend
     fi
     rm -rf backend/pipelines/faiss-index-so.*
+    rm -rf /home/encrypted_storage/faiss-index-so.*
     echo -e "\nstart backend container..."
-    mv -n data/data.txt /home/encrypted_storage
+    cp data/data.txt /home/encrypted_storage
     docker run -itd --privileged --network host \
        -e http_proxy=${http_proxy} \
        -e https_proxy=${https_proxy} \
@@ -81,6 +93,7 @@ elif [ "$SERVICE_NAME" == 'backend' ]; then
        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
        -v /home/encrypted_storage:/home/rag_data/ \
        -v $(pwd)/backend/pipelines:/home/user/workspace \
+       --add-host pccs.service.com:${pccs_addr} \
        --shm-size=64gb --name tdx_rag_backend intelcczoo/tdx-rag:backend /bin/bash
     sleep 5
 
@@ -116,6 +129,7 @@ elif [ "$SERVICE_NAME" == 'backend_es' ]; then
        -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
        -v /home/encrypted_storage:/home/rag_data/ \
        -v $(pwd)/backend/pipelines:/home/user/workspace \
+       --add-host pccs.service.com:${pccs_addr} \
        --shm-size=64gb --name tdx_rag_backend intelcczoo/tdx-rag:backend /bin/bash
     sleep 5
 
@@ -135,8 +149,6 @@ elif [ "$SERVICE_NAME" == 'frontend' ]; then
     fi
     echo -e "\nstart frontend container..."
     docker run -itd --privileged --network host \
-        -e http_proxy=${http_proxy} \
-        -e https_proxy=${https_proxy} \
         -e no_proxy=${no_proxy} \
         -e API_PROTOCOL=${REMOTE_ATTESTATION} \
         -e STREAMLIT_SERVER_PORT=8502 \
@@ -145,6 +157,7 @@ elif [ "$SERVICE_NAME" == 'frontend' ]; then
         -v /dev:/dev \
         -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
         -v $(pwd)/frontend/chatbot-rag:/home/user/workspace \
+	--add-host pccs.service.com:${pccs_addr} \
         --shm-size=64gb --name tdx_rag_frontend intelcczoo/tdx-rag:frontend /bin/bash
     sleep 5
     docker exec -i tdx_rag_frontend /bin/bash -c "streamlit run app.py"
