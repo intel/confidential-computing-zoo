@@ -10,7 +10,7 @@ from haystack import Pipeline
 from haystack.nodes.prompt import PromptNode
 
 
-query_pipeline = Pipeline.load_from_yaml(Path("rag.yaml"))
+query_pipeline = Pipeline.load_from_yaml(Path("rag_mysql.yaml"))
 
 def _get_grpc_streaming_iterator(pipeline, request=None):
     params = request["params"] or {}
@@ -41,6 +41,9 @@ class QueryServicer(query_pb2_grpc.QueryServicer):
 API_ENDPOINT_GRPC = os.getenv("API_ENDPOINT_GRPC", "[::]:80")
 API_PROTOCOL = os.getenv("API_PROTOCOL", "grpc")
 print("API_PROTOCOL:", API_PROTOCOL, flush=True)
+
+os.unsetenv("http_proxy")
+os.unsetenv("https_proxy")
 
 server = grpc.server(ThreadPoolExecutor(max_workers=8))
 query_pb2_grpc.add_QueryServicer_to_server(QueryServicer(), server)
