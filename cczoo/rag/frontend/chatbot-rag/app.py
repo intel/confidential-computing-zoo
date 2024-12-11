@@ -92,12 +92,14 @@ def resp_iter(r):
 
 # Check the connection
 with st.spinner("⌛️ &nbsp;&nbsp; Chatbot-RAG demo is starting..."):
+    status = get_ratls_output()
     if not haystack_is_ready(model_type):
         st.error("🚫 &nbsp;&nbsp; Connection Error. Is the chatbot-rag pipeline service running?")
-    else:
+    elif "grpc-ratls" in status:
         st.success("✅ &nbsp;&nbsp; Secure connection established with Intel\u00AE TDX technology")
+    else:
+        st.warning("⚠️ &nbsp;&nbsp; Connection established with an insecure channel")
 
-    status = get_ratls_output()
     if "grpc-ratls" in status:
         with st.expander('Connection Message:', expanded=True):
             st.text(status)
