@@ -4,6 +4,7 @@ Actors package, the bussiness logic layer.
 
 import os
 import logging
+import struct
 from typing import Dict, List
 from hashlib import sha384
 
@@ -89,8 +90,7 @@ class TDEventLogActor:
         self._event_logs = []
         self._rtmrs = {}
 
-    def _read(self, ccel_file="/sys/firmware/acpi/tables/data/CCEL"):
-        assert os.path.exists(ccel_file), f"Could not find the CCEL file {ccel_file}"
+    def _read_direct(self, ccel_file):
         try:
             with open(ccel_file, "rb") as fobj:
                 self._data = fobj.read()
@@ -99,6 +99,62 @@ class TDEventLogActor:
         except (PermissionError, OSError):
             LOG.error("Need root permission to open file %s", ccel_file)
             return None
+
+    def _read_from_devmem(self, acpi_file):
+        try:
+            with open(acpi_file, "rb") as fobj:
+                acpi_data = fobj.read()
+                assert len(acpi_data) > 0
+
+            # typedef struct {
+            #   UINT32  Signature;
+            #   UINT32  Length;
+            #   UINT8   Revision;
+            #   UINT8   Checksum;
+            #   UINT8   OemId[6];
+            #   UINT64  OemTableId;
+            #   UINT32  OemRevision;
+            #   UINT32  CreatorId;
+            #   UINT32  CreatorRevision;
+            # } EFI_ACPI_DESCRIPTION_HEADER;
+
+            # typedef struct {
+            #     EFI_ACPI_DESCRIPTION_HEADER Header;
+            #     UINT32                      Rsv;  // default to 0
+            #     UINT64                      Laml; // Optional
+            #     UINT64                      Lasa;
+            # } TDX_Event_Log_ACPI_Table;
+
+            # Read the CCEL table from the /sys/firmware/acpi/tables/CCEL
+            struct_fmt = "<4sI2B6sQ4IQQ"
+            ccel_acpi_table = struct.unpack(struct_fmt, acpi_data[:struct.calcsize(struct_fmt)])
+            (
+                signature, length, revision, checksum, oem_id, oem_table_id, oem_revision,
+                creator_id, creator_revision,
+                rsv, laml, lasa
+            ) = ccel_acpi_table
+
+            assert signature == b'CCEL', "Invalid CCEL ACPI table"
+            assert length == len(acpi_data), "Invalid CCEL ACPI table"
+            assert rsv == 0, "Invalid CCEL ACPI table"
+
+            with open("/dev/mem", "rb") as fobj:
+                fobj.seek(lasa)
+                self._data = fobj.read(laml)
+                assert len(self._data) > 0
+                return self._data
+
+        except (PermissionError, OSError):
+            LOG.error("Need root permission to open file %s", acpi_file)
+            return None
+
+    def _read(self, ccel_file="/sys/firmware/acpi/tables/data/CCEL", acpi_file="/sys/firmware/acpi/tables/CCEL"):
+        assert os.path.exists(ccel_file) or os.path.exists(acpi_file), f"Could not find the CCEL file and CCEL ACPI table"
+
+        if os.path.exists(ccel_file):
+            return self._read_direct(ccel_file)
+        else:
+            return self._read_from_devmem(acpi_file)
 
     @staticmethod
     def _replay_single_rtmr(event_logs: List[TDEventLogEntry]) -> RTMR:
