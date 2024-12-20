@@ -12,7 +12,7 @@ before providing the TDX guest VM.
 ### Overview
 
 The `RTMR` stands for Run-time Measurement Register, recording measurement for the component participating in the booting process.
-As of 2023.4, TDX supports four RTMRs, including RTMR[0], RTMR[1], RTMR[2] and RTMR[3]. 
+TDX supports four RTMRs, including RTMR[0], RTMR[1], RTMR[2] and RTMR[3]. 
 
 The same RTMR may store measurement for different section in `direct boot` or `grub boot`.
 
@@ -40,9 +40,6 @@ The Log Area Start Address (LASA) is from ACPI CCEL table. Please see [GHCI spec
     ```
     ./tdx_eventlogs
     ```
-
-    The example output for the event log in [grub boot](https://github.com/intel/tdx-tools/blob/main/doc/measure_log_grub_boot.txt)
-    and [direct boot](https://github.com/intel/tdx-tools/blob/main/doc/measure_log_direct_boot.txt)
 
 2. Get TD Report
 
