@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+
+import argparse
+
+from pytdxmeasure.cli import TDXRTMRExtendCmd
+
+parser = argparse.ArgumentParser(description="The utility to write data into RTMR register")
+parser.add_argument('-e', type=str, help='Extend value to rtmr register', dest='rtmr_extend_data')
+parser.add_argument('-r', type=int, default=2, help='RTMR register to extend', dest='extended_rtmr_index')
+
+args = parser.parse_args()
+print(args)
+
+if args.rtmr_extend_data is not None:
+    TDXRTMRExtendCmd().run(args.rtmr_extend_data, args.extended_rtmr_index)
+
