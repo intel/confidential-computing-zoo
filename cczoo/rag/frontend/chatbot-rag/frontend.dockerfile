@@ -27,8 +27,11 @@ COPY configs/config.toml /root/.streamlit/
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir streamlit streamlit-chat matplotlib pyyaml grpcio==1.38.1 grpcio-tools==1.38.1
 
-RUN wget https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/distro/ubuntu22.04-server/sgx_debian_local_repo.tgz \
-    && wget https://download.01.org/intel-sgx/sgx-dcap/1.18/linux/distro/ubuntu22.04-server/sgx_linux_x64_sdk_2.21.100.1.bin \
+ARG DCAP_VERSION
+RUN wget https://download.01.org/intel-sgx/sgx-dcap/${DCAP_VERSION}/linux/distro/ubuntu22.04-server/sgx_debian_local_repo.tgz \
+    && wget -qO- https://download.01.org/intel-sgx/sgx-dcap/${DCAP_VERSION}/linux/distro/ubuntu22.04-server/ | \
+    grep -oP 'sgx_linux_x64_sdk_\d+(\.\d+)*\.bin' | head -n 1 | \
+    xargs -I {} wget https://download.01.org/intel-sgx/sgx-dcap/${DCAP_VERSION}/linux/distro/ubuntu22.04-server/{} \
     && tar -zxvf sgx_debian_local_repo.tgz \
     && mkdir -p /opt/intel \
     && mv sgx_debian_local_repo sgx_linux_x64_sdk_*.bin /opt/intel/ \
@@ -50,8 +53,8 @@ RUN apt-get update \
         libsgx-ae-qve
 
 COPY ra_configs /
-RUN chmod +x /opt/intel/sgx_linux_x64_sdk_2.21.100.1.bin \
-    && /install_sgxsdk.sh /opt/intel/sgx_linux_x64_sdk_2.21.100.1.bin
+RUN chmod +x /opt/intel/sgx_linux_x64_sdk_*.bin \
+    && /install_sgxsdk.sh /opt/intel/sgx_linux_x64_sdk_*.bin
 ENV INTEL_SGXSDK_INCLUDE=/opt/intel/sgxsdk/include
 
 # cmake tool chain
@@ -74,7 +77,7 @@ RUN ln -s ${GRPC_VERSION_PATH} ${GRPC_PATH}
 RUN pip3 install --upgrade pip \
     && pip3 install -r ${GRPC_PATH}/requirements.txt \
     && pip3 install cython==0.29.36
-ARG CCZOO_VERSION=06499d3bda5ccde13f3c64c8e5ee6bd3eac6e5bd
+ARG CCZOO_VERSION=051bbc9f4d6a0c9476341f33161e5775536f62b4
 RUN git clone https://github.com/intel/confidential-computing-zoo.git \
     && cd confidential-computing-zoo \
     && git checkout ${CCZOO_VERSION}

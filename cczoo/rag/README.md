@@ -4,20 +4,21 @@ This repo contains code to build various chatbot services using the state-of-the
 ## Getting Started 
 
 ### 1. Prepare for Docker images
-You can download the Docker images from `docker.io`:
+You can download the Docker images from `docker.io`(Use dcap 1.18 by default):
 
 ```bash
 docker pull intelcczoo/tdx-rag:backend
 docker pull intelcczoo/tdx-rag:frontend
 ```
 
-Or you can compile Docker images locally:
+Or you can compile Docker images locally, providing the same dcap version as the host when building the images:
 
 ```bash
 # clone the repo
 git clone https://github.com/intel/confidential-computing-zoo.git
-cd cczoo/rag
-./build-images.sh
+cd confidential-computing-zoo/cczoo/rag
+# Note: If you use the PCCS service in the public cloud, modify the `backend/configs/etc/sgx_default_qcnl.conf` file and the `frontend/chatbot-rag/ra_configs/etc/sgx_default_qcnl.conf` file before building the Docker image, and fill in the correct PCCS service configuration.
+./build-images.sh --dcap-version 1.18
 ```
 
 ### 2. Create encrypted partition
@@ -168,7 +169,7 @@ In the `frontend/chatbot-rag/dynamic_config.json` and `backend/pipelines/dynamic
 ```shell
 ./run.sh backend ra <ip addr>
 ```
-The "ra" means "remote attestation" and the subsequent IP address is the attestation server address.
+The "ra" means "remote attestation" and the subsequent IP address is the attestation server address. If the PCCS service has been configured in `backend/configs/etc/sgx_default_qcnl.conf` and `frontend/chatbot-rag/ra_configs/etc/sgx_default_qcnl.conf` files, this configuration can be ignored.
 
 Then, enter the following message:
 
