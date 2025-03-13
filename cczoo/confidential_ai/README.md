@@ -25,10 +25,32 @@
 | **Attestation Service**    |               |                                                                                                           |
 ## 4. Build and Setup Instructions
 
-### Prerequisites:
+### 4.1 Download AI Modle
+Here we use deepseek-llm-7b-chat model, please refer to the [guide](https://www.modelscope.cn/models/deepseek-ai/deepseek-llm-7b-chat) to download the model.
 
-### Steps - 
-==Please update setup instructions for ollama, deepseek, and open-webui==
+
+### 4.2 Install ollama
+Please refer to [ollama installation guide](https://github.com/ollama/ollama/blob/main/docs/linux.md).
+
+### 4.3 Build openwebui
+xxx
+xxx
+
+### 4.4 Run openwebui
+- Run ollama + AI model
+xxx
+- Run openwebui
+xxx
+
+- Configure `Attestation Service`
+xxx
+- Check Attestation status
+
+
+### Prerequisites:
+- Hardware: Intel Xeon with TDX features
+- Software: (1) Host/Guest OS with TDX support (2)Install TDX remote attestation DCAP packages
+Please refer to [Intel TDX Enabling Guide](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/01/introduction/index.html).
 
 ## 5. Implemenation Detials
 ### Measurement 
