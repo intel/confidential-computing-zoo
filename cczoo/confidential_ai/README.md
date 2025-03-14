@@ -4,6 +4,7 @@
 ## 1. Overview 
 
 **Objective**: Enable privacy-preserving LLM inference workflows with confidential computing VM 
+
 **Design Principles**:
 - Confidentiality: Ensure models and user data are not exposed outside of confidential VM
 - Integrity: Guarantee the LLM inference environment(e.g., framework, models, UI) is untampered and verifiable. 
