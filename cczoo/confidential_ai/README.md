@@ -10,7 +10,7 @@
 
 ## 2. System Architecture 
 
-![System Deployment Architecture](./images/Deployment Architecture.png)
+![System Deployment Architecture](./images/Deployment%20Architecture.png)
 
 ### Key Components
 
@@ -28,14 +28,13 @@ A cloud-based service that verifies the proofness of the remote model serving en
 - **TSM Module:**  
     The Trusted Service Module that provides the proofness of the execution environment.
 
-**Intel TDX Confidential VM**
-+ Hardware-level memory encryption (MK-TME technology) for AI model parameters
-+ TSM module for secure key management (FIPS 140-3 compliant)
-+ GPU TEE support for heterogeneous computi
+**Intel TDX based heterogeneous Confidential VM**
++ Hardware-level memory encryption and isolation for AI model and user data
++ GPU TEE support for heterogeneous confidential computing 
 
 ### Workflow
 
-![Confidential AI Workflow](./images/Confidential AI Flow.png)
+![Confidential AI Workflow](./images/Confidential%20AI%20Flow.png)
 
 #### 1. Initialization Phase
 
