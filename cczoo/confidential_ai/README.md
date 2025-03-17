@@ -99,7 +99,7 @@ xxx
 - Software: (1) Host/Guest OS with TDX support (2)Install TDX remote attestation DCAP packages
 Please refer to [Intel TDX Enabling Guide](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/01/introduction/index.html).
 
-## 5. Security Design
+## 5. Security Design Overview
 ### Measurement
 
 Intel Trust Domain Extensions (TDX) enhances virtual machine security by isolating them within hardware-protected Trust Domains (TDs). During the boot process, the TDX module records the state of the TD guest using two primary registers:
