@@ -99,6 +99,26 @@ xxx
 - Software: (1) Host/Guest OS with TDX support (2)Install TDX remote attestation DCAP packages
 Please refer to [Intel TDX Enabling Guide](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/01/introduction/index.html).
 
-## 5. Implemenation Detials
-### Measurement 
+## 5. Security Design
+### Measurement
+
+Intel Trust Domain Extensions (TDX) enhances virtual machine security by isolating them within hardware-protected Trust Domains (TDs). During the boot process, the TDX module records the state of the TD guest using two primary registers:
+
+- **Build Time Measurement Register (MRTD):** Captures measurements related to the guest VM's initial configuration and boot block image.
+    
+- **Runtime Measurement Registers (RTMR):** Records measurements of the initial state, kernel image, command-line options, and other runtime services and parameters as needed. 
+    
+
+These measurements ensure the integrity of the TD and the running application throughout its lifecycle. For this solution demo, the measurements of model services and parameters, including those associated with the Ollama and DeepSeek models, as well as the open-webui web framework can be reflected in the RTMRs. 
+
 ### Remote Attestation
+
+Remote attestation in TDX provides cryptographic proof of a TD's integrity and authenticity to remote parties. The process involves several key steps:
+
++ **Quote Generation and Retrieval:**
+    1. The client requests the `open-webui` to provide proof of the remote services' integrity.
+    2. The backend of `open-webui` communicates with the Trusted Service to retrieve the measurement report signed with the platform's TCB certificate. The report includes MRTD and RTMRs reflecting the current integrity status of the running model serving environment. This signed measurement report is known as the quote.
++ **Quote Verification:** The client sends the quote to a trusted attestation service to verify it against predefined policies, establishing trust with the model service before processing sensitive information.
+    
+
+By integrating these measurement and attestation mechanisms, the Confidential AI service provides a robust framework for verifying the integrity and authenticity of remote model serving services, which is crucial for protecting data security and privacy.
