@@ -161,7 +161,7 @@ ANONYMIZED_TELEMETRY=false
 ```
 Ensure you replace `ip_address:port` with the actual IP address and port of your **Ollama server** if necessary.
 
- 4.3.4.3 Build frontend server:
+ 4.3.4.3 Build frontend server(if error occured,please goto [here](#IssueNote)):
     
   ```bash
   npm run build
@@ -187,7 +187,7 @@ Ensure you replace `ip_address:port` with the actual IP address and port of your
     conda activate open-webui
     ```
 
- 4.3.4.5 Install python dependencies:
+ 4.3.4.5 Install python dependencies([Tips](#Tips)):
     
   ```bash
   pip install -r requirements.txt -U
@@ -240,6 +240,27 @@ Ensure you replace `ip_address:port` with the actual IP address and port of your
     get quote data and parse
     
     ![backend service](./images/parse.png)
+
+### IssueNote{#IssueNote}:
+ - While building, meet with `Cannot find package `,you can try command:
+
+ ```bash
+ npm install pyodide
+ ```
+
+### Tips{#Tips}:
+ - Downloading packages from remote sites can be slow. To speed up the   process, you can specify a local mirror such as **Aliyun** when installing packages:
+
+ ```bash
+ pip install torch -i https://mirrors.aliyun.com/pypi/simple/
+ ```
+
+ Alternatively, you can set Aliyun as the default mirror by adding the following lines to `~/.pip/pip.conf`, suggest to this method:
+
+ ```ini
+ [global]
+index-url = https://mirrors.aliyun.com/pypi/simple/
+ ```
 
 
 
