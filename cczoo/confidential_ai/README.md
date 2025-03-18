@@ -161,7 +161,7 @@ ANONYMIZED_TELEMETRY=false
 ```
 Ensure you replace `ip_address:port` with the actual IP address and port of your **Ollama server** if necessary.
 
- 4.3.4.3 Build frontend server(if error occured,please goto [here](#IssueNote)):
+ 4.3.4.3 Build frontend server(if error occured,please goto [here](#issue_note)):
     
   ```bash
   npm run build
@@ -187,7 +187,7 @@ Ensure you replace `ip_address:port` with the actual IP address and port of your
     conda activate open-webui
     ```
 
- 4.3.4.5 Install python dependencies([Tips](#Tips)):
+ 4.3.4.5 Install python dependencies([Tips](#tips)):
     
   ```bash
   pip install -r requirements.txt -U
@@ -241,14 +241,14 @@ Ensure you replace `ip_address:port` with the actual IP address and port of your
     
     ![backend service](./images/parse.png)
 
-### IssueNote{#IssueNote}:
+### <h2 id="issue_note">IssueNote：</h2>
  - While building, meet with `Cannot find package `,you can try command:
 
  ```bash
  npm install pyodide
  ```
 
-### Tips{#Tips}:
+### <h2 id="tips">Tips：</h2>
  - Downloading packages from remote sites can be slow. To speed up the   process, you can specify a local mirror such as **Aliyun** when installing packages:
 
  ```bash
