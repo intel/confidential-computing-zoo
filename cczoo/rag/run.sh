@@ -65,7 +65,7 @@ elif [ "$SERVICE_NAME" == 'backend' ]; then
     fi
     rm -rf backend/pipelines/faiss-index-so.*
     echo -e "\nstart backend container..."
-    mv -n data/data.txt /home/encrypted_storage
+    cp -n data/data.txt /home/encrypted_storage
     docker run -itd --privileged --network host \
        -e http_proxy=${http_proxy} \
        -e https_proxy=${https_proxy} \
@@ -100,7 +100,7 @@ elif [ "$SERVICE_NAME" == 'backend_es' ]; then
     fi
     rm -rf backend/pipelines/faiss-index-so.*
     echo -e "\nstart backend container..."
-    mv -n data/data.txt /home/encrypted_storage
+    cp -n data/data.txt /home/encrypted_storage
     docker run -itd --privileged --network host \
        -e http_proxy=${http_proxy} \
        -e https_proxy=${https_proxy} \
