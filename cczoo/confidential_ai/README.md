@@ -225,14 +225,14 @@ Ensure you replace `ip_address:port` with the actual IP address and port of your
   conda activate open-webui
   cd /path/to/open-webui/backend/ && ./dev.sh
   ```
-  ![backend service](./images/owu1.png)
+  ![backend service](./images/openwebui-backend.png)
 
   2.open frontend service
 
   ```bash
   cd utilities/tdx/restful_as/restful_tdx_att_service && ./attest_service
   ```
-  ![backend service](./images/frontend.png)
+  ![backend service](./images/openwebui-fronted.png)
 
   3.open browser and goto address: https://{ip_address}:18080/(The ip address is your server ip)
 
