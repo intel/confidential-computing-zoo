@@ -287,7 +287,7 @@ Intel Trust Domain Extensions (TDX) 通过将虚拟机隔离在受硬件保护�
 - **Runtime Measurement Registers (RTMR):** 根据需要记录初始状态、内核映像、命令行选项和其他运行时服务和参数的测量值。
     
 
-这些测量可确保 TD 和正在运行的应用程序在整个生命周期中的完整性。对于此解决方案演示，模型服务和参数的测量（包括与 Ollama 和 DeepSeek 模型以及 open-webui web 框架相关的测量）可以反映在 RTMR 中。
+这些Measurement可确保 TD 和正在运行的应用程序在整个生命周期中的完整性。对于此解决方案演示，模型服务和参数的测量（包括与 Ollama 和 DeepSeek 模型以及 open-webui web 框架相关的测量）可以反映在 RTMR 中。
 
 ### Remote Attestation
 
@@ -299,4 +299,4 @@ TDX 中的远程认证为远程方提供了 TDs 完整性和真实性的加密�
 + **Quote Verification:** 客户端将quote发送到受信任的证明服务，以根据预定义的策略进行验证，并在处理敏感信息之前与模型服务建立信任。
     
 
-通过集成这些测量和证明机制，Confidential AI 服务提供了一个强大的框架来验证远程模型服务服务的完整性和真实性，这对于保护数据安全和隐私至关重要。
+通过集成这些Measurement和证明机制，Confidential AI 服务提供了一个强大的框架来验证远程模型服务服务的完整性和真实性，这对于保护数据安全和隐私至关重要。
