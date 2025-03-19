@@ -82,7 +82,7 @@
 ## 4. 构建和安装指南
 
 ### 4.1 下载AI模型
-这里我们使用 deepseek-llm-7b-chat 模型, 请详细参阅 [guide](https://www.modelscope.cn/models/deepseek-ai/deepseek-llm-7b-chat) to download the model.
+这里我们使用 deepseek-llm-7b-chat 模型, 请详细参阅文档下载安装模型。 [guide](https://www.modelscope.cn/models/deepseek-ai/deepseek-llm-7b-chat)
 
 
 ### 4.2 安装 ollama
