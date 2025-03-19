@@ -81,76 +81,76 @@
 | **Attestation Service**    |               |                                                                                                           |
 ## 4. 构建和安装指南
 
-### 4.1 Download AI Modle
+### 4.1 下载AI模型
 Here we use deepseek-llm-7b-chat model, please refer to the [guide](https://www.modelscope.cn/models/deepseek-ai/deepseek-llm-7b-chat) to download the model.
 
 
-### 4.2 Install ollama
+### 4.2 安装 ollama
 Please refer to [ollama installation guide](https://github.com/ollama/ollama/blob/main/docs/linux.md).
 
-### 4.3 Build openwebui
-4.3.1 System Requirements
-- **Operating System**: Linux 
-- **Python Version**: Python 3.11+
-- **Node.js Version**: 20.18+
+### 4.3 编译 openwebui
+4.3.1 编译环境
+- **操作系统**: Linux 
+- **Python 版本**: Python 3.11+
+- **Node.js 版本**: 20.18+
 
-4.3.2 Development Setup Instruction
- 4.3.2.1 Clone the Repository
+4.3.2 编译安装步骤说明
+ 4.3.2.1 拉取openweb-ui代码
 ```bash
-git clone https://github.com/your-org/open-webui.git  #Replace with actual repository URL(git apply xxx.patch  添加openwebUI对TDX的支持.)
+git clone https://github.com/your-org/open-webui.git  #替换为你需要的git路径(git apply xxx.patch  添加openwebUI对TDX的支持.)
 cd open-webui
 ```
 
- 4.3.2.2 Install Node.js
-   - Ensure Node.js ≥20.18.1 is installed:
+ 4.3.2.2 安装 Node.js
+   - 确保 Node.js版本 ≥ 20.18.1:
 ```bash
-# Install Node Version Manager (n)
+# 安装npm模块管理器
 sudo npm install -g n
 
-# Install specific Node.js version
+# 安装nodejs指定版本
 sudo npm install 20.18.1
 
-# if meet any connect error, you can use follow way to install
-# install nvm(Node Version Manager)
+# 如果安装过程遇到问题，可尝试以下方法
+# 安装 nvm(Nodejs 版本管理器)
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
 
-### install node with verison ID
+### 通过指定版本号安装nodejs
 nvm install 20.18.1
 
-### if need change node version
+### nodejs版本切换
 nvm use 20.18.1
 ```
-4.3.3 Install Miniconda
- - Download and install Miniconda:
+4.3.3 安装 Miniconda
+ - 下载安装 Miniconda:
 ```bash
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
 bash Miniconda3-latest-Linux-x86_64.sh
-### while installing,you can skip reading install information by enter q, and set default choice to finish installation
+### 安装过程中可通过输入q，跳过阅读安装信息
 
 ```
-4.3.3.1  Configure environment paths:
+4.3.3.1  配置minconda环境:
 ```bash
-# Add Miniconda to PATH (replace /path/to/ with actual installation path)
-export PATH="/path/to/miniconda3/bin:$PATH"   ### defaoult path is: /root/miniconda3/bin
+# 设置Miniconda 的安装路径 (注意替换 /path/to/ 为真实安装路径)
+export PATH="/path/to/miniconda3/bin:$PATH"   ### 默认安装路径是: /root/miniconda3/bin
 
-# Initialize Conda
+# 初始化 Conda
 conda init
 source ~/.bashrc
 
-# Verify installation
+# 验证安装
 conda --version
 ```
 
-4.3.4 Frontend Build and Test
+4.3.4 前端设置与测试
 
- 4.3.4.1  Enter open-webui & Create a `.env` file:
+ 4.3.4.1  进入open-webui目录并创建 `.env` file:
 
   ```bash
   cd open-webui
   cp -RPp .env.example .env
   ```
 
- 4.3.4.2  Update Ollama Serving Address in `.env` and Modify the `.env` file to configure the **Ollama backend URL**. This ensures that requests to `/ollama` are correctly redirected to the specified backend:
+ 4.3.4.2  更新 Ollama 服务的ip地址到 `.env` 并修改 `.env` 文件，配置 **Ollama backend URL**. 确保对`/ollama`的请求正确指向后端:
 
 ```ini
 # Ollama URL for the backend to connect
@@ -168,67 +168,67 @@ SCARF_NO_ANALYTICS=true
 DO_NOT_TRACK=true
 ANONYMIZED_TELEMETRY=false
 ```
-Ensure you replace `ip_address:port` with the actual IP address and port of your **Ollama server** if necessary.
+确保替换掉`ip_address:port`为真实的**Ollama server**的ip地址和端口。
 
- 4.3.4.3 Build frontend server(if error occured,please goto [here](#issue_note)):
+ 4.3.4.3 编译open-webui(如又报错可跳转查询[here](#issue_note)):
     
   ```bash
   npm run build
   ```
-+ After building the frontend, copy the generated `build` directory to the backend and rename it to `frontend`:
++ 编译完成后，复制生成的`build`文件夹到backend目录并重命名为`frontend`:
     
     ```bash
    cp -r build ./backend/open-webui/frontend
 
     ```
- 4.3.4.4 Backend Build and Setup
+ 4.3.4.4 后端服务设置
 
-- Navigate to the backend:
+- 进入backend目录:
     
     ```bash
     cd backend
     ```
     
-- Use **Conda** for environment setup:
+- 使用**Conda** 启动环境:
     
     ```bash
     conda create --name open-webui python=3.11
     conda activate open-webui
     ```
 
- 4.3.4.5 Install python dependencies([Tips](#tips)):
+ 4.3.4.5 安装Python依赖库([Tips](#tips)):
     
   ```bash
   pip install -r requirements.txt -U
   ```
 
- 4.3.4.6.1 Install TDX-quote_parse-feature enable:
+ 4.3.4.6.1 安装 TDX-quote_parse-feature:
 
   ```bash
   cd quote_generator
   python setup.py install
   ```
-### 4.4 Run openwebui
-- Run ollama + AI model
+### 4.4 运行 openwebui
+- 运行 ollama + AI model
   ```bash
      ollama run xxxx(model name)
   ```
 
-- Configure `Attestation Service`
-  Build setps:
+- 配置 `Attestation Service`
+  编译步骤:
   ```bash
   cd confidential_ai/attestation_service/ && ./build.sh
   ```
-- Check Attestation status
+- 检查 Attestation 状态
   ```bash
   ./attest_service
   ```
-  It will start the service and wait for connection: "Starting TDX Attestation Service on port 8443..."
+  成功启动后会显示："Starting TDX Attestation Service on port 8443..."
 
 
-- Run openwebui
+- 运行 openwebui
 
-  1.open backend service
+  1.开启后端服务
   ```bash
   conda create --name open-webui python=3.11
   conda activate open-webui
@@ -236,35 +236,35 @@ Ensure you replace `ip_address:port` with the actual IP address and port of your
   ```
   ![backend service](./images/openwebui-backend.png)
 
-  2.open frontend service
+  2.开启前端服务
 
   ```bash
   cd utilities/tdx/restful_as/restful_tdx_att_service && ./attest_service
   ```
   ![backend service](./images/openwebui-fronted.png)
 
-  3.open browser and goto address: https://{ip_address}:18080/(The ip address is your server ip)
+  3.打开浏览器输入: https://{ip_address}:18080/(注意替换ip地址为真实地址，端口号为默认端口)
 
-  4.Example:
-    get quote data and parse
+  4.示例:
+    获取quote数据并解析：
     
     ![backend service](./images/parse.png)
 
-### <h2 id="issue_note">IssueNote：</h2>
- - While building, meet with `Cannot find package `,you can try command:
+### <h2 id="issue_note">：</h2>
+ - 当编译open-webui时，遇到`Cannot find package `,可以尝试如下命令(注意替换pyodide为真实包名):
 
  ```bash
  npm install pyodide
  ```
 
 ### <h2 id="tips">Tips：</h2>
- - Downloading packages from remote sites can be slow. To speed up the   process, you can specify a local mirror such as **Aliyun** when installing packages:
+ - 在安装依赖时可以使用阿里云的镜像来加速下载:
 
  ```bash
  pip install torch -i https://mirrors.aliyun.com/pypi/simple/
  ```
 
- Alternatively, you can set Aliyun as the default mirror by adding the following lines to `~/.pip/pip.conf`, suggest to this method:
+ 或者可以在`~/.pip/pip.conf`文件中设置(建议使用):
 
  ```ini
  [global]
@@ -273,31 +273,30 @@ index-url = https://mirrors.aliyun.com/pypi/simple/
 
 
 
-### Prerequisites:
-- Hardware: Intel Xeon with TDX features
-- Software: (1) Host/Guest OS with TDX support (2)Install TDX remote attestation DCAP packages
-Please refer to [Intel TDX Enabling Guide](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/01/introduction/index.html).
+### 前提条件:
+- 硬件: Intel Xeon with TDX features
+- 软件: (1) 支持 TDX 的主机/客户操作系统 (2)I安装 TDX 远程认证DCAP包详情请参阅[Intel TDX Enabling Guide](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/01/introduction/index.html).
 
 ## 5. 安全原理概述
 ### Measurement
 
-Intel Trust Domain Extensions (TDX) enhances virtual machine security by isolating them within hardware-protected Trust Domains (TDs). During the boot process, the TDX module records the state of the TD guest using two primary registers:
+Intel Trust Domain Extensions (TDX) 通过将虚拟机隔离在受硬件保护的信任域 (TDs) 中来增强虚拟机的安全性. 在启动过程中，TDX 模块使用两个主要寄存器记录 TD 客户机的状态:
 
-- **Build Time Measurement Register (MRTD):** Captures measurements related to the guest VM's initial configuration and boot block image.
+- **Build Time Measurement Register (MRTD):** 捕获与客户虚拟机的初始配置和启动块映像相关的测量值。
     
-- **Runtime Measurement Registers (RTMR):** Records measurements of the initial state, kernel image, command-line options, and other runtime services and parameters as needed. 
+- **Runtime Measurement Registers (RTMR):** 根据需要记录初始状态、内核映像、命令行选项和其他运行时服务和参数的测量值。
     
 
-These measurements ensure the integrity of the TD and the running application throughout its lifecycle. For this solution demo, the measurements of model services and parameters, including those associated with the Ollama and DeepSeek models, as well as the open-webui web framework can be reflected in the RTMRs. 
+这些Measurement可确保 TD 和正在运行的应用程序在整个生命周期中的完整性。对于此解决方案演示，模型服务和参数的测量（包括与 Ollama 和 DeepSeek 模型以及 open-webui web 框架相关的测量）可以反映在 RTMR 中。
 
 ### Remote Attestation
 
-Remote attestation in TDX provides cryptographic proof of a TD's integrity and authenticity to remote parties. The process involves several key steps:
+TDX 中的远程认证为远程方提供了 TDs 完整性和真实性的加密认证。该过程涉及几个关键步骤:
 
 + **Quote Generation and Retrieval:**
-    1. The client requests the `open-webui` to provide proof of the remote services' integrity.
-    2. The backend of `open-webui` communicates with the Trusted Service to retrieve the measurement report signed with the platform's TCB certificate. The report includes MRTD and RTMRs reflecting the current integrity status of the running model serving environment. This signed measurement report is known as the quote.
-+ **Quote Verification:** The client sends the quote to a trusted attestation service to verify it against predefined policies, establishing trust with the model service before processing sensitive information.
+    1. 客户端向`open-webui`请求提供完整的远程认证服务。
+    2. `open-webui` 后端与 Trusted Service 通信，获取使用平台 TCB 证书签名的测量报告. 该报告包括 MRTD 和 RTMR，反映正在运行的模型服务环境的当前完整性状态. 这份签署的测量报告被称为quote。
++ **Quote Verification:** 客户端将quote发送到受信任的证明服务，以根据预定义的策略进行验证，并在处理敏感信息之前与模型服务建立信任。
     
 
-By integrating these measurement and attestation mechanisms, the Confidential AI service provides a robust framework for verifying the integrity and authenticity of remote model serving services, which is crucial for protecting data security and privacy.
+通过集成这些Measurement和证明机制，Confidential AI 服务提供了一个强大的框架来验证远程模型服务服务的完整性和真实性，这对于保护数据安全和隐私至关重要。
