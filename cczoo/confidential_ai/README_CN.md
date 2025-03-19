@@ -82,11 +82,12 @@
 ## 4. 构建和安装指南
 
 ### 4.1 下载AI模型
-Here we use deepseek-llm-7b-chat model, please refer to the [guide](https://www.modelscope.cn/models/deepseek-ai/deepseek-llm-7b-chat) to download the model.
 
+这里我们使用 deepseek-llm-7b-chat 模型, 请详细参阅文档下载安装模型。 [guide](https://www.modelscope.cn/models/deepseek-ai/deepseek-llm-7b-chat)
 
 ### 4.2 安装 ollama
-Please refer to [ollama installation guide](https://github.com/ollama/ollama/blob/main/docs/linux.md).
+请详细参阅 [ollama installation guide](https://github.com/ollama/ollama/blob/main/docs/linux.md).
+
 
 ### 4.3 编译 openwebui
 4.3.1 编译环境
@@ -153,17 +154,17 @@ conda --version
  4.3.4.2  更新 Ollama 服务的ip地址到 `.env` 并修改 `.env` 文件，配置 **Ollama backend URL**. 确保对`/ollama`的请求正确指向后端:
 
 ```ini
-# Ollama URL for the backend to connect
+# Ollama URL地址，用于后端连接
 OLLAMA_BASE_URL='http://ip_address:port' 
 
-# OpenAI API Configuration (Leave empty if not used)
+# OpenAI API 配置 (未使用则置空)
 OPENAI_API_BASE_URL=''
 OPENAI_API_KEY=''
 
-# AUTOMATIC1111 API (Uncomment if needed)
+# AUTOMATIC1111 API (如需要，取消注释)
 # AUTOMATIC1111_BASE_URL="http://localhost:7860"
 
-# Disable Tracking & Telemetry
+# 禁用跟踪和遥测
 SCARF_NO_ANALYTICS=true
 DO_NOT_TRACK=true
 ANONYMIZED_TELEMETRY=false
