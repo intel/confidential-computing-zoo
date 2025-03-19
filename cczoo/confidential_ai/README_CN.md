@@ -1,76 +1,75 @@
 <div align="right">
-  <a href="./README_CN.md">中文</a>
+  <a href="./README.md">English</a>
 </div>
-
-# Confidential AI Solution Demo 
+# Confidential AI 方案演示 
 
 ---
-## 1. Overview 
+## 1. 概述 
 
-**Objective**: Enable privacy-preserving LLM inference workflows with confidential computing VM 
+**目标**: 通过机密计算虚拟机展示隐私保护的大语言模型推理工作流程
 
-**Design Principles**:
-- Confidentiality: Ensure models and user data are not exposed outside of confidential VM
-- Integrity: Guarantee the LLM inference environment(e.g., framework, models, UI) is untampered and verifiable. 
+**设计原则**:
+- 机密性: 确保模型与用户数据仅在机密计算虚拟机（Confidential VM）的加密安全边界内处理，​禁止明文暴露到外部环境。
+- 完整性: 保障大语言模型推理服务运行环境各组件（推理服务框架、模型文件、交互界面等）的代码与配置防篡改，支持第三方审计验证流程。
 
-## 2. System Architecture 
+## 2. 系统架构 
 
 ![System Deployment Architecture](./images/Deployment%20Architecture.png)
 
-### Key Components
+### 部署组件
 
-#### 1. Client
-The UI interface for end users to access large language model services. It initiates sessions, verifies the remote model serving environment and interacts with backend model service.
+#### 1. 客户端
+终端用户访问大语言模型服务的交互界面（UI），负责 ​发起会话、验证远端模型服务环境可信性，并与后端模型服务进行安全通信。
 
-#### 2. Attestation Service:
-A cloud-based service that verifies the proofness of the remote model serving environment. It verifies the the trustworthy of the platform TCB(Trusted Computing Base)and the model serving environment and ensures that the system’s security is intact before allowing further interactions with senstive data.
+#### 2. 远程证明服务
+基于云端的远程证明服务，用于验证模型推理服务环境的安全状态，包括：平台可信计算基（TCB, Trusted Computing Base）以及推理模型服务环境，如服务框架、模型参数、运行依赖、配置等的可信性。
 
-#### 3. Confidential VM (TDVM)
+#### 3. 机密虚拟机 (TDVM)
 - **open-webui:**  
-    A web-based interface hosted inside the confidential VM that accepts user requests for model service via web APIs.
-- **Model Service:**  
-    Handles AI model inference requests securely. 
-- **TSM Module:**  
-    The Trusted Service Module that provides the proofness of the execution environment.
+    运行于机密虚拟机内部的 Web 交互接口，通过 RESTful API 接收用户模型服务请求。
+- **模型服务:**  
+    处理模型推理服务请求的模型服务框架。
+- **可信服务:**  
+    提供执行环境可信性证明的安全服务模块
 
-**Intel TDX based heterogeneous Confidential VM**
-+ Hardware-level memory encryption and isolation for AI model and user data
-+ GPU TEE support for heterogeneous confidential computing 
+**基于Intel TDX的机密虚拟机**
++ 基于硬件的可信执行环境，满足机密计算需要的内存密态隔离和权限隔离多种保护能力，确保用户数据和模型参数的机密性保护
++ 支持异构机密计算能力，配合支持机密计算的AI加速器实现对模型处理的安全高效加速。
 
-### Workflow
+### 工作流程
 
 ![Confidential AI Workflow](./images/Confidential%20AI%20Flow.png)
 
-#### 1. Measurement Phase
+#### 1. 服务启动及度量流程
 
-- **Measure Exeuction Environment:**  
-    The platform Trusted Computing Base (TCB), meausre the model serving environment while boot-up.
+- **运行环境度量:**  
+    平台TCB模块针对运行模型服务的运行环境进行完整性度量，度量结果存储在位于TCB中的TDX Module中。
 
-#### 2. Initialization Phase
+#### 2. 推理会话初始化阶段
 
-- **New Chat Session:**  
-    The client (browser) initiates a new chat session by sending a session start request to the `open-webui`.
+- **新建会话:**  
+    客户端 (浏览器) 向`open-webui`发起新的会话请求。
 
-#### 3. Attestation Phase
+#### 3. 远程证明阶段
 
-- **Quote Request:**  
-    The client requests a TDX quote from remote model execution environment running `open-webui` and model service (`ollama + DeepSeek`).
+- **证明请求:**  
+    客户端发起会话请求时，会向服务后端同时请求一个证明模型运行环境的可信性证明(TDX quote)，该证明可以用来验证远程服务环境的可信性，包含用户会话管理服务 `open-webui` 和模型服务 (`ollama + DeepSeek`)。
     
-- **TDX Quote Generation:**  
-    The `open-webui` forwards the request to the Trusted Service Module (TSM) within the TDX Confidential VM, which generates a TDX Quote along with a certification chain, by facilitating the underlying TDX Module and the quote generation service running at host operation system.
+- **证明产生:**  
+    `open-webui` 服务后端将将用户会话创建过程中的证明请求转发至​基于Intel TDX的机密计算虚拟机（Confidential VM）​ 可信服务模块（TSM）​。该模块通过协调底层TDX Module与宿主机操作系统（Host OS）上运行的证明生成服务，生成包含完整证书链的​TDX证明（TDX Quote）​。
+
     
-- **Quote Verification:**  
-    The client submits the responded quote to an external Attestation Service for verification. The Attestation Service validates the quote and returns an attestation result confirming the remote model serving environment's integrity.
-    
+- **证明验证:**  
+    客户端将接收到的证明（Quote）提交至远程证明服务（Attestation Service）​进行验证。证明服务通过验证该次证明的有效性（包括数字签名、证书链及安全策略），返回证明结果，确认远端模型服务环境的安全性状态与完整性。
 
-#### 4. Trusted Model Service Flow
+#### 4. 机密大模型推理服务阶段
 
-- **If Attestation is Successful:** The client can confidently trust the remote model service, knowing it operates in a highly secure, trusted mode. This assurance means there is low risk (every system carries some level of risk) of data leakage for the end user.
+- **远程证明成功:** 客户端可以 ​充分信任远端模型服务，因为其运行在​高度安全且可信的模式 下。这种保证意味着，对于终端用户而言，数据泄露的风险极低（尽管任何系统都存在一定程度的风险）。
 
-- **If Attestation Fails:** The Attestation Service returns an error message indicating the attestation failure, which halts further processing or continuing serving but with a caution that the remote model service may be at risk .
+- **远程证明失败:** 证明服务将返回错误信息，表明远程证明失败。此时，用户或者系统或选择中止进一步服务请求，或在 有效提示安全风险的情况下继续提供服务，但是此时远端模型服务可能存在数据安全风险。
 
 
-## 3. Required Software Components
+## 3. 软件组件
 
 | Component                  | Version       | Purpose                                                                                                   |
 | -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
@@ -79,7 +78,7 @@ A cloud-based service that verifies the proofness of the remote model serving en
 | **open-webui**             | `v0.5.20`     | Self-hosted AI interface for user-interaction, running on the same confidential VM to simplify deployment |
 | **Cofidential AI(cc-zoo)** |               | Patches and compoents from cc-zoo                                                                         |
 | **Attestation Service**    |               |                                                                                                           |
-## 4. Build and Setup Instructions
+## 4. 构建和安装指南
 
 ### 4.1 Download AI Modle
 Here we use deepseek-llm-7b-chat model, please refer to the [guide](https://www.modelscope.cn/models/deepseek-ai/deepseek-llm-7b-chat) to download the model.
@@ -278,7 +277,7 @@ index-url = https://mirrors.aliyun.com/pypi/simple/
 - Software: (1) Host/Guest OS with TDX support (2)Install TDX remote attestation DCAP packages
 Please refer to [Intel TDX Enabling Guide](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/01/introduction/index.html).
 
-## 5. Security Design Overview
+## 5. 安全原理概述
 ### Measurement
 
 Intel Trust Domain Extensions (TDX) enhances virtual machine security by isolating them within hardware-protected Trust Domains (TDs). During the boot process, the TDX module records the state of the TD guest using two primary registers:
