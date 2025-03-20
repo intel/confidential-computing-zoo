@@ -288,9 +288,14 @@ index-url = https://mirrors.aliyun.com/pypi/simple/
   ![backend service](./images/selectModel.png)
 
  - TDX quote data获取及远程认证
-   新chat被创建后，后台会自动获取quote data发送至远程认证服务并返回认证结果。(以Chrome浏览器为例，打开开发者选项<Ctrl-Shift-I>,在`Console`中可以看到quote原始数据以及认证结果Attestation Result)
+   新chat被创建后，后台会自动获取quote data发送至远程认证服务并返回认证结果。(以Chrome浏览器为例，打开开发者选项<Ctrl-Shift-I>,在`Console`中可以看到quote原始数据以及认证结果 Attestation Result)
   ![backend service](./images/get_quotedata.png)
   
+ - TDX 远程认证
+ 
+   新chat创建后，后端接受quote data，认证成功后会返回前端。
+  ![backend service](./images/backend_Attestation.png)
+
  - 前端TDX验证(鼠标悬停在对话框中的第一个图标上，可以看到解析后详细的认证信息)
   ![backend service](./images/show_quote_data.png)
 
