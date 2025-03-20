@@ -84,7 +84,6 @@
 ### 4.1 下载AI模型
 这里我们使用 deepseek-llm-7b-chat 模型, 请详细参阅文档下载安装模型。 [guide](https://www.modelscope.cn/models/deepseek-ai/deepseek-llm-7b-chat)
 
-
 ### 4.2 安装 ollama
 请详细参阅 [ollama installation guide](https://github.com/ollama/ollama/blob/main/docs/linux.md).
 
@@ -119,6 +118,25 @@
   wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
   bash Miniconda3-latest-Linux-x86_64.sh
   ### 安装过程中可通过输入q，跳过阅读安装信息
+
+```ini
+# Ollama URL地址，用于后端连接
+OLLAMA_BASE_URL='http://ip_address:port' 
+
+# OpenAI API 配置 (未使用则置空)
+OPENAI_API_BASE_URL=''
+OPENAI_API_KEY=''
+
+# AUTOMATIC1111 API (如需要，取消注释)
+# AUTOMATIC1111_BASE_URL="http://localhost:7860"
+
+# 禁用跟踪和遥测
+SCARF_NO_ANALYTICS=true
+DO_NOT_TRACK=true
+ANONYMIZED_TELEMETRY=false
+```
+确保替换掉`ip_address:port`为真实的**Ollama server**的ip地址和端口。
+
 
   ```
   - 配置minconda环境:
