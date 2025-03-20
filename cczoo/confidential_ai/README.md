@@ -94,120 +94,119 @@ Please refer to [ollama installation guide](https://github.com/ollama/ollama/blo
 - **Python Version**: Python 3.11+
 - **Node.js Version**: 20.18+
 
+  4.3.1.1 Install Node.js
+  - Ensure Node.js ≥20.18.1 is installed:
+  ```bash
+  # Install Node Version Manager (n)
+  sudo npm install -g n
+
+  # Install specific Node.js version
+  sudo npm install 20.18.1
+
+  # if meet any connect error, you can use follow way to install
+  # install nvm(Node Version Manager)
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
+
+  ### install node with verison ID
+  nvm install 20.18.1
+
+  ### if need change node version
+  nvm use 20.18.1
+  ```
+  4.3.1.2 Install Miniconda(to start open-webui environment)
+  - Download and install Miniconda:
+  ```bash
+  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+  bash Miniconda3-latest-Linux-x86_64.sh
+  ### while installing,you can skip reading install information by enter q, and set default choice to finish installation
+  ```
+  - Configure environment paths:
+  ```bash
+  # Add Miniconda to PATH (replace /root with actual installation path)
+  export PATH="/root/miniconda3/bin:$PATH"   ### defaoult path is: /root/miniconda3/bin
+
+  # Initialize Conda
+  conda init
+  source ~/.bashrc
+
+  # Verify installation
+  conda --version
+  ```
+
 4.3.2 Development Setup Instruction
- 4.3.2.1 Clone the Repository
-```bash
-git clone https://github.com/your-org/open-webui.git  #Replace with actual repository URL(git apply xxx.patch  添加openwebUI对TDX的支持.)
-cd open-webui
-```
 
- 4.3.2.2 Install Node.js
-   - Ensure Node.js ≥20.18.1 is installed:
-```bash
-# Install Node Version Manager (n)
-sudo npm install -g n
+    1. Clone the Repository
 
-# Install specific Node.js version
-sudo npm install 20.18.1
-
-# if meet any connect error, you can use follow way to install
-# install nvm(Node Version Manager)
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
-
-### install node with verison ID
-nvm install 20.18.1
-
-### if need change node version
-nvm use 20.18.1
-```
-4.3.3 Install Miniconda
- - Download and install Miniconda:
-```bash
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-bash Miniconda3-latest-Linux-x86_64.sh
-### while installing,you can skip reading install information by enter q, and set default choice to finish installation
-
-```
-4.3.3.1  Configure environment paths:
-```bash
-# Add Miniconda to PATH (replace /path/to/ with actual installation path)
-export PATH="/path/to/miniconda3/bin:$PATH"   ### defaoult path is: /root/miniconda3/bin
-
-# Initialize Conda
-conda init
-source ~/.bashrc
-
-# Verify installation
-conda --version
-```
-
-4.3.4 Frontend Build and Test
-
- 4.3.4.1  Enter open-webui & Create a `.env` file:
-
-  ```bash
-  cd open-webui
-  cp -RPp .env.example .env
-  ```
-
- 4.3.4.2  Update Ollama Serving Address in `.env` and Modify the `.env` file to configure the **Ollama backend URL**. This ensures that requests to `/ollama` are correctly redirected to the specified backend:
-
-```ini
-# Ollama URL for the backend to connect
-OLLAMA_BASE_URL='http://ip_address:port' 
-
-# OpenAI API Configuration (Leave empty if not used)
-OPENAI_API_BASE_URL=''
-OPENAI_API_KEY=''
-
-# AUTOMATIC1111 API (Uncomment if needed)
-# AUTOMATIC1111_BASE_URL="http://localhost:7860"
-
-# Disable Tracking & Telemetry
-SCARF_NO_ANALYTICS=true
-DO_NOT_TRACK=true
-ANONYMIZED_TELEMETRY=false
-```
-Ensure you replace `ip_address:port` with the actual IP address and port of your **Ollama server** if necessary.
-
- 4.3.4.3 Build frontend server(if error occured,please goto [here](#issue_note)):
-    
-  ```bash
-  npm run build
-  ```
-+ After building the frontend, copy the generated `build` directory to the backend and rename it to `frontend`:
-    
     ```bash
-   cp -r build ./backend/open-webui/frontend
+    git clone https://github.com/open-webui/open-webui.git  #Replace with actual repository URL(git apply xxx.patch  添加openwebUI对TDX的支持.)
+    ```
+
+    2. Enter open-webui & Create a `.env` file:
+
+    ```bash
+    cd open-webui
+    cp -RPp .env.example .env
+    ```
+
+    3. Update Ollama Serving Address in `.env` and Modify the `.env` file to configure the **Ollama backend URL**. This ensures that requests to `/ollama` are correctly redirected to the specified backend:
+
+    ```ini
+    # Ollama URL for the backend to connect
+    OLLAMA_BASE_URL='http://ip_address:port' 
+
+    # OpenAI API Configuration (Leave empty if not used)
+    OPENAI_API_BASE_URL=''
+    OPENAI_API_KEY=''
+
+    # AUTOMATIC1111 API (Uncomment if needed)
+    # AUTOMATIC1111_BASE_URL="http://localhost:7860"
+
+    # Disable Tracking & Telemetry
+    SCARF_NO_ANALYTICS=true
+    DO_NOT_TRACK=true
+    ANONYMIZED_TELEMETRY=false
+    ```
+    Ensure you replace `ip_address:port` with the actual IP address and port of your **Ollama server** if necessary.
+
+    4. Build frontend server(if error occured,please goto [here](#issue_note)):
+
+    ```bash
+    npm run build
+    ```
+
+   After building the frontend, copy the generated `build` directory to the backend and rename it to `frontend`:
+
+    ```bash
+    cp -r build ./backend/open-webui/frontend
 
     ```
- 4.3.4.4 Backend Build and Setup
+    5. Backend Build and Setup
 
-- Navigate to the backend:
-    
-    ```bash
-    cd backend
-    ```
-    
-- Use **Conda** for environment setup:
-    
+      Navigate to the backend:
+
+      ```bash
+      cd backend
+      ```
+
+     Use **Conda** for environment setup:
+
     ```bash
     conda create --name open-webui python=3.11
     conda activate open-webui
     ```
 
- 4.3.4.5 Install python dependencies([Tips](#tips)):
-    
-  ```bash
-  pip install -r requirements.txt -U
-  ```
+    6. Install python dependencies([Tips](#tips)):
 
- 4.3.4.6.1 Install TDX-quote_parse-feature enable:
+    ```bash
+    pip install -r requirements.txt -U
+    ```
 
-  ```bash
-  cd quote_generator
-  python setup.py install
-  ```
+    7. Install TDX-quote_parse-feature enable:
+
+    ```bash
+    cd quote_generator
+    python setup.py install
+    ```
 ### 4.4 Run openwebui
 - Run ollama + AI model
   ```bash

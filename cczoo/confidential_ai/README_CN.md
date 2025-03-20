@@ -82,76 +82,42 @@
 ## 4. 构建和安装指南
 
 ### 4.1 下载AI模型
-
 这里我们使用 deepseek-llm-7b-chat 模型, 请详细参阅文档下载安装模型。 [guide](https://www.modelscope.cn/models/deepseek-ai/deepseek-llm-7b-chat)
 
 ### 4.2 安装 ollama
 请详细参阅 [ollama installation guide](https://github.com/ollama/ollama/blob/main/docs/linux.md).
 
-
-### 4.3 编译 openwebui
-4.3.1 编译环境
+### 4.3 编译安装 open-webui
+4.3.1 运行环境
 - **操作系统**: Linux 
 - **Python 版本**: Python 3.11+
 - **Node.js 版本**: 20.18+
 
-4.3.2 编译安装步骤说明
- 4.3.2.1 拉取openweb-ui代码
-```bash
-git clone https://github.com/your-org/open-webui.git  #替换为你需要的git路径(git apply xxx.patch  添加openwebUI对TDX的支持.)
-cd open-webui
-```
-
- 4.3.2.2 安装 Node.js
-   - 确保 Node.js版本 ≥ 20.18.1:
-```bash
-# 安装npm模块管理器
-sudo npm install -g n
-
-# 安装nodejs指定版本
-sudo npm install 20.18.1
-
-# 如果安装过程遇到问题，可尝试以下方法
-# 安装 nvm(Nodejs 版本管理器)
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
-
-### 通过指定版本号安装nodejs
-nvm install 20.18.1
-
-### nodejs版本切换
-nvm use 20.18.1
-```
-4.3.3 安装 Miniconda
- - 下载安装 Miniconda:
-```bash
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-bash Miniconda3-latest-Linux-x86_64.sh
-### 安装过程中可通过输入q，跳过阅读安装信息
-
-```
-4.3.3.1  配置minconda环境:
-```bash
-# 设置Miniconda 的安装路径 (注意替换 /path/to/ 为真实安装路径)
-export PATH="/path/to/miniconda3/bin:$PATH"   ### 默认安装路径是: /root/miniconda3/bin
-
-# 初始化 Conda
-conda init
-source ~/.bashrc
-
-# 验证安装
-conda --version
-```
-
-4.3.4 前端设置与测试
-
- 4.3.4.1  进入open-webui目录并创建 `.env` file:
-
+  4.3.1.1 安装 Nodejs
+  - 确保 Node.js版本 ≥ 20.18.1:
   ```bash
-  cd open-webui
-  cp -RPp .env.example .env
-  ```
+  # 安装npm模块管理器
+  sudo npm install -g n
 
- 4.3.4.2  更新 Ollama 服务的ip地址到 `.env` 并修改 `.env` 文件，配置 **Ollama backend URL**. 确保对`/ollama`的请求正确指向后端:
+  # 安装nodejs指定版本
+  sudo npm install 20.18.1
+
+  # 如果安装过程遇到问题，可尝试以下方法
+  # 安装 nvm(Nodejs 版本管理器)
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
+
+  ### 通过指定版本号安装nodejs
+  nvm install 20.18.1
+
+  ### nodejs版本切换
+  nvm use 20.18.1
+  ```
+  4.3.1.2 安装 Miniconda(用于open-webui虚拟环境启动)
+  - 下载安装 Miniconda:
+  ```bash
+  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+  bash Miniconda3-latest-Linux-x86_64.sh
+  ### 安装过程中可通过输入q，跳过阅读安装信息
 
 ```ini
 # Ollama URL地址，用于后端连接
@@ -171,44 +137,97 @@ ANONYMIZED_TELEMETRY=false
 ```
 确保替换掉`ip_address:port`为真实的**Ollama server**的ip地址和端口。
 
- 4.3.4.3 编译open-webui(如又报错可跳转查询[here](#issue_note)):
-    
-  ```bash
-  npm run build
+
   ```
-+ 编译完成后，复制生成的`build`文件夹到backend目录并重命名为`frontend`:
-    
-    ```bash
-   cp -r build ./backend/open-webui/frontend
-
-    ```
- 4.3.4.4 后端服务设置
-
-- 进入backend目录:
-    
-    ```bash
-    cd backend
-    ```
-    
-- 使用**Conda** 启动环境:
-    
-    ```bash
-    conda create --name open-webui python=3.11
-    conda activate open-webui
-    ```
-
- 4.3.4.5 安装Python依赖库([Tips](#tips)):
-    
+  - 配置minconda环境:
   ```bash
-  pip install -r requirements.txt -U
+  # 设置Miniconda 的安装路径 (注意替换 /root 为真实安装路径)
+  export PATH="/root/miniconda3/bin:$PATH"   ### 默认安装路径是: /root/miniconda3/bin
+
+  # 初始化 Conda
+  conda init
+  source ~/.bashrc
+
+  # 验证安装
+  conda --version
   ```
 
- 4.3.4.6.1 安装 TDX-quote_parse-feature:
 
-  ```bash
-  cd quote_generator
-  python setup.py install
-  ```
+4.3.2 编译安装步骤说明
+
+    1. 拉取openweb-ui代码
+  
+    ```bash
+    git clone https://github.com/open-webui/open-webui.git  #替换为你需要的git路径(git apply xxx.patch  添加openwebUI对TDX的支持.)
+    ```
+
+    2. 进入open-webui目录并创建 `.env` file:
+
+      ```bash
+      cd open-webui
+      cp -RPp .env.example .env
+      ```
+
+    3. 更新 Ollama 服务的ip地址到 `.env` 并修改 `.env` 文件，配置 **Ollama backend URL**. 确保对`/ollama`的请求正确指向后端:
+
+    ```ini
+    # Ollama URL地址，用于后端连接
+    OLLAMA_BASE_URL='http://ip_address:port' 
+
+    # OpenAI API 配置 (未使用则置空)
+    OPENAI_API_BASE_URL=''
+    OPENAI_API_KEY=''
+
+    # AUTOMATIC1111 API (如需要，取消注释)
+    # AUTOMATIC1111_BASE_URL="http://localhost:7860"
+
+    # 禁用跟踪和遥测
+    SCARF_NO_ANALYTICS=true
+    DO_NOT_TRACK=true
+    ANONYMIZED_TELEMETRY=false
+    ```
+
+    确保替换掉`ip_address:port`为真实的**Ollama server**的ip地址和端口。
+
+    4. 编译open-webui(如又报错可跳转查询[here](#issue_note)):
+
+      ```bash
+      npm run build
+      ```
+
+    编译完成后，复制生成的`build`文件夹到backend目录并重命名为`frontend`:
+
+      ```bash
+      cp -r build ./backend/open-webui/frontend
+      ```
+
+    5. 后端服务设置
+
+       进入backend目录:
+
+        ```bash
+        cd backend
+        ```
+
+       使用**Conda** 启动环境:
+
+        ```bash
+        conda create --name open-webui python=3.11
+        conda activate open-webui
+        ```
+
+    6. 安装Python依赖库([Tips](#tips)):
+
+      ```bash
+      pip install -r requirements.txt -U
+      ```
+
+    7. 安装 TDX-quote_parse-feature:
+
+      ```bash
+      cd quote_generator
+      python setup.py install
+      ```
 ### 4.4 运行 openwebui
 - 运行 ollama + AI model
   ```bash
@@ -220,6 +239,7 @@ ANONYMIZED_TELEMETRY=false
   ```bash
   cd confidential_ai/attestation_service/ && ./build.sh
   ```
+
 - 检查 Attestation 状态
   ```bash
   ./attest_service
@@ -251,7 +271,7 @@ ANONYMIZED_TELEMETRY=false
     
     ![backend service](./images/parse.png)
 
-### <h2 id="issue_note">：</h2>
+### <h2 id="issue_note">IssueNote：</h2>
  - 当编译open-webui时，遇到`Cannot find package `,可以尝试如下命令(注意替换pyodide为真实包名):
 
  ```bash
@@ -272,11 +292,31 @@ ANONYMIZED_TELEMETRY=false
 index-url = https://mirrors.aliyun.com/pypi/simple/
  ```
 
-
-
 ### 前提条件:
 - 硬件: Intel Xeon with TDX features
 - 软件: (1) 支持 TDX 的主机/客户操作系统 (2)I安装 TDX 远程认证DCAP包详情请参阅[Intel TDX Enabling Guide](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/01/introduction/index.html).
+
+### Open-webui运行流程展示
+ - 登陆open-webui(注意替换ip地址，端口号为默认端口。)
+  ![backend service](./images/login.png)
+
+ - 选择模型(这里以deepseek-r1:70b为例)
+
+   每次新建一个会话窗口，都可以选择一个模型
+  ![backend service](./images/selectModel.png)
+
+ - TDX quote data获取及远程认证
+   新chat被创建后，后台会自动获取quote data发送至远程认证服务并返回认证结果。(以Chrome浏览器为例，打开开发者选项<Ctrl-Shift-I>,在`Console`中可以看到quote原始数据以及认证结果 Attestation Result)
+  ![backend service](./images/get_quotedata.png)
+  
+ - TDX 远程认证
+ 
+   新chat创建后，后端接受quote data，认证成功后会返回前端。
+  ![backend service](./images/backend_Attestation.png)
+
+ - 前端TDX验证(鼠标悬停在对话框中的第一个图标上，可以看到解析后详细的认证信息)
+  ![backend service](./images/show_quote_data.png)
+
 
 ## 5. 安全原理概述
 ### Measurement
@@ -300,4 +340,4 @@ TDX 中的远程认证为远程方提供了 TDs 完整性和真实性的加密�
 + **Quote Verification:** 客户端将quote发送到受信任的证明服务，以根据预定义的策略进行验证，并在处理敏感信息之前与模型服务建立信任。
     
 
-通过集成这些Measurement和证明机制，Confidential AI 服务提供了一个强大的框架来验证远程模型服务服务的完整性和真实性，这对于保护数据安全和隐私至关重要。
+通过集成这些度量和证明机制，Confidential AI 服务提供了一个强大的框架来验证远程模型服务服务的完整性和真实性，这对于保护数据安全和隐私至关重要。
