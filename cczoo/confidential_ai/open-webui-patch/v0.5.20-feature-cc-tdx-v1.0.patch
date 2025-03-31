@@ -1,3 +1,5 @@
+# Feature patch (cc-tdx v1.0) based on tag 0.5.20: Introducing support for confidential computing VMs on TDX
+
 diff --git a/backend/open_webui/main.py b/backend/open_webui/main.py
 index 416460837..06d85350e 100644
 --- a/backend/open_webui/main.py
