@@ -1,5 +1,5 @@
 <div align="right">
-  <a href="./README.md">English</a>
+  <a href="./README_CN.md">中文版</a>
 </div>
 
 # Confidential AI Solution Demo 
@@ -9,9 +9,6 @@
 This article describes how to build a DeepSeek confidential inference service in an Alibaba Cloud heterogeneous confidential computing instance (gn8v-tee), and demonstrates how to combine the CPU TDX confidential computing security measurement authentication function to provide security authentication and privacy protection workflows for the deployed DeepSeek online inference service.
 **Objective**: Demonstrate the privacy-preserving large language model inference workflow through confidential computing virtual machines
 
-**Background**
-
-Alibaba Cloud's heterogeneous confidential computing instance (gn8v-tee) introduces GPU into TEE (Trusted Execution Environment) based on CPU TDX confidential computing instance, which can protect data transmission between CPU and GPU and data calculation in GPU. For the construction of CPU TDX confidential computing environment and its remote attestation capability verification, please refer to[**Build TDX confidential computing environment**](https://help.aliyun.com/zh/ecs/user-guide/build-a-tdx-confidential-computing-environment)；关于异构机密计算环境的搭建请参见[**构建异构机密计算环境**](https://help.aliyun.com/zh/ecs/user-guide/build-a-tdx-confidential-computing-environment).
 **Design principles**:
 - Confidentiality: Ensure that models and user data are processed only within the encrypted security boundary of the confidential computing instance (TDX CPU+CC GPU), and do not expose plain text to the external environment.
 - Integrity: Ensure that the code and configuration of each component of the large language model inference service operating environment (inference service framework, model files, interactive interface, etc.) are tamper-proof and support third-party audit verification processes.
