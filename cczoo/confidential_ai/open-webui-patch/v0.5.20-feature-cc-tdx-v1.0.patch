@@ -6,8 +6,8 @@ index 416460837..fa3c850b5 100644
 +++ b/backend/open_webui/main.py
 @@ -1370,6 +1370,26 @@ async def healthcheck_with_db():
      return {"status": True}
-
-
+ 
+ 
 +@app.get("/api/v1/tee/quote")
 +async def fetch_tee_quote(response: Response):
 +    from datetime import datetime
@@ -30,7 +30,7 @@ index 416460837..fa3c850b5 100644
 +
  app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
  app.mount("/cache", StaticFiles(directory=CACHE_DIR), name="cache")
-
+ 
 diff --git a/external/acs-attest-client/index.js b/external/acs-attest-client/index.js
 new file mode 100644
 index 000000000..83bc072bd
@@ -45,43 +45,43 @@ index 000000000..83bc072bd
 +const ATTEST_SERVICE_ENDPOINT = "https://attest.cn-beijing.aliyuncs.com/v1/attestation";
 +
 +export async function attest(quote) {
-+       const quotebase64 = Buffer.from(quote).toString('base64');
-+       const evidence = {
-+               "quote": quotebase64,
-+               "aa_eventlog": null,
-+               "cc_eventlog": null,
-+       };
++	const quotebase64 = Buffer.from(quote).toString('base64');
++	const evidence = {
++		"quote": quotebase64,
++		"aa_eventlog": null,
++		"cc_eventlog": null,
++	};
 +
-+       // base64 encode evidence with URL safe characters without padding
-+       const evidencebase64 = Buffer.from(JSON.stringify(evidence)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
++	// base64 encode evidence with URL safe characters without padding
++	const evidencebase64 = Buffer.from(JSON.stringify(evidence)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 +
-+       const req = {
-+               // empty policy_ids means only check the cryptographic integrity of the evidence
-+               "policy_ids": [],
-+               "tee": "tdx",
-+               "evidence": evidencebase64,
-+       }
-+       const response = await axios.post(ATTEST_SERVICE_ENDPOINT, req);
++	const req = {
++		// empty policy_ids means only check the cryptographic integrity of the evidence
++		"policy_ids": [],
++		"tee": "tdx",
++		"evidence": evidencebase64,
++	}
++	const response = await axios.post(ATTEST_SERVICE_ENDPOINT, req);
 +
-+       return response.data;
++	return response.data;
 +}
 +
 +export async function decode_apprasial_token(token) {
-+       const decoded = jwtDecode(token);
++	const decoded = jwtDecode(token);
 +
-+       return decoded;
++	return decoded;
 +}
 +
 +export async function verify_apprasial_token(token) {
-+       const client = jwksClient({
-+               jwksUri: 'https://attest.cn-beijing.aliyuncs.com/jwks.json',
-+       });
-+       const key = await client.getSigningKey();
-+       const publicKey = key.getPublicKey();
++	const client = jwksClient({
++		jwksUri: 'https://attest.cn-beijing.aliyuncs.com/jwks.json',
++	});
++	const key = await client.getSigningKey();
++	const publicKey = key.getPublicKey();
 +
-+       const decoded = jsonwebtoken.verify(token, publicKey);
++	const decoded = jsonwebtoken.verify(token, publicKey);
 +
-+       return decoded;
++	return decoded;
 +}
 +
 +
@@ -782,313 +782,305 @@ index 2e4b905b1..42cbfedc2 100644
 --- a/package.json
 +++ b/package.json
 @@ -47,6 +47,7 @@
-                "tslib": "^2.4.1",
-                "typescript": "^5.5.4",
-                "vite": "^5.4.14",
-+               "vite-plugin-node-polyfills": "^0.23.0",
-                "vitest": "^1.6.1"
-        },
-        "type": "module",
+ 		"tslib": "^2.4.1",
+ 		"typescript": "^5.5.4",
+ 		"vite": "^5.4.14",
++		"vite-plugin-node-polyfills": "^0.23.0",
+ 		"vitest": "^1.6.1"
+ 	},
+ 	"type": "module",
 @@ -69,12 +70,13 @@
-                "@tiptap/pm": "^2.10.0",
-                "@tiptap/starter-kit": "^2.10.0",
-                "@xyflow/svelte": "^0.1.19",
-+               "acs-attest-client": "file:external/acs-attest-client",
-                "async": "^3.2.5",
-                "bits-ui": "^0.19.7",
-                "codemirror": "^6.0.1",
-                "codemirror-lang-hcl": "^0.0.0-beta.2",
-                "crc-32": "^1.2.2",
--               "dayjs": "^1.11.10",
-+               "dayjs": "^1.11.13",
-                "dompurify": "^3.1.6",
-                "eventsource-parser": "^1.1.2",
-                "file-saver": "^2.0.5",
+ 		"@tiptap/pm": "^2.10.0",
+ 		"@tiptap/starter-kit": "^2.10.0",
+ 		"@xyflow/svelte": "^0.1.19",
++		"acs-attest-client": "file:external/acs-attest-client",
+ 		"async": "^3.2.5",
+ 		"bits-ui": "^0.19.7",
+ 		"codemirror": "^6.0.1",
+ 		"codemirror-lang-hcl": "^0.0.0-beta.2",
+ 		"crc-32": "^1.2.2",
+-		"dayjs": "^1.11.10",
++		"dayjs": "^1.11.13",
+ 		"dompurify": "^3.1.6",
+ 		"eventsource-parser": "^1.1.2",
+ 		"file-saver": "^2.0.5",
 @@ -90,6 +92,7 @@
-                "kokoro-js": "^1.1.1",
-                "marked": "^9.1.0",
-                "mermaid": "^10.9.3",
-+               "moment": "^2.30.1",
-                "paneforge": "^0.0.6",
-                "panzoom": "^9.4.3",
-                "prosemirror-commands": "^1.6.0",
+ 		"kokoro-js": "^1.1.1",
+ 		"marked": "^9.1.0",
+ 		"mermaid": "^10.9.3",
++		"moment": "^2.30.1",
+ 		"paneforge": "^0.0.6",
+ 		"panzoom": "^9.4.3",
+ 		"prosemirror-commands": "^1.6.0",
 @@ -102,7 +105,7 @@
-                "prosemirror-schema-list": "^1.4.1",
-                "prosemirror-state": "^1.4.3",
-                "prosemirror-view": "^1.34.3",
--               "pyodide": "^0.27.2",
-+               "pyodide": "^0.27.4",
-                "socket.io-client": "^4.2.0",
-                "sortablejs": "^1.15.2",
-                "svelte-sonner": "^0.3.19",
+ 		"prosemirror-schema-list": "^1.4.1",
+ 		"prosemirror-state": "^1.4.3",
+ 		"prosemirror-view": "^1.34.3",
+-		"pyodide": "^0.27.2",
++		"pyodide": "^0.27.4",
+ 		"socket.io-client": "^4.2.0",
+ 		"sortablejs": "^1.15.2",
+ 		"svelte-sonner": "^0.3.19",
 diff --git a/src/lib/apis/chats/index.ts b/src/lib/apis/chats/index.ts
 index 02bdd4eb3..4add7d713 100644
 --- a/src/lib/apis/chats/index.ts
 +++ b/src/lib/apis/chats/index.ts
 @@ -1052,3 +1052,17 @@ export const archiveAllChats = async (token: string) => {
-
-        return res;
+ 
+ 	return res;
  };
 +// New API to query quote from backend API service
 +export const getQuote = async (token: string): Promise<any> => {
-+       const res = await fetch(`${WEBUI_API_BASE_URL}/tee/quote`, {
-+               method: 'GET',
-+               headers: {
-+                       Accept: 'application/json',
-+                       'Content-Type': 'application/json',
-+                       ...(token && {authorization: `Bearer ${token}`})
-+               }
-+       });
++	const res = await fetch(`${WEBUI_API_BASE_URL}/tee/quote`, {
++		method: 'GET',
++		headers: {
++			Accept: 'application/json',
++			'Content-Type': 'application/json',
++			...(token && {authorization: `Bearer ${token}`})
++		}
++	});
 +
-+       const resJson = await res.json();
-+       return resJson.quote;
++	const resJson = await res.json();
++	return resJson.quote;
 +};
 diff --git a/src/lib/components/chat/Chat.svelte b/src/lib/components/chat/Chat.svelte
-index ca766c9f7..92b80c27c 100644
+index ca766c9f7..37f7584a9 100644
 --- a/src/lib/components/chat/Chat.svelte
 +++ b/src/lib/components/chat/Chat.svelte
 @@ -13,6 +13,9 @@
-        import { get, type Unsubscriber, type Writable } from 'svelte/store';
-        import type { i18n as i18nType } from 'i18next';
-        import { WEBUI_BASE_URL } from '$lib/constants';
+ 	import { get, type Unsubscriber, type Writable } from 'svelte/store';
+ 	import type { i18n as i18nType } from 'i18next';
+ 	import { WEBUI_BASE_URL } from '$lib/constants';
 +        // acs-attest-client library
-+       import * as acs_attest_client from 'acs-attest-client';
-+       import moment from 'moment';
-
-        import {
-                chatId,
++	import * as acs_attest_client from 'acs-attest-client';	
++	import moment from 'moment';
+ 
+ 	import {
+ 		chatId,
 @@ -60,7 +63,8 @@
-                getChatById,
-                getChatList,
-                getTagsById,
--               updateChatById
-+               updateChatById,
-+               getQuote
-        } from '$lib/apis/chats';
-        import { generateOpenAIChatCompletion } from '$lib/apis/openai';
-        import { processWeb, processWebSearch, processYoutubeVideo } from '$lib/apis/retrieval';
+ 		getChatById,
+ 		getChatList,
+ 		getTagsById,
+-		updateChatById
++		updateChatById,
++		getQuote
+ 	} from '$lib/apis/chats';
+ 	import { generateOpenAIChatCompletion } from '$lib/apis/openai';
+ 	import { processWeb, processWebSearch, processYoutubeVideo } from '$lib/apis/retrieval';
 @@ -134,6 +138,8 @@
-        let chatFiles = [];
-        let files = [];
-        let params = {};
-+       let attestationValid = false;
-+       let attestationInfo = null;
-
-        $: if (chatIdProp) {
-                (async () => {
-@@ -639,11 +645,88 @@
-                }
-        };
-
-+       // TEE Quote Verification Function
-+       let _pendingQuoteUpdate = false;
+ 	let chatFiles = [];
+ 	let files = [];
+ 	let params = {};
++	let attestationValid = false;
++	let attestationInfo = null;
+ 
+ 	$: if (chatIdProp) {
+ 		(async () => {
+@@ -639,11 +645,90 @@
+ 		}
+ 	};
+ 
++	// TEE Quote Verification Function
++	let _pendingQuoteUpdate = false;
 +        const teeQuoteVerify = async () => {
 +            const ENABLE_TEE = true;
-+           if (!ENABLE_TEE || _pendingQuoteUpdate)
-+               return;
-+           const hexToBytes = (hexString) => {
-+               hexString = hexString.replaceAll(' ', '');
-+               if (hexString.length % 2 !== 0) {
-+                   throw new Error("Hex string length must be a multiple of 2");
-+               }
-+               const bytes = [];
-+               for (let i = 0; i < hexString.length; i += 2) {
-+                   bytes.push(parseInt(hexString.substr(i, 2), 16));
-+               }
-+               return new Uint8Array(bytes);
-+           };
++	    if (!ENABLE_TEE || _pendingQuoteUpdate) 
++		return;
++	    const hexToBytes = (hexString) => {
++		hexString = hexString.replaceAll(' ', '');
++		if (hexString.length % 2 !== 0) {
++		    throw new Error("Hex string length must be a multiple of 2");
++		}
++		const bytes = [];
++		for (let i = 0; i < hexString.length; i += 2) {
++		    bytes.push(parseInt(hexString.substr(i, 2), 16));
++		}
++		return new Uint8Array(bytes);
++	    };
 +
-+           try {
-+               _pendingQuoteUpdate = true;
-+               attestationInfo = null;
-+               attestationValid = false;
-+               const _quote_hex = await getQuote(localStorage.token);
-+               const quote = hexToBytes(_quote_hex);
-+               const token = await acs_attest_client.attest(quote);
-+               const jwtclaims = await acs_attest_client.decode_apprasial_token(token);
-+               let tmpInfo = {};
-+               const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-+               tmpInfo.exp = moment((jwtclaims.exp)*1000).format('YYYY-MM-DD HH:mm:ss ')+timeZone;
-+               tmpInfo.iat = moment((jwtclaims.iat)*1000).format('YYYY-MM-DD HH:mm:ss ')+timeZone;
-+               tmpInfo.jti = jwtclaims.jti;
-+               tmpInfo.tee = jwtclaims.tee;
++	    try {
++		_pendingQuoteUpdate = true;
++		attestationInfo = null;
++		attestationValid = false;
++		const _quote_hex = await getQuote(localStorage.token);
++		const quote = hexToBytes(_quote_hex);
++		const token = await acs_attest_client.attest(quote);
++		const jwtclaims = await acs_attest_client.decode_apprasial_token(token);
++		let tmpInfo = {};
++		const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
++		tmpInfo.exp = moment((jwtclaims.exp)*1000).format('YYYY-MM-DD HH:mm:ss ')+timeZone;
++		tmpInfo.iat = moment((jwtclaims.iat)*1000).format('YYYY-MM-DD HH:mm:ss ')+timeZone;
++		tmpInfo.jti = jwtclaims.jti;
++		tmpInfo.tee = jwtclaims.tee;
 +
-+               const tmp_tcbinfo = JSON.parse(jwtclaims['tcb-status']);
-+               tmpInfo.mr_config_id = tmp_tcbinfo['tdx.quote.body.mr_config_id'];
-+               tmpInfo.mr_owner = tmp_tcbinfo['tdx.quote.body.mr_owner'];
-+               tmpInfo.mr_owner_config = tmp_tcbinfo['tdx.quote.body.mr_owner_config'];
-+               tmpInfo.mr_seam = tmp_tcbinfo['tdx.quote.body.mr_seam'];
-+               tmpInfo.mr_servicetd = tmp_tcbinfo['tdx.quote.body.mr_servicetd'];
-+               tmpInfo.mr_td = tmp_tcbinfo['tdx.quote.body.mr_td'];
-+               tmpInfo.mrsigner_seam = tmp_tcbinfo['tdx.quote.body.mrsigner_seam'];
-+               tmpInfo.rtmr_0 = tmp_tcbinfo['tdx.quote.body.rtmr_0'];
-+               tmpInfo.rtmr_1 = tmp_tcbinfo['tdx.quote.body.rtmr_1'];
-+               tmpInfo.rtmr_2 = tmp_tcbinfo['tdx.quote.body.rtmr_2'];
-+               tmpInfo.rtmr_3 = tmp_tcbinfo['tdx.quote.body.rtmr_3'];
-+               tmpInfo.seam_attributes = tmp_tcbinfo['tdx.quote.body.seam_attributes'];
-+               tmpInfo.tcb_svn = tmp_tcbinfo['tdx.quote.body.tcb_svn'];
-+               tmpInfo.td_attributes = tmp_tcbinfo['tdx.quote.body.td_attributes'];
-+               tmpInfo.tee_tcb_svn2 = tmp_tcbinfo['tdx.quote.body.tee_tcb_svn2'];
-+               tmpInfo.xfam = tmp_tcbinfo['tdx.quote.body.xfam'];
-+               tmpInfo.att_key_type = tmp_tcbinfo['tdx.quote.header.att_key_type'];
-+               tmpInfo.tee_type = tmp_tcbinfo['tdx.quote.header.tee_type'];
-+               tmpInfo.user_data = tmp_tcbinfo['tdx.quote.header.user_data'];
-+               tmpInfo.vendor_id = tmp_tcbinfo['tdx.quote.header.vendor_id'];
-+               tmpInfo.version = tmp_tcbinfo['tdx.quote.header.version'];
-+               tmpInfo.type = tmp_tcbinfo['tdx.quote.type'];
-+               Object.assign(tmpInfo,{'td_attributes.debug':tmp_tcbinfo['tdx.td_attributes.debug'],
-+                                          'td_attributes.key_locker':tmp_tcbinfo['tdx.td_attributes.key_locker'],
-+                                          'td_attributes.perfmon':tmp_tcbinfo['tdx.td_attributes.perfmon'],
-+                                          'td_attributes.protection_keys':tmp_tcbinfo['tdx.td_attributes.protection_keys'],
-+                                          'td_attributes.septve_disable':tmp_tcbinfo['tdx.td_attributes.septve_disable']
-+                                               });
-+               attestationInfo = tmpInfo;
-+               attestationValid = true;
-+           } catch (error) {
-+               attestationInfo = {
-+                   error: error,
-+                   timestamp: Date.now()
-+               };
-+               attestationValid = false;
-+               console.log('teeQuoteVerify error:', attestationInfo);
-+           } finally {
-+               _pendingQuoteUpdate = false;
-+           }
-+       };
++		const tmp_tcbinfo = JSON.parse(jwtclaims['tcb-status']);
++		//tmpInfo.mr_config_id = tmp_tcbinfo['tdx.quote.body.mr_config_id'];
++		//tmpInfo.mr_owner = tmp_tcbinfo['tdx.quote.body.mr_owner'];
++		//tmpInfo.mr_owner_config = tmp_tcbinfo['tdx.quote.body.mr_owner_config'];
++		tmpInfo.mr_seam = tmp_tcbinfo['tdx.quote.body.mr_seam'];
++		tmpInfo.mr_servicetd = tmp_tcbinfo['tdx.quote.body.mr_servicetd'];
++		tmpInfo.mr_td = tmp_tcbinfo['tdx.quote.body.mr_td'];
++		//tmpInfo.mrsigner_seam = tmp_tcbinfo['tdx.quote.body.mrsigner_seam'];
++		tmpInfo.rtmr_0 = tmp_tcbinfo['tdx.quote.body.rtmr_0'];
++		tmpInfo.rtmr_1 = tmp_tcbinfo['tdx.quote.body.rtmr_1'];
++		tmpInfo.rtmr_2 = tmp_tcbinfo['tdx.quote.body.rtmr_2'];
++		tmpInfo.rtmr_3 = tmp_tcbinfo['tdx.quote.body.rtmr_3'];
++		tmpInfo.seam_attributes = tmp_tcbinfo['tdx.quote.body.seam_attributes'];
++		tmpInfo.tcb_svn = tmp_tcbinfo['tdx.quote.body.tcb_svn'];
++		tmpInfo.td_attributes = tmp_tcbinfo['tdx.quote.body.td_attributes'];
++		tmpInfo.tee_tcb_svn2 = tmp_tcbinfo['tdx.quote.body.tee_tcb_svn2'];
++		//tmpInfo.xfam = tmp_tcbinfo['tdx.quote.body.xfam'];
++		//tmpInfo.att_key_type = tmp_tcbinfo['tdx.quote.header.att_key_type'];
++		//tmpInfo.tee_type = tmp_tcbinfo['tdx.quote.header.tee_type'];
++		tmpInfo.user_data = tmp_tcbinfo['tdx.quote.header.user_data'];
++		//tmpInfo.vendor_id = tmp_tcbinfo['tdx.quote.header.vendor_id'];
++		//tmpInfo.version = tmp_tcbinfo['tdx.quote.header.version'];
++		//tmpInfo.type = tmp_tcbinfo['tdx.quote.type'];
++		/*
++		Object.assign(tmpInfo,{'td_attributes.debug':tmp_tcbinfo['tdx.td_attributes.debug'],
++					   'td_attributes.key_locker':tmp_tcbinfo['tdx.td_attributes.key_locker'],
++					   'td_attributes.perfmon':tmp_tcbinfo['tdx.td_attributes.perfmon'],
++					   'td_attributes.protection_keys':tmp_tcbinfo['tdx.td_attributes.protection_keys'],
++					   'td_attributes.septve_disable':tmp_tcbinfo['tdx.td_attributes.septve_disable']
++						});
++						*/
++		attestationInfo = tmpInfo;
++		attestationValid = true;
++	    } catch (error) {
++		attestationInfo = {
++		    error: error,
++		    timestamp: Date.now()
++		};
++		attestationValid = false;
++		console.log('teeQuoteVerify error:', attestationInfo);
++	    } finally {
++		_pendingQuoteUpdate = false;
++	    }
++	};
 +
-        //////////////////////////
-        // Web functions
-        //////////////////////////
-
--       const initNewChat = async () => {
+ 	//////////////////////////
+ 	// Web functions
+ 	//////////////////////////
+ 
+-	const initNewChat = async () => {
 +       const initNewChat = async () => {
-+               teeQuoteVerify();
-                if ($page.url.searchParams.get('models')) {
-                        selectedModels = $page.url.searchParams.get('models')?.split(',');
-                } else if ($page.url.searchParams.get('model')) {
-@@ -2031,6 +2114,8 @@
-                                                                bind:codeInterpreterEnabled
-                                                                bind:webSearchEnabled
-                                                                bind:atSelectedModel
-+                                                               bind:attestationValid
-+                                                               bind:attestationInfo
-                                                                transparentBackground={$settings?.backgroundImageUrl ?? false}
-                                                                {stopResponse}
-                                                                {createMessagePair}
-@@ -2083,6 +2168,8 @@
-                                                                bind:codeInterpreterEnabled
-                                                                bind:webSearchEnabled
-                                                                bind:atSelectedModel
-+                                                               bind:attestationValid
-+                                                               bind:attestationInfo
-                                                                transparentBackground={$settings?.backgroundImageUrl ?? false}
-                                                                {stopResponse}
-                                                                {createMessagePair}
++		teeQuoteVerify();
+ 		if ($page.url.searchParams.get('models')) {
+ 			selectedModels = $page.url.searchParams.get('models')?.split(',');
+ 		} else if ($page.url.searchParams.get('model')) {
+@@ -2031,6 +2116,8 @@
+ 								bind:codeInterpreterEnabled
+ 								bind:webSearchEnabled
+ 								bind:atSelectedModel
++								bind:attestationValid
++								bind:attestationInfo
+ 								transparentBackground={$settings?.backgroundImageUrl ?? false}
+ 								{stopResponse}
+ 								{createMessagePair}
+@@ -2083,6 +2170,8 @@
+ 								bind:codeInterpreterEnabled
+ 								bind:webSearchEnabled
+ 								bind:atSelectedModel
++								bind:attestationValid
++								bind:attestationInfo
+ 								transparentBackground={$settings?.backgroundImageUrl ?? false}
+ 								{stopResponse}
+ 								{createMessagePair}
 diff --git a/src/lib/components/chat/MessageInput.svelte b/src/lib/components/chat/MessageInput.svelte
-index 7db31010b..7d4a22463 100644
+index 7db31010b..de6eeeacc 100644
 --- a/src/lib/components/chat/MessageInput.svelte
 +++ b/src/lib/components/chat/MessageInput.svelte
-@@ -59,7 +59,18 @@
-
-        export let atSelectedModel: Model | undefined = undefined;
-        export let selectedModels: [''];
+@@ -59,7 +59,8 @@
+ 
+ 	export let atSelectedModel: Model | undefined = undefined;
+ 	export let selectedModels: [''];
 -
 +        export let attestationValid = false;
 +        export let attestationInfo = null;
-+  //$: {
-+  //  try {
-+  //    console.log('[MessageInput] attestation State Update:', {
-+  //      valid: attestationValid,
-+  //      info: attestationInfo ? JSON.parse(JSON.stringify(attestationInfo)) : 'undefined'
-+  //    });
-+  //  } catch (e) {
-+  //    console.error('attestationInfo failed:', e);
-+  //  }
-+  //}
-        let selectedModelIds = [];
-        $: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
-
-@@ -1231,6 +1242,35 @@
-                                                                        </div>
-
-                                                                        <div class="self-end flex space-x-1 mr-1 shrink-0">
-+                                                                               {#if !history?.currentId || history.messages[history.currentId]?.done == true}
-+                                                                                       {#key [attestationValid, JSON.stringify(attestationInfo)]}
-+                                                                                               <Tooltip content={`Intel TDX attestation information:<br>` +
-+                                                                                                       (attestationInfo ? Object.entries(attestationInfo).map(([key, value]) => `${key}:${value}`).join('<br>')
-+                                                                                                               : 'No attestation message.')}
-+                                                                                                               >
-+                                                                                                       <button
-+                                                                                                               id="attestation-info-button"
-+                                                                                                               class=" text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 mr-0.5 self-center"
-+                                                                                                               type="button"
-+                                                                                                               on:click={async () => {
-+
-+                                                                                                               }}
-+                                                                                                               aria-label="Attestation Info"
-+                                                                                                       >
-+                                                                                                               {#if attestationValid}
-+                                                                                                                       <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 240 265"
-+                                                                                                                       fill="currentColor"
-+                                                                                                                       class="w-5 h-5 translate-y-[0.5px]" ><image xlink:href="data:image/png;base64,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" width="240" height="265.6" preserveAspectRatio="none"/></svg>
-+                                                                                                               {:else}
-+                                                                                                                       <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 233 268"
-+                                                                                                                               fill="currentColor"
-+                                                                                                                               class="w-5 h-5 translate-y-[0.5px]" ><image xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABUCAYAAADOOxqZAAAABHNCSVQICAgIfAhkiAAAAAlwSFlz AAAEnQAABJ0BfDRroQAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAABbGSURB VHic7Zx7dFXVve8/c679yIO8SSAPSADxWbSCReTVYgSlWKynVqqe0h5uW+QWsefUc8UXiIoK9+od Vjp6dciwo8UHVaFXrdcWC57IaAWRXkh5PxJCQggEQgg72a81f/ePvddmZSeBHRTIOed+x1h77zXX XHOt9V2/32/+fr8551YiIsQhIiilCIfDhEKhRJn7uBs9HXN+d/oWkNhHrAxBoUB1bc/dVlZWFhkZ GVxMeJwfIkJNTQ2vvfYa69ato7m5uVtSeiIjubwnQs/UpvNtjEkcHz58OK+++iplZWUopbgoMMaI bduyYsUKKSkpEa21AKKUSnyf66a1/sLnAzJ69Gipq6sTMSLGGLnQUHbUljdXvsmPf/xj2tvbAfD7 /eTn52NZFlrrBKHJb9J9LLlOcl1nP/kcpVSnus7+4cOHaWlpSZiA0aNHs3LlSgYPHnzBJUodPHhQ JkyYQG1tLVprpk2bxkMPPURZWRla604P3dODn6msu/0z1XGOP/DAA/z617/upHrXX389q1atYuDA gReWqOeeey6hWtOnT5e2traLItLJmDNnTkJdvV5vQgVvuOEGqauru6D3qD/++GNEhLS0NObOnUtm ZubFM5A9YM6cOeTl5QGwYcMG7r77bo4cOdKlEzhf0E1NTSil8Pv9DB0y9IJctDdQSjFmzBh+8Ytf kJeXh4jwl7/8hbvuuoumpqYLQpS2bTtxM0p3tRcXGyKC1pqxY8fyy1/+kpycHESEqqoq7rrrLg4d OnTeierSPV0oEe4NJN7DjR07lhdeeIHs7GyMMVRVVfGDH/yAlpaWRL3zga59eB+EUipBwMSJE3np pZcSErV27Vq++93v0tDQcN6un7IkiRGMMYjEvt2bxL1mEUGMdPHEnTrua7jPTRWORI0ZM4bnnnuO 7OxsANatW8cPf/jDhER92fCcrYKIEI1GWbx4MZ999hmODXMT4/gy7t9uAtznuMuLiopYtmwZFRUV vb7xG2+8keeff56f/exnBAIB1q5dyz333MNvf/NbCvoXfLm2ddSoUaKUktzcXNm3b5/Ytt3JRzDG yF//+lfRWvcYZrjLu6uTfNzZLMuShQsXduubuP2kN998U/bv3y+1tbWdtpqaGnn55ZclKytLtNbi 8Xhk6tSpcvTo0S/BOzqNs9okpRSDBw+mtLS0W9Vw2wtHshwkq1uymuXn5zPpG5MSmYFzwU033cSS JUtIT08nGo3y4Ycf8qMf/YiTJ0+ee6NJSEndiouL2fTZJhoONSTCBvfmjse01mil0VaszF3HfQ5A ZmYmebl5ndIlvYHTzi233ILH4+H++++no6OD9957j5kzZ/LKK6/Qv3//c2vchbOS5NxIYVEhhUWF nSTnXPS+N4Y6FTgvaPLkySxdupT58+cTCAR49913mTVrFq+//voXjiJ65QL0FOGfSxupoDeEKqWY Nm0azz77LOnp6QD84Q9/YNasWbS2tn6hl5MySalkAHrTVrLqJaO3D+Wo9PTp01myZAkZGRmICO+8 8w6zZs3iZOvJThmF3qDPOpPZ2dkJv6iuri7llyIiTJs2jaeeeor09HREhNWrVzP73tm0t7efk0T1 WZImTpyI1hoR4d133+3Vw1mWxW233cbixYvxer0AvP3228yePZtTp071mqg+S9KECRMoKSkBYOPG jfzud78D6OLhJ3v/bpX69re/zRNPPEFmZibGGN544w3mzJnTa4mySkpKHm9sbCQtLY3Zs2eTm5vb JzIBXq8XrTVr1qzBtm0+/fRTjhw5gt/vp7m5mcOHD3e7NTY20tTURGNjI4cPHyY3Nxfbttm+fTsi wrZt22hsbGTy5MkJKTsrzuZxX0wEAgH53ve+J5ZldfLWibmfXTa3l++UWZaV8NydMq21zJ8/P+Xs 5ln9pIuJjIwMXnrpJYqKili+fDnt7e1YltVjfbeLYozpNj9v2zbGGDZv3owx5oztOejTJEFscPL5 557n3nvv5YMPPmD37t1EIpFu67rNhLhCJacDOHHiBO+//z7RaLRXJqXPk6SUwvJYXHHFFVxxxRXn 3I6IUF1dzZ///Odex3V9tnf7suFIjlvCUsV/GpK+CFJWN4l7v72p3x2S32h3x5zjTp3uRoovJFIi yRjDmjVrqK6u7pIfSt7cWUjbtjtNgnCLukjXzKZTz53pBKisrGT69OkXjayU8kk7duzg9ttvJxgM Xoh7SlzXwYoVK9i4cSPDhw//Qm2eaxYjpVdzMTxwd7IuOzubzMzMlDKYyVLqRlFREf3790drzeWX X56yZKaUdLv88sv54x//SHV1dZfZIW5Hzck+JmchnTLHcXPsW09bMlEjRoyguLi42wymo9bt7e2c PHmSUChEJBLB6/WSnp5Ov36Z9OuXhdaaAQMGsGbNGrZv305lZWXKLz8lm6S1Zty4cYwfP74LgecL Z+qiHSnZu3cvf/rTn6iqqmLXrl00HTlCe3sH0WgUy9L065fBgAFFjLjyK4yfMJHJU6ZQUVHB0KG9 HM5PNXYzxnTZzieSr+H8jkQisn79ern99n+QgoJCsbRHPNojGi1aKdEKUQpRxDYU4lGIx7KksLBQ 7rzzTtmwYYOEw+GU76VPB7hu2LYtO3fulDvuuEP8fn8soAXxguQoLUMsn4xMz5AJ/frJ17OyZGJW loxMT5dyy5JMh7B4EOz3+2XmzJmyf//+lF72Fw5LxKUWSinESMJ2uAcN3HWQ+Hnq7CprjAGB1avf 5l/++eccPNSAQuEDyi2LiQX5XD9gAMP96RRZCh8GrWLiFAYOG5ttHQHWHz3OhqZmGowhHAqzYsUK /rJ+Pf/zhRf45je/eUYjnjJJDQ0NNDQ0dPJ9nN/Sjc8jSb6TJPlLxhiuuvIqhl0y7IxERaMRlixd yuLFTxMOh7BEGOzxMKO8jNsGFjPEDuMxBkUYsQVEUK73Ugx81eNjenk5ByuGsPrQId5qaORQNEpt TQ13zriTZ55+hrlz5/aYEUjJT6qvr2fs2LE0NDSkHPMkS1F3Awnl5eV8+umnFBYWdiVKIBQO8fTT T7P4mcXYUUO6Eqbk5zO3vILLvZAWbkMJCBp6GlAgJthZ0ShXiVBRXMTX++fzq5o61p1ooaMjyIMP Poht28ybNw+PpyslKY3gOtk+iA8+prA53b57PxktLS2JyaxdLwyvvf4aS//7EkzUJgv4p9Jynrz0 Ur6qIvjsCKIVoNDi0NH9CzTKAAYBMsMRxisvSy69jDsGDiQDIRQKsWDBAt5etarb81NSt1GjRrF4 8WI2b96cIA5iCfee/CJ3uXOOUioh0lprJk2aRHl5eTcEClu3bOH+++8nGAyRhWL2oMHMKR1IXqQd LQYbD0pAYbAAWwTjxIWu5mKqp2NkohClQQyl0SALB5WTY3l4tb6BQEc7P/3pf+WrV1/NZZdd1ume UiLJsiweeOCB0yO3STP5E7P93UXxZFeiuLv60r3hDrR38MC/zqcjEMCH5taiAv6pdADZ0SCgMMob I0h5ECLYKgzKQomnE0GnCYvZKlEx0kQJFob+0Q7uLSuhLtDGB8dbOXHsGPPnz2flypX4/f5EG70a nEyojk6SGq26qJsjZUqrnutbXS8vIqxetYp/W1eFNjDc7+OnQ8oYGO7AwmCJoJQQRXEiv4j2q64h ZKVh4j1adwhri1NXXUlbTh620oDBKEBpiqNhfn7pcC71+hCBDz/8kA8++KDT+X0un9TR0cGyF18k Gg2SpeDHQ8sZZmzi6xMQJdgqyvEBeeQ98t8ofnYpwdHjCWo/iEKbuMrF22u3PHRM+DplS/8HOf/6 AC25BSijUaIQFNoYLjNR/rGinEwgHA6zbNmyTsF8nyNpw4YNbP7bZlDC8IwMKnNzsGyJq43CRtPS L4/ihx8hZ/zX0QMGUPbwQjpGjiVsKUSbGKEKgpYmNG485Q/Oh6IBZN9YScG//DPH+mVgAC0GBXht Q2X/XCoy0lDAJ598QnV1deKeUvaTAoEAbW1tnbr1ZJ/IQbLvlLBl8VEMxyYVFRWRlZWVsEvOAKJt G7zA9OJiCoNBPJw2xiHLQ9F/+RHZN4xDtEKhsAYWMvTJx6lduADz2Qa8EiGifQTHjWfYgkWYnKyY h+D1kFs5EVW/m8Ary8m0NbZWKNFU2IZvFRezZ38t4WiUt956i6997Wupk9Ta2sqMGTPYtWtXt+S4 iXB/d1fPjdGjR/PWW2+RkZGBUopIOEJVVRUAWUoxOTcPrwmhOK0+PmNo/v3/xv+16/BccglKe2N2 rqCAwQ8/wsGnnyK8ZRNm9ATK58/HZPcj0WvYho5du2l+//+QJxpRoAW0CCYapTI3m/8FRBR89OeP sI3B0jo1Z/Lvf/87a9as6fKgZ/KUxZXu7e4cpRRVVVXU19dz2WWXISLUHqjl0KFDKBEqMjMp9mhU SCPKJGiyjE3O/r3UP/oYZQsX4LtiBEZrlAJdXMLgxx6nZtXvGDLjbsjPI94Xg7Hp2LaVAwsWkH/o MIhBlMYSUCJYGob5vAz0eWkNhdm3bx9NTU2UFBenlk8aMWIEt956a0KSHCTPcHOfk+wfJe9rrbnp ppsYNmxYory+vp5gMIgSYXi/THzxUF4hcZ8oBo8Ycvfvo2HRk5Q8+SS+4cNBe0ELekARw+79acLR BMAY2rdVc2jRIvo31GM5CxKdNYpxj8aPYkhODruPHiUaCXHgQG1qJEFsGszKlSs5derU6YeNt9wp SZaIbGO/hc7JtUSMECclPT29U7xUX19PNBrFAwzy+zGRcPyIJFo3SmOUwoshe99eGhYuoPSZZ/BX XBKzO47VxqCwECMEt++lbuHjFNTXY6koShSK09eV+GnaNpT6vGggGo5ytCm2fiVlw52WlkZaWlqq 1c8J7o4hx+ON8anseHwWgxJBtMIWhUcrMmt2s+fRRxn+zFLSBg2OxXAKwMIAwf017F/4IEUN9fiM AB5QnSdzObRqEfI9MU8+agxtbbFBzD7lArhV1khsLF8UmHgvBvGHibnq8QSRRVp+EVZaOm63PlYP PGke0vrnx9pRkbjqdo72nbOEWHgDxNTVCaHOy9OeI3JycmLEAC12GLE0FjoWdbnVOm6fIloTGn09 wxY8jKcwn045EgRB8BUPYshjT3BqxLWELT+20o5FSvSap6elQIsdxQCW0uTm5AJ9jKSysjK8Xi8C 1IWiiFZYxonyOweuQcsiMHoUgx9+DFU4EJQHEYUYIBgEMSgxoBXWwBIqFiyk/eprCXtivaVRMY/b aBWXSsEoi7pgFFEKn+VhYGFRrJO5GGT0hPLyctLS0jDA7taTdKAxLukQwCgIW5pT145g8EOPoAYU E+v/Ygjt3c3WBQsJHjx4WkQ0WKXFDHpsIW1XXkNUWXHGYy9AAKUtOrSHutaTIJCZkcmQ+HKOPkXS oEGDGDJkCChFbbCDPeEgUSWIUsRDMiJaE7j2WoY98SzWgMGomIVCRw3BHTuoe+hBCqr+jbr5DxHe uxORCKIE0RpdWsKQp57k5JWXEsXE7J6BWLgDWzsCNEXDoBRXfuUr5BUUAH2MJK01kydPBqBdYN2x ZiJWLBfkwNYWOSOvQ+Xm4Sz6UMYQ2rePA4sWkltfQ3okSN7enRxc9CR2fR0YGyUapQWdn0vBNVcT jZ8bEzYh4tF8dKyZ9rjDfPMtNyeSnX2KJKUUM2bMwOvzEVWKD5uO06i8GGMn6njtCM1vrOD4u++i wiEQQ3jvHmoef5SCmt34o1Esovhsm6xdO6lZ8CiRA7UgNipsc/zttzn29u/xRh0FFbSKsl+EtU3H sIH09HRuu+22hAr3KZIARowYwaRJk1DKYk97B6uajxP2+RLHtUBeW4CWF1+gZfU7BHdso+7RR+i/ exeWfZpMweBHkbtjNwceW0h4/y6OvPlbWl/6FbnBDle3L5zSPl4/1MT+UEzVpk69heHDLkn0qH1u ppvf7+e+uXP5+JMq2tttVtTUMqEgj1FKoUVQImhsck+10v6rF2jLzSer8SiaUNyr1yAaowENXlvI 3rWNwz//Oep4C9nt7bGeL+5xG6WpFs3v6xuJIGT1y2LevPvxul/MReLijLj55pu54x9uRynNQWN4 evtO6iwfUQ2iBaU8KDTpgSD9DjXhF4PCA+LBxB9JESNVtMGnFJkNh8jsaEermMeuEYwF+7yaJ7fv oNEA2uKue/6RcRMmdEo39zmSRATLsnh28bOUlZUiSvFZIMAze/ZzyPLR+ZYT0WI8zR/3zJUiMSE5 cdz51GhRhJVNjcfLs7tr+NupAGjF5cOH8cSiRV2yG32OJOcGS8tKefnll8nLyyMo8P6xZh7ftZc9 Xh92Ij7rfN6ZFva4y0Vr9nj6sWDnPv54/ARhpSnIz+fll5fTv7Dr+rg+RxKcfqApk6fw4osvkpWd RUgrPmg5wX3/9++8F7Y55UtHtBfRNigblMRDjZgIKaRTmKKMIqo0rX4Pq4IR7ttazdoTrYQV5OTl snz5csaOHx93MjsnB/uc4XZD6ZhL4PF4+MlPfkJrayub2zt4sHobN/bvz92lxYxI95NmDF47ntJw r5iV2DNHNbT5ffytI8Ibuw/wybHjHBeDjaKwoIBXli/n1m99i9PkOLoao71PkwQxqfrOd75DRUUF 9913H5s3beKYLbxz5CgfNh/lqn6ZTCos5JqMTEr9FpneWDBsgFMRoSEUobrtJGubj7MtcIpTSGwQ QGvG3zCWF5ct46vXXONcLf6dNBJ8Mabe9GaOk7ve8ePHZdHChVJSNCC21gTEUkq8GsnSSKlWMszv lUvTfDLc75MSpSQTxIcWD1q0sgStpKysVJ55erG0tp3s4R5MfItBjRo1SjZv3kxOTg6ff/45FRUV 3U5DaW9vJxAIdJkZK92s1hbpPEDQ3YCAMYbS0lKys7N7NWPOGMPBgwd59dVXWbFiBfX19YTDYZBY jonkqdTxiRs+n4+hQ4dyzz33MHPmTEpKSjpNaTyjNJ+NJBGhpaWFKVOmsG3btk7TiZPJcIhzI7nM fUMjR47ko48+SuSRUoXTZjAY5PPPP2fdunVs3bKVuoN1tLa2JhbW5ObmMnjwYK699lq+8Y1vMHLk SDweT7ep5zMh5SnKW7ZsSczR7g2664od7Ny5k+ajzeTm5p5Tm+np6YwbN46xY8eilCIYDBIJR4ja UTweD36/H7/fn1ixJCIcOHCAPXv2MG7cuNiM3hRwVpK01lx33XV8//vfZ/PmzZ1njSjd5Y24Z5i4 Z5W4p+A4x26++WaGDvti/9nk9ol6ysM7mnH06FGmTp1KbW0t8+bNY8mSJSlJU0q9m9/vZ/ny5QlV cw8PuW8WupkemKRuyftf5iz/7q7nRlNTE01NTYRCIbZs2fLlr3dzzy06W73e7H/ZONuAqbvDcb7P dk990uPua/j/JKUA7axoFpEel23+R4CIEA6HsW0brXViAmkq6q+HDh2KUopAIMCmTZvOu824mNi0 aVPiPwEuueSS1DuN3/zmN4kl5VdffbUcOHBAbNvuE3/I+WXACWt27twpQ4cOFaWU+Hw+ee+991Ju Q7W0tMjUqVPZsGEDSilKS0uZN28eV15xJZbH6tVa1b6IaDRKdXU1y5Yto7GxEaUUlZWVrF69OmVn EmOMbNy4UcrKyhJ/PODxeLr8rZh7/9/b5mgKIIMGDZLq6upeaQqOOG7dulUmTJggaWlpnf6DjaTh 8n9vm/McaWlpMmXKFNmxY4cYu3emRBljEvoUCoVYv349H3/88QX7y9TzDUtbDCweSGVlJWPGjMHr 9fa6c1LyH4GJ84z/B+uxQHdW+NT7AAAAAElFTkSuQmCC" width="233.6" height="268.8" preserveAspectRatio="none"/></svg>
-+                                                                                                               {/if}
-+                                                                                                       </button>
-+                                                                                               </Tooltip>
-+                                                                                       {/key}
-+                                                                               {/if}
-+
-                                                                                {#if !history?.currentId || history.messages[history.currentId]?.done == true}
-                                                                                        <Tooltip content={$i18n.t('Record voice')}>
-                                                                                                <button
+ 	let selectedModelIds = [];
+ 	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
+ 
+@@ -1231,6 +1232,35 @@
+ 									</div>
+ 
+ 									<div class="self-end flex space-x-1 mr-1 shrink-0">
++										{#if !history?.currentId || history.messages[history.currentId]?.done == true}
++											{#key [attestationValid, JSON.stringify(attestationInfo)]}
++												<Tooltip content={`Intel TDX attestation information:<br>` +
++													(attestationInfo ? Object.entries(attestationInfo).map(([key, value]) => `${key}:${value}`).join('<br>')
++														: 'No attestation message.')}
++														>
++													<button
++														id="attestation-info-button"
++														class=" text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 mr-0.5 self-center"
++														type="button"
++														on:click={async () => {
++														
++														}}
++														aria-label="Attestation Info"
++													>
++														{#if attestationValid}
++															<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 240 265"
++															fill="currentColor"
++															class="w-5 h-5 translate-y-[0.5px]" ><image xlink:href="data:image/png;base64,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" width="240" height="265.6" preserveAspectRatio="none"/></svg>
++														{:else}
++															<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 233 268"
++																fill="currentColor"
++																class="w-5 h-5 translate-y-[0.5px]" ><image xlink:href="data:image/png;base64,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" width="233.6" height="268.8" preserveAspectRatio="none"/></svg>
++														{/if}
++													</button>
++												</Tooltip>
++											{/key}
++										{/if}
++									
+ 										{#if !history?.currentId || history.messages[history.currentId]?.done == true}
+ 											<Tooltip content={$i18n.t('Record voice')}>
+ 												<button
 diff --git a/src/lib/components/chat/Placeholder.svelte b/src/lib/components/chat/Placeholder.svelte
 index 8593dbd86..e2da8136d 100644
 --- a/src/lib/components/chat/Placeholder.svelte
 +++ b/src/lib/components/chat/Placeholder.svelte
 @@ -38,6 +38,9 @@
-        export let codeInterpreterEnabled = false;
-        export let webSearchEnabled = false;
-
+ 	export let codeInterpreterEnabled = false;
+ 	export let webSearchEnabled = false;
+ 
 +        export let attestationValid = false;
 +        export let attestationInfo = null;
 +
-        let models = [];
-
-        const selectSuggestionPrompt = async (p) => {
+ 	let models = [];
+ 
+ 	const selectSuggestionPrompt = async (p) => {
 @@ -196,6 +199,8 @@
-                                        bind:codeInterpreterEnabled
-                                        bind:webSearchEnabled
-                                        bind:atSelectedModel
-+                                       bind:attestationValid
-+                                       bind:attestationInfo
-                                        {transparentBackground}
-                                        {stopResponse}
-                                        {createMessagePair}
+ 					bind:codeInterpreterEnabled
+ 					bind:webSearchEnabled
+ 					bind:atSelectedModel
++					bind:attestationValid
++					bind:attestationInfo
+ 					{transparentBackground}
+ 					{stopResponse}
+ 					{createMessagePair}
 diff --git a/vite.config.ts b/vite.config.ts
 index ed690f502..377bbe2b7 100644
 --- a/vite.config.ts
 +++ b/vite.config.ts
 @@ -2,7 +2,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
  import { defineConfig } from 'vite';
-
+ 
  import { viteStaticCopy } from 'vite-plugin-static-copy';
 -
 +import { nodePolyfills } from 'vite-plugin-node-polyfills';
  // /** @type {import('vite').Plugin} */
  // const viteServerConfig = {
- //     name: 'log-request-middleware',
+ // 	name: 'log-request-middleware',
 @@ -28,7 +28,10 @@ export default defineConfig({
-                                        dest: 'wasm'
-                                }
-                        ]
--               })
-+               }),
-+               nodePolyfills({
-+                       include: ['stream', 'util', 'events', 'http', 'https', 'cypto']
-+               }),
-        ],
-        define: {
-                APP_VERSION: JSON.stringify(process.env.npm_package_version),
+ 					dest: 'wasm'
+ 				}
+ 			]
+-		})
++		}),
++		nodePolyfills({
++			include: ['stream', 'util', 'events', 'http', 'https', 'cypto']
++		}),
+ 	],
+ 	define: {
+ 		APP_VERSION: JSON.stringify(process.env.npm_package_version),
