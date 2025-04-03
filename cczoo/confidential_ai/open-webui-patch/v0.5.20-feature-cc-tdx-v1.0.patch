@@ -1,10 +1,10 @@
 # Feature patch (cc-tdx v1.0) based on tag 0.5.20: Introducing support for confidential computing VMs on TDX
 
 diff --git a/backend/open_webui/main.py b/backend/open_webui/main.py
-index 416460837..06d85350e 100644
+index 416460837..fa3c850b5 100644
 --- a/backend/open_webui/main.py
 +++ b/backend/open_webui/main.py
-@@ -1370,6 +1370,28 @@ async def healthcheck_with_db():
+@@ -1370,6 +1370,26 @@ async def healthcheck_with_db():
      return {"status": True}
  
  
@@ -26,8 +26,6 @@ index 416460837..06d85350e 100644
 +        "id": str(uuid.uuid4()),
 +        "status": True
 +    }
-+    print(f"response: {result}")
-+    log.info(f"Returned message: {result}")
 +    return result
 +
  app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -35,10 +33,33 @@ index 416460837..06d85350e 100644
  
 diff --git a/external/acs-attest-client/index.js b/external/acs-attest-client/index.js
 new file mode 100644
-index 000000000..83bc072bd
+index 000000000..36eaf8113
 --- /dev/null
 +++ b/external/acs-attest-client/index.js
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,71 @@
++/*
++Copyright (c) 2025 Alibaba Cloud
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
++*/
++
++
 +import axios from 'axios';
 +import jsonwebtoken from 'jsonwebtoken';
 +import jwksClient from 'jwks-rsa';
@@ -846,7 +867,7 @@ index 02bdd4eb3..4add7d713 100644
 +	return resJson.quote;
 +};
 diff --git a/src/lib/components/chat/Chat.svelte b/src/lib/components/chat/Chat.svelte
-index ca766c9f7..bbdf3ad5a 100644
+index ca766c9f7..c7e99c61d 100644
 --- a/src/lib/components/chat/Chat.svelte
 +++ b/src/lib/components/chat/Chat.svelte
 @@ -13,6 +13,9 @@
@@ -878,7 +899,7 @@ index ca766c9f7..bbdf3ad5a 100644
  
  	$: if (chatIdProp) {
  		(async () => {
-@@ -639,11 +645,91 @@
+@@ -639,11 +645,92 @@
  		}
  	};
  
@@ -905,48 +926,49 @@ index ca766c9f7..bbdf3ad5a 100644
 +		attestationInfo = null;
 +		attestationValid = false;
 +		const _quote_hex = await getQuote(localStorage.token);
-+		console.log('Quote:', _quote_hex);
 +		const quote = hexToBytes(_quote_hex);
 +		const token = await acs_attest_client.attest(quote);
-+		console.log('Attestation Token:', token);
 +		const jwtclaims = await acs_attest_client.decode_apprasial_token(token);
-+		console.log('Attestation Claims:', jwtclaims);
 +		let tmpInfo = {};
++
 +		const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-+		tmpInfo.exp = moment((jwtclaims.exp)*1000).format('YYYY-MM-DD HH:mm:ss ')+timeZone;
-+		tmpInfo.iat = moment((jwtclaims.iat)*1000).format('YYYY-MM-DD HH:mm:ss ')+timeZone;
 +		tmpInfo.jti = jwtclaims.jti;
 +		tmpInfo.tee = jwtclaims.tee;
-+
++		tmpInfo.exp = moment((jwtclaims.exp)*1000).format('YYYY-MM-DD HH:mm:ss ')+timeZone;
++		tmpInfo.iat = moment((jwtclaims.iat)*1000).format('YYYY-MM-DD HH:mm:ss ')+timeZone;
 +		const tmp_tcbinfo = JSON.parse(jwtclaims['tcb-status']);
-+		tmpInfo.mr_config_id = tmp_tcbinfo['tdx.quote.body.mr_config_id'];
-+		tmpInfo.mr_owner = tmp_tcbinfo['tdx.quote.body.mr_owner'];
-+		tmpInfo.mr_owner_config = tmp_tcbinfo['tdx.quote.body.mr_owner_config'];
-+		tmpInfo.mr_seam = tmp_tcbinfo['tdx.quote.body.mr_seam'];
-+		tmpInfo.mr_servicetd = tmp_tcbinfo['tdx.quote.body.mr_servicetd'];
 +		tmpInfo.mr_td = tmp_tcbinfo['tdx.quote.body.mr_td'];
-+		tmpInfo.mrsigner_seam = tmp_tcbinfo['tdx.quote.body.mrsigner_seam'];
 +		tmpInfo.rtmr_0 = tmp_tcbinfo['tdx.quote.body.rtmr_0'];
 +		tmpInfo.rtmr_1 = tmp_tcbinfo['tdx.quote.body.rtmr_1'];
 +		tmpInfo.rtmr_2 = tmp_tcbinfo['tdx.quote.body.rtmr_2'];
 +		tmpInfo.rtmr_3 = tmp_tcbinfo['tdx.quote.body.rtmr_3'];
++		tmpInfo.mr_seam = tmp_tcbinfo['tdx.quote.body.mr_seam'];
 +		tmpInfo.seam_attributes = tmp_tcbinfo['tdx.quote.body.seam_attributes'];
-+		tmpInfo.tcb_svn = tmp_tcbinfo['tdx.quote.body.tcb_svn'];
 +		tmpInfo.td_attributes = tmp_tcbinfo['tdx.quote.body.td_attributes'];
-+		tmpInfo.tee_tcb_svn2 = tmp_tcbinfo['tdx.quote.body.tee_tcb_svn2'];
 +		tmpInfo.xfam = tmp_tcbinfo['tdx.quote.body.xfam'];
-+		tmpInfo.att_key_type = tmp_tcbinfo['tdx.quote.header.att_key_type'];
-+		tmpInfo.tee_type = tmp_tcbinfo['tdx.quote.header.tee_type'];
-+		tmpInfo.user_data = tmp_tcbinfo['tdx.quote.header.user_data'];
-+		tmpInfo.vendor_id = tmp_tcbinfo['tdx.quote.header.vendor_id'];
-+		tmpInfo.version = tmp_tcbinfo['tdx.quote.header.version'];
-+		tmpInfo.type = tmp_tcbinfo['tdx.quote.type'];
-+		Object.assign(tmpInfo,{'td_attributes.debug':tmp_tcbinfo['td_attributes.debug'],
-+					   'td_attributes.key_locker':tmp_tcbinfo['td_attributes.key_locker'],
-+					   'td_attributes.perfmon':tmp_tcbinfo['td_attributes.perfmon'],
-+					   'td_attributes.protection_keys':tmp_tcbinfo['td_attributes.protection_keys'],
-+					   'td_attributes.septve_disable':tmp_tcbinfo['td_attributes.septve_disable']
-+						});
++
++		let ui_displayInfo = JSON.parse(JSON.stringify(tmpInfo));
++		Object.assign(ui_displayInfo,{'mr_condif_id':tmp_tcbinfo['tdx.quote.body.mr_config_id'],
++					'mr_owner':tmp_tcbinfo['tdx.quote.body.mr_owner'],
++					'mr_owner_config':tmp_tcbinfo['tdx.quote.body.mr_owner_config'],
++					'mrsigner_seam':tmp_tcbinfo['tdx.quote.body.mrsigner_seam'],
++					'mr_servicetd':tmp_tcbinfo['tdx.quote.body.mr_servicetd'],
++					'tcb_svn':tmp_tcbinfo['tdx.quote.body.tcb_svn'],
++					'tee_tcb_svn2':tmp_tcbinfo['tdx.quote.body.tee_tcb_svn2'],
++					'att_key_type':tmp_tcbinfo['tdx.quote.header.att_key_type'],
++					'tee_type':tmp_tcbinfo['tdx.quote.header.tee_type'],
++					'user_data':tmp_tcbinfo['tdx.quote.header.user_data'],
++					'vendor_id':tmp_tcbinfo['tdx.quote.header.vendor_id'],
++					'version':tmp_tcbinfo['tdx.quote.header.version'],
++					'type':tmp_tcbinfo['tdx.quote.type'],
++					'td_attributes.debug':tmp_tcbinfo['tdx.td_attributes.debug'],
++					'td_attributes.key_locker':tmp_tcbinfo['tdx.td_attributes.key_locker'],
++					'td_attributes.perfmon':tmp_tcbinfo['tdx.td_attributes.perfmon'],
++					'td_attributes.protection_keys':tmp_tcbinfo['tdx.td_attributes.protection_keys'],
++					'td_attributes.septve_disable':tmp_tcbinfo['tdx.td_attributes.septve_disable']
++			});
++		console.log("Attestation Display info:",tmpInfo);
++		console.log("ALL Attestation info",ui_displayInfo);
 +		attestationInfo = tmpInfo;
 +		attestationValid = true;
 +	    } catch (error) {
@@ -971,7 +993,7 @@ index ca766c9f7..bbdf3ad5a 100644
  		if ($page.url.searchParams.get('models')) {
  			selectedModels = $page.url.searchParams.get('models')?.split(',');
  		} else if ($page.url.searchParams.get('model')) {
-@@ -2031,6 +2117,8 @@
+@@ -2031,6 +2118,8 @@
  								bind:codeInterpreterEnabled
  								bind:webSearchEnabled
  								bind:atSelectedModel
@@ -980,7 +1002,7 @@ index ca766c9f7..bbdf3ad5a 100644
  								transparentBackground={$settings?.backgroundImageUrl ?? false}
  								{stopResponse}
  								{createMessagePair}
-@@ -2083,6 +2171,8 @@
+@@ -2083,6 +2172,8 @@
  								bind:codeInterpreterEnabled
  								bind:webSearchEnabled
  								bind:atSelectedModel
@@ -990,30 +1012,20 @@ index ca766c9f7..bbdf3ad5a 100644
  								{stopResponse}
  								{createMessagePair}
 diff --git a/src/lib/components/chat/MessageInput.svelte b/src/lib/components/chat/MessageInput.svelte
-index 7db31010b..bda7fe816 100644
+index 7db31010b..d6aea65c7 100644
 --- a/src/lib/components/chat/MessageInput.svelte
 +++ b/src/lib/components/chat/MessageInput.svelte
-@@ -59,7 +59,18 @@
+@@ -59,7 +59,8 @@
  
  	export let atSelectedModel: Model | undefined = undefined;
  	export let selectedModels: [''];
 -
 +        export let attestationValid = false;
 +        export let attestationInfo = null;
-+  $: {
-+    try {
-+      console.log('[MessageInput] attestation State Update:', {
-+        valid: attestationValid,
-+        info: attestationInfo ? JSON.parse(JSON.stringify(attestationInfo)) : 'undefined'
-+      });
-+    } catch (e) {
-+      console.error('attestationInfo failed:', e);
-+    }
-+  }
  	let selectedModelIds = [];
  	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
  
-@@ -1231,6 +1242,35 @@
+@@ -1231,6 +1232,35 @@
  									</div>
  
  									<div class="self-end flex space-x-1 mr-1 shrink-0">
@@ -1022,7 +1034,7 @@ index 7db31010b..bda7fe816 100644
 +												<Tooltip content={`Intel TDX attestation information:<br>` +
 +													(attestationInfo ? Object.entries(attestationInfo).map(([key, value]) => `${key}:${value}`).join('<br>')
 +														: 'No attestation message.')}
-+														>
++												>
 +													<button
 +														id="attestation-info-button"
 +														class=" text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 mr-0.5 self-center"
@@ -1072,6 +1084,18 @@ index 8593dbd86..e2da8136d 100644
  					{transparentBackground}
  					{stopResponse}
  					{createMessagePair}
+diff --git a/src/lib/components/common/Tooltip.svelte b/src/lib/components/common/Tooltip.svelte
+index 74f936320..3de924f7f 100644
+--- a/src/lib/components/common/Tooltip.svelte
++++ b/src/lib/components/common/Tooltip.svelte
+@@ -15,7 +15,6 @@
+ 	export let offset = [0, 4];
+ 	export let allowHTML = true;
+ 	export let tippyOptions = {};
+-
+ 	let tooltipElement;
+ 	let tooltipInstance;
+ 
 diff --git a/vite.config.ts b/vite.config.ts
 index ed690f502..377bbe2b7 100644
 --- a/vite.config.ts
