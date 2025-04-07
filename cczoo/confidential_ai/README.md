@@ -253,7 +253,9 @@ cd <work_dir>/open-webui-main/open-webui/backend/ && ./dev.sh
 5) Each time you click the "New Chat" button, the background will automatically obtain the quote data of the TDX confidential computing environment and send it to the remote attestation service and return the authentication result. In the initial state, this icon is red. It means that the remote attestation is not completed or failed. It will be green after the remote attestation is successful.
   ![backend service](./images/attestationinfo_error.png)
 6) Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red.
-  ![backend service](./images/attestationinfo_pass.png)
+    ![backend service](./images/attestationinfo_pass.png)
+  Developer can check more detailed TDX measurements info via brower debug console shown as below： 
+  ![backend service](./images/AttestationInfo.png)
 
 
 ### <h2 id="tips">Tips：</h2>
