@@ -60,5 +60,5 @@ def generate_quote():
 
     tdx_att_free_quote(p_quote_buf)
 
-    return (quote_data, parse_result)
+    return quote_data
 
