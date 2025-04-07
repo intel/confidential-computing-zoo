@@ -6,55 +6,25 @@
 
 ---
 ## 1. Overview 
-This article describes how to build a DeepSeek confidential inference service in an Alibaba Cloud heterogeneous confidential computing instance (gn8v-tee), and demonstrates how to combine the CPU TDX confidential computing security measurement authentication function to provide security authentication and privacy protection workflows for the deployed DeepSeek online inference service.
-**Objective**: Demonstrate the privacy-preserving large language model inference workflow through confidential computing virtual machines
+This solution demonstrates how to build a confidential AI inference service within a confidential virtual machines (CVM) using a suite of open-source frameworks and large language models (LLMs). It further illustrates how to integrate the Intel TDX based security measurement and remote attestation capabilities into LLM inference service, thereby establishing robust security authentication and privacy protected workflows for the LLM service. This approach ensures that both the model and the user data are managed securely, maintaining their integrity and protecting against unauthorized access throughout the entire service lifecycle.
+
+**Objective**: Demonstrate the privacy-preserving large language model inference workflow through confidential virtual machines (CVM)
 
 **Design principles**:
-- Confidentiality: Ensure that models and user data are processed only within the encrypted security boundary of the confidential computing instance (TDX CPU+CC GPU), and do not expose plain text to the external environment.
-- Integrity: Ensure that the code and configuration of each component of the large language model inference service operating environment (inference service framework, model files, interactive interface, etc.) are tamper-proof and support third-party audit verification processes.
-
-# Safety Principles Overview
-## Credibility Metrics
-Intel Trust Domain Extensions (TDX) 
-The security of the virtual machine is enhanced by isolating the virtual machine in a hardware-protected trust domain(TDs, Trusted Domains). During the boot process, the TDX module uses two main registers to record the status of the TD client.
-
-- Build Time Measurement Register (MRTD): Capture measurements related to the initial configuration and boot image of a guest VM.
-
-- Runtime Measurement Registers (RTMR): Record measurements of initial state, kernel images, command-line options, and other runtime services and parameters as needed.
-
-These measurements ensure the integrity of the TD and the running application throughout its lifecycle. For this solution demonstration, measurements of model serving and kernel parameters(including those related to the Ollama and DeepSeek models and the open-webui web framework), can be reflected in the RTMR.
-
-## Remote authentication
-Remote attestation in TDX provides cryptographic authentication of the integrity and authenticity of the TD confidential virtual machine to the remote party. The process involves several key steps:
-- Get TD Quote:
-   i. The client requests open-webui to provide complete remote authentication services.
-   ii. The open-webui backend communicates with the Trusted Service to obtain a measurement report signed with the platform TCB certificate. The report includes MRTD and RTMR, reflecting the current integrity status of the running model service environment. This signed measurement report is called Quote.
-- TD Quote's certification: The client sends the quote to a trusted attestation service for verification against predefined policies and establishes trust with the model service before processing sensitive information.
-
-## Alibaba Cloud Remote Authentication Service
-Alibaba Cloud Remote Attestation Service is based on RFC 9394 - Remote ATtestation procedureS (RATS) Architecture，It can be used to verify the security status and credibility of Alibaba Cloud security-enhanced instances. This service involves the following roles:
-- Attester：Users of Alibaba Cloud ECS instances need to prove the identity and credibility of the ECS instances to the relying parties.
-- Relying Party：For entities that need to verify the identity and credibility of the prover, the relying party will generate an evaluation strategy based on TPM, TEE and other measurement information as benchmark data.
-- Verifier：Alibaba Cloud Remote Attestation Service is responsible for comparing the evidence with the evaluation strategy and obtaining the verification result.
-
-Alibaba Cloud Remote Attestation Service provides an API that is compatible with the OIDC standard. You can regard Alibaba Cloud Remote Attestation Service as a standard identity provider (IdP) service.
-
-- Alibaba Cloud Remote Attestation Service issues OIDC Tokens for trusted computing instances and confidential computing instances to prove the identity of ECS instances to relying parties.
-- Relying parties can verify the cryptographic validity of OIDC Tokens through OIDC's standard process.
-
-By integrating these metrics and proof mechanisms, DeepSeek online inference service provides a powerful framework to verify the integrity and authenticity of remote model serving services, which is critical to protecting data security and privacy.
+- Confidentiality: Ensure that models and user data are processed only within the encrypted security boundary of the confidential computing instance, and preventing any exposure of plaintext to the external environments.
+- Integrity: Guarantee that the code, the data and the configuration of each component of the LLM inference service environment (inference service framework, model files, interactive interface, etc.) remain tamper-proof, while also supporting robust third-party audit verification processes.
 
 ## 2. System Architecture 
 The overall solution architecture design is shown in the figure:
-![System Deployment Architecture](./images/DeploymentArchitecture.png)
+![System Deployment Architecture](./images/Deployment%20Architecture.png)
 
 ### Deployment Components
 
 #### 1. Client
-The interactive interface (UI) through which end users access the large language model service is responsible for initiating sessions, verifying the credibility of the remote model service environment, and communicating securely with the backend model service.
+The interactive user interface (UI) through which end users access the large language model service is responsible for initiating sessions, verifying the credibility of the remote model service environment, and communicating securely with the backend model service.
 
 #### 2. Remote Attestation Services
-Based on Alibaba Cloud Remote Attestation Service, it is used to verify the security status of the model reasoning service environment, including: the platform trusted computing base (TCB, Trusted Computing Base) and the reasoning model service environment.
+Based Attestation Service, it is used to verify the security status of the model reasoning service environment, including: the platform trusted computing base (TCB) and the model service environment.
 
 #### 3. Reasoning Service Components
 
@@ -72,7 +42,7 @@ Based on Alibaba Cloud Remote Attestation Service, it is used to verify the secu
 #### 1. Service startup and measurement process
 
 - **Operating environment metrics:**  
-    The platform TCB module performs integrity measurement on the operating environment of the running model service, and the measurement results are stored in the TDX Module located in the TCB.
+    The platform TCB performs integrity measurement on the operating environment of the running model service, and the measurement results are stored in the TDX Module located in the TCB.
 
 #### 2. Reasoning session initialization phase
 
@@ -98,7 +68,62 @@ Based on Alibaba Cloud Remote Attestation Service, it is used to verify the secu
 - **Remote attestation failed:** The attestation service will return an error message, indicating that the remote attestation has failed. At this point, the user or system may choose to terminate further service requests, or continue to provide services with effective warnings of security risks, but at this point the remote model service may have data security risks.
 
 
-## 4. DeepSeek Confidential Inference Service Build and Installation Guide
+### Secuity Design
+#### Measure Service Exeuction Environment
+Intel Trust Domain Extensions (TDX) enhance virtual machine (VM) by isolating each VM within a hardware-protected trust domain (TD). During the boot process, the TDX module uses two sets of registers to record the status of the TD VM instance.
+
+- MRTD: Build Time Measurement Register to capture measurements related to the initial configuration and boot image of a TD VM.
+
+- RTMRs: Runtime Measurement Registers to record measurements of initial state, kernel images, command-line options, and other runtime services and parameters as needed.
+
+These measurement registers ensure the integrity of the TD, including those running applications throughout its lifecycle. For this solution demonstration, measurements of model serving and kernel parameters(including those related to the Ollama and DeepSeek models and the open-webui web framework), can be reflected in the RTMR.
+
+#### Verify Trustworthiness of Runtime Service
+Remote attestation in TDX provides cryptographic authentication assurance of the integrity and authenticity of the TD VM to the remote parties. The process involves several key steps:
+1. Backend API for Quote Generation:
+An API endpoint is added in the `open-webui` backend to generate and provide a quote, serving as verifiable proof of the service execution environment.
+```python
+@app.get("/api/v1/tee/quote")
+async def fetch_tee_quote(response: Response):
+...
+    quote = quote_generator.generate_quote()
+    quote_hex = bytearray(quote).hex()
+
+    result = {
+        "quote": quote_hex,
+        "quote_parse" : "reserved",
+        "timestamp": datetime.utcnow().isoformat(),
+        "id": str(uuid.uuid4()),
+        "status": True
+   }
+   return result
+```
+2. Request and verfiy the quote of the LLM Serving Environment:
+When a client initiates a new chat session `initNewChat`, it automatically triggers a request to obtain proof of the Large Language Model (LLM) service environment's trustworthiness from the `open-webui` backend. The returned quote is forwarded to a remote attestation service for verification. If the quote passes verification, the client displays the result via a UI notification.
+```javascript
+const initNewChat = async () => {
+    teeQuoteVerify();
+
+
+```
+
+#### Integrate with Remote Attestation Service
+The end user can choose any remote attestation service to verify the trustworthiness of the provided quote. For simplicity, this demo integrates an existing attestation service - Alibaba Remote Attestation Service, eliminating the need for users to deploy their own. In future iterations, we plan to enhance flexibility by offering configurable options that allow users to specify their preferred attestation service address.
+
+Alibaba Cloud Remote Attestation Service is based on RFC 9394 - Remote ATtestation procedureS (RATS) Architecture，It can be used to verify the security status and credibility of Alibaba Cloud security-enhanced instances. This service involves the following roles:
+- Attester：Users of Alibaba Cloud ECS instances need to prove the identity and credibility of the ECS instances to the relying parties.
+- Relying Party：For entities that need to verify the identity and credibility of the prover, the relying party will generate an evaluation strategy based on TPM, TEE and other measurement information as benchmark data.
+- Verifier：Alibaba Cloud Remote Attestation Service is responsible for comparing the evidence with the evaluation strategy and obtaining the verification result.
+
+Alibaba Cloud Remote Attestation Service provides an API that is compatible with the OIDC standard. You can regard Alibaba Cloud Remote Attestation Service as a standard identity provider (IdP) service.
+
+- Alibaba Cloud Remote Attestation Service issues OIDC Tokens for trusted computing instances and confidential computing instances to prove the identity of ECS instances to relying parties.
+- Relying parties can verify the cryptographic validity of OIDC Tokens through OIDC's standard process.
+
+#### HTTPS usage in open-webui
+The native design of `open-webui` supports only the HTTP protocol. To enhance the security of data transmission, it is recommended to enable HTTPS by deploying a reverse proxy with TLS support, such as Nginx. This ensures that all communication between the client and the inference service is encrypted, protecting sensitive user inputs and model outputs from potential interception or tampering. Configuring HTTPS for `open-webui` is out of the scope of this article.
+
+## 3. Build and Installation Guide
 
 #### Step 1: Install ollama
 ```bash
@@ -173,7 +198,6 @@ conda activate open-webui
 cd <work_dir>/confidential-computing-zoo/cczoo/confidential_ai/tdx_measurement_plugin/
 python setup.py install
 
-#验证安装使用
 python3 -c "import quote_generator"
 ```
 5）Compile open-webui
@@ -204,7 +228,7 @@ pip install -r requirements.txt -U
 conda deactiva
 ```
 
-#### Step 4：Run openwebui
+## 4. Run and Test
 1. Run ollama + DeepSeek model
 ```bash
 ollama run deepseek-r1:70b
@@ -231,10 +255,6 @@ cd <work_dir>/open-webui-main/open-webui/backend/ && ./dev.sh
 6) Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red.
   ![backend service](./images/attestationinfo_pass.png)
 
-
-### Solution security enhancement
-[Using CLB to deploy HTTPS services (one-way authentication)](https://help.aliyun.com/zh/slb/classic-load-balancer/use-cases/configure-one-way-authentication-for-https-requests)
-1. Open WebUI native design only supports HTTP protocol, in order to increase the security of data transmission
 
 ### <h2 id="tips">Tips：</h2>
 1. When installing dependencies, you can use Alibaba Cloud's image to speed up downloading:
