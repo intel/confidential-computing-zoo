@@ -169,12 +169,13 @@ cd <work_dir>
 git clone https://github.com/open-webui/open-webui.git
 
 # 切换到tag:v0.5.20 
-cd open-webui-main/
+cd open-webui/
 git checkout v0.5.20
 
 # 合入CCZoo提供的patch，该patch增加了open-webui对TDX远程认证相关的功能
-cp <work_dir>/confidential-computing-zoo/cczoo/xxxxx.patch .
-git apply xxxx.patch
+cd ..
+cp <work_dir>/cczoo/confidential_ai/open-webui-patch/v0.5.20-feature-cc-tdx-v1.0.patch .
+git apply --ignore-whitespace --directory=open-webui/ v0.5.20-feature-cc-tdx-v1.0.patch
 ```
 3）创建open-webui环境并激活
 ```bash
