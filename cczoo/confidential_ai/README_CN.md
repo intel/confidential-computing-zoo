@@ -6,67 +6,33 @@
 
 ---
 ## 1. 概述 
-本文介绍如何在阿里云异构机密计算实例（gn8v-tee）中构建DeepSeek机密推理服务，并演示如何结合CPU TDX机密计算安全度量认证功能，为部署的DeepSeek在线推理服务提供安全认证和隐私保护工作流程。
-**目标**: 通过机密计算虚拟机展示隐私保护的大语言模型推理工作流程
-
-**背景信息**
-
-阿里云异构机密计算实例（gn8v-tee）在CPU TDX机密计算实例的基础上，额外将GPU引入到TEE（Trusted Execution Environment）中，可以保护CPU和GPU之间的数据传输及GPU中的数据计算。关于CPU TDX机密计算环境的构建及其远程证明能力验证，请参见[**构建TDX机密计算环境**](https://help.aliyun.com/zh/ecs/user-guide/build-a-tdx-confidential-computing-environment)；关于异构机密计算环境的搭建请参见[**构建异构机密计算环境**](https://help.aliyun.com/zh/ecs/user-guide/build-a-tdx-confidential-computing-environment)。
+此解决方案演示了如何使用一套开源框架和大型语言模型 （LLM） 在机密虚拟机 （CVM） 中构建机密 AI 推理服务，并进一步介绍了如何将基于英特尔TDX的安全测量和远程认证功能集成到LLM 推理服务中，从而为LLM服务建立强大的安全身份验证和隐私保护工作流程。这种方法可确保模型和用户数据都得到安全管理，从而在整个服务生命周期中保持其完整性并防止未经授权的访问。
+**目标**: 通过TDX机密虚拟机演示保护隐私的大型语言模型推理工作流
 
 **设计原则**:
-- 机密性: 确保模型与用户数据仅在机密计算实例（TDX CPU+CC GPU）的加密安全边界内处理，禁止明文暴露到外部环境。
-- 完整性: 保障大语言模型推理服务运行环境各组件（推理服务框架、模型文件、交互界面等）的代码与配置防篡改，支持第三方审计验证流程。
-
-# 安全原理概述
-## 可信度量
-Intel Trust Domain Extensions (TDX) 通过将虚拟机隔离在受硬件保护的信任域 (TDs, Trusted Domains) 中来增强虚拟机的安全性，在启动过程中，TDX 模块使用两个主要寄存器记录 TD 客户机的状态:
-
-- Build Time Measurement Register (MRTD): 捕获与客户虚拟机的初始配置和启动镜像相关的测量值。
-
-- Runtime Measurement Registers (RTMR): 根据需要记录初始状态、内核映像、命令行选项和其他运行时服务和参数的测量值。
-
-这些Measurement可确保 TD 和正在运行的应用程序在整个生命周期中的完整性。对于此解决方案演示，模型服务和内核参数的测量（包括与 Ollama 和 DeepSeek 模型以及 open-webui web 框架相关的测量）可以反映在 RTMR 中。
-
-## 远程认证
-TDX 中的远程认证为远程方提供了TD机密虚拟机完整性和真实性的加密认证。该过程涉及几个关键步骤:
-- TD Quote的获取:
-   i. 客户端向open-webui请求提供完整的远程认证服务。
-   ii. open-webui 后端与 Trusted Service 通信，获取使用平台 TCB 证书签名的测量报告。该报告包括 MRTD 和 RTMR，反映正在运行的模型服务环境的当前完整性状态。这份签署的测量报告被称为Quote。
-- TD Quote的认证: 客户端将Quote发送到受信任的证明服务，以根据预定义的策略进行验证，并在处理敏感信息之前与模型服务建立信任。
-
-## 阿里云远程认证服务
-阿里云远程证明服务以 RFC 9394 - Remote ATtestation procedureS (RATS) Architecture 为基础，可用于验证阿里云安全增强型实例的安全状态和可信性。该服务涉及以下角色：
-- 证明者（Attester）：使用阿里云ECS实例的用户，需要向依赖方证明ECS实例的身份及可信度。
-- 依赖方（Relying Party）：需要验证证明者身份及可信度的实体，依赖方会基于TPM、TEE等度量信息作为基准数据生成评估策略。
-- 验证方（Verifier）：阿里云远程证明服务，负责将证据与评估策略进行比较，并得出验证结果。
-
-阿里云远程证明服务提供OIDC标准兼容的API，您可以将阿里云远程证明服务视为一个标准的identity provider (IdP) 服务。
-
-- 阿里云远程证明服务通过为可信计算实例、机密计算实例颁发OIDC Token以向依赖方（Relying Party）证明ECS实例的身份。
-- 依赖方可以通过OIDC的标准流程验证OIDC Token的密码学有效性。
-
-通过集成这些度量和证明机制，DeepSeek在线推理服务提供了一个强大的框架来验证远程模型服务服务的完整性和真实性，这对于保护数据安全和隐私至关重要。
+- 机密性：确保模型和用户数据仅在机密计算实例的加密安全边界内处理，并防止将明文暴露到外部环境中
+- 完整性: 保证LLM推理服务环境的每个组件（推理服务框架、模型文件、交互式界面等）的代码、数据和配置保持防篡改，同时还支持强大的第三方审计验证流程。
 
 ## 2. 系统架构 
 整体方案架构设计如图所示：
-![System Deployment Architecture](./images/DeploymentArchitecture.png)
+![System Deployment Architecture](./images/Deployment%20Architecture.png)
 
 ### 部署组件
 
 #### 1. 客户端
 终端用户访问大语言模型服务的交互界面（UI），负责 发起会话、验证远端模型服务环境可信性，并与后端模型服务进行安全通信。
 
-#### 2. 远程证明服务
-基于阿里云远程证明服务，用于验证模型推理服务环境的安全状态，包括：平台可信计算基（TCB, Trusted Computing Base）以及推理模型服务环境。
+#### 2. 远程认证服务
+基于认证服务，用于验证模型推理服务环境的安全状态，包括：平台可信计算库 （TCB） 和模型服务环境。
 
 #### 3. 推理服务组件
 
 | Component                  | Version       | Purpose                                                                                                   |
 | -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
-| **Ollama**                 |  `v0.5.7`     | Framework for running language models on confidential VMs                                                 |
-| **DeepSeek-R1**            |`deepseek-r1-70b(量化)`| High performance reasoning model for inference service                                                    |
-| **open-webui**             | `v0.5.20`     | Self-hosted AI interface for user-interaction, running on the same confidential VM to simplify deployment |
-| **Cofidential AI(cc-zoo)** |   `v1.2`        | Patches and compoents from cc-zoo                                                                         |
+| **Ollama**                 |  `v0.5.7`     | 用于在机密 VM 上运行语言模型的框架                                                 |
+| **DeepSeek-R1**            |`deepseek-r1-70b(量化)`| 用于推理服务的高性能推理模型                                                    |
+| **open-webui**             | `v0.5.20`     | 用于用户交互的自托管 AI 界面，在同一机密 VM 上运行以简化部署 |
+| **Cofidential AI(cc-zoo)** |   `v1.2`        |  来自 cc-zoo 的补丁和组件                                                                         |
 
 ### 工作流程
 
@@ -84,10 +50,10 @@ TDX 中的远程认证为远程方提供了TD机密虚拟机完整性和真实�
 
 #### 3. 远程证明阶段
 
-- **证明请求:**  
+- **认证请求:**  
     客户端发起会话请求时，会向服务后端同时请求一个证明模型运行环境的可信性证明(TDX Quote)，该证明可以用来验证远程服务环境的可信性，包含用户会话管理服务 `open-webui` 和模型服务 (`ollama + DeepSeek`)的可信性。
     
-- **证明产生:**  
+- **生成证明:**  
     `open-webui` 服务后端将用户会话创建过程中的证明请求转发至​基于Intel TDX的机密计算虚拟机（Confidential VM）​可信服务模块（TSM）​。该模块通过协调底层TDX Module与宿主机操作系统（Host OS）上运行的证明生成服务，生成包含完整证书链的​TDX证明（TDX Quote）​。
 
     
@@ -100,8 +66,56 @@ TDX 中的远程认证为远程方提供了TD机密虚拟机完整性和真实�
 
 - **远程证明失败:** 证明服务将返回错误信息，表明远程证明失败。此时，用户或者系统或选择中止进一步服务请求，或在 有效提示安全风险的情况下继续提供服务，但是此时远端模型服务可能存在数据安全风险。
 
+# 安全设计
+## 测量服务执行环境
+Intel Trust Domain Extensions (TDX) 通过将虚拟机隔离在受硬件保护的信任域 (TDs, Trusted Domains) 中来增强虚拟机的安全性，在启动过程中，TDX 模块使用两个主要寄存器记录 TD 客户机的状态:
 
-## 4. DeepSeek机密推理服务构建和安装指南
+- Build Time Measurement Register (MRTD): 捕获与客户虚拟机的初始配置和启动镜像相关的测量值。
+
+- Runtime Measurement Registers (RTMR): 根据需要记录初始状态、内核映像、命令行选项和其他运行时服务和参数的测量值。
+
+这些Measurement可确保TD和正在运行的应用程序在整个生命周期中的完整性。对于此解决方案演示，模型服务和内核参数的测量（包括与 Ollama 和 DeepSeek 模型以及 open-webui web 框架相关的测量）可以反映在 RTMR 中。
+
+## 验证运行时服务的可信性
+TDX 中的远程认证为远程方提供了TD机密虚拟机完整性和真实性的加密认证。该过程涉及几个关键步骤:
+- 用于TDX Quote生成的后端API：在 open-webui 后端添加一个API端点，用于生成和提供 Quote，作为服务执行环境的可认证证明。
+```python
+@app.get("/api/v1/tee/quote")
+async def fetch_tee_quote(response: Response):
+...
+    quote = quote_generator.generate_quote()
+    quote_hex = bytearray(quote).hex()
+
+    result = {
+        "quote": quote_hex,
+        "quote_parse" : "reserved",
+        "timestamp": datetime.utcnow().isoformat(),
+        "id": str(uuid.uuid4()),
+        "status": True
+   }
+   return result
+```
+- 请求并验证LLM服务运行环境的Quote：当客户端发起新的聊天会话initNewChat时，它会自动触发一个请求，从open-webui后端获取大型语言模型服务环境的可信证明。返回的Quote将转发到远程证明服务进行验证。如果Quote通过验证，客户端将通过UI通知显示结果。
+```javascript
+const initNewChat = async () => {
+    teeQuoteVerify();
+```
+
+## 与Remote Attestation Service集成
+最终用户可以选择任何远程认证服务来验证所提供Quote的可信度。为简单起见，此Demo集成了现有的认证服务 - 阿里巴巴远程认证服务，用户无需部署自己的认证服务。在未来的迭代中，我们计划通过提供允许用户指定其首选认证服务地址的可配置选项来提高灵活性。
+阿里云远程证明服务以 RFC 9394 - Remote ATtestation procedureS (RATS) Architecture 为基础，可用于验证阿里云安全增强型实例的安全状态和可信性。该服务涉及以下角色：
+- 证明者（Attester）：使用阿里云ECS实例的用户，需要向依赖方证明ECS实例的身份及可信度。
+- 依赖方（Relying Party）：需要验证证明者身份及可信度的实体，依赖方会基于TPM、TEE等度量信息作为基准数据生成评估策略。
+- 验证方（Verifier）：阿里云远程证明服务，负责将证据与评估策略进行比较，并得出验证结果。
+
+阿里云远程证明服务提供OIDC标准兼容的API，您可以将阿里云远程证明服务视为一个标准的identity provider (IdP) 服务。
+- 阿里云远程证明服务通过为可信计算实例、机密计算实例颁发OIDC Token以向依赖方（Relying Party）证明ECS实例的身份。
+- 依赖方可以通过OIDC的标准流程验证OIDC Token的密码学有效性。
+
+### open-webui 中的 HTTPS 使用情况
+open-webui的原生设计仅支持 HTTP 协议。为了增强数据传输的安全性，建议通过部署支持 TLS 的反向代理（如 Nginx）来启用 HTTPS。这可确保客户端和推理服务之间的所有通信都已加密，从而保护敏感的用户输入和模型输出免受潜在的拦截或篡改。为open-webui配置 HTTPS 超出了本文的范围。
+
+## 3. 构建和安装指南
 
 #### 步骤1：安装 ollama
 ```bash
@@ -127,23 +141,20 @@ sudo yum install npm -y
 # 安装nodejs指定版本
 sudo npm install 20.18.1
 ```
-安装 Miniconda(用于open-webui虚拟环境启动)：
+安装 Miniforge(用于open-webui虚拟环境启动)：
 ```bash
-sudo wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-sudo bash Miniconda3-latest-Linux-x86_64.sh -bu
+sudo wget https://github.com/conda-forge/miniforge/releases/download/24.11.3-2/Miniforge3-24.11.3-2-Linux-x86_64.sh
+sudo bash Miniforge3-24.11.3-2-Linux-x86_64.sh -bu
+export PATH="/root/miniforge3/bin:$PATH"
 ```
-2. 配置环境变量
-```bash
-# 设置Miniconda 的安装路径,默认安装路径是: /root/miniconda3/bin
-export PATH="/root/miniconda3/bin:$PATH"   
 
-# 初始化 Conda
+2. 初始化 Conda
+```
 conda init
 source ~/.bashrc
-
-# 验证安装
 conda --version
 ```
+
 3. 编译安装步骤说明
 
 1）下载TDX安全度量插件
@@ -234,10 +245,6 @@ cd <work_dir>/open-webui-main/open-webui/backend/ && ./dev.sh
 6) 前端TDX验证(鼠标悬停在对话框中的第一个图标上，可以看到解析TDX Quote详细的认证信息。远程证明成功，该图标会出现绿色标记，如果证明失败则为红色。
   ![backend service](./images/attestationinfo_pass.png)
 
-
-### 方案安全增强
-[使用CLB部署HTTPS业务（单向认证)](https://help.aliyun.com/zh/slb/classic-load-balancer/use-cases/configure-one-way-authentication-for-https-requests)
-1. Open WebUI 原生设计仅支持HTTP协议，为了增加对数据安全传输
 
 ### <h2 id="tips">Tips：</h2>
 1. 在安装依赖时可以使用阿里云的镜像来加速下载:
