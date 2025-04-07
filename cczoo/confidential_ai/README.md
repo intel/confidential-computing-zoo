@@ -185,6 +185,7 @@ cd open-webui-main/
 git checkout v0.5.20
 
 # merger to CCZoo's patch，the patch enhance the functions of open-webui for TDX remote authentication
+cd ..
 cp <work_dir>/cczoo/confidential_ai/open-webui-patch/v0.5.20-feature-cc-tdx-v1.0.patch .
 git apply --ignore-whitespace --directory=open-webui/ v0.5.20-feature-cc-tdx-v1.0.patch
 ```
