@@ -243,7 +243,8 @@ cd <work_dir>/open-webui-main/open-webui/backend/ && ./dev.sh
   ![backend service](./images/attestationinfo_error.png)
 6) 前端TDX验证(鼠标悬停在对话框中的第一个图标上，可以看到解析TDX Quote详细的认证信息。远程证明成功，该图标会出现绿色标记，如果证明失败则为红色。
   ![backend service](./images/attestationinfo_pass.png)
-
+  开发者可以通过浏览器debug Console查看TDX Quote更多详细信息： 
+  ![backend service](./images/AttestationInfo.png)
 
 ### <h2 id="tips">Tips：</h2>
 1. 在安装依赖时可以使用阿里云的镜像来加速下载:
