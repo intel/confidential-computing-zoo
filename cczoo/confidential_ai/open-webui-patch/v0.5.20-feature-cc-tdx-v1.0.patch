@@ -31,6 +31,17 @@ index 416460837..fa3c850b5 100644
  app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
  app.mount("/cache", StaticFiles(directory=CACHE_DIR), name="cache")
  
+diff --git a/backend/requirements.txt b/backend/requirements.txt
+index eb1ee6018..02abc8efa 100644
+--- a/backend/requirements.txt
++++ b/backend/requirements.txt
+@@ -118,3 +118,6 @@ ldap3==2.9.1
+ 
+ ## Firecrawl
+ firecrawl-py==1.12.0
++
++## TDX plugin
++Cython==3.0.12
 diff --git a/external/acs-attest-client/index.js b/external/acs-attest-client/index.js
 new file mode 100644
 index 000000000..36eaf8113
@@ -801,7 +812,7 @@ index 000000000..fc8df2e29
 +  }
 +}
 diff --git a/package.json b/package.json
-index 2e4b905b1..42cbfedc2 100644
+index 2e4b905b1..47e0ab749 100644
 --- a/package.json
 +++ b/package.json
 @@ -47,6 +47,7 @@
@@ -840,7 +851,7 @@ index 2e4b905b1..42cbfedc2 100644
  		"prosemirror-state": "^1.4.3",
  		"prosemirror-view": "^1.34.3",
 -		"pyodide": "^0.27.2",
-+		"pyodide": "^0.27.4",
++		"pyodide": "^0.27.5",
  		"socket.io-client": "^4.2.0",
  		"sortablejs": "^1.15.2",
  		"svelte-sonner": "^0.3.19",
