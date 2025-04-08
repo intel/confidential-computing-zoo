@@ -124,7 +124,10 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 #### 步骤2：下载并运行deepseek模型
 ```bash
+# 运行ollama + deepseek-r1:70b
 ollama run deepseek-r1:70b
+# 退出ollama
+/bye
 ``` 
 
 #### 步骤3：编译安装 open-webui
@@ -215,7 +218,7 @@ uvicorn open_webui.main:app --port $PORT --host 0.0.0.0 --forwarded-allow-ips '*
 安装Python依赖库
 ```bash
 pip install -r requirements.txt -U
-conda deactiva
+conda deactivate
 ```
 
 #### 步骤4：运行 openwebui
