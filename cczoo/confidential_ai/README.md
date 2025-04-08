@@ -69,7 +69,7 @@ Based Attestation Service, it is used to verify the security status of the model
 
 
 ### Secuity Design
-#### Measure Service Exeuction Environment
+#### Measure Service Execution Environment
 Intel Trust Domain Extensions (TDX) enhance virtual machine (VM) by isolating each VM within a hardware-protected trust domain (TD). During the boot process, the TDX module uses two sets of registers to record the status of the TD VM instance.
 
 - MRTD: Build Time Measurement Register to capture measurements related to the initial configuration and boot image of a TD VM.
@@ -274,7 +274,7 @@ cd <work_dir>/open-webui/backend/ && ./dev.sh
  [global]
 index-url = https://mirrors.aliyun.com/pypi/simple/
  ```
-2. When compiling open-webui, if you encounter Cannot find package, you can try the following command (note that pyodide is replaced with the actual package name):
+2. When compiling open-webui, if you encounter the problem of “Cannot finding the package”, you can try the following command (note that pyodide is replaced with the actual package name):
 ```bash
 npm install pyodide
 ```
