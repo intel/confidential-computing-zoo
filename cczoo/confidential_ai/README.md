@@ -26,14 +26,14 @@ The interactive user interface (UI) through which end users access the large lan
 #### 2. Remote Attestation Services
 Based Attestation Service, it is used to verify the security status of the model reasoning service environment, including: the platform trusted computing base (TCB) and the model service environment.
 
-#### 3. Reasoning Service Components
+#### 3. Inference Service Components
 
 | Component                  | Version       | Purpose                                                                                                   |
 | -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
 | **Ollama**                 |  `v0.5.7`     | Framework for running language models on confidential VMs                                                 |
 | **DeepSeek-R1**            |`deepseek-r1-70b(Quantification)`| High performance reasoning model for inference service                                                    |
 | **open-webui**             | `v0.5.20`     | Self-hosted AI interface for user-interaction, running on the same confidential VM to simplify deployment |
-| **Cofidential AI(cc-zoo)** |   `v1.2`        | Patches and compoents from cc-zoo                                                                         |
+| **Cofidential AI(cc-zoo)** |   `v1.2`        | Patches and components from cc-zoo                                                                         |
 
 ### Workflow
 
