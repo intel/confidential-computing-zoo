@@ -151,13 +151,13 @@ sudo npm install 20.18.1
 ```
 Install Miniconda(Used to start the open-webui virtual environment)：
 ```bash
-sudo wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-sudo bash Miniconda3-latest-Linux-x86_64.sh -bu
+sudo wget https://github.com/conda-forge/miniforge/releases/download/24.11.3-2/Miniforge3-24.11.3-2-Linux-x86_64.sh
+sudo bash Miniforge3-24.11.3-2-Linux-x86_64.sh -bu
 ```
 2. Configuring environment variables
 ```bash
-# Set Miniconda path,Defaulte path is: /root/miniconda3/bin
-export PATH="/root/miniconda3/bin:$PATH"   
+# Set miniforge3 path
+export PATH="/root/miniforge3/bin:$PATH"    
 
 # initial Conda
 conda init
@@ -181,7 +181,7 @@ cd <work_dir>
 git clone https://github.com/open-webui/open-webui.git
 
 # checkout to tag:v0.5.20 
-cd open-webui-main/
+cd open-webui/
 git checkout v0.5.20
 
 # merger to CCZoo's patch，the patch enhance the functions of open-webui for TDX remote authentication
@@ -204,7 +204,7 @@ python3 -c "import quote_generator"
 5）Compile open-webui
 ```bash
  # Install Dependencies
- cd <work_dir>/open-webui-main/open-webui/
+ cd <work_dir>/open-webui/
  sudo npm install
  
  #Compile
@@ -226,16 +226,18 @@ uvicorn open_webui.main:app --port $PORT --host 0.0.0.0 --forwarded-allow-ips '*
 Install Python Dependencies
 ```bash
 pip install -r requirements.txt -U
-conda deactiva
+conda deactivate
 ```
 
 ## 4. Run and Test
 1. Run ollama + DeepSeek model
 ```bash
+# Run ollama with deepseek-r1:70b
 ollama run deepseek-r1:70b
+# Exit the service
 /bye
 ```
-2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui-main/open-webui/external/acs-attest-client/index.js
+2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui/external/acs-attest-client/index.js
 3. run openwebui
 1) activate open-webui environment
 ```bash
@@ -243,7 +245,7 @@ conda activate open-webui
 ```
 2) Enable backend services：
 ```bash
-cd <work_dir>/open-webui-main/open-webui/backend/ && ./dev.sh
+cd <work_dir>/open-webui/backend/ && ./dev.sh
 ```
  ![backend service](./images/openwebui-backend.png)
 3) Open browser and enter the IP address of the current heterogeneous confidential computing instance，https://{ip_address}:{port}/(Note that the IP address is replaced with the IP address of the instance where open-webui is located, and the port number is the default port 18080).

@@ -124,7 +124,10 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 #### 步骤2：下载并运行deepseek模型
 ```bash
+# 运行ollama + deepseek-r1:70b
 ollama run deepseek-r1:70b
+# 退出ollama
+/bye
 ``` 
 
 #### 步骤3：编译安装 open-webui
@@ -193,7 +196,7 @@ python3 -c "import quote_generator"
 5）编译open-webui
 ```bash
  # 安装依赖
- cd <work_dir>/open-webui-main/open-webui/
+ cd <work_dir>/open-webui/
  sudo npm install
  
  #编译
@@ -215,7 +218,7 @@ uvicorn open_webui.main:app --port $PORT --host 0.0.0.0 --forwarded-allow-ips '*
 安装Python依赖库
 ```bash
 pip install -r requirements.txt -U
-conda deactiva
+conda deactivate
 ```
 
 #### 步骤4：运行 openwebui
@@ -224,7 +227,7 @@ conda deactiva
 ollama run deepseek-r1:70b
 /bye
 ```
-2. 阿里云远程证明服务Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation)已配置在<work_dir>/open-webui-main/open-webui/external/acs-attest-client/index.js
+2. 阿里云远程证明服务Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation)已配置在<work_dir>/open-webui/external/acs-attest-client/index.js
 3. 运行 openwebui
 1) 激活open-webui环境
 ```bash
@@ -232,7 +235,7 @@ conda activate open-webui
 ```
 2) 开启后端服务：
 ```bash
-cd <work_dir>/open-webui-main/open-webui/backend/ && ./dev.sh
+cd <work_dir>/open-webui/backend/ && ./dev.sh
 ```
  ![backend service](./images/openwebui-backend.png)
 3) 打开本地浏览器输入当前异构机密计算实例的IP地址，https://{ip_address}:{port}/(注意替换ip地址为open-webui所在实例IP地址，端口号为18080默认端口)。
