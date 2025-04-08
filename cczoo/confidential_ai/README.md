@@ -156,7 +156,7 @@ sudo bash Miniforge3-24.11.3-2-Linux-x86_64.sh -bu
 ```
 2. Configuring environment variables
 ```bash
-# Set Miniconda path,Defaulte path is: /root/miniconda3/bin
+# Set miniforge3 path
 export PATH="/root/miniforge3/bin:$PATH"    
 
 # initial Conda
@@ -204,7 +204,7 @@ python3 -c "import quote_generator"
 5）Compile open-webui
 ```bash
  # Install Dependencies
- cd <work_dir>/open-webui-main/open-webui/
+ cd <work_dir>/open-webui/
  sudo npm install
  
  #Compile
@@ -237,7 +237,7 @@ ollama run deepseek-r1:70b
 # Exit the service
 /bye
 ```
-2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui-main/open-webui/external/acs-attest-client/index.js
+2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui/external/acs-attest-client/index.js
 3. run openwebui
 1) activate open-webui environment
 ```bash
@@ -245,7 +245,7 @@ conda activate open-webui
 ```
 2) Enable backend services：
 ```bash
-cd <work_dir>/open-webui-main/open-webui/backend/ && ./dev.sh
+cd <work_dir>/open-webui/backend/ && ./dev.sh
 ```
  ![backend service](./images/openwebui-backend.png)
 3) Open browser and enter the IP address of the current heterogeneous confidential computing instance，https://{ip_address}:{port}/(Note that the IP address is replaced with the IP address of the instance where open-webui is located, and the port number is the default port 18080).
