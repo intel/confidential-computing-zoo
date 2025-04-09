@@ -26,14 +26,14 @@ The interactive user interface (UI) through which end users access the large lan
 #### 2. Remote Attestation Services
 Based Attestation Service, it is used to verify the security status of the model reasoning service environment, including: the platform trusted computing base (TCB) and the model service environment.
 
-#### 3. Reasoning Service Components
+#### 3. Inference Service Components
 
 | Component                  | Version       | Purpose                                                                                                   |
 | -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
 | **Ollama**                 |  `v0.5.7`     | Framework for running language models on confidential VMs                                                 |
 | **DeepSeek-R1**            |`deepseek-r1-70b(Quantification)`| High performance reasoning model for inference service                                                    |
 | **open-webui**             | `v0.5.20`     | Self-hosted AI interface for user-interaction, running on the same confidential VM to simplify deployment |
-| **Cofidential AI(cc-zoo)** |   `v1.2`        | Patches and compoents from cc-zoo                                                                         |
+| **Cofidential AI(cc-zoo)** |   `v1.2`        | Patches and components from cc-zoo                                                                         |
 
 ### Workflow
 
@@ -69,7 +69,7 @@ Based Attestation Service, it is used to verify the security status of the model
 
 
 ### Secuity Design
-#### Measure Service Exeuction Environment
+#### Measure Service Execution Environment
 Intel Trust Domain Extensions (TDX) enhance virtual machine (VM) by isolating each VM within a hardware-protected trust domain (TD). During the boot process, the TDX module uses two sets of registers to record the status of the TD VM instance.
 
 - MRTD: Build Time Measurement Register to capture measurements related to the initial configuration and boot image of a TD VM.
@@ -151,13 +151,13 @@ sudo npm install 20.18.1
 ```
 Install Miniconda(Used to start the open-webui virtual environment)：
 ```bash
-sudo wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-sudo bash Miniconda3-latest-Linux-x86_64.sh -bu
+sudo wget https://github.com/conda-forge/miniforge/releases/download/24.11.3-2/Miniforge3-24.11.3-2-Linux-x86_64.sh
+sudo bash Miniforge3-24.11.3-2-Linux-x86_64.sh -bu
 ```
 2. Configuring environment variables
 ```bash
-# Set Miniconda path,Defaulte path is: /root/miniconda3/bin
-export PATH="/root/miniconda3/bin:$PATH"   
+# Set miniforge3 path
+export PATH="/root/miniforge3/bin:$PATH"    
 
 # initial Conda
 conda init
@@ -181,12 +181,13 @@ cd <work_dir>
 git clone https://github.com/open-webui/open-webui.git
 
 # checkout to tag:v0.5.20 
-cd open-webui-main/
+cd open-webui/
 git checkout v0.5.20
 
 # merger to CCZoo's patch，the patch enhance the functions of open-webui for TDX remote authentication
-cp <work_dir>/confidential-computing-zoo/cczoo/xxxxx.patch .
-git apply xxxx.patch
+cd ..
+cp <work_dir>/cczoo/confidential_ai/open-webui-patch/v0.5.20-feature-cc-tdx-v1.0.patch .
+git apply --ignore-whitespace --directory=open-webui/ v0.5.20-feature-cc-tdx-v1.0.patch
 ```
 3）Create and activate the open-webui environment
 ```bash
@@ -203,7 +204,7 @@ python3 -c "import quote_generator"
 5）Compile open-webui
 ```bash
  # Install Dependencies
- cd <work_dir>/open-webui-main/open-webui/
+ cd <work_dir>/open-webui/
  sudo npm install
  
  #Compile
@@ -225,16 +226,18 @@ uvicorn open_webui.main:app --port $PORT --host 0.0.0.0 --forwarded-allow-ips '*
 Install Python Dependencies
 ```bash
 pip install -r requirements.txt -U
-conda deactiva
+conda deactivate
 ```
 
 ## 4. Run and Test
 1. Run ollama + DeepSeek model
 ```bash
+# Run ollama with deepseek-r1:70b
 ollama run deepseek-r1:70b
+# Exit the service
 /bye
 ```
-2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui-main/open-webui/external/acs-attest-client/index.js
+2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui/external/acs-attest-client/index.js
 3. run openwebui
 1) activate open-webui environment
 ```bash
@@ -242,7 +245,7 @@ conda activate open-webui
 ```
 2) Enable backend services：
 ```bash
-cd <work_dir>/open-webui-main/open-webui/backend/ && ./dev.sh
+cd <work_dir>/open-webui/backend/ && ./dev.sh
 ```
  ![backend service](./images/openwebui-backend.png)
 3) Open browser and enter the IP address of the current heterogeneous confidential computing instance，https://{ip_address}:{port}/(Note that the IP address is replaced with the IP address of the instance where open-webui is located, and the port number is the default port 18080).
@@ -253,7 +256,9 @@ cd <work_dir>/open-webui-main/open-webui/backend/ && ./dev.sh
 5) Each time you click the "New Chat" button, the background will automatically obtain the quote data of the TDX confidential computing environment and send it to the remote attestation service and return the authentication result. In the initial state, this icon is red. It means that the remote attestation is not completed or failed. It will be green after the remote attestation is successful.
   ![backend service](./images/attestationinfo_error.png)
 6) Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red.
-  ![backend service](./images/attestationinfo_pass.png)
+    ![backend service](./images/attestationinfo_pass.png)
+  Developer can check more detailed TDX measurements info via brower debug console shown as below： 
+  ![backend service](./images/AttestationInfo.png)
 
 
 ### <h2 id="tips">Tips：</h2>
@@ -269,7 +274,7 @@ cd <work_dir>/open-webui-main/open-webui/backend/ && ./dev.sh
  [global]
 index-url = https://mirrors.aliyun.com/pypi/simple/
  ```
-2. When compiling open-webui, if you encounter Cannot find package, you can try the following command (note that pyodide is replaced with the actual package name):
+2. When compiling open-webui, if you encounter the problem of “Cannot finding the package”, you can try the following command (note that pyodide is replaced with the actual package name):
 ```bash
 npm install pyodide
 ```
