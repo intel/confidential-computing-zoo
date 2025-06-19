@@ -237,7 +237,8 @@ Install Python Dependencies
 pip install -r requirements.txt -U
 conda deactivate
 ```
-6) Trustee setup and patch 
+4. Trustee setup and patch 
+
 If you plan to set up your own attestation service using trustee to support this demo, please follow the instructions below. Otherwise, you can skip this step.
 <!-- TODO: Add instructions to setup & patch Trustee -->
 
