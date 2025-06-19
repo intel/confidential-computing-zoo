@@ -44,7 +44,7 @@ Based Attestation Service, it is used to verify the security status of the model
 - **Operating environment metrics:**  
     The platform TCB performs integrity measurement on the operating environment of the running model service, and the measurement results are stored in the TDX Module located in the TCB.
 
-#### 2. Reasoning session initialization phase
+#### 2. Inference service session setup phase
 
 - **New Session:**  
     The client (browser) initiates a new session request to `open-webui`.
@@ -61,7 +61,7 @@ Based Attestation Service, it is used to verify the security status of the model
 - **Proof Verification:**  
     The client submits the received quote to the remote attestation service for verification. The attestation service verifies the validity of the quote (including digital signature, certificate chain and security policy), returns the attestation result, and confirms the security status and integrity of the remote model service environment.
 
-#### 4. Confidential large model inference service stage
+#### 4. Confidential large model inference serving stage
 
 - **Remote attestation success:** Clients can fully trust the remote model service because it runs in a highly secure and trusted mode. This assurance means that for end users, the risk of data leakage is extremely low (although any system has some degree of risk).
 
@@ -107,9 +107,13 @@ const initNewChat = async () => {
 
 ```
 
-#### Integrate with Remote Attestation Service
-The end user can choose any remote attestation service to verify the trustworthiness of the provided quote. For simplicity, this demo integrates an existing attestation service - Alibaba Remote Attestation Service, eliminating the need for users to deploy their own. In future iterations, we plan to enhance flexibility by offering configurable options that allow users to specify their preferred attestation service address.
+#### Remote Attestation Service Support
+The end user can choose any remote attestation service to verify the trustworthiness of the provided quote. This demo now supports two types of attestation services: 
+1. Alibaba Remote Attestation Service
+2. Self-hosted attestation service built with [trustee](https://github.com/confidential-containers/trustee)
+This demo adds a configuration menu in open-webui user parameters panel to support the selection of different remote attestation services. 
 
+##### Alibaba Cloud Remote Attestation Service 
 Alibaba Cloud Remote Attestation Service is based on RFC 9394 - Remote ATtestation procedureS (RATS) Architecture，It can be used to verify the security status and credibility of Alibaba Cloud security-enhanced instances. This service involves the following roles:
 - Attester：Users of Alibaba Cloud ECS instances need to prove the identity and credibility of the ECS instances to the relying parties.
 - Relying Party：For entities that need to verify the identity and credibility of the prover, the relying party will generate an evaluation strategy based on TPM, TEE and other measurement information as benchmark data.
@@ -119,6 +123,11 @@ Alibaba Cloud Remote Attestation Service provides an API that is compatible with
 
 - Alibaba Cloud Remote Attestation Service issues OIDC Tokens for trusted computing instances and confidential computing instances to prove the identity of ECS instances to relying parties.
 - Relying parties can verify the cryptographic validity of OIDC Tokens through OIDC's standard process.
+
+##### Self-hosted Attestation Service with trustee
+Trustee is a lightweight, open-source remote attestation verifier designed for confidential computing. Originally developed for the Confidential Containers project, it allows local verification of attestation evidence without relying on cloud-based services, and supports diverse applications and hardware platforms. For more project details and architectural information, please refer to its [GitHub repositorytrustee](https://github.com/confidential-containers/trustee).  
+The current project does not support cross-origin access (CORS), which means it cannot be accessed directly from web applications hosted on different origins. To support this demo scenario, an additional patch needs to be applied to trustee. Please refer to the Trustee Patch section if you plan to set up your own attestation service with trustee to support this demo.
+
 
 #### HTTPS usage in open-webui
 The native design of `open-webui` supports only the HTTP protocol. To enhance the security of data transmission, it is recommended to enable HTTPS by deploying a reverse proxy with TLS support, such as Nginx. This ensures that all communication between the client and the inference service is encrypted, protecting sensitive user inputs and model outputs from potential interception or tampering. Configuring HTTPS for `open-webui` is out of the scope of this article.
@@ -228,6 +237,9 @@ Install Python Dependencies
 pip install -r requirements.txt -U
 conda deactivate
 ```
+6) Trustee setup and patch 
+If you plan to set up your own attestation service using trustee to support this demo, please follow the instructions below. Otherwise, you can skip this step.
+<!-- TODO: Add instructions to setup & patch Trustee -->
 
 ## 4. Run and Test
 1. Run ollama + DeepSeek model
@@ -253,9 +265,13 @@ cd <work_dir>/open-webui/backend/ && ./dev.sh
 
 4) Select a model (deepseek-r1:70b is used as an example here). You can select a model each time you create a new session window.
   ![backend service](./images/selectModel.png)
-5) Each time you click the "New Chat" button, the background will automatically obtain the quote data of the TDX confidential computing environment and send it to the remote attestation service and return the authentication result. In the initial state, this icon is red. It means that the remote attestation is not completed or failed. It will be green after the remote attestation is successful.
+
+5) Configure Attestation Aervice Address 
+<!-- ToDo: add instruction for how to configure and select the remote attestation service in open-webui -->
+
+6) Each time you click the "New Chat" button, the background will automatically obtain the quote data of the TDX confidential computing environment and send it to the remote attestation service and return the authentication result. In the initial state, this icon is red. It means that the remote attestation is not completed or failed. It will be green after the remote attestation is successful.
   ![backend service](./images/attestationinfo_error.png)
-6) Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red.
+7) Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red.
     ![backend service](./images/attestationinfo_pass.png)
   Developer can check more detailed TDX measurements info via brower debug console shown as below： 
   ![backend service](./images/AttestationInfo.png)
