@@ -1,0 +1,288 @@
+# Feature patch (cc-tdx v1.0) based on tag 0.5.20: Introducing support for confidential computing VMs on TDX
+
+diff --git a/external/acs-attest-client/index.js b/external/acs-attest-client/index.js
+index 36eaf8113..1ab63e547 100644
+--- a/external/acs-attest-client/index.js
++++ b/external/acs-attest-client/index.js
+@@ -25,8 +25,14 @@ import axios from 'axios';
+ import jsonwebtoken from 'jsonwebtoken';
+ import jwksClient from 'jwks-rsa';
+ import { jwtDecode } from 'jwt-decode';
++import { attest_adr,verify_adr, typeflag } from '../../src/lib/stores/index.ts';
+ 
+-const ATTEST_SERVICE_ENDPOINT = "https://attest.cn-beijing.aliyuncs.com/v1/attestation";
++let ATTEST_SERVICE_ENDPOINT;
++let verifyToken;
++let ast_type;
++attest_adr.subscribe(value => (ATTEST_SERVICE_ENDPOINT = value));
++verify_adr.subscribe(value => (verifyToken = value));
++typeflag.subscribe(value => (ast_type =value));
+ 
+ export async function attest(quote) {
+ 	const quotebase64 = Buffer.from(quote).toString('base64');
+@@ -58,7 +64,8 @@ export async function decode_apprasial_token(token) {
+ 
+ export async function verify_apprasial_token(token) {
+ 	const client = jwksClient({
+-		jwksUri: 'https://attest.cn-beijing.aliyuncs.com/jwks.json',
++		// jwksUri: 'https://attest.cn-beijing.aliyuncs.com/jwks.json',
++		jwksUrl: verifyToken
+ 	});
+ 	const key = await client.getSigningKey();
+ 	const publicKey = key.getPublicKey();
+diff --git a/src/lib/components/chat/Chat.svelte b/src/lib/components/chat/Chat.svelte
+index c7e99c61d..644f0843c 100644
+--- a/src/lib/components/chat/Chat.svelte
++++ b/src/lib/components/chat/Chat.svelte
+@@ -89,6 +89,7 @@
+ 	import Placeholder from './Placeholder.svelte';
+ 	import NotificationToast from '../NotificationToast.svelte';
+ 	import Spinner from '../common/Spinner.svelte';
++	import { typeflag,attest_adr } from '$lib/stores';
+ 
+ 	export let chatIdProp = '';
+ 
+@@ -646,6 +647,11 @@
+ 	};
+ 
+ 	// TEE Quote Verification Function
++	let attestAdress;
++	attest_adr.subscribe(value => (attestAdress = value));
++	let attestType;
++	typeflag.subscribe(value => (attestType = value));
++
+ 	let _pendingQuoteUpdate = false;
+         const teeQuoteVerify = async () => {
+             const ENABLE_TEE = true;
+diff --git a/src/lib/components/chat/Settings/Advanced/AdvancedParams.svelte b/src/lib/components/chat/Settings/Advanced/AdvancedParams.svelte
+index 59d230d1b..c4176f59a 100644
+--- a/src/lib/components/chat/Settings/Advanced/AdvancedParams.svelte
++++ b/src/lib/components/chat/Settings/Advanced/AdvancedParams.svelte
+@@ -2,6 +2,7 @@
+ 	import Switch from '$lib/components/common/Switch.svelte';
+ 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+ 	import { getContext, createEventDispatcher } from 'svelte';
++	import { onMount, onDestroy } from "svelte";
+ 
+ 	const dispatch = createEventDispatcher();
+ 
+@@ -12,6 +13,8 @@
+ 	export let params = {
+ 		// Advanced
+ 		stream_response: null, // Set stream responses for this model individually
++		attestation: 'disable',
++		attestationtype: null,
+ 		function_calling: null,
+ 		seed: null,
+ 		stop: null,
+@@ -41,9 +44,53 @@
+ 	let customFieldName = '';
+ 	let customFieldValue = '';
+ 
++	import { models, settings, theme, user } from '$lib/stores';
+ 	$: if (params) {
+ 		dispatch('change', params);
+ 	}
++
++	params = { ...params, ...$settings.params };
++	
++	import { typeflag,attest_adr } from '$lib/stores';
++	import Chat from '$lib/components/chat/Chat.svelte';
++        let ATTEST_SERVICE_ENDPOINT;
++        attest_adr.subscribe(value => (ATTEST_SERVICE_ENDPOINT = value));
++        let att_type;
++        typeflag.subscribe(value => (att_type = value));
++	
++	let selectedValue = 'ali';
++	let ali_input = ATTEST_SERVICE_ENDPOINT;
++	let trustee_input = '';
++	let showInput = true;
++	function handleSelectChange(event) {
++		selectedValue = event.target.value;
++		if (selectedValue === 'ali'){
++			showInput = true;
++			params.attestationtype = 'ali';
++			attest_adr.set(ali_input);
++			typeflag.set("Ali")
++		}
++		else if (selectedValue === 'trustee'){
++			showInput = true;
++			params.attestationtype = 'trustee';
++			attest_adr.set(trustee_input);
++			typeflag.set("trustee")
++		}
++		else {
++			showInput = false;
++			params.attestationtype = value;
++		}
++		$settings.params = {...$settings.params, ...params};
++	  }
++	
++
++	function handleCustomInput() {
++	    if (customInput.trim()) {
++	      selectedValue = customInput;
++	      showInput = false;
++	    }
++	  }
++
+ </script>
+ 
+ <div class=" space-y-1 text-xs pb-safe-bottom">
+@@ -129,7 +176,8 @@
+ 					class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+ 					type="button"
+ 					on:click={() => {
+-						params.seed = (params?.seed ?? null) === null ? 0 : null;
++						params.seed = (params?.seed ?? null) === null ? 0 : params.seed;
++						$settings.params = {...$settings.params, ...params};
+ 					}}
+ 				>
+ 					{#if (params?.seed ?? null) === null}
+@@ -149,6 +197,7 @@
+ 						type="number"
+ 						placeholder={$i18n.t('Enter Seed')}
+ 						bind:value={params.seed}
++						on:change={(e) => {$settings.params.seed=params.seed}}
+ 						autocomplete="off"
+ 						min="0"
+ 					/>
+@@ -1170,6 +1219,108 @@
+ 		{/if}
+ 	</div>
+ 
++	<div>
++		<Tooltip
++			content={$i18n.t(
++                                'When enabled, the chat session will attestate the remote environment running model service. Local: using local quote verification service, Remote: using remote verifiation service, need to configure Remote Verfication Service Address. Now only Intel TDX support.'
++                        )}
++                        placement="top-start"
++                        className="inline-tooltip"
++                >
++                        <div class=" py-0.5 flex w-full justify-between">
++                                <div class=" self-center text-xs font-medium">
++                                        {$i18n.t('Remote Attestation Mode')}
++                                </div>
++                                <button
++                                        class="flex items-center px-3 py-1 rounded-sm transition-colors text-xs"
++                                        class:bg-red-100={params?.attestation === 'disable'}
++                                        class:dark:bg-red-800={params.attestation === 'disable'}
++                                        class:text-red-700={params.attestation === 'disable'}
++                                        class:dark:text-red-200={params.attestation === 'disable'}
++
++                                        class:bg-green-100={params.attestation === 'enable'}
++                                        class:dark:bg-green-800={params.attestation === 'enable'}
++                                        class:text-green-700={params.attestation === 'enable'}
++                                        class:dark:text-green-200={params.attestation === 'enable'}
++
++                                        on:click={() => {
++                                                params.attestation = params.attestation === 'disable' ? 'enable' : 'disable';
++                                                $settings.params = {...$settings.params, ...params};
++                                        }}
++                                        type="button"
++                                >
++                                        <span class="ml-2">
++                                        {#if params.attestation === 'disable'}
++                                                {$i18n.t('Disable')}
++                                        {:else}
++                                                {$i18n.t('Enable')}
++                                        {/if}
++                                        </span>
++                                </button>
++                        </div>
++                </Tooltip>
++        </div>
++
++
++        <div class=" py-0.5 w-full justify-between">
++                <Tooltip
++                        content={$i18n.t(
++                            'Sets attestation Type. Default as Ali'
++                        )}
++                        placement="top-start"
++                        className="inline-tooltip"
++                >
++                        <div class="flex w-full justify-between">
++                                <div class=" self-center text-xs font-medium">
++                                        {$i18n.t('Attesation Service Type')}
++                                </div>
++                                <style>
++                                        select {
++                                          padding-right: 1px;
++                                          width: 60px;
++                                          height: 25px;
++                                          font-size: 14px;
++                                        }
++                                  </style>
++
++                                <select
++                                    disabled={(params?.attestation ?? null) === 'disable' ? true : false}
++                                    bind:value={selectedValue} on:change={handleSelectChange}>
++                                    <option value="ali"><span class="ml-2 self-center"> Ali </span></option>
++                                    <option value="trustee"><span class="ml-2 self-center"> Trustee </span></option>
++                                </select>
++                        </div>
++                </Tooltip>
++
++                {#if (params?.attestationtype ?? null) !== null}
++                    {#if (params.attestationtype === 'ali') && showInput}
++                                <div class="flex mt-0.5 space-x-2">
++                                        <div class=" flex-1">
++                                                <input
++                                                        class="w-full rounded-lg py-2 px-1 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
++                                                        type="text"
++                                                        bind:value={ali_input}
++                                                        autocomplete="off"
++                                                />
++                                        </div>
++                                </div>
++                    {:else}
++                                <div class="flex mt-0.5 space-x-2">
++                                        <div class=" flex-1">
++                                                 <input
++                                                        class="w-full rounded-lg py-2 px-1 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
++                                                        type="text"
++                                                        placeholder='http://127.0.0.1:9090/verify_quote/trustee'
++                                                        bind:value={trustee_input}
++                                                        autocomplete="off"
++                                                />
++                                        </div>
++                                </div>
++
++                    {/if}
++                {/if}
++        </div>
++
+ 	{#if admin}
+ 		<div class=" py-0.5 w-full justify-between">
+ 			<Tooltip
+diff --git a/src/lib/components/chat/Settings/General.svelte b/src/lib/components/chat/Settings/General.svelte
+index 666256c09..74c5ed4f5 100644
+--- a/src/lib/components/chat/Settings/General.svelte
++++ b/src/lib/components/chat/Settings/General.svelte
+@@ -371,7 +371,9 @@
+ 						use_mmap: params.use_mmap !== null ? params.use_mmap : undefined,
+ 						use_mlock: params.use_mlock !== null ? params.use_mlock : undefined,
+ 						num_thread: params.num_thread !== null ? params.num_thread : undefined,
+-						num_gpu: params.num_gpu !== null ? params.num_gpu : undefined
++						num_gpu: params.num_gpu !== null ? params.num_gpu : undefined,
++						attestation: params.attestation !== null ? params.attestation : undefined,
++						attestationtype: params.attestationtype !== null ? params.attestationtype : undefined
+ 					},
+ 					keepAlive: keepAlive ? (isNaN(keepAlive) ? keepAlive : parseInt(keepAlive)) : undefined
+ 				});
+diff --git a/src/lib/stores/index.ts b/src/lib/stores/index.ts
+index 4526d3612..6bc11ad9f 100644
+--- a/src/lib/stores/index.ts
++++ b/src/lib/stores/index.ts
+@@ -5,7 +5,9 @@ import type { Banner } from '$lib/types';
+ import type { Socket } from 'socket.io-client';
+ 
+ import emojiShortCodes from '$lib/emoji-shortcodes.json';
+-
++export const typeflag = writable();
++export const attest_adr = writable("https://attest.cn-beijing.aliyuncs.com/v1/attestation");
++export const verify_adr = writable("https://attest.cn-beijing.aliyuncs.com/jwks.json");
+ // Backend
+ export const WEBUI_NAME = writable(APP_NAME);
+ export const config: Writable<Config | undefined> = writable(undefined);
