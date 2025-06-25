@@ -28,12 +28,14 @@ Based Attestation Service, it is used to verify the security status of the model
 
 #### 3. Inference Service Components
 
-| Component                  | Version       | Purpose                                                                                                   |
-| -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
-| **Ollama**                 |  `v0.5.7`     | Framework for running language models on confidential VMs                                                 |
-| **DeepSeek-R1**            |`deepseek-r1-70b(Quantification)`| High performance reasoning model for inference service                                                    |
-| **open-webui**             | `v0.5.20`     | Self-hosted AI interface for user-interaction, running on the same confidential VM to simplify deployment |
-| **Cofidential AI(cc-zoo)** |   `v1.2`        | Patches and components from cc-zoo                                                                         |
+| Component                  | Version       | Purpose                                                                                                   | Comments |
+| -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- | -------- |
+| **Ollama**                 |  `v0.5.7`     | Framework for running language models on confidential VMs                                                 |          |
+| **DeepSeek-R1**            |`deepseek-r1-70b(Quantification)`| High performance reasoning model for inference service                                                    |          |
+| **open-webui**             | `v0.5.20`     | Self-hosted AI interface for user-interaction, running on the same confidential VM to simplify deployment |          |
+| **Cofidential AI(cc-zoo)** |   `v1.2`        | Patches and components from cc-zoo                                                                         |          |
+| **Ali AttestationService** |`Ali`        |  Alibaba Remote Attestation Service                                                                         | Default |
+| **Trustee AttestationService** |`Trustee`        |  Trustee Remote Attestation Service                                                                         | Optional |
 
 ### Workflow
 
@@ -106,13 +108,15 @@ const initNewChat = async () => {
 ```
 
 ## Remote Attestation Service Support
-TThis solution supports two types of attestation service and provides one attestation option for user to choose:
-
- - #### [Alibaba Remote Attestation Service](https://attest.cn-beijing.aliyuncs.com/v1/attestation) 
- - #### Self-hosted attestation service built with [trustee](https://github.com/confidential-containers/trustee)  This demo adds a configuration menu in open-webui user parameters panel to support the selection of different remote attestation services.
-
+In future iterations, we plan to enhance flexibility by offering configurable options that allow users to specify their preferred attestation service address.
+Currently,this solution supports two types of attestation service and provides one attestation option for user to choose:
+ - #### Ali: [Alibaba Remote Attestation Service](https://attest.cn-beijing.aliyuncs.com/v1/attestation)
+   Send TEE Evidence to Aliyun Remote Attestation Service, which completes the evaluation of Evidence based on the platform policy and returns a JSON Web Token (JWT, RFC 7519) issued by Aliyun.
+ - #### Trustee: Self-hosted attestation service built with [trustee](https://github.com/confidential-containers/trustee)
+   Send an evidence to the Trustee-AS service to verify the format and origin of the evidence itself (i.e., check the signature of the evidence).
+   
 #### Integrate with Remote Attestation Service
-The end user can choose any remote attestation service to verify the trustworthiness of the provided quote. For simplicity, this demo integrates an existing attestation service - Alibaba Remote Attestation Service, eliminating the need for users to deploy their own. In future iterations, we plan to enhance flexibility by offering configurable options that allow users to specify their preferred attestation service address.
+The end user can choose any remote attestation service to verify the trustworthiness of the provided quote. For simplicity, this demo integrates an existing attestation service - Alibaba Remote Attestation Service, eliminating the need for users to deploy their own. 
 
 Alibaba Cloud Remote Attestation Service is based on RFC 9394 - Remote ATtestation procedureS (RATS) Architecture，It can be used to verify the security status and credibility of Alibaba Cloud security-enhanced instances. This service involves the following roles:
 - Attester：Users of Alibaba Cloud ECS instances need to prove the identity and credibility of the ECS instances to the relying parties.
@@ -134,19 +138,19 @@ The native design of `open-webui` supports only the HTTP protocol. To enhance th
 ## 3. Build and Installation Guide
 ##### Notice: The following steps are completed in the Aliyun instance, which supports Aliyun Remote Attestation Service, and you can also configure other remote authentication services. If you need to configure other remote attestation services, you can also use other environments.
 
-#### Step 1: Install ollama
+#### 3.1: Install ollama
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ``` 
 For more information, see [**ollama Installation Guide**](https://github.com/ollama/ollama/blob/main/docs/linux.md).
 
-#### Step 2：Download and run the deepseek model
+#### 3.2：Download and run the deepseek model
 ```bash
 ollama run deepseek-r1:70b
 ``` 
 
-#### Step 3：Compile and install open-webui
-1. Install Dependencies
+#### 3.3：Compile and install open-webui
+##### 1. Install Dependencies
 ```bash
 # install nodejs
 sudo yum install nodejs -y
@@ -163,7 +167,7 @@ Install Miniconda(Used to start the open-webui virtual environment)：
 sudo wget https://github.com/conda-forge/miniforge/releases/download/24.11.3-2/Miniforge3-24.11.3-2-Linux-x86_64.sh
 sudo bash Miniforge3-24.11.3-2-Linux-x86_64.sh -bu
 ```
-2. Configuring environment variables
+##### 2. Configuring environment variables
 ```bash
 # Set miniforge3 path
 export PATH="/root/miniforge3/bin:$PATH"    
@@ -175,16 +179,16 @@ source ~/.bashrc
 # Verify Installation
 conda --version
 ```
-3. Compile and install steps
+##### 3. Compile and install steps
 
-1）Download the TDX Security Metrics plugin
+###### 1）Download the TDX Security Metrics plugin
 ```bash
 cd <work_dir>
 git clone https://github.com/intel/confidential-computing-zoo.git
 cd confidential-computing-zoo
 git checkout v1.2
 ```
-2）get openweb-ui code
+###### 2）get openweb-ui code
 ```bash
 cd <work_dir>
 git clone https://github.com/open-webui/open-webui.git
@@ -198,19 +202,19 @@ cd ..
 cp <work_dir>/cczoo/confidential_ai/open-webui-patch/v0.5.20-feature-cc-tdx-v1.0.patch .
 git apply --ignore-whitespace --directory=open-webui/ v0.5.20-feature-cc-tdx-v1.0.patch
 ```
-3）Create and activate the open-webui environment
+###### 3）Create and activate the open-webui environment
 ```bash
 conda create --name open-webui python=3.11
 conda activate open-webui
 ```
-4）Install the "Get TDX Quote" plugin
+###### 4）Install the "Get TDX Quote" plugin
 ```bash
 cd <work_dir>/confidential-computing-zoo/cczoo/confidential_ai/tdx_measurement_plugin/
 python setup.py install
 
 python3 -c "import quote_generator"
 ```
-5）Compile open-webui
+###### 5）Compile open-webui
 ```bash
  # Install Dependencies
  cd <work_dir>/open-webui/
@@ -237,7 +241,9 @@ Install Python Dependencies
 pip install -r requirements.txt -U
 conda deactivate
 ```
-4. Trustee setup and patch
+
+#### Notice: Complete the steps above, you can proceed to step 4.Run and Test, this is to verify the remote certification service. (Default is Alibaba remote attestation service.)
+#### 3.4 Trustee setup and patch
 ```bash
 # merger new feature patch, the patch add function to change TDX remote authentication type. Now support Ali & Trustee(Trustee need start service first).
 # Detail:(https://github.com/confidential-containers/trustee/blob/v0.13.0/attestation-service/docs/restful-as.md#quick-start).
@@ -307,11 +313,12 @@ cd <work_dir>/open-webui/backend/ && ./dev.sh
   ![backend service](./images/ChangeTDXType.png)
 6) When set attestation address, each time you click the "New Chat" button, the background will automatically obtain the quote data of the TDX confidential computing environment and send it to the remote attestation service and return the authentication result. In the initial state, this icon is red. It means that the remote attestation is not completed or failed. It will be green after the remote attestation is successful.
   ![backend service](./images/attestationinfo_error.png)
-6) Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red.
+7) Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red.
     ![backend service](./images/attestationinfo_pass.png)
   Developer can check more detailed TDX measurements info via brower debug console shown as below： 
   ![backend service](./images/AttestationInfo.png)
-
+8) When choose trustee and Trustee service is enable, click 'New Chat' button, then trustee service will be used. The result is as shown in step 7).
+   ![backend service](./images/trusteeAttestation.png)
 
 ### <h2 id="tips">Tips：</h2>
 1. When installing dependencies, you can use Alibaba Cloud's image to speed up downloading:
