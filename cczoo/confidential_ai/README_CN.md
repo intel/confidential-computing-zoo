@@ -103,15 +103,16 @@ const initNewChat = async () => {
 ```
 
 ## 远程认证服务支持
-终端用户可以选择任何远程认证服务来验证所提供报价的可信度。本演示现在支持两种类型的验证服务：
+当前允许终端用户可以选择任何远程认证服务来验证。本演示现在支持两种类型的验证服务：
 
- - #### [阿里](https://help.aliyun.com/zh/ecs/user-guide/remote-attestation-service)远程认证服务:
+ - #### [阿里云](https://help.aliyun.com/zh/ecs/user-guide/remote-attestation-service)远程认证服务:
    发送 TEE Evidence至阿里云远程证明服务，阿里云远程证明服务基于平台策略完成对Evidence的评估后，返回一个由阿里云签发的JSON Web Token（JWT, RFC 7519）。
  - #### Trustee: 使用 [trustee](https://github.com/confidential-containers/trustee)构建的自托管验证服务
    发送一个 evidence 到 Trustee-AS 服务，核实证据本身的格式和来源（即检查证据的签名）。
+   在未来的迭代中，会支持更多的可配置远程认证服务。
 
 ## 与Remote Attestation Service集成
-最终用户可以选择任何远程认证服务来验证所提供Quote的可信度。为简单起见，此Demo集成了现有的认证服务 - 阿里巴巴远程认证服务，用户无需部署自己的认证服务。在未来的迭代中，我们计划通过提供允许用户指定其首选认证服务地址的可配置选项来提高灵活性。
+为简单起见，此Demo集成了现有的认证服务 - 阿里巴巴远程认证服务，用户无需部署自己的认证服务
 [阿里云远程证明服务](https://help.aliyun.com/zh/ecs/user-guide/remote-attestation-service)以RFC 9394 - Remote ATtestation procedureS (RATS) Architecture 为基础，可用于验证阿里云安全增强型实例的安全状态和可信性。该服务涉及以下角色：
 - 证明者（Attester）：使用阿里云ECS实例的用户，需要向依赖方证明ECS实例的身份及可信度。
 - 依赖方（Relying Party）：需要验证证明者身份及可信度的实体，依赖方会基于TPM、TEE等度量信息作为基准数据生成评估策略。
@@ -236,7 +237,7 @@ pip install -r requirements.txt -U
 conda deactivate
 ```
 
-#### Notice: 完成以上步骤后可跳至步骤4.运行open-webui 即可验证远程认证服务（默认是阿里巴巴的远程认证服务）。
+#### Notice: 如果想要使用自构建的认证服务(如Trustee)，可按照一下步骤执行。否则可以跳过步骤3.4。
 #### 3.4. Trustee setup and patch
 ```bash
 # 合入新补丁, 该patch增加了TDX远程认证服务切换的功能, 目前支持Ali和Trustee(Trustee需先启动其后台服务)。
@@ -285,7 +286,7 @@ conda activate open-webui
 ```bash
 cd <work_dir>/open-webui/backend/ && ./dev.sh
 ```
- ![backend service](./images/openwebui-backend.png)
+  ![backend service](./images/openwebui-backend.png)
 ###### 3) 打开本地浏览器输入当前异构机密计算实例的IP地址，https://{ip_address}:{port}/(注意替换ip地址为open-webui所在实例IP地址，端口号为18080默认端口)。
   ![backend service](./images/login.png)
 
@@ -297,8 +298,11 @@ cd <work_dir>/open-webui/backend/ && ./dev.sh
   ![backend service](./images/attestationinfo_error.png)
 ###### 7) 前端TDX验证(鼠标悬停在对话框中的第一个图标上，可以看到解析TDX Quote详细的认证信息。远程证明成功，该图标会出现绿色标记，如果证明失败则为红色。
   ![backend service](./images/attestationinfo_pass.png)
+  
   开发者可以通过浏览器debug Console查看TDX Quote更多详细信息： 
+
   ![backend service](./images/AttestationInfo.png)
+
 ###### 8) 当选择 Trustee 后, 点击 'New Chat' 后, 会使用 trustee 认证服务。结果如步骤7）类似。
   ![backend service](./images/trusteeAttestation.png)
 
@@ -319,4 +323,4 @@ index-url = https://mirrors.aliyun.com/pypi/simple/
 ```bash
 npm install pyodide
 ```
-3. 启动Trustee认证服务时需要注意默认端口号的分配，避免与 `open-webui` 后端端口号冲突。
+3. 启动Trustee认证服务时需要注意默认端口号的分配，避免与 `open-webui` 后端(默认端口号：8080)端口号冲突。

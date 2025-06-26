@@ -108,15 +108,15 @@ const initNewChat = async () => {
 ```
 
 ## Remote Attestation Service Support
-In future iterations, we plan to enhance flexibility by offering configurable options that allow users to specify their preferred attestation service address.
-Currently,this solution supports two types of attestation service and provides one attestation option for user to choose:
- - #### Ali: [Alibaba Remote Attestation Service](https://attest.cn-beijing.aliyuncs.com/v1/attestation)
+We enhance flexibility by offering configurable options that allow users to specify their preferred attestation service address.Currently,this solution supports two types of attestation service and provides one attestation option for user to choose:
+ - #### Alibaba Cloud: [Alibaba Remote Attestation Service](https://attest.cn-beijing.aliyuncs.com/v1/attestation)
    Send TEE Evidence to Aliyun Remote Attestation Service, which completes the evaluation of Evidence based on the platform policy and returns a JSON Web Token (JWT, RFC 7519) issued by Aliyun.
  - #### Trustee: Self-hosted attestation service built with [trustee](https://github.com/confidential-containers/trustee)
    Send an evidence to the Trustee-AS service to verify the format and origin of the evidence itself (i.e., check the signature of the evidence).
-   
+In future iterations, we will support more configurable attestation service.
+
 #### Integrate with Remote Attestation Service
-The end user can choose any remote attestation service to verify the trustworthiness of the provided quote. For simplicity, this demo integrates an existing attestation service - Alibaba Remote Attestation Service, eliminating the need for users to deploy their own. 
+We use Alibaba Remote Attestation Service by default, eliminating the need for users to deploy their own. 
 
 Alibaba Cloud Remote Attestation Service is based on RFC 9394 - Remote ATtestation procedureS (RATS) Architecture，It can be used to verify the security status and credibility of Alibaba Cloud security-enhanced instances. This service involves the following roles:
 - Attester：Users of Alibaba Cloud ECS instances need to prove the identity and credibility of the ECS instances to the relying parties.
@@ -242,7 +242,7 @@ pip install -r requirements.txt -U
 conda deactivate
 ```
 
-#### Notice: Complete the steps above, you can proceed to step 4.Run and Test, this is to verify the remote certification service. (Default is Alibaba remote attestation service.)
+#### Notice: If want to use self-hosted remote attestation service (Trustee), can follow below steps. Otherwirse, you skip step 3.4. 
 #### 3.4 Trustee setup and patch
 ```bash
 # merger new feature patch, the patch add function to change TDX remote authentication type. Now support Ali & Trustee(Trustee need start service first).
@@ -303,20 +303,24 @@ conda activate open-webui
 ```bash
 cd <work_dir>/open-webui/backend/ && ./dev.sh
 ```
- ![backend service](./images/openwebui-backend.png)
+    ![backend service](./images/openwebui-backend.png)
 3) Open browser and enter the IP address of the current heterogeneous confidential computing instance，https://{ip_address}:{port}/(Note that the IP address is replaced with the IP address of the instance where open-webui is located, and the port number is the default port 18080).
-  ![backend service](./images/login.png)
+    ![backend service](./images/login.png)
 
 4) Select a model (deepseek-r1:70b is used as an example here). You can select a model each time you create a new session window.
-  ![backend service](./images/selectModel.png)
+    ![backend service](./images/selectModel.png)
 5) Default option is Alibaba Attestation Service.
-  ![backend service](./images/ChangeTDXType.png)
+
+      ![backend service](./images/ChangeTDXType.png)
 6) When set attestation address, each time you click the "New Chat" button, the background will automatically obtain the quote data of the TDX confidential computing environment and send it to the remote attestation service and return the authentication result. In the initial state, this icon is red. It means that the remote attestation is not completed or failed. It will be green after the remote attestation is successful.
   ![backend service](./images/attestationinfo_error.png)
-7) Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red.
-    ![backend service](./images/attestationinfo_pass.png)
-  Developer can check more detailed TDX measurements info via brower debug console shown as below： 
-  ![backend service](./images/AttestationInfo.png)
+7) Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red).
+  ![backend service](./images/attestationinfo_pass.png)
+
+    Developer can check more detailed TDX measurements info via brower debug console shown as below： 
+
+      ![backend service](./images/AttestationInfo.png)
+
 8) When choose trustee and Trustee service is enable, click 'New Chat' button, then trustee service will be used. The result is as shown in step 7).
    ![backend service](./images/trusteeAttestation.png)
 
@@ -337,3 +341,4 @@ index-url = https://mirrors.aliyun.com/pypi/simple/
 ```bash
 npm install pyodide
 ```
+3. When starting the Trustee Authentication Service, you need to pay attention to the assignment of the default port number to avoid conflict with the port number of the `open-webui` backend(default port: 8080).
