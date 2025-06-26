@@ -27,12 +27,14 @@
 
 #### 3. 推理服务组件
 
-| Component                  | Version       | Purpose                                                                                                   |
-| -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- |
-| **Ollama**                 |  `v0.5.7`     | 用于在机密 VM 上运行语言模型的框架                                                 |
-| **DeepSeek-R1**            |`deepseek-r1-70b(量化)`| 用于推理服务的高性能推理模型                                                    |
-| **open-webui**             | `v0.5.20`     | 用于用户交互的自托管 AI 界面，在同一机密 VM 上运行以简化部署 |
-| **Cofidential AI(cc-zoo)** |   `v1.2`        |  来自 cc-zoo 的补丁和组件                                                                         |
+| Component                  | Version       | Purpose                                                                                                   | Comments |
+| -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- | -------- |
+| **Ollama**                 |`v0.5.7`     | 用于在机密 VM 上运行语言模型的框架                                                 |          |
+| **DeepSeek-R1**            |`deepseek-r1-70b(量化)`| 用于推理服务的高性能推理模型                                                    |          |
+| **open-webui**             |`v0.5.20`     | 用于用户交互的自托管 AI 界面，在同一机密 VM 上运行以简化部署 |v0.5.20-feature-cc-tdx-v1.0.patch|
+| **Cofidential AI(cc-zoo)** |`v1.2`        |  来自 cc-zoo 的补丁和组件                                                                         |          |
+| **Ali AttestationService** |`Ali`        |  阿里的远程认证服务                                                                         | Default |
+| **Trustee AttestationService** |`Trustee`        |  Trustee远程认证服务                                                                         | Optional |
 
 ### 工作流程
 
@@ -54,7 +56,7 @@
     客户端发起会话请求时，会向服务后端同时请求一个证明模型运行环境的可信性证明(TDX Quote)，该证明可以用来验证远程服务环境的可信性，包含用户会话管理服务 `open-webui` 和模型服务 (`ollama + DeepSeek`)的可信性。
     
 - **生成证明:**  
-    `open-webui` 服务后端将用户会话创建过程中的证明请求转发至​基于Intel TDX的机密计算虚拟机（Confidential VM）​可信服务模块（TSM）​。该模块通过协调底层TDX Module与宿主机操作系统（Host OS）上运行的证明生成服务，生成包含完整证书链的​TDX证明（TDX Quote）​。
+    `open-webui` 服务后端将用户会话创建过程中的证明请求转发至​基于Intel TDX的机密计算虚拟机（Confidential VM）​可信服务模块(TSM)​。该模块通过协调底层TDX Module与宿主机操作系统（Host OS）上运行的证明生成服务，生成包含完整证书链的​TDX证明（TDX Quote）​。
     
 - **证明验证:**  
     客户端将接收到的证明（Quote）提交至远程证明服务（Attestation Service）进行验证。证明服务通过验证该次证明的有效性（包括数字签名、证书链及安全策略），返回证明结果，确认远端模型服务环境的安全性状态与完整性。
@@ -100,8 +102,17 @@ const initNewChat = async () => {
     teeQuoteVerify();
 ```
 
+## 远程认证服务支持
+当前允许终端用户可以选择任何远程认证服务来验证。本演示现在支持两种类型的验证服务：
+
+ - #### [阿里云](https://help.aliyun.com/zh/ecs/user-guide/remote-attestation-service)远程认证服务:
+   发送 TEE Evidence至阿里云远程证明服务，阿里云远程证明服务基于平台策略完成对Evidence的评估后，返回一个由阿里云签发的JSON Web Token（JWT, RFC 7519）。
+ - #### Trustee: 使用 [trustee](https://github.com/confidential-containers/trustee)构建的自托管验证服务
+   发送一个 evidence 到 Trustee-AS 服务，核实证据本身的格式和来源（即检查证据的签名）。
+   在未来的迭代中，会支持更多的可配置远程认证服务。
+
 ## 与Remote Attestation Service集成
-最终用户可以选择任何远程认证服务来验证所提供Quote的可信度。为简单起见，此Demo集成了现有的认证服务 - 阿里巴巴远程认证服务，用户无需部署自己的认证服务。在未来的迭代中，我们计划通过提供允许用户指定其首选认证服务地址的可配置选项来提高灵活性。
+为简单起见，此Demo集成了现有的认证服务 - 阿里巴巴远程认证服务，用户无需部署自己的认证服务
 [阿里云远程证明服务](https://help.aliyun.com/zh/ecs/user-guide/remote-attestation-service)以RFC 9394 - Remote ATtestation procedureS (RATS) Architecture 为基础，可用于验证阿里云安全增强型实例的安全状态和可信性。该服务涉及以下角色：
 - 证明者（Attester）：使用阿里云ECS实例的用户，需要向依赖方证明ECS实例的身份及可信度。
 - 依赖方（Relying Party）：需要验证证明者身份及可信度的实体，依赖方会基于TPM、TEE等度量信息作为基准数据生成评估策略。
@@ -111,18 +122,23 @@ const initNewChat = async () => {
 - 阿里云远程证明服务通过为可信计算实例、机密计算实例颁发OIDC Token以向依赖方（Relying Party）证明ECS实例的身份。
 - 依赖方可以通过OIDC的标准流程验证OIDC Token的密码学有效性。
 
+### 使用 trustee 构建的自托管验证服务
+Trustee 是一款轻量级开源远程证明验证器，专为机密计算而设计。它最初是为保密容器项目开发的，可以在不依赖云服务的情况下对证明证据进行本地验证，并支持各种应用和硬件平台。更多项目详情和架构信息，请参阅其 GitHub repository [trustee](https://github.com/confidential-containers/trustee)。
+当前项目不支持跨来源访问（CORS），这意味着无法从托管在不同来源的网络应用程序直接访问该项目。为支持这一演示场景，需要在 trustee 上打上额外的补丁。如果您计划使用受托人建立自己的验证服务以支持此演示，请参阅 “受托人补丁 ”部分。
+
 ### open-webui 中的 HTTPS 使用情况
-open-webui的原生设计仅支持HTTP协议。为了增强数据传输的安全性，建议通过部署支持TLS的反向代理（如 Nginx）来启用HTTPS。这可确保客户端和推理服务之间的所有通信都已加密，从而保护敏感的用户输入和模型输出免受潜在的拦截或篡改。为open-webui配置HTTPS超出了本文的范围。
+`open-webui`的原生设计仅支持HTTP协议。为了增强数据传输的安全性，建议通过部署支持TLS的反向代理（如 Nginx）来启用HTTPS。这可确保客户端和推理服务之间的所有通信都已加密，从而保护敏感的用户输入和模型输出免受潜在的拦截或篡改。为`open-webui`配置HTTPS超出了本文的范围。
 
 ## 3. 构建和安装指南
 
-#### 步骤1：安装 ollama
+##### Notice: 以下步骤均在阿里云TDX实例中完成，默认采用阿里云远程证明服务，也可以配置使用trustee远程认证服务。如果使用其他TDX环境，可使用trustee远程认证服务。
+#### 3.1：安装 ollama
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ``` 
 更多信息请参阅 [**ollama 安装指南**](https://github.com/ollama/ollama/blob/main/docs/linux.md).
 
-#### 步骤2：下载并运行deepseek模型
+#### 3.2：下载并运行deepseek模型
 ```bash
 # 运行ollama + deepseek-r1:70b
 ollama run deepseek-r1:70b
@@ -130,8 +146,8 @@ ollama run deepseek-r1:70b
 /bye
 ``` 
 
-#### 步骤3：编译安装 open-webui
-1. 安装依赖
+#### 3.3：编译安装 open-webui
+##### 1. 安装依赖
 ```bash
 # 安装nodejs
 sudo yum install nodejs -y
@@ -150,23 +166,23 @@ sudo bash Miniforge3-24.11.3-2-Linux-x86_64.sh -bu
 export PATH="/root/miniforge3/bin:$PATH"
 ```
 
-2. 初始化 Conda
+##### 2. 初始化 Conda
 ```
 conda init
 source ~/.bashrc
 conda --version
 ```
 
-3. 编译安装步骤说明
+##### 3. 编译安装步骤说明
 
-1）下载TDX安全度量插件
+###### 1）下载TDX安全度量插件
 ```bash
 cd <work_dir>
 git clone https://github.com/intel/confidential-computing-zoo.git
 cd confidential-computing-zoo
 git checkout v1.2
 ```
-2）拉取openweb-ui代码
+###### 2）拉取openweb-ui代码
 ```bash
 cd <work_dir>
 git clone https://github.com/open-webui/open-webui.git
@@ -180,12 +196,12 @@ cd ..
 cp <work_dir>/cczoo/confidential_ai/open-webui-patch/v0.5.20-feature-cc-tdx-v1.0.patch .
 git apply --ignore-whitespace --directory=open-webui/ v0.5.20-feature-cc-tdx-v1.0.patch
 ```
-3）创建open-webui环境并激活
+###### 3）创建open-webui环境并激活
 ```bash
 conda create --name open-webui python=3.11
 conda activate open-webui
 ```
-4）安装 "获取TDX Quote" 插件
+###### 4）安装 "获取TDX Quote" 插件
 ```bash
 cd <work_dir>/confidential-computing-zoo/cczoo/confidential_ai/tdx_measurement_plugin/
 python setup.py install
@@ -193,7 +209,7 @@ python setup.py install
 #验证安装使用
 python3 -c "import quote_generator"
 ```
-5）编译open-webui
+###### 5）编译open-webui
 ```bash
  # 安装依赖
  cd <work_dir>/open-webui/
@@ -221,34 +237,74 @@ pip install -r requirements.txt -U
 conda deactivate
 ```
 
+#### Notice: 如果想要使用自构建的认证服务(如Trustee)，可按照一下步骤执行。否则可以跳过步骤3.4。
+#### 3.4. Trustee setup and patch
+```bash
+# 合入新补丁, 该patch增加了TDX远程认证服务切换的功能, 目前支持Ali和Trustee(Trustee需先启动其后台服务)。
+# Trustee远程认证服务，详情参见(https://github.com/confidential-containers/trustee/blob/v0.13.0/attestation-service/docs/restful-as.md#quick-start).
+
+cp <work_dir>/cczoo/confidential_ai/open-webui-patch/configurable-as-option.patch .
+git apply --ignore-whitespace --directory=open-webui/configurable-as-option.patch
+
+### 如需在open-webui中验证Trustee认证服务，需先启动trustee服务。
+# Trustee服务启动
+cd <work_dir>
+git clone https://github.com/confidential-containers/trustee.git
+
+# 切换到tag:v0.13.0
+cd trustee
+git checkout v0.13.0
+# 获取patch
+
+# 应用patch
+cd ..
+git apply --ignore-whitespace --directory=trustee/restful.patch
+
+# 编译镜像
+cd trustee
+docker build -t <name>:<tag>  -f attestation-service/docker/as-restful/Dockerfile --build-arg --build-arg VERIFIER=all-verifier .
+
+# 获取新镜像ID
+dicker images
+# 启动服务
+docker run -d --network=host  -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf -p 8080:8080 image_ID
+
+```
 #### 步骤4：运行 openwebui
-1. 运行 ollama + DeepSeek model
+##### 1. 运行 ollama + DeepSeek model
 ```bash
 ollama run deepseek-r1:70b
 /bye
 ```
-2. 阿里云远程证明服务Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation)已配置在<work_dir>/open-webui/external/acs-attest-client/index.js
-3. 运行 openwebui
-1) 激活open-webui环境
+##### 2. 阿里云远程证明服务Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation)已配置在<work_dir>/open-webui/external/acs-attest-client/index.js
+##### 3. 运行 openwebui
+###### 1) 激活open-webui环境
 ```bash
 conda activate open-webui
 ```
-2) 开启后端服务：
+###### 2) 开启后端服务：
 ```bash
 cd <work_dir>/open-webui/backend/ && ./dev.sh
 ```
- ![backend service](./images/openwebui-backend.png)
-3) 打开本地浏览器输入当前异构机密计算实例的IP地址，https://{ip_address}:{port}/(注意替换ip地址为open-webui所在实例IP地址，端口号为18080默认端口)。
+  ![backend service](./images/openwebui-backend.png)
+###### 3) 打开本地浏览器输入当前异构机密计算实例的IP地址，https://{ip_address}:{port}/(注意替换ip地址为open-webui所在实例IP地址，端口号为18080默认端口)。
   ![backend service](./images/login.png)
 
-4) 选择模型(这里以deepseek-r1:70b为例)，每次新建一个会话窗口，都可以选择一个模型。
+###### 4) 选择模型(这里以deepseek-r1:70b为例)，每次新建一个会话窗口，都可以选择一个模型。
   ![backend service](./images/selectModel.png)
-5) 每次点击“New Chat” 按钮后，后台会自动获取TDX 机密计算环境的Quote data发送至远程证明服务并返回认证结果。初始状态下，此图标显示红色。表示远程证明未完成或失败，远程证明成功后显示绿色。
+###### 5) 设置远程认证服务地址，默认情况下是阿里远程认证服务。Remote Attestation Mode:enable/disable(控制TDX服务切换功能，默认enable);Attesation Service Type：Ali/Trustee(认证服务的类型，可自行输入认证服务地址)。
+  ![backend service](./images/ChangeTDXType.png)
+###### 6) 设置完认证服务地址后，每次点击“New Chat” 按钮后，后台会自动获取TDX 机密计算环境的Quote data发送至远程证明服务并返回认证结果。初始状态下，此图标显示红色。表示远程证明未完成或失败，远程证明成功后显示绿色。
   ![backend service](./images/attestationinfo_error.png)
-6) 前端TDX验证(鼠标悬停在对话框中的第一个图标上，可以看到解析TDX Quote详细的认证信息。远程证明成功，该图标会出现绿色标记，如果证明失败则为红色。
+###### 7) 前端TDX验证(鼠标悬停在对话框中的第一个图标上，可以看到解析TDX Quote详细的认证信息。远程证明成功，该图标会出现绿色标记，如果证明失败则为红色。
   ![backend service](./images/attestationinfo_pass.png)
+  
   开发者可以通过浏览器debug Console查看TDX Quote更多详细信息： 
+
   ![backend service](./images/AttestationInfo.png)
+
+###### 8) 当选择 Trustee 后, 点击 'New Chat' 后, 会使用 trustee 认证服务。结果如步骤7）类似。
+  ![backend service](./images/trusteeAttestation.png)
 
 ### <h2 id="tips">Tips：</h2>
 1. 在安装依赖时可以使用阿里云的镜像来加速下载:
@@ -267,3 +323,4 @@ index-url = https://mirrors.aliyun.com/pypi/simple/
 ```bash
 npm install pyodide
 ```
+3. 启动Trustee认证服务时需要注意默认端口号的分配，避免与 `open-webui` 后端(默认端口号：8080)端口号冲突。
