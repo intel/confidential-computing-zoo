@@ -33,7 +33,7 @@
 | **DeepSeek-R1**            |`deepseek-r1-70b(量化)`| 用于推理服务的高性能推理模型                                                    |          |
 | **open-webui**             |`v0.5.20`     | 用于用户交互的自托管 AI 界面，在同一机密 VM 上运行以简化部署 |v0.5.20-feature-cc-tdx-v1.0.patch|
 | **Cofidential AI(cc-zoo)** |`v1.2`        |  来自 cc-zoo 的补丁和组件                                                                         |          |
-| **Ali AttestationService** |`Ali`        |  阿里的远程认证服务                                                                         | Default |
+| **Alibaba Cloud AttestationService** |`Alibaba Cloud`        |  阿里云的远程认证服务                                                                         | Default |
 | **Trustee AttestationService** |`Trustee`        |  Trustee远程认证服务                                                                         | Optional |
 
 ### 工作流程
