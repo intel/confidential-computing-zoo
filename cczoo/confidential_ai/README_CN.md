@@ -123,7 +123,7 @@ const initNewChat = async () => {
 - 依赖方可以通过OIDC的标准流程验证OIDC Token的密码学有效性。
 
 ### 使用 trustee 构建的自托管验证服务
-Trustee 是一款轻量级开源远程证明验证器，专为保密计算而设计。它最初是为保密容器项目开发的，可以在不依赖云服务的情况下对证明证据进行本地验证，并支持各种应用和硬件平台。更多项目详情和架构信息，请参阅其 GitHub repository [trustee](https://github.com/confidential-containers/trustee)。
+Trustee 是一款轻量级开源远程证明验证器，专为机密计算而设计。它最初是为保密容器项目开发的，可以在不依赖云服务的情况下对证明证据进行本地验证，并支持各种应用和硬件平台。更多项目详情和架构信息，请参阅其 GitHub repository [trustee](https://github.com/confidential-containers/trustee)。
 当前项目不支持跨来源访问（CORS），这意味着无法从托管在不同来源的网络应用程序直接访问该项目。为支持这一演示场景，需要在 trustee 上打上额外的补丁。如果您计划使用受托人建立自己的验证服务以支持此演示，请参阅 “受托人补丁 ”部分。
 
 ### open-webui 中的 HTTPS 使用情况
