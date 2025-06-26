@@ -322,7 +322,7 @@ cd <work_dir>/open-webui/backend/ && ./dev.sh
 
       ![backend service](./images/AttestationInfo.png)
 
-8) When choose trustee and Trustee service is enable, click 'New Chat' button, then trustee service will be used. The result is as shown in step 7).
+9) When choose trustee and Trustee service is enable, click 'New Chat' button, then trustee service will be used. The result is as shown in step 7).
    ![backend service](./images/trusteeAttestation.png)
 
 ### <h2 id="tips">Tips：</h2>
