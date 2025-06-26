@@ -34,7 +34,7 @@ Based Attestation Service, it is used to verify the security status of the model
 | **DeepSeek-R1**            |`deepseek-r1-70b(Quantification)`| High performance reasoning model for inference service                                                    |          |
 | **open-webui**             | `v0.5.20`     | Self-hosted AI interface for user-interaction, running on the same confidential VM to simplify deployment |          |
 | **Cofidential AI(cc-zoo)** |   `v1.2`        | Patches and components from cc-zoo                                                                         |          |
-| **Ali AttestationService** |`Ali`        |  Alibaba Remote Attestation Service                                                                         | Default |
+| **Alibaba Cloud AttestationService** |`Alibaba Cloud`        |  Alibaba Cloud Remote Attestation Service                                                                         | Default |
 | **Trustee AttestationService** |`Trustee`        |  Trustee Remote Attestation Service                                                                         | Optional |
 
 ### Workflow
@@ -108,11 +108,12 @@ const initNewChat = async () => {
 ```
 
 ## Remote Attestation Service Support
-We enhance flexibility by offering configurable options that allow users to specify their preferred attestation service address.Currently,this solution supports two types of attestation service and provides one attestation option for user to choose:
+We enable and provide configurable options for users to choose attestation service address. Currently,this solution supports two types of attestation service and provides one attestation option for user to choose:
  - #### Alibaba Cloud: [Alibaba Remote Attestation Service](https://attest.cn-beijing.aliyuncs.com/v1/attestation)
    Send TEE Evidence to Aliyun Remote Attestation Service, which completes the evaluation of Evidence based on the platform policy and returns a JSON Web Token (JWT, RFC 7519) issued by Aliyun.
  - #### Trustee: Self-hosted attestation service built with [trustee](https://github.com/confidential-containers/trustee)
    Send an evidence to the Trustee-AS service to verify the format and origin of the evidence itself (i.e., check the signature of the evidence).
+
 In future iterations, we will support more configurable attestation service.
 
 #### Integrate with Remote Attestation Service
@@ -123,14 +124,14 @@ Alibaba Cloud Remote Attestation Service is based on RFC 9394 - Remote ATtestati
 - Relying Party：For entities that need to verify the identity and credibility of the prover, the relying party will generate an evaluation strategy based on TPM, TEE and other measurement information as benchmark data.
 - Verifier：Alibaba Cloud Remote Attestation Service is responsible for comparing the evidence with the evaluation strategy and obtaining the verification result.
 
-Alibaba Cloud Remote Attestation Service provides an API that is compatible with the OIDC standard. You can regard Alibaba Cloud Remote Attestation Service as a standard identity provider (IdP) service.
+Alibaba Cloud Remote Attestation Service provides an API that is compatible with the OIDC standard. You can regard Alibaba Cloud Remote Attestation Service as a standard identity provider service.
 
 - Alibaba Cloud Remote Attestation Service issues OIDC Tokens for trusted computing instances and confidential computing instances to prove the identity of ECS instances to relying parties.
 - Relying parties can verify the cryptographic validity of OIDC Tokens through OIDC's standard process.
 
 ### Self-hosted Attestation Service with trustee
-Trustee is a lightweight, open-source remote attestation verifier designed for confidential computing. Originally developed for the Confidential Containers project, it allows local verification of attestation evidence without relying on cloud-based services, and supports diverse applications and hardware platforms. For more project details and architectural information, please refer to its GitHub repositorytrustee.
-The current project does not support cross-origin access (CORS), which means it cannot be accessed directly from web applications hosted on different origins. To support this demo scenario, an additional patch needs to be applied to trustee. Please refer to the Trustee Patch section if you plan to set up your own attestation service with trustee to support this demo.
+Trustee is a lightweight, open-sourced remote attestation component designed for confidential computing. It allows local verification of attestation evidence without relying on cloud-based services, and supports diverse applications and hardware platforms. For more project details and architectural information, please refer to its GitHub repository of trustee.
+The current project does not support cross-origin access (CORS), which means it cannot be accessed directly from web applications hosted on different origins. To support this demo scenario, an additional patch needs to be applied to trustee. Please refer to the trustee patch section if you plan to set up your own attestation service with trustee to support this demo.
 
 #### HTTPS usage in open-webui
 The native design of `open-webui` supports only the HTTP protocol. To enhance the security of data transmission, it is recommended to enable HTTPS by deploying a reverse proxy with TLS support, such as Nginx. This ensures that all communication between the client and the inference service is encrypted, protecting sensitive user inputs and model outputs from potential interception or tampering. Configuring HTTPS for `open-webui` is out of the scope of this article.
@@ -167,7 +168,7 @@ Install Miniconda(Used to start the open-webui virtual environment)：
 sudo wget https://github.com/conda-forge/miniforge/releases/download/24.11.3-2/Miniforge3-24.11.3-2-Linux-x86_64.sh
 sudo bash Miniforge3-24.11.3-2-Linux-x86_64.sh -bu
 ```
-##### 2. Configuring environment variables
+##### 2. Configure environment variables
 ```bash
 # Set miniforge3 path
 export PATH="/root/miniforge3/bin:$PATH"    
@@ -188,7 +189,7 @@ git clone https://github.com/intel/confidential-computing-zoo.git
 cd confidential-computing-zoo
 git checkout v1.2
 ```
-###### 2）get openweb-ui code
+###### 2）Get openweb-ui code
 ```bash
 cd <work_dir>
 git clone https://github.com/open-webui/open-webui.git
@@ -242,7 +243,7 @@ pip install -r requirements.txt -U
 conda deactivate
 ```
 
-#### Notice: If want to use self-hosted remote attestation service (Trustee), can follow below steps. Otherwirse, you skip step 3.4. 
+#### Notice: If you want to use self-hosted remote attestation service (Trustee), can follow below steps. Otherwirse, you skip step 3.4. 
 #### 3.4 Trustee setup and patch
 ```bash
 # merger new feature patch, the patch add function to change TDX remote authentication type. Now support Ali & Trustee(Trustee need start service first).
