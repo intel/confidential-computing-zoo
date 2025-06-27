@@ -311,6 +311,7 @@ cd <work_dir>/open-webui/backend/ && ./dev.sh
 
 ###### 4. Select a model (deepseek-r1:70b is used as an example here). You can select a model each time you create a new session window.
   <img src="./images/selectModel.png" width="700" height="350">
+
 ###### 5. Default option is Alibaba Attestation Service.
 
   <img src="./images/ChangeTDXType.png" width="500" height="768">
