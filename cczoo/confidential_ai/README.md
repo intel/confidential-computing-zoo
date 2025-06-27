@@ -286,44 +286,48 @@ docker run -d \
   -p 8080:8080 \
   ghcr.io/confidential-containers/staged-images/coco-as-restful:latest
 ```
-## 4. Run and Test
-1. Run ollama + DeepSeek model
+#### 4. Run and Test
+##### 1. Run ollama + DeepSeek model
 ```bash
 # Run ollama with deepseek-r1:70b
 ollama run deepseek-r1:70b
 # Exit the service
 /bye
 ```
-2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui/external/acs-attest-client/index.js
-3. run openwebui
-1) activate open-webui environment
+##### 2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui/external/acs-attest-client/index.js
+##### 3. run openwebui
+###### 1. activate open-webui environment
 ```bash
 conda activate open-webui
 ```
-2) Enable backend services：
+###### 2. Enable backend services：
 ```bash
 cd <work_dir>/open-webui/backend/ && ./dev.sh
 ```
-    ![backend service](./images/openwebui-backend.png)
-3) Open browser and enter the IP address of the current heterogeneous confidential computing instance，https://{ip_address}:{port}/(Note that the IP address is replaced with the IP address of the instance where open-webui is located, and the port number is the default port 18080).
-    ![backend service](./images/login.png)
+  <img src="./images/openwebui-backend.png" width="690" height="500">
+  
+###### 3. Open browser and enter the IP address of the current heterogeneous confidential computing instance，https://{ip_address}:{port}/(Note that the IP address is replaced with the IP address of the instance where open-webui is located, and the port number is the default port 18080).
+  <img src="./images/login.png" width="760" height="500">
 
-4) Select a model (deepseek-r1:70b is used as an example here). You can select a model each time you create a new session window.
-    ![backend service](./images/selectModel.png)
-5) Default option is Alibaba Attestation Service.
+###### 4. Select a model (deepseek-r1:70b is used as an example here). You can select a model each time you create a new session window.
+  <img src="./images/selectModel.png" width="700" height="350">
+###### 5. Default option is Alibaba Attestation Service.
 
-      ![backend service](./images/ChangeTDXType.png)
-6) When set attestation address, each time you click the "New Chat" button, the background will automatically obtain the quote data of the TDX confidential computing environment and send it to the remote attestation service and return the authentication result. In the initial state, this icon is red. It means that the remote attestation is not completed or failed. It will be green after the remote attestation is successful.
-  ![backend service](./images/attestationinfo_error.png)
-7) Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red).
-  ![backend service](./images/attestationinfo_pass.png)
+  <img src="./images/ChangeTDXType.png" width="500" height="768">
+  
+###### 6. When set attestation address, each time you click the "New Chat" button, the background will automatically obtain the quote data of the TDX confidential computing environment and send it to the remote attestation service and return the authentication result. In the initial state, this icon is red. It means that the remote attestation is not completed or failed. It will be green after the remote attestation is successful.
+  <img src="./images/attestationinfo_error.png" width="820" height="404">
+  
+###### 7. Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red).
+  <img src="./images/attestationinfo_pass.png" width="300" height="550">
 
-    Developer can check more detailed TDX measurements info via brower debug console shown as below： 
+  Developer can check more detailed TDX measurements info via brower debug console shown as below： 
 
-      ![backend service](./images/AttestationInfo.png)
+  <img src="./images/AttestationInfo.png" width="368" height="400">
 
-9) When choose trustee and Trustee service is enable, click 'New Chat' button, then trustee service will be used. The result is as shown in step 7).
-   ![backend service](./images/trusteeAttestation.png)
+###### 8. When choose trustee and Trustee service is enable, click 'New Chat' button, then trustee service will be used. The result is as shown in step 7).
+   
+  <img src="./images/AttestationInfo.png" width="380" height="400">
 
 ### <h2 id="tips">Tips：</h2>
 1. When installing dependencies, you can use Alibaba Cloud's image to speed up downloading:
