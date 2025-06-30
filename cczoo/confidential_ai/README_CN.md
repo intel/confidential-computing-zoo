@@ -126,7 +126,7 @@ const initNewChat = async () => {
 Trustee 是一款轻量级开源远程证明验证器，专为机密计算而设计。它最初是为保密容器项目开发的，可以在不依赖云服务的情况下对证明证据进行本地验证，并支持各种应用和硬件平台。更多项目详情和架构信息，请参阅其 GitHub repository [trustee](https://github.com/confidential-containers/trustee)。
 当前项目不支持跨来源访问（CORS），这意味着无法从托管在不同来源的网络应用程序直接访问该项目。为支持这一演示场景，需要在 trustee 上打上额外的补丁。如果您计划使用受托人建立自己的验证服务以支持此演示，请参阅 “受托人补丁 ”部分。
 
-### open-webui 中的 HTTPS 使用情况
+## open-webui 中的 HTTPS 使用情况
 `open-webui`的原生设计仅支持HTTP协议。为了增强数据传输的安全性，建议通过部署支持TLS的反向代理（如 Nginx）来启用HTTPS。这可确保客户端和推理服务之间的所有通信都已加密，从而保护敏感的用户输入和模型输出免受潜在的拦截或篡改。为`open-webui`配置HTTPS超出了本文的范围。
 
 ## 3. 构建和安装指南
