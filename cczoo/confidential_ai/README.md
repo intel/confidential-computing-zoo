@@ -46,7 +46,7 @@ Based Attestation Service, it is used to verify the security status of the model
 - **Operating environment metrics:**  
     The platform TCB performs integrity measurement on the operating environment of the running model service, and the measurement results are stored in the TDX Module located in the TCB.
 
-#### 2. Reasoning session initialization phase
+#### 2. Inference service session setup phase
 
 - **New Session:**  
     The client (browser) initiates a new session request to `open-webui`.
@@ -63,7 +63,7 @@ Based Attestation Service, it is used to verify the security status of the model
 - **Proof Verification:**  
     The client submits the received quote to the remote attestation service for verification. The attestation service verifies the validity of the quote (including digital signature, certificate chain and security policy), returns the attestation result, and confirms the security status and integrity of the remote model service environment.
 
-#### 4. Confidential large model inference service stage
+#### 4. Confidential large model inference serving stage
 
 - **Remote attestation success:** Clients can fully trust the remote model service because it runs in a highly secure and trusted mode. This assurance means that for end users, the risk of data leakage is extremely low (although any system has some degree of risk).
 
@@ -107,7 +107,7 @@ const initNewChat = async () => {
     teeQuoteVerify();
 ```
 
-## Remote Attestation Service Support
+#### Remote Attestation Service Support
 We enable and provide configurable options for users to choose attestation service address. Currently,this solution supports two types of attestation service and provides one attestation option for user to choose:
  - #### Alibaba Cloud: [Alibaba Remote Attestation Service](https://attest.cn-beijing.aliyuncs.com/v1/attestation)
    Send TEE Evidence to Aliyun Remote Attestation Service, which completes the evaluation of Evidence based on the platform policy and returns a JSON Web Token (JWT, RFC 7519) issued by Aliyun.
@@ -129,7 +129,7 @@ Alibaba Cloud Remote Attestation Service provides an API that is compatible with
 - Alibaba Cloud Remote Attestation Service issues OIDC Tokens for trusted computing instances and confidential computing instances to prove the identity of ECS instances to relying parties.
 - Relying parties can verify the cryptographic validity of OIDC Tokens through OIDC's standard process.
 
-### Self-hosted Attestation Service with trustee
+##### Self-hosted Attestation Service with trustee
 Trustee is a lightweight, open-sourced remote attestation component designed for confidential computing. It allows local verification of attestation evidence without relying on cloud-based services, and supports diverse applications and hardware platforms. For more project details and architectural information, please refer to its GitHub repository of trustee.
 The current project does not support cross-origin access (CORS), which means it cannot be accessed directly from web applications hosted on different origins. To support this demo scenario, an additional patch needs to be applied to trustee. Please refer to the trustee patch section if you plan to set up your own attestation service with trustee to support this demo.
 
