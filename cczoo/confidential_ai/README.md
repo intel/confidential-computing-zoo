@@ -18,7 +18,7 @@ This solution demonstrates how to build a confidential AI inference service with
 The overall solution architecture design is shown in the figure:
 ![System Deployment Architecture](./images/Deployment%20Architecture.png)
 
-### Deployment Components
+### 2.1 Deployment Components
 
 #### 1. Client
 The interactive user interface (UI) through which end users access the large language model service is responsible for initiating sessions, verifying the credibility of the remote model service environment, and communicating securely with the backend model service.
@@ -37,7 +37,7 @@ Based Attestation Service, it is used to verify the security status of the model
 | **Alibaba Cloud AttestationService** |`Alibaba Cloud`        |  Alibaba Cloud Remote Attestation Service                                                                         | Default |
 | **Trustee AttestationService** |`Trustee`        |  Trustee Remote Attestation Service                                                                         | Optional |
 
-### Workflow
+### 2.2 Workflow
 
 ![Confidential AI Workflow](./images/Confidential%20AI%20Flow.png)
 
@@ -70,8 +70,8 @@ Based Attestation Service, it is used to verify the security status of the model
 - **Remote attestation failed:** The attestation service will return an error message, indicating that the remote attestation has failed. At this point, the user or system may choose to terminate further service requests, or continue to provide services with effective warnings of security risks, but at this point the remote model service may have data security risks.
 
 
-### Secuity Design
-#### Measure Service Execution Environment
+### 2.3 Secuity Design
+#### 2.3.1 Measure Service Execution Environment
 Intel Trust Domain Extensions (TDX) enhance virtual machine (VM) by isolating each VM within a hardware-protected trust domain (TD). During the boot process, the TDX module uses two sets of registers to record the status of the TD VM instance.
 
 - MRTD: Build Time Measurement Register to capture measurements related to the initial configuration and boot image of a TD VM.
@@ -80,7 +80,7 @@ Intel Trust Domain Extensions (TDX) enhance virtual machine (VM) by isolating ea
 
 These measurement registers ensure the integrity of the TD, including those running applications throughout its lifecycle. For this solution demonstration, measurements of model serving and kernel parameters(including those related to the Ollama and DeepSeek models and the open-webui web framework), can be reflected in the RTMR.
 
-#### Verify Trustworthiness of Runtime Service
+#### 2.3.2 Verify Trustworthiness of Runtime Service
 Remote attestation in TDX provides cryptographic authentication assurance of the integrity and authenticity of the TD VM to the remote parties. The process involves several key steps:
 1. Backend API for Quote Generation:
 An API endpoint is added in the `open-webui` backend to generate and provide a quote, serving as verifiable proof of the service execution environment.
@@ -107,7 +107,7 @@ const initNewChat = async () => {
     teeQuoteVerify();
 ```
 
-#### Remote Attestation Service Support
+#### 2.3.3 Remote Attestation Service Support
 We enable and provide configurable options for users to choose attestation service address. Currently,this solution supports two types of attestation service and provides one attestation option for user to choose:
  - #### Alibaba Cloud: [Alibaba Remote Attestation Service](https://attest.cn-beijing.aliyuncs.com/v1/attestation)
    Send TEE Evidence to Aliyun Remote Attestation Service, which completes the evaluation of Evidence based on the platform policy and returns a JSON Web Token (JWT, RFC 7519) issued by Aliyun.
@@ -116,7 +116,7 @@ We enable and provide configurable options for users to choose attestation servi
 
 In future iterations, we will support more configurable attestation service.
 
-#### Integrate with Remote Attestation Service
+#### 2.3.4 Integrate with Remote Attestation Service
 We use Alibaba Remote Attestation Service by default, eliminating the need for users to deploy their own. 
 
 Alibaba Cloud Remote Attestation Service is based on RFC 9394 - Remote ATtestation procedureS (RATS) Architecture，It can be used to verify the security status and credibility of Alibaba Cloud security-enhanced instances. This service involves the following roles:
@@ -133,7 +133,7 @@ Alibaba Cloud Remote Attestation Service provides an API that is compatible with
 Trustee is a lightweight, open-sourced remote attestation component designed for confidential computing. It allows local verification of attestation evidence without relying on cloud-based services, and supports diverse applications and hardware platforms. For more project details and architectural information, please refer to its GitHub repository of trustee.
 The current project does not support cross-origin access (CORS), which means it cannot be accessed directly from web applications hosted on different origins. To support this demo scenario, an additional patch needs to be applied to trustee. Please refer to the trustee patch section if you plan to set up your own attestation service with trustee to support this demo.
 
-#### HTTPS usage in open-webui
+#### 2.3.5 HTTPS usage in open-webui
 The native design of `open-webui` supports only the HTTP protocol. To enhance the security of data transmission, it is recommended to enable HTTPS by deploying a reverse proxy with TLS support, such as Nginx. This ensures that all communication between the client and the inference service is encrypted, protecting sensitive user inputs and model outputs from potential interception or tampering. Configuring HTTPS for `open-webui` is out of the scope of this article.
 
 ## 3. Build and Installation Guide
@@ -145,13 +145,13 @@ curl -fsSL https://ollama.com/install.sh | sh
 ``` 
 For more information, see [**ollama Installation Guide**](https://github.com/ollama/ollama/blob/main/docs/linux.md).
 
-#### 3.2：Download and run the deepseek model
+#### 3.2: Download and run the deepseek model
 ```bash
 ollama run deepseek-r1:70b
 ``` 
 
-#### 3.3：Compile and install open-webui
-##### 1. Install Dependencies
+#### 3.3: Compile and install open-webui
+##### 3.3.1 Install Dependencies
 ```bash
 # install nodejs
 sudo yum install nodejs -y
@@ -168,7 +168,7 @@ Install Miniconda(Used to start the open-webui virtual environment)：
 sudo wget https://github.com/conda-forge/miniforge/releases/download/24.11.3-2/Miniforge3-24.11.3-2-Linux-x86_64.sh
 sudo bash Miniforge3-24.11.3-2-Linux-x86_64.sh -bu
 ```
-##### 2. Configure environment variables
+##### 3.3.2 Configure environment variables
 ```bash
 # Set miniforge3 path
 export PATH="/root/miniforge3/bin:$PATH"    
@@ -180,7 +180,7 @@ source ~/.bashrc
 # Verify Installation
 conda --version
 ```
-##### 3. Compile and install steps
+##### 3.3.3 Compile and install steps
 
 ###### 1）Download the TDX Security Metrics plugin
 ```bash
@@ -287,15 +287,15 @@ docker run -d \
   ghcr.io/confidential-containers/staged-images/coco-as-restful:latest
 ```
 #### 4. Run and Test
-##### 1. Run ollama + DeepSeek model
+##### 4.1 Run ollama + DeepSeek model
 ```bash
 # Run ollama with deepseek-r1:70b
 ollama run deepseek-r1:70b
 # Exit the service
 /bye
 ```
-##### 2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui/external/acs-attest-client/index.js
-##### 3. run openwebui
+##### 4.2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui/external/acs-attest-client/index.js
+##### 4.3. run openwebui
 ###### 1. activate open-webui environment
 ```bash
 conda activate open-webui
