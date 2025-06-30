@@ -270,7 +270,7 @@ dicker images
 docker run -d --network=host  -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf -p 8080:8080 image_ID
 
 ```
-#### 步骤4：运行 openwebui
+#### 4：运行 openwebui
 ##### 4.1. 运行 ollama + DeepSeek model
 ```bash
 ollama run deepseek-r1:70b
