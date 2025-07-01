@@ -19,13 +19,13 @@
 
 ### 2.1 部署组件
 
-#### 1. 客户端
+#### 2.2.1 客户端
 终端用户访问大语言模型服务的交互界面（UI），负责发起会话、验证远端模型服务环境可信性，并与后端模型服务进行安全通信。
 
-#### 2. 远程认证服务
+#### 2.2.2 远程认证服务
 基于认证服务，用于验证模型推理服务环境的安全状态，包括：平台可信计算库（TCB）和模型服务环境。
 
-#### 3. 推理服务组件
+#### 2.2.3 推理服务组件
 
 | Component                  | Version       | Purpose                                                                                                   | Comments |
 | -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- | -------- |
@@ -40,17 +40,17 @@
 
 ![Confidential AI Workflow](./images/Confidential%20AI%20Flow.png)
 
-#### 1. 服务启动及度量流程
+#### 2.2.1 服务启动及度量流程
 
 - **运行环境度量:**  
     平台TCB模块针对运行模型服务的运行环境进行完整性度量，度量结果存储在位于TCB中的TDX Module中。
 
-#### 2. 推理会话初始化阶段
+#### 2.2.2 推理会话初始化阶段
 
 - **新建会话:**  
     客户端 (浏览器) 向`open-webui`发起新的会话请求。
 
-#### 3. 远程证明阶段
+#### 2.2.3 远程证明阶段
 
 - **认证请求:**  
     客户端发起会话请求时，会向服务后端同时请求一个证明模型运行环境的可信性证明(TDX Quote)，该证明可以用来验证远程服务环境的可信性，包含用户会话管理服务 `open-webui` 和模型服务 (`ollama + DeepSeek`)的可信性。
@@ -61,7 +61,7 @@
 - **证明验证:**  
     客户端将接收到的证明（Quote）提交至远程证明服务（Attestation Service）进行验证。证明服务通过验证该次证明的有效性（包括数字签名、证书链及安全策略），返回证明结果，确认远端模型服务环境的安全性状态与完整性。
 
-#### 4. 机密大模型推理服务阶段
+#### 2.2.4 机密大模型推理服务阶段
 
 - **远程证明成功:** 客户端可以 ​充分信任远端模型服务，因为其运行在​高度安全且可信的模式 下。这种保证意味着，对于终端用户而言，数据泄露的风险极低（尽管任何系统都存在一定程度的风险）。
 
@@ -132,13 +132,13 @@ Trustee 是一款轻量级开源远程证明验证器，专为机密计算而设
 ## 3. 构建和安装指南
 
 ##### Notice: 以下步骤均在阿里云TDX实例中完成，默认采用阿里云远程证明服务，也可以配置使用trustee远程认证服务。如果使用其他TDX环境，可使用trustee远程认证服务。
-#### 3.1: 安装 ollama
+#### 3.1 安装 ollama
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ``` 
 更多信息请参阅 [**ollama 安装指南**](https://github.com/ollama/ollama/blob/main/docs/linux.md).
 
-#### 3.2: 下载并运行deepseek模型
+#### 3.2 下载并运行deepseek模型
 ```bash
 # 运行ollama + deepseek-r1:70b
 ollama run deepseek-r1:70b
@@ -146,7 +146,7 @@ ollama run deepseek-r1:70b
 /bye
 ``` 
 
-#### 3.3: 编译安装 open-webui
+#### 3.3 编译安装 open-webui
 ##### 3.3.1 安装依赖
 ```bash
 # 安装nodejs
@@ -175,14 +175,14 @@ conda --version
 
 ##### 3.3.3 编译安装步骤说明
 
-###### 1）下载TDX安全度量插件
+&ensp;&ensp; 1. 下载TDX安全度量插件
 ```bash
 cd <work_dir>
 git clone https://github.com/intel/confidential-computing-zoo.git
 cd confidential-computing-zoo
 git checkout v1.2
 ```
-###### 2）拉取openweb-ui代码
+&ensp;&ensp; 2. 拉取openweb-ui代码
 ```bash
 cd <work_dir>
 git clone https://github.com/open-webui/open-webui.git
@@ -196,12 +196,12 @@ cd ..
 cp <work_dir>/cczoo/confidential_ai/open-webui-patch/v0.5.20-feature-cc-tdx-v1.0.patch .
 git apply --ignore-whitespace --directory=open-webui/ v0.5.20-feature-cc-tdx-v1.0.patch
 ```
-###### 3）创建open-webui环境并激活
+&ensp;&ensp; 3. 创建open-webui环境并激活
 ```bash
 conda create --name open-webui python=3.11
 conda activate open-webui
 ```
-###### 4）安装 "获取TDX Quote" 插件
+&ensp;&ensp; 4. 安装 "获取TDX Quote" 插件
 ```bash
 cd <work_dir>/confidential-computing-zoo/cczoo/confidential_ai/tdx_measurement_plugin/
 python setup.py install
@@ -209,7 +209,7 @@ python setup.py install
 #验证安装使用
 python3 -c "import quote_generator"
 ```
-###### 5）编译open-webui
+&ensp;&ensp; 5. 编译open-webui
 ```bash
  # 安装依赖
  cd <work_dir>/open-webui/
@@ -218,11 +218,11 @@ python3 -c "import quote_generator"
  #编译
  sudo npm run build
  ```
- 编译完成后，复制生成的`build`文件夹到backend目录并重命名为`frontend`:
+ &ensp;&ensp;编译完成后，复制生成的`build`文件夹到backend目录并重命名为`frontend`:
  ```bash
  cp -r build ./backend/open-webui/frontend
  ```
- 后端服务设置
+ &ensp;&ensp;后端服务设置
  ```bash
  cd backend
 vim dev.sh
@@ -231,7 +231,7 @@ vim dev.sh
 PORT="${PORT:-8080}"
 uvicorn open_webui.main:app --port $PORT --host 0.0.0.0 --forwarded-allow-ips '*' --reload
 ```
-安装Python依赖库
+&ensp;&ensp;安装Python依赖库
 ```bash
 pip install -r requirements.txt -U
 conda deactivate
@@ -278,38 +278,43 @@ ollama run deepseek-r1:70b
 ```
 ##### 4.2. 阿里云远程证明服务Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation)已配置在<work_dir>/open-webui/external/acs-attest-client/index.js
 ##### 4.3. 运行 openwebui
-###### 1) 激活open-webui环境
+ 1. 激活open-webui环境
 ```bash
 conda activate open-webui
 ```
-###### 2) 开启后端服务：
+ 2. 开启后端服务：
 ```bash
 cd <work_dir>/open-webui/backend/ && ./dev.sh
 ```
-  <img src="./images/openwebui-backend.png" width="690" height="500">
+&ensp;&ensp;<img src="./images/openwebui-backend.png" width="690" height="500">
   
-###### 3) 打开本地浏览器输入当前异构机密计算实例的IP地址，https://{ip_address}:{port}/(注意替换ip地址为open-webui所在实例IP地址，端口号为18080默认端口)。
-  <img src="./images/login.png" width="760" height="500">
+ 3. 打开本地浏览器输入当前异构机密计算实例的IP地址，https://{ip_address}:{port}/(注意替换ip地址为open-webui所在实例IP地址，端口号为18080默认端口)。
 
-###### 4) 选择模型(这里以deepseek-r1:70b为例)，每次新建一个会话窗口，都可以选择一个模型。
-  <img src="./images/selectModel.png" width="700" height="350">
-  
-###### 5) 设置远程认证服务地址，默认情况下是阿里远程认证服务。Remote Attestation Mode:enable/disable(控制TDX服务切换功能，默认enable);Attesation Service Type：Ali/Trustee(认证服务的类型，可自行输入认证服务地址)。
+&ensp;&ensp;<img src="./images/login.png" width="760" height="500">
 
-  <img src="./images/ChangeTDXType.png" width="500" height="768">
-  
-###### 6) 设置完认证服务地址后，每次点击“New Chat” 按钮后，后台会自动获取TDX 机密计算环境的Quote data发送至远程证明服务并返回认证结果。初始状态下，此图标显示红色。表示远程证明未完成或失败，远程证明成功后显示绿色。
-  <img src="./images/attestationinfo_error.png" width="820" height="404">
-  
-###### 7) 前端TDX验证(鼠标悬停在对话框中的第一个图标上，可以看到解析TDX Quote详细的认证信息。远程证明成功，该图标会出现绿色标记，如果证明失败则为红色。
-  <img src="./images/attestationinfo_pass.png" width="300" height="550">
-  
-  开发者可以通过浏览器debug Console查看TDX Quote更多详细信息： 
+ 4. 选择模型(这里以deepseek-r1:70b为例)，每次新建一个会话窗口，都可以选择一个模型。
 
-  <img src="./images/AttestationInfo.png" width="368" height="400">
+&ensp;&ensp;<img src="./images/selectModel.png" width="700" height="350">
+  
+ 5. 设置远程认证服务地址，默认情况下是阿里远程认证服务。Remote Attestation Mode:enable/disable(控制TDX服务切换功能，默认enable);Attesation Service Type：Ali/Trustee(认证服务的类型，可自行输入认证服务地址)。
 
-###### 8) 当选择 Trustee 后, 点击 'New Chat' 后, 会使用 trustee 认证服务。结果如步骤7）类似。
-  <img src="./images/AttestationInfo.png" width="380" height="400">
+&ensp;&ensp;<img src="./images/ChangeTDXType.png" width="500" height="768">
+  
+ 6. 设置完认证服务地址后，每次点击“New Chat” 按钮后，后台会自动获取TDX 机密计算环境的Quote data发送至远程证明服务并返回认证结果。初始状态下，此图标显示红色。表示远程证明未完成或失败，远程证明成功后显示绿色。
+
+&ensp;&ensp;<img src="./images/attestationinfo_error.png" width="820" height="404">
+  
+ 7. 前端TDX验证(鼠标悬停在对话框中的第一个图标上，可以看到解析TDX Quote详细的认证信息。远程证明成功，该图标会出现绿色标记，如果证明失败则为红色。
+
+&ensp;&ensp;<img src="./images/attestationinfo_pass.png" width="300" height="550">
+  
+ 开发者可以通过浏览器debug Console查看TDX Quote更多详细信息： 
+
+&ensp;&ensp;<img src="./images/AttestationInfo.png" width="368" height="400">
+
+ 8. 当选择 Trustee 后, 点击 'New Chat' 后, 会使用 trustee 认证服务。结果如步骤7）类似。
+
+&ensp;&ensp;<img src="./images/AttestationInfo.png" width="380" height="400">
 
 ### <h2 id="tips">Tips：</h2>
 1. 在安装依赖时可以使用阿里云的镜像来加速下载:
