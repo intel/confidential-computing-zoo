@@ -139,18 +139,18 @@ The native design of `open-webui` supports only the HTTP protocol. To enhance th
 ## 3. Build and Installation Guide
 ##### Notice: The following steps are completed in the Aliyun instance, which supports Aliyun Remote Attestation Service, and you can also configure other remote authentication services. If you need to configure other remote attestation services, you can also use other environments.
 
-#### 3.1: Install ollama
+#### 3.1 Install ollama
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ``` 
 For more information, see [**ollama Installation Guide**](https://github.com/ollama/ollama/blob/main/docs/linux.md).
 
-#### 3.2: Download and run the deepseek model
+#### 3.2 Download and run the deepseek model
 ```bash
 ollama run deepseek-r1:70b
 ``` 
 
-#### 3.3: Compile and install open-webui
+#### 3.3 Compile and install open-webui
 ##### 3.3.1 Install Dependencies
 ```bash
 # install nodejs
