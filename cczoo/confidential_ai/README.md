@@ -20,13 +20,13 @@ The overall solution architecture design is shown in the figure:
 
 ### 2.1 Deployment Components
 
-#### 1. Client
+#### 2.1.1 Client
 The interactive user interface (UI) through which end users access the large language model service is responsible for initiating sessions, verifying the credibility of the remote model service environment, and communicating securely with the backend model service.
 
-#### 2. Remote Attestation Services
+#### 2.1.2 Remote Attestation Services
 Based Attestation Service, it is used to verify the security status of the model reasoning service environment, including: the platform trusted computing base (TCB) and the model service environment.
 
-#### 3. Inference Service Components
+#### 2.1.3 Inference Service Components
 
 | Component                  | Version       | Purpose                                                                                                   | Comments |
 | -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- | -------- |
@@ -41,17 +41,17 @@ Based Attestation Service, it is used to verify the security status of the model
 
 ![Confidential AI Workflow](./images/Confidential%20AI%20Flow.png)
 
-#### 1. Service startup and measurement process
+#### 2.2.1  Service startup and measurement process
 
 - **Operating environment metrics:**  
     The platform TCB performs integrity measurement on the operating environment of the running model service, and the measurement results are stored in the TDX Module located in the TCB.
 
-#### 2. Inference service session setup phase
+#### 2.2.2 Inference service session setup phase
 
 - **New Session:**  
     The client (browser) initiates a new session request to `open-webui`.
 
-#### 3. Remote Attestation Phase
+#### 2.2.3 Remote Attestation Phase
 
 - **Certification Request:**  
     When the client initiates a session request, it will also request a credibility certificate (TDX Quote) from the service backend to prove the credibility of the model running environment. This certificate can be used to verify the credibility of the remote service environment, including the credibility of the user session management service `open-webui` and the model service (`ollama + DeepSeek`).
@@ -63,7 +63,7 @@ Based Attestation Service, it is used to verify the security status of the model
 - **Proof Verification:**  
     The client submits the received quote to the remote attestation service for verification. The attestation service verifies the validity of the quote (including digital signature, certificate chain and security policy), returns the attestation result, and confirms the security status and integrity of the remote model service environment.
 
-#### 4. Confidential large model inference serving stage
+#### 2.2.4 Confidential large model inference serving stage
 
 - **Remote attestation success:** Clients can fully trust the remote model service because it runs in a highly secure and trusted mode. This assurance means that for end users, the risk of data leakage is extremely low (although any system has some degree of risk).
 
@@ -182,14 +182,14 @@ conda --version
 ```
 ##### 3.3.3 Compile and install steps
 
-###### 1）Download the TDX Security Metrics plugin
+&ensp;&ensp; 1）Download the TDX Security Metrics plugin
 ```bash
 cd <work_dir>
 git clone https://github.com/intel/confidential-computing-zoo.git
 cd confidential-computing-zoo
 git checkout v1.2
 ```
-###### 2）Get openweb-ui code
+&ensp;&ensp; 2）Get openweb-ui code
 ```bash
 cd <work_dir>
 git clone https://github.com/open-webui/open-webui.git
@@ -203,19 +203,19 @@ cd ..
 cp <work_dir>/cczoo/confidential_ai/open-webui-patch/v0.5.20-feature-cc-tdx-v1.0.patch .
 git apply --ignore-whitespace --directory=open-webui/ v0.5.20-feature-cc-tdx-v1.0.patch
 ```
-###### 3）Create and activate the open-webui environment
+&ensp;&ensp; 3）Create and activate the open-webui environment
 ```bash
 conda create --name open-webui python=3.11
 conda activate open-webui
 ```
-###### 4）Install the "Get TDX Quote" plugin
+&ensp;&ensp; 4）Install the "Get TDX Quote" plugin
 ```bash
 cd <work_dir>/confidential-computing-zoo/cczoo/confidential_ai/tdx_measurement_plugin/
 python setup.py install
 
 python3 -c "import quote_generator"
 ```
-###### 5）Compile open-webui
+&ensp;&ensp; 5）Compile open-webui
 ```bash
  # Install Dependencies
  cd <work_dir>/open-webui/
@@ -224,11 +224,11 @@ python3 -c "import quote_generator"
  #Compile
  sudo npm run build
  ```
- After compilation is complete, copy the generated `build` folder to the backend directory and rename it to `frontend`:
+ &ensp;&ensp;After compilation is complete, copy the generated `build` folder to the backend directory and rename it to `frontend`:
  ```bash
  cp -r build ./backend/open-webui/frontend
  ```
- Backend service settings
+ &ensp;&ensp;Backend service settings
  ```bash
  cd backend
 vim dev.sh
@@ -237,7 +237,7 @@ vim dev.sh
 PORT="${PORT:-8080}"
 uvicorn open_webui.main:app --port $PORT --host 0.0.0.0 --forwarded-allow-ips '*' --reload
 ```
-Install Python Dependencies
+&ensp;&ensp;Install Python Dependencies
 ```bash
 pip install -r requirements.txt -U
 conda deactivate
@@ -249,8 +249,8 @@ conda deactivate
 # merger new feature patch, the patch add function to change TDX remote authentication type. Now support Ali & Trustee(Trustee need start service first).
 # Detail:(https://github.com/confidential-containers/trustee/blob/v0.13.0/attestation-service/docs/restful-as.md#quick-start).
 
-cp <work_dir>/cczoo/confidential_ai/open-webui-patch/new_feature.patch .
-git apply --ignore-whitespace --directory=open-webui/ new_feature.patch
+cp <work_dir>/cczoo/confidential_ai/open-webui-patch/configurable-as-option.patch .
+git apply --ignore-whitespace --directory=open-webui/configurable-as-option.patch
 
 ### To verify the Trustee authentication service in open-webui, you need to start the trustee service first.
 # Start Trustee
@@ -296,39 +296,41 @@ ollama run deepseek-r1:70b
 ```
 ##### 4.2. Alibaba Cloud Remote Attestation Service(URL:https://attest.cn-beijing.aliyuncs.com/v1/attestation) has been configured in <work_dir>/open-webui/external/acs-attest-client/index.js
 ##### 4.3. run openwebui
-###### 1. activate open-webui environment
+ 1. activate open-webui environment
 ```bash
 conda activate open-webui
 ```
-###### 2. Enable backend services：
+ 2. Enable backend services：
 ```bash
 cd <work_dir>/open-webui/backend/ && ./dev.sh
 ```
-  <img src="./images/openwebui-backend.png" width="690" height="500">
+&ensp;&ensp;<img src="./images/openwebui-backend.png" width="690" height="500">
   
-###### 3. Open browser and enter the IP address of the current heterogeneous confidential computing instance，https://{ip_address}:{port}/(Note that the IP address is replaced with the IP address of the instance where open-webui is located, and the port number is the default port 18080).
-  <img src="./images/login.png" width="760" height="500">
+ 3. Open browser and enter the IP address of the current heterogeneous confidential computing instance，https://{ip_address}:{port}/(Note that the IP address is replaced with the IP address of the instance where open-webui is located, and the port number is the default port 18080).
 
-###### 4. Select a model (deepseek-r1:70b is used as an example here). You can select a model each time you create a new session window.
-  <img src="./images/selectModel.png" width="700" height="350">
+&ensp;&ensp;<img src="./images/login.png" width="760" height="500">
 
-###### 5. Default option is Alibaba Attestation Service.
+ 4. Select a model (deepseek-r1:70b is used as an example here). You can select a model each time you create a new session window.
+&ensp;&ensp;<img src="./images/selectModel.png" width="700" height="350">
 
-  <img src="./images/ChangeTDXType.png" width="500" height="768">
+ 5. Default option is Alibaba Attestation Service.
+
+&ensp;&ensp;&ensp;&ensp;<img src="./images/ChangeTDXType.png" width="500" height="768">
   
-###### 6. When set attestation address, each time you click the "New Chat" button, the background will automatically obtain the quote data of the TDX confidential computing environment and send it to the remote attestation service and return the authentication result. In the initial state, this icon is red. It means that the remote attestation is not completed or failed. It will be green after the remote attestation is successful.
-  <img src="./images/attestationinfo_error.png" width="820" height="404">
+ 6. When set attestation address, each time you click the "New Chat" button, the background will automatically obtain the quote data of the TDX confidential computing environment and send it to the remote attestation service and return the authentication result. In the initial state, this icon is red. It means that the remote attestation is not completed or failed. It will be green after the remote attestation is successful.
+
+&ensp;&ensp;&ensp;&ensp;<img src="./images/attestationinfo_error.png" width="820" height="404">
   
-###### 7. Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red).
-  <img src="./images/attestationinfo_pass.png" width="300" height="550">
+ 7. Front-end TDX Verification (Hover the mouse over the first icon in the dialog box to see the detailed authentication information of parsing TDX Quote. If the remote attestation is successful, the icon will be marked green, and if the attestation fails, it will be marked red).
+&ensp;&ensp;<img src="./images/attestationinfo_pass.png" width="300" height="550">
 
-  Developer can check more detailed TDX measurements info via brower debug console shown as below： 
+    Developer can check more detailed TDX measurements info via brower debug console shown as below： 
 
-  <img src="./images/AttestationInfo.png" width="368" height="400">
+&ensp;&ensp;&ensp;&ensp;<img src="./images/AttestationInfo.png" width="368" height="400">
 
-###### 8. When choose trustee and Trustee service is enable, click 'New Chat' button, then trustee service will be used. The result is as shown in step 7).
+ 8. When choose trustee and Trustee service is enable, click 'New Chat' button, then trustee service will be used. The result is as shown in step 7).
    
-  <img src="./images/AttestationInfo.png" width="380" height="400">
+&ensp;&ensp;&ensp;&ensp;<img src="./images/AttestationInfo.png" width="380" height="400">
 
 ### <h2 id="tips">Tips：</h2>
 1. When installing dependencies, you can use Alibaba Cloud's image to speed up downloading:
