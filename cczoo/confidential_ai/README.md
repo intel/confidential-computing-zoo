@@ -182,14 +182,14 @@ conda --version
 ```
 ##### 3.3.3 Compile and install steps
 
-&ensp;&ensp; 1）Download the TDX Security Metrics plugin
+&ensp;&ensp; 1. Download the TDX Security Metrics plugin
 ```bash
 cd <work_dir>
 git clone https://github.com/intel/confidential-computing-zoo.git
 cd confidential-computing-zoo
 git checkout v1.2
 ```
-&ensp;&ensp; 2）Get openweb-ui code
+&ensp;&ensp; 2. Get openweb-ui code
 ```bash
 cd <work_dir>
 git clone https://github.com/open-webui/open-webui.git
@@ -203,19 +203,19 @@ cd ..
 cp <work_dir>/cczoo/confidential_ai/open-webui-patch/v0.5.20-feature-cc-tdx-v1.0.patch .
 git apply --ignore-whitespace --directory=open-webui/ v0.5.20-feature-cc-tdx-v1.0.patch
 ```
-&ensp;&ensp; 3）Create and activate the open-webui environment
+&ensp;&ensp; 3. Create and activate the open-webui environment
 ```bash
 conda create --name open-webui python=3.11
 conda activate open-webui
 ```
-&ensp;&ensp; 4）Install the "Get TDX Quote" plugin
+&ensp;&ensp; 4. Install the "Get TDX Quote" plugin
 ```bash
 cd <work_dir>/confidential-computing-zoo/cczoo/confidential_ai/tdx_measurement_plugin/
 python setup.py install
 
 python3 -c "import quote_generator"
 ```
-&ensp;&ensp; 5）Compile open-webui
+&ensp;&ensp; 5. Compile open-webui
 ```bash
  # Install Dependencies
  cd <work_dir>/open-webui/
