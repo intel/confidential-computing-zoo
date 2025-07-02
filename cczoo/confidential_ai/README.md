@@ -264,7 +264,7 @@ git checkout v0.13.0
 
 # Apply patch
 cd ..
-git apply --ignore-whitespace --directory=trustee/ new_feature.patch
+git apply --ignore-whitespace --directory=trustee/ configurable-as-option.patch
 
 # Complie image
 cd trustee
