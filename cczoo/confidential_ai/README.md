@@ -264,7 +264,8 @@ git checkout v0.13.0
 
 # Apply patch
 cd ..
-git apply --ignore-whitespace --directory=trustee/ new_feature.patch
+cp <work_dir>/cczoo/confidential_ai/trustee-patch/restful.patch .
+git apply --ignore-whitespace --directory=trustee/ restful.patch
 
 # Complie image
 cd trustee
