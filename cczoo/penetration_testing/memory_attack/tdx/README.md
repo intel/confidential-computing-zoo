@@ -8,10 +8,7 @@ By scanning these dumped memory files, user can search the sensitive application
 
 The demo vedio:
 
-<video id="video" controls loop width="700" preload="none" >
-      <source id="mp4" src="./img/tdx-demo.mp4" type="video/mp4">
-</videos>
-
+https://private-user-images.githubusercontent.com/48268768/461796528-11d5fcbc-5a17-4119-a7bc-dc2ca57956fa.mp4?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NTE1MDg4NzYsIm5iZiI6MTc1MTUwODU3NiwicGF0aCI6Ii80ODI2ODc2OC80NjE3OTY1MjgtMTFkNWZjYmMtNWExNy00MTE5LWE3YmMtZGMyY2E1Nzk1NmZhLm1wND9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTA3MDMlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUwNzAzVDAyMDkzNlomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTNiOTk4MTFkNGY0OTM0ZGU2ODRjNTJkZmIyYzJiYmIxZWFiM2E3YzgxZjI3ZDY1MTQ4YWIwYzUwMDcyNTUzZjkmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.eeZqTycy9MP_sVBk2SFaYrdlv1zi8naX5KYx3DVL94M
 
 ## 1. TDX Environment Setup 
 Download source code from https://github.com/canonical/tdx.
