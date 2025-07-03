@@ -1,12 +1,19 @@
 # TDX Confidential Computing with Encrypted Memory protection for Application/Data in Runtime
 
 This demo primarily shows the memory encryption protection provided by TDVM at runtime. 
-Using the `virsh dump` tool, user can dump the runtime memory images of both TDVM and legacy VM. 
-By scanning these dumped memory files, user can search the sensitive application data during execution.
+
+In traditional virtual machines, memory dump attacks are a serious concern. A privileged user—such as a hypervisor, host administrator, or an attacker who has broken privilege control—can use tools like `virsh` or `gdb` to access the full memory of a virtual machine. Since legacy VM memory is stored in plaintext, sensitive data can be easily extracted from the dump.
+
+For example, using the `virsh dump` tool, a user can dump the runtime memory images of a VM. By scanning these dumped memory files, user can search the sensitive application data during execution, such as keys, passwords, or proprietary model information.
+
+In contrast, Intel TDX-based TDVMs use hardware-enforced memory encryption to prevent the host，the hypervisor or any privileged software from reading the VM user’s raw data even the underlying cloud environment is not fully trusted. The memory contents of a TDVM are encrypted and can only be decrypted by the TDVM itself, ensuring that sensitive data remains confidential even if the memory is dumped.
+
+This demo demonstrates the key advantage of confidential computing: keeping tenant memory contents private in complex public cloud environments where trust in the underlying infrastructure cannot be fully assured.
+
 
 ![alt text](./img/demo-overview.png)
 
-The demo vedio:
+The demo video:
 
 https://private-user-images.githubusercontent.com/48268768/461796528-11d5fcbc-5a17-4119-a7bc-dc2ca57956fa.mp4?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NTE1MDg4NzYsIm5iZiI6MTc1MTUwODU3NiwicGF0aCI6Ii80ODI2ODc2OC80NjE3OTY1MjgtMTFkNWZjYmMtNWExNy00MTE5LWE3YmMtZGMyY2E1Nzk1NmZhLm1wND9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTA3MDMlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUwNzAzVDAyMDkzNlomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTNiOTk4MTFkNGY0OTM0ZGU2ODRjNTJkZmIyYzJiYmIxZWFiM2E3YzgxZjI3ZDY1MTQ4YWIwYzUwMDcyNTUzZjkmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.eeZqTycy9MP_sVBk2SFaYrdlv1zi8naX5KYx3DVL94M
 
