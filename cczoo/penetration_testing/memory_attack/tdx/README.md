@@ -1,8 +1,14 @@
 # TDX Confidential Computing with Encrypted Memory protection for Application/Data in Runtime
 
 This demo primarily shows the memory encryption protection provided by TDVM at runtime. 
-Using the `virsh dump` tool, user can dump the runtime memory images of both TDVM and legacy VM. 
-By scanning these dumped memory files, user can search the sensitive application data during execution.
+
+In traditional virtual machines, memory dump attacks are a serious concern. A privileged user—such as a hypervisor, host administrator, or an attacker who has broken privilege control—can use tools like `virsh` or `gdb` to access the full memory of a virtual machine. Since legacy VM memory is stored in plaintext, sensitive data can be easily extracted from the dump.
+
+For example, using the `virsh dump` tool, a user can dump the runtime memory images of a VM. By scanning these dumped memory files, user can search the sensitive application data during execution, such as keys, passwords, or proprietary model information.
+
+In contrast, Intel TDX-based TDVMs use hardware-enforced memory encryption to prevent the host，the hypervisor or any privileged software from reading the VM user’s raw data even the underlying cloud environment is not fully trusted. The memory contents of a TDVM are encrypted and can only be decrypted by the TDVM itself, ensuring that sensitive data remains confidential even if the memory is dumped.
+
+This demo demonstrates the key advantage of confidential computing: keeping tenant memory contents private in complex public cloud environments where trust in the underlying infrastructure cannot be fully assured.
 
 ![alt text](./img/demo-overview.png)
 
