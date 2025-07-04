@@ -1,0 +1,43 @@
+diff --git a/attestation-service/Cargo.toml b/attestation-service/Cargo.toml
+index 4f48f2d..0337c64 100644
+--- a/attestation-service/Cargo.toml
++++ b/attestation-service/Cargo.toml
+@@ -65,6 +65,7 @@ tokio.workspace = true
+ tonic = { workspace = true, optional = true }
+ uuid = { version = "1.1.2", features = ["v4"] }
+ verifier = { path = "../deps/verifier", default-features = false }
++actix-cors = "0.7"
+ 
+ [build-dependencies]
+ shadow-rs.workspace = true
+diff --git a/attestation-service/src/bin/restful-as.rs b/attestation-service/src/bin/restful-as.rs
+index e03fd71..526d5c8 100644
+--- a/attestation-service/src/bin/restful-as.rs
++++ b/attestation-service/src/bin/restful-as.rs
+@@ -1,6 +1,6 @@
+ use std::{net::SocketAddr, path::Path, sync::Arc};
+ 
+-use actix_web::{web, App, HttpServer};
++use actix_web::{web, App, HttpServer, http};
+ use anyhow::Result;
+ use attestation_service::{config::Config, config::ConfigError, AttestationService, ServiceError};
+ use clap::{arg, command, Parser};
+@@ -14,6 +14,7 @@ use thiserror::Error;
+ use tokio::sync::RwLock;
+ 
+ use crate::restful::{attestation, get_challenge, get_policies, set_policy};
++use actix_cors::Cors;
+ 
+ mod restful;
+ 
+@@ -96,7 +97,10 @@ async fn main() -> Result<(), RestfulError> {
+ 
+     let attestation_service = web::Data::new(Arc::new(RwLock::new(attestation_service)));
+     let server = HttpServer::new(move || {
++        let cors = Cors::permissive();
+         App::new()
++            // add cors
++            .wrap(cors)
+             .service(web::resource(WebApi::Attestation.as_ref()).route(web::post().to(attestation)))
+             .service(
+                 web::resource(WebApi::Policy.as_ref())
