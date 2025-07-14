@@ -130,7 +130,10 @@ Alibaba Cloud Remote Attestation Service provides an API that is compatible with
 - Relying parties can verify the cryptographic validity of OIDC Tokens through OIDC's standard process.
 
 ##### Self-hosted Attestation Service with trustee
-Trustee is a lightweight, open-sourced remote attestation component designed for confidential computing. It allows local verification of attestation evidence without relying on cloud-based services, and supports diverse applications and hardware platforms. For more project details and architectural information, please refer to its GitHub repository of trustee.
+Trustee is a lightweight, open-sourced remote attestation component designed for confidential computing. It allows local verification of attestation evidence without relying on cloud-based services, and supports diverse applications and hardware platforms.
+
+Trustee attestation service provides a flexible policy support based on Rego for facilitate the customized verification rules. User can customize the evaluated claims in the config template to enhance the evidence check. In this solution, to guarantee the identity and integrity of TDVM environment, we specify the TDX measurements in the policy template, e.g, mrtd, rtmr0/1/2/3, which will reflect the current TDVM runtime measurements. When both TDX Quote is verified successfully and customized policy is checked as expected, the verification result can be treated as trusted. Trustee attestation service policy detailed designed is [here](https://github.com/confidential-containers/trustee/blob/main/attestation-service/docs/policy.md).
+
 The current project does not support cross-origin access (CORS), which means it cannot be accessed directly from web applications hosted on different origins. To support this demo scenario, an additional patch needs to be applied to trustee. Please refer to the trustee patch section if you plan to set up your own attestation service with trustee to support this demo.
 
 #### 2.3.5 HTTPS usage in open-webui
@@ -244,7 +247,7 @@ conda deactivate
 ```
 
 #### Notice: If you want to use self-hosted remote attestation service (Trustee), can follow below steps. Otherwirse, you skip step 3.4. 
-#### 3.4 Trustee setup and patch
+#### 3.4 Trustee setup
 ```bash
 # merger new feature patch, the patch add function to change TDX remote authentication type. Now support Ali & Trustee(Trustee need start service first).
 # Detail:(https://github.com/confidential-containers/trustee/blob/v0.13.0/attestation-service/docs/restful-as.md#quick-start).
@@ -256,39 +259,73 @@ git apply --ignore-whitespace --directory=open-webui/configurable-as-option.patc
 # Start Trustee
 cd <work_dir>
 git clone https://github.com/confidential-containers/trustee.git
-
-# checkou tag:v0.13.0
 cd trustee
-git checkout v0.13.0
-# Get patch
+# commit 52a7 supports cors for browser
+git checkout 52a71bbc8037de998465bb5f0f6f4dfb304aef39
 
-# Apply patch
-cd ..
-cp <work_dir>/cczoo/confidential_ai/trustee-patch/restful.patch .
-git apply --ignore-whitespace --directory=trustee/ restful.patch
+# Configure attestation policy with TDVM reference measurements
+## Run tdx-report-parser tool in TDVM to get TDVM measurements 
+Please refer to [tdx_report_parser](https://github.com/intel/confidential-computing-zoo/tree/main/utilities/tdx/tdx_report_parser) to get TDVM measurements. For example: 
 
-# Complie image
+./tdx_report.out
+
+TD info
+attributes: 0x0000000010000000 (NO_DEBUG SEPT_VE_DISABLE)
+xfam: 0x0000000000061ae7
+mr_td: a4a003346c5a19a6fd250471e872bd071d8c92d7431abda463417808a17383aa0d42987814bc92f5f59c6044b677f514
+mr_config_id: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+mr_owner: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+mr_owner_config: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+rtmr0: 419f603bf91259399dc65e3fbc6fefac63ae2ac4c78615496763e0a25c34b4471a9c5298ee2e21f720c1f913cc38f06e
+rtmr1: 22e6adf1051970281455f9eba5a5fb6c161ff8df9e59a36c4882c607a1028fdc16ae19885a169e00f83ed3c09329ed19
+rtmr2: e6062f5a1327f49bddbedbff5724b5ef5eb19402f1ce81934d761eefb7edb187233a9677006024752cd4afdecb412a9a
+rtmr3: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+## Configure policy with point policy dir: /etc/ear/, which will use default policy: attestation-service/src/token/ear_default_policy_cpu.rego
+Replace the settings in attestation-service/config.json with below:
+
+{
+    "work_dir": "/var/lib/attestation-service/",
+    "rvps_config": {
+        "type": "BuiltIn",
+        "storage": {
+            "type": "LocalFs"
+	}
+    },
+    "attestation_token_broker": {
+        "type": "Ear",
+        "duration_min": 5,
+        "policy_dir": "/etc/ear/"
+    }
+}
+
+## Update ear_default_policy_cpu.rego with TDVM reference measurements
+Find tdx part in ear_default_policy_cpu.rego and setup TDVM measurements with below:
+
+executables := 3 if {
+    input.tdx.quote.body.mr_td == "a4a003346c5a19a6fd250471e872bd071d8c92d7431abda463417808a17383aa0d42987814bc92f5f59c6044b677f514"
+    input.tdx.quote.body.rtmr_0 == "419f603bf91259399dc65e3fbc6fefac63ae2ac4c78615496763e0a25c34b4471a9c5298ee2e21f720c1f913cc38f06e"
+	input.tdx.quote.body.rtmr_1 == "22e6adf1051970281455f9eba5a5fb6c161ff8df9e59a36c4882c607a1028fdc16ae19885a169e00f83ed3c09329ed19"
+    input.tdx.quote.body.rtmr_2 == "e6062f5a1327f49bddbedbff5724b5ef5eb19402f1ce81934d761eefb7edb187233a9677006024752cd4afdecb412a9a"
+}
+
+For hardware and configuration segment, user can configure related claims as needed.
+
+# Build attestation service docker image
 cd trustee
 docker build -t <name>:<tag>  \
        -f attestation-service/docker/as-restful/Dockerfile \
        --build-arg VERIFIER=all-verifier .
 
 # Get imageID
-dicker images
-# Start service
-docker run -d --network=host  -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf -p 8080:8080 image_ID
-
-# Quick start（Option）
-# pull new image
-docker pull ghcr.io/confidential-containers/staged-images/coco-as-restful:latest
-# get new imageID
 docker images
-# Start service
-docker run -d \
-  -v <path-to-attestation-service>/docs/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf \
-  -p 8080:8080 \
-  ghcr.io/confidential-containers/staged-images/coco-as-restful:latest
-```
+# Start attestation service
+docker run -d --network=host -e ALLOWED_ORIGIN=http://open_webui_addr:18080 -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf -p 8080:8080 030a
+
+Note:
+1. Please make sure sgx_default_qcnl.conf is in your local path and pccs url is working.
+2. User needs to provide the specific regions addresses and ports to Attestation service, otherwise the access will be denied.
+
 #### 4. Run and Test
 ##### 4.1 Run ollama + DeepSeek model
 ```bash
@@ -329,11 +366,11 @@ cd <work_dir>/open-webui/backend/ && ./dev.sh
 
     Developer can check more detailed TDX measurements info via brower debug console shown as below： 
 
-&ensp;&ensp;&ensp;&ensp;<img src="./images/AttestationInfo.png" width="368" height="400">
+&ensp;&ensp;&ensp;&ensp;<img src="./images/AttestationInfo-ali.png" width="368" height="400">
 
  8. When choose trustee and Trustee service is enable, click 'New Chat' button, then trustee service will be used. The result is as shown in step 7).
    
-&ensp;&ensp;&ensp;&ensp;<img src="./images/AttestationInfo.png" width="380" height="400">
+&ensp;&ensp;&ensp;&ensp;<img src="./images/AttestationInfo-trustee.png" width="380" height="400">
 
 ### <h2 id="tips">Tips：</h2>
 1. When installing dependencies, you can use Alibaba Cloud's image to speed up downloading:
