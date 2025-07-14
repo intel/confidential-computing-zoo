@@ -258,11 +258,14 @@ git checkout v0.13.0
 
 # 应用patch
 cd ..
-git apply --ignore-whitespace --directory=trustee/restful.patch
+cp <work_dir>/cczoo/confidential_ai/trustee-patch/restful.patch .
+git apply --ignore-whitespace --directory=trustee/ restful.patch
 
 # 编译镜像
 cd trustee
-docker build -t <name>:<tag>  -f attestation-service/docker/as-restful/Dockerfile --build-arg --build-arg VERIFIER=all-verifier .
+docker build -t <name>:<tag>  \
+       -f attestation-service/docker/as-restful/Dockerfile \
+       --build-arg VERIFIER=all-verifier .
 
 # 获取新镜像ID
 dicker images

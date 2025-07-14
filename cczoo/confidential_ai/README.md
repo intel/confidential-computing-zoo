@@ -269,7 +269,9 @@ git apply --ignore-whitespace --directory=trustee/ restful.patch
 
 # Complie image
 cd trustee
-docker build -t <name>:<tag>  -f attestation-service/docker/as-restful/Dockerfile --build-arg --build-arg VERIFIER=all-verifier .
+docker build -t <name>:<tag>  \
+       -f attestation-service/docker/as-restful/Dockerfile \
+       --build-arg VERIFIER=all-verifier .
 
 # Get imageID
 dicker images
