@@ -123,8 +123,11 @@ const initNewChat = async () => {
 - 依赖方可以通过OIDC的标准流程验证OIDC Token的密码学有效性。
 
 #### 使用 trustee 构建的自托管验证服务
-Trustee 是一款轻量级开源远程证明验证器，专为机密计算而设计。它最初是为保密容器项目开发的，可以在不依赖云服务的情况下对证明证据进行本地验证，并支持各种应用和硬件平台。更多项目详情和架构信息，请参阅其 GitHub repository [trustee](https://github.com/confidential-containers/trustee)。
+Trustee 是一款轻量级开源远程证明验证器，专为机密计算而设计。它最初是为机密容器项目开发的，可以在不依赖云服务的情况下对证明证据进行本地验证，并支持各种应用和硬件平台。更多项目详情和架构信息，请参阅其 GitHub repository [trustee](https://github.com/confidential-containers/trustee)。
 当前项目不支持跨来源访问（CORS），这意味着无法从托管在不同来源的网络应用程序直接访问该项目。为支持这一演示场景，需要在 trustee 上打上额外的补丁。如果您计划使用受托人建立自己的验证服务以支持此演示，请参阅 “受托人补丁 ”部分。
+Trustee 是一款轻量级开源远程证明验证器，专为机密计算而设计。它最初是为机密容器项目开发的，可以在不依赖云服务的情况下对证明证据进行本地验证，并支持各种应用和硬件平台。
+
+受托人证明服务基于 Rego 提供灵活的策略支持，方便用户自定义验证规则。用户可以在配置模板中自定义已评估的声明，以增强证据检查。在此解决方案中，为了保证 TDVM 环境的身份和完整性，我们在策略模板中指定了 TDX 度量，例如 mrtd、rtmr0/1/2/3，这些度量将反映当前 TDVM 运行时的度量。当 TDX Quote 验证成功且自定义策略检查符合预期时，验证结果可视为可信。受托人证明服务策略的详细设计请参见[此处](https://github.com/confidential-containers/trustee/blob/main/attestation-service/docs/policy.md)。
 
 ## 2.3.5 open-webui 中的 HTTPS 使用情况
 `open-webui`的原生设计仅支持HTTP协议。为了增强数据传输的安全性，建议通过部署支持TLS的反向代理（如 Nginx）来启用HTTPS。这可确保客户端和推理服务之间的所有通信都已加密，从而保护敏感的用户输入和模型输出免受潜在的拦截或篡改。为`open-webui`配置HTTPS超出了本文的范围。
@@ -238,7 +241,7 @@ conda deactivate
 ```
 
 #### Notice: 如果想要使用自构建的认证服务(如Trustee)，可按照一下步骤执行。否则可以跳过步骤3.4。
-#### 3.3.4. Trustee 构建及启动
+#### 3.4. Trustee 构建及启动
 ```bash
 # 合入新补丁, 该patch增加了TDX远程认证服务切换的功能, 目前支持Ali和Trustee(Trustee需先启动其后台服务)。
 # Trustee远程认证服务，详情参见(https://github.com/confidential-containers/trustee/blob/v0.13.0/attestation-service/docs/restful-as.md#quick-start).
@@ -250,28 +253,74 @@ git apply --ignore-whitespace --directory=open-webui/configurable-as-option.patc
 # Trustee服务启动
 cd <work_dir>
 git clone https://github.com/confidential-containers/trustee.git
-
-# 切换到tag:v0.13.0
 cd trustee
-git checkout v0.13.0
-# 获取patch
-
-# 应用patch
-cd ..
-cp <work_dir>/cczoo/confidential_ai/trustee-patch/restful.patch .
-git apply --ignore-whitespace --directory=trustee/ restful.patch
-
 # 编译镜像
+# 切换分支
+# commit 52a7 supports cors for browser
+git checkout 52a71bbc8037de998465bb5f0f6f4dfb304aef39
+
+# 使用 TDVM 参考测量配置证明策略
+## 在 TDVM 中运行 tdx-report-parser 工具以获取 TDVM 测量值。
+详情请参阅 [tdx_report_parser](https://github.com/intel/confidential-computing-zoo/tree/main/utilities/tdx/tdx_report_parser)获取 TDVM 测量值. 例如： 
+
+./tdx_report.out
+
+TD info
+attributes: 0x0000000010000000 (NO_DEBUG SEPT_VE_DISABLE)
+xfam: 0x0000000000061ae7
+mr_td: a4a003346c5a19a6fd250471e872bd071d8c92d7431abda463417808a17383aa0d42987814bc92f5f59c6044b677f514
+mr_config_id: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+mr_owner: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+mr_owner_config: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+rtmr0: 419f603bf91259399dc65e3fbc6fefac63ae2ac4c78615496763e0a25c34b4471a9c5298ee2e21f720c1f913cc38f06e
+rtmr1: 22e6adf1051970281455f9eba5a5fb6c161ff8df9e59a36c4882c607a1028fdc16ae19885a169e00f83ed3c09329ed19
+rtmr2: e6062f5a1327f49bddbedbff5724b5ef5eb19402f1ce81934d761eefb7edb187233a9677006024752cd4afdecb412a9a
+rtmr3: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+## 使用点策略目录配置策略：/etc/ear/，默认策略：attestation service/src/token/ear_default_policy_cpu.rego 。将 attestation-service/config.json 中的设置替换为以下内容：
+
+{
+    "work_dir": "/var/lib/attestation-service/",
+    "rvps_config": {
+        "type": "BuiltIn",
+        "storage": {
+            "type": "LocalFs"
+	}
+    },
+    "attestation_token_broker": {
+        "type": "Ear",
+        "duration_min": 5,
+        "policy_dir": "/etc/ear/"
+    }
+}
+
+## 使用 TDVM 参考测量值更新 ear_default_policy_cpu.rego
+在 ear_default_policy_cpu.rego 中找到 tdx 部分并使用以下内容设置 TDVM 测量：
+
+executables := 3 if {
+    input.tdx.quote.body.mr_td == "a4a003346c5a19a6fd250471e872bd071d8c92d7431abda463417808a17383aa0d42987814bc92f5f59c6044b677f514"
+    input.tdx.quote.body.rtmr_0 == "419f603bf91259399dc65e3fbc6fefac63ae2ac4c78615496763e0a25c34b4471a9c5298ee2e21f720c1f913cc38f06e"
+	input.tdx.quote.body.rtmr_1 == "22e6adf1051970281455f9eba5a5fb6c161ff8df9e59a36c4882c607a1028fdc16ae19885a169e00f83ed3c09329ed19"
+    input.tdx.quote.body.rtmr_2 == "e6062f5a1327f49bddbedbff5724b5ef5eb19402f1ce81934d761eefb7edb187233a9677006024752cd4afdecb412a9a"
+}
+
+对于硬件和配置部分，用户可以根据需要配置相关要求。
+
+# 构建认证服务docker镜像
 cd trustee
 docker build -t <name>:<tag>  \
        -f attestation-service/docker/as-restful/Dockerfile \
        --build-arg VERIFIER=all-verifier .
 
 # 获取新镜像ID
-dicker images
-# 启动服务
-docker run -d --network=host  -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf -p 8080:8080 image_ID
+docker images
 
+# 启动 attestation service
+docker run -d --network=host -e ALLOWED_ORIGIN=http://open_webui_addr:18080 -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf -p 8080:8080 {imageID}
+
+注意：
+1. 请确保 sgx_default_qcnl.conf 位于您的本地路径中，并且 pccs url 正常工作。
+2. 用户需要向认证服务提供具体的服务地址和端口，否则访问将被拒绝。
 ```
 #### 4：运行 openwebui
 ##### 4.1. 运行 ollama + DeepSeek model
@@ -313,11 +362,11 @@ cd <work_dir>/open-webui/backend/ && ./dev.sh
   
  开发者可以通过浏览器debug Console查看TDX Quote更多详细信息： 
 
-&ensp;&ensp;<img src="./images/AttestationInfo.png" width="368" height="400">
+&ensp;&ensp;<img src="./images/AttestationInfo-ali.png" width="368" height="400">
 
  8. 当选择 Trustee 后, 点击 'New Chat' 后, 会使用 trustee 认证服务。结果如步骤7）类似。
 
-&ensp;&ensp;<img src="./images/AttestationInfo.png" width="380" height="400">
+&ensp;&ensp;<img src="./images/AttestationInfo-trustee.png" width="380" height="400">
 
 ### <h2 id="tips">Tips：</h2>
 1. 在安装依赖时可以使用阿里云的镜像来加速下载:
