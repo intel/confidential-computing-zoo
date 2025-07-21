@@ -4,20 +4,20 @@
 
 **TruCon** is a proof-of-concept (PoC) project that demonstrates how to securely build, deploy, and run container images in a **Confidential Virtual Machine (CVM)** environment using trusted and measured methods. The workflow is organized into three phases:
 
-## 1. Build and Publish
+**Build and Publish**:
 - Build container images from source.  
 - Sign images to ensure authenticity.  
 - Generate and attach Software Bill of Materials (SBOM) for supply chain transparency.  
 - Publish images and manifest securely to a container registry.  
 - Publish evidences (certificates, measurements etc.) to a secure location, e.g., key server and trusted log registry.
 
-## 2. Deploy and Launch
+**Deploy and Launch**:
 - Pull container images into the CVM environment.  
 - Verify image signatures and SBOM attestations to confirm integrity and trustworthiness.  
 - Launch the container securely inside the CVM.  
 - Support secure container upgrades during runtime.
 
-## 3. Runtime Attestation
+**Runtime Attestation**:
 - Continuously attest the runtime container environment.  
 - Verify the integrity of the running container trustworthy against expected measurements.  
 - Provide evidence for trusted execution to external verifiers or management systems.
