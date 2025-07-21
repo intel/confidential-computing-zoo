@@ -1,28 +1,30 @@
-# cc-runtime-poc
+# TruCon: Running Container Workflow (POC) in a Confidential Computing Environment (CVM) 
 
 ---
 
-This is a new poc to demonstrate the workflow of running a container image with secure and trust way in a CVM environment, including the following steps:
+**TruCon** is a proof-of-concept (PoC) project that demonstrates how to securely build, deploy, and run container images in a **Confidential Virtual Machine (CVM)** environment using trusted and measured methods. The workflow is organized into three phases:
 
-- Build the container image from a Dockerfile.
+## 1. Build and Publish
+- Build container images from source.  
+- Sign images to ensure authenticity.  
+- Generate and attach Software Bill of Materials (SBOM) for supply chain transparency.  
+- Publish images and manifest securely to a container registry.  
+- Publish evidences (certificates, measurements etc.) to a secure location, e.g., key server and trusted log registry.
 
-- Sign the image to ensure authenticity and integrity.
+## 2. Deploy and Launch
+- Pull container images into the CVM environment.  
+- Verify image signatures and SBOM attestations to confirm integrity and trustworthiness.  
+- Launch the container securely inside the CVM.  
+- Support secure container upgrades during runtime.
 
-- Encrypt the image (optional, for confidential layers).
-
-- Push the image to a secure container registry.
-
-- Pull & Verify the image inside the CVM (verify signature & digest).
-
-- Decrypt the image securely after attestation (if encrypted).
-
-- Run the container inside the trusted CVM.
-
-- Upgrade or Destroy the container image securely as needed.
+## 3. Runtime Attestation
+- Continuously attest the runtime container environment.  
+- Verify the integrity of the running container trustworthy against expected measurements.  
+- Provide evidence for trusted execution to external verifiers or management systems.
 
 ---
 
-## 🛠️ Required Tools
+## Required Tools
 
 - [cosign](https://github.com/sigstore/cosign) – for signing, attesting, and verifying images and SBOMs
     
@@ -34,47 +36,24 @@ This is a new poc to demonstrate the workflow of running a container image with 
     
 
 
-## 📊 Workflow 
+## Deployment Architecture
 
-Below is a visual representation of the full workflow:
+Here is a simple description of the key steps and components:
 
-```plantuml
-@startuml
-actor User
-box "User Local Environment" #D0F0F8
-    participant  "Key Pair" as Keys
-    participant "Image" as Image
-    participant "SBOM" as SBOM
-end box
-box "Remote Environment" #E0F8D8
-    participant "Image Registry\n(docker hub)" as Registry
-    participant "Key Servers" as TrsutedServers
-end box
+Build & Package: The "App/WL Owner" creates and publishes container images (like Docker images) to an "Artifact Repository." They also publish evidence of this process to an "Evidences Registry."
 
+Deploy & Launch: The "Artifact Repository" provides the container images for deployment. A "Runtime System(s)" pulls these images and launches them. This is often done under the control of a "Deploy & Launch" service.
 
-== Image Generation ==
-User -> Keys : generate cosign key-pair
-User -> TrsutedServers : publish public key
-User -> Image : build or pull image
-User -> SBOM : generate SBOM with syft
-User -> Image : (optional) encrypt image
-User -> Registry : sign image with cosign
-User -> Registry : attach SBOM attestation
+Attest: During this process, a "Remote Attestation Service" checks the "Evidences Registry" to verify the trustworthiness of the code. This service attests to the integrity of the runtime environment, ensuring it's running as expected. A dedicated "Attest" service verifies the trustworthiness of the launched container and its artifacts at runtime. This process involves the "App/WL Owner," "Data/Model Owner," and "End User" all attesting to the trustworthiness of the system.
 
-== Image Verification ==
-User -> TrsutedServers: pull pub key for image
-User -> Registry: pull image and SBOM 
-User -> Image : verify image signature
-User -> SBOM : verify SBOM signature
-User -> Image : regenerate SBOM from image
-User -> SBOM : verify SBOM aginst local image
-@enduml
-```
+In essence, this workflow ensures that the software running on a system is exactly what it is supposed to be, providing a high level of security and trust by continuously verifying the code, data, and runtime environment.
+
+![Deployment Architecture](./images/deployment_architecture.png) 
 
 ---
-
-### 🔐 Image Generation (Signing & Publishing)
-#### 1. Create a Test Key Pair
+## Workflow Steps
+### Build and Publish
+#### Create a Test Key Pair
 
 Generate a public/private key pair (`cosign.key` and `cosign.pub`) to be used for image signing and attestations:
 
@@ -84,7 +63,7 @@ cosign generate-key-pair
 The public key (`cosign.pub`) can be published to trusted servers or registries for verification purposes.
 
 
-#### 2. Generate an SBOM for the Image
+#### Generate an SBOM for the Image
 
 Generate an SPDX JSON SBOM for the image hosted on Docker Hub:
 
@@ -94,13 +73,13 @@ syft docker-hub-repository-name/my-test-image:latest -o spdx-json > my-test-imag
 
 ---
 
-#### 3. (Optional) Encrypt the Image
+#### (Optional) Encrypt the Image
 
 If your workflow requires encryption, apply it here using tools like `skopeo` or `docker image encrypt`.
 
 ---
 
-#### 4. Sign and Publish the Image and its SBOM
+#### Sign and Publish the Image and its SBOM
 
 Sign the image:
 
@@ -117,16 +96,20 @@ cosign attest \
   --type sbom \
   docker-hub-repository-name/my-test-image:latest
 ```
+#### Publish the evidences
+
+#ToDo Publish evidences (certificates, measurements etc.) to a secure location, e.g., key server and trusted log registry.
+
 
 These steps ensure that both the image and its associated SBOM are cryptographically verifiable in the registry.
 
 ---
 
-### ✅ Image Verification
+### Deploy and Launch
 
-This section demonstrates how to verify the signed image and its SBOM, and validate their consistency by regenerating the SBOM locally and comparing the results.
+In this phase, container images are pulled securely into the Confidential Virtual Machine (CVM) environment. The image signatures and Software Bill of Materials (SBOM) attestations are verified to ensure the integrity and trustworthiness of the container. The container is then launched securely inside the CVM, with support for secure upgrades during runtime to maintain trust throughout its lifecycle.
 
-#### 1 Verify the Image Signature
+#### Verify the Image Signature
 
 ```bash
 cosign verify --key ../co-sign-test/cosign.pub docker-hub-repository-name/my-test-image:latest
@@ -136,7 +119,7 @@ This verifies the authenticity and integrity of the signed container image using
 
 ---
 
-#### 2 Verify the SBOM Attestation Signature
+#### Verify the SBOM Attestation Signature
 
 ```bash
 cosign verify-attestation \
@@ -149,7 +132,7 @@ This ensures the SBOM attestation was created and signed by a trusted party.
 
 ---
 
-#### 3 Download the SBOM from the Registry
+#### Download the SBOM from the Registry
 
 ```bash
 cosign download sbom docker-hub-repository-name/my-test-image:latest > my-test-image-sbom-download.json
@@ -157,11 +140,11 @@ cosign download sbom docker-hub-repository-name/my-test-image:latest > my-test-i
 
 This retrieves the SBOM attached to the image.
 
-#### 4. (Optional) Decrypt the Image
+#### (Optional) Decrypt the Image
 
 If your workflow requires decryption, apply it here using tools like `skopeo` or `docker image encrypt`.
 
-#### 5. Regenerate the SBOM from the Pulled Image
+#### Regenerate the SBOM from the Pulled Image
 
 ```bash
 syft docker-hub-repository-name/my-test-image:latest -o spdx-json > my-test-image-regenerate-spdx-sbom.json
@@ -171,7 +154,7 @@ This produces a new SBOM using the same image to ensure consistency.
 
 ---
 
-#### 6. Compare the Attached and Regenerated SBOMs
+#### Compare the Attached and Regenerated SBOMs
 
 ```bash
 diff my-test-image-sbom-download.json my-test-image-regenerate-spdx-sbom.json
@@ -187,7 +170,7 @@ diff -u my-test-image-sbom-download-pretty.json my-test-image-regenerate-spdx-sb
 
 ---
 
-### ✅ Result Interpretation
+##### Result Interpretation
 
 The following comparison shows that the only differences are:
 
@@ -198,3 +181,8 @@ The following comparison shows that the only differences are:
 
 All other content—including checksums, file paths, and package metadata—is identical, confirming the integrity of the image and SBOM.
 ![alt text](./images/sbom_diff.png)
+
+
+---
+
+### Attest
