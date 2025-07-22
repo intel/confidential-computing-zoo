@@ -26,12 +26,14 @@
 
 ## Required Tools
 
+- [Docker](https://www.docker.com/) – for building and managing container images
+
 - [cosign](https://github.com/sigstore/cosign) – for signing, attesting, and verifying images and SBOMs
     
 - [syft](https://github.com/anchore/syft) – for generating SBOMs in SPDX format
     
 - [jq](https://stedolan.github.io/jq/) – for pretty-printing JSON files
-    
+
 - (Optional) [skopeo](https://github.com/containers/skopeo) or similar tools – for encrypting images
     
 
@@ -63,6 +65,31 @@ cosign generate-key-pair
 The public key (`cosign.pub`) can be published to trusted servers or registries for verification purposes.
 
 
+#### Build a custom Container Image through docker file 
+
+Create a `Dockerfile` for your application:
+
+```dockerfile
+# Use a base image
+FROM nginx:stable-alpine
+
+# Expose default Nginx port
+EXPOSE 80
+
+```
+
+Build the Docker image:
+
+```bash
+docker build -t my-test-image:latest .
+```
+#### Push the Image to Docker Hub
+
+```bash
+docker tag my-test-image:latest docker-hub-repository-name/my-test-image:latest
+docker push docker-hub-repository-name/my-test-image:latest
+```
+
 #### Generate an SBOM for the Image
 
 Generate an SPDX JSON SBOM for the image hosted on Docker Hub:
@@ -76,6 +103,16 @@ syft docker-hub-repository-name/my-test-image:latest -o spdx-json > my-test-imag
 #### (Optional) Encrypt the Image
 
 If your workflow requires encryption, apply it here using tools like `skopeo` or `docker image encrypt`.
+Encrypt the image with skopeo:
+
+```bash
+skopeo copy docker://docker-hub-repository-name/my-test-image:latest  oci:my-test-image-plain:latest
+skopeo copy \
+  --encryption-key  cosign.pub \
+  oci:my-test-image-plain:latest \
+  oci:my-test-image:latest-encrypted
+skopeo copy oci:my-test-image:latest-encrypted docker://docker-hub-repository-name/my-test-image:latest-encrypted 
+```
 
 ---
 
@@ -84,7 +121,7 @@ If your workflow requires encryption, apply it here using tools like `skopeo` or
 Sign the image:
 
 ```bash
-cosign sign --key cosign.key docker-hub-repository-name/my-test-image:latest
+cosign sign --key cosign.key docker-hub-repository-name/my-test-image:latest-encrypted
 ```
 
 Create and publish a signed SBOM attestation:
@@ -94,12 +131,22 @@ cosign attest \
   --key cosign.key \
   --predicate my-test-image-sbom.json \
   --type sbom \
-  docker-hub-repository-name/my-test-image:latest
+  docker-hub-repository-name/my-test-image:latest-encrypted
 ```
+If you want to use a different type for the SBOM, you can specify it with the `--type` flag. For example, to use SPDX:
+
+```bash
+cosign attest \
+  --key cosign.key \
+  --predicate my-test-image-sbom.json \
+  --type spdx \
+  docker-hub-repository-name/my-test-image:latest-encrypted
+```
+
 #### Publish the evidences
 
 #ToDo Publish evidences (certificates, measurements etc.) to a secure location, e.g., key server and trusted log registry.
-
+#ToDo KBS client push evidence to trustee KBS service. 
 
 These steps ensure that both the image and its associated SBOM are cryptographically verifiable in the registry.
 
