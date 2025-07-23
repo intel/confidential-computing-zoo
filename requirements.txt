@@ -5,3 +5,7 @@ pydantic==2.5.0
 httpx==0.25.2
 python-decouple==3.8
 requests==2.31.0
+
+# Testing dependencies
+pytest==7.4.3
+pytest-asyncio==0.21.1

@@ -92,3 +92,33 @@ tc_api/
 ├── Dockerfile        # Docker build file
 └── README.md         # Project documentation
 ```
+
+## Testing
+
+The project includes comprehensive test suites for all API endpoints.
+
+### Test Files
+
+- `test_api.py` - Manual integration tests with detailed output
+- `test_unit.py` - Automated unit and integration tests using pytest
+- `TESTING.md` - Detailed testing documentation
+
+### Quick Test Commands
+
+```bash
+# Run all tests
+python test_api.py
+
+# Run specific manual test
+python test_api.py health
+python test_api.py build
+
+# Run automated tests
+pytest test_unit.py -v
+
+# Use test runner scripts
+./run_tests.sh --type all --verbose
+.\run_tests.ps1 -TestType unit -Verbose
+```
+
+See `TESTING.md` for complete testing documentation.
