@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  tc-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=false
+      - DOCKER_REGISTRY=docker.io
+      - DOCKER_REPOSITORY=myrepo
+    volumes:
+      - ./uploads:/app/uploads
+      - ./builds:/app/builds
+      - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for building images
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Add a reverse proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - tc-api
+    restart: unless-stopped
