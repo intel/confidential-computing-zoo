@@ -38,7 +38,7 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
         
         # Initialize build status
         docker_service.update_build_status(build_id, "submitted")
-        
+       
         # Start background build process
         background_tasks.add_task(
             build_container_async, 
@@ -223,4 +223,4 @@ async def get_artifact(build_id: str, artifact_type: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=HOST, port=PORT)
+    uvicorn.run(app, host=HOST, port=PORT, log_level="debug")

@@ -18,6 +18,7 @@ class DockerService:
     
     def generate_build_id(self) -> str:
         """Generate a unique build ID"""
+
         return f"bld-{str(uuid.uuid4())[:8]}"
     
     def build_image(self, dockerfile_content: str, build_id: str, user_id: str) -> bool:
@@ -25,7 +26,7 @@ class DockerService:
         try:
             build_path = os.path.join(BUILD_DIR, build_id)
             os.makedirs(build_path, exist_ok=True)
-            
+            logger.info(f"Building image for user {user_id} with build ID {build_id} at {build_path} {dockerfile_content}")
             # Write dockerfile to build directory
             dockerfile_path = os.path.join(build_path, "Dockerfile")
             with open(dockerfile_path, 'w') as f:
