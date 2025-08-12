@@ -26,6 +26,86 @@
 
 ## Required Tools
 
+
+    
+
+
+## Deployment Architecture
+
+
+
+![Deployment Architecture](./images/deployment_architecture.png) 
+
+Here is a simple description of the key deployable components:
+
+**Build & Pacakge**: 
+
+Build & Package: The "App/WL Owner" creates and publishes container images (like Docker images) to an "Artifact Repository." They also publish evidence of this process to an "Evidences Registry."
+
+![Build & Package](./images/build_package.png)
+
++ Workflow Trigger
+Workflow Pipeline Mgmt initiates the build process. Communicates with the tc_api interface to trigger the build and pacakge process.
+
++ Build & Packaging
+tc_api agent drives the Build and Package Mgmt. Tools to execute the application build and packaging tasks, which may include application, user data, user model etc. In the end, it shall publishes the generated image and SBOM (Software Bill of Materials) to the Artifact Repository. 
+
++ Trusted Evidence Collection
+Trusted Log Agent interacts with the build tools via API to collect the evidence which can be used to provide the trustworthy of the build and packaging, e.g., build steps, configurations, signatures.
+
++ Evidence Publishing
+
+Publishes trusted build evidence to the Trusted Log System for audit and verification, and meanwhile, there are further needs to push keys and measurement evidence to the KBS/RVPS for secure storage.
+
++ Security & Transparency Assurance
+To ensure the build and packaging process is auditable and reproducible, this flow shall integrates trusted computing principles into the build pipeline.
+Ensures:
+  - Transparency – every build step is logged and verifiable.
+  - Traceability – artifacts can be linked back to their build process.
+  - Security – keys and evidence are securely stored and protected.
+
+
+
+**Deploy & Launch**:
+
+The "Artifact Repository" provides the container images for deployment. A "Trusted Runtime System(s)" pulls these images and launches them. This is done under the control of a "Deploy & Launch" service.  The "Deploy & Launch" service is responsible for securely pulling the container images into the CVM environment, verifying their signatures and SBOM attestations, and launching the container securely inside the CVM. It also supports secure upgrades of the container during runtime.
+
+There is a challenge to integrate this tools flow with existing container orchestration systems like Kubernetes, OpenShift, etc. In this PoC, we are separting the implemenation into two phases: 
++ Phase 1: Implement a standalone orchestration flow via integrating with workflow pipeline tools like n8n and just demonstrate the deployment and launch flow under a trusted way.
++ Phase 2: Explore seamless integration with existing container orchestration systems, e.g., Kubernetes, OpenShift, etc. to implement the Deploy & Launch flow. That implicates the integration with existing container runtime management systems, e.g., containerd, CRI-O, etc. to implement the Deploy & Launch flow under trusted way.
+
+![Deploy & Launch](./images/deploy_launch.png)
+
+**User Attest**:
+
+During this process, a "Remote Attestation Service" checks the "Evidences Registry" to verify the trustworthiness of the code. This service attests to the integrity of the runtime environment, ensuring it's running as expected. A dedicated "Attest" service verifies the trustworthiness of the launched container and its artifacts at runtime. This process involves the "App/WL Owner," "Data/Model Owner," and "End User" all attesting to the trustworthiness of the system.
+
+The deployable components are packaged into standalone container images using Dockerfiles or similar methods, enabling independent building, testing, and deployment of each component.
+
+![User Attest](./images/user_attest.png)
+
+### Ingridents
+
+#### tc_api
+
+**tc_api** is a Python-based API service that provides a unified interface for managing the TruCon workflow. It handles interactions between different components, such as build and package management, deployment, and attestation.  tc_api is responsible for orchestrating the workflow, managing the lifecycle of container images, and facilitating communication between the various services involved in the TruCon process.  
+
+[tc_api Documentation](doc/api.md).
+
+#### as_router
+
+**as_router** is a general-purpose attestation service that routes attestation requests to the appropriate RA service, while seamlessly integrating with various RA consumer services. It provides a flexible and extensible framework for managing RA-related flows and interactions, such as querying quotes, collecting reports, verifying quotes and reports, and generating attestation reports.
+
+[as_router Documentation](doc/api.md).
+
+#### transparent_log wrapper
+
+**transparent_log wrapper** is a wrapper around the Transparent Log System, which provides a secure and auditable logging mechanism for the TruCon workflow. It ensures that all actions taken during the build, deployment, and attestation processes are logged in a tamper-proof manner. Given transparent log is not a mature ecosystem, and this wrapper is a proof-of-concept implementation, it may not be suitable for production use and to ensure future compatibility, it is recommended to add a api layer to decouple the wrapper integration from the underlying implementation.
+
+#### 3rd party dependencies
+
+The TruCon workflow relies on several third-party tools and libraries to facilitate the build, deployment, and attestation processes. These include:
+
 - [Docker](https://www.docker.com/) – for building and managing container images
 
 - [cosign](https://github.com/sigstore/cosign) – for signing, attesting, and verifying images and SBOMs
@@ -35,25 +115,10 @@
 - [jq](https://stedolan.github.io/jq/) – for pretty-printing JSON files
 
 - (Optional) [skopeo](https://github.com/containers/skopeo) or similar tools – for encrypting images
-    
-
-
-## Deployment Architecture
-
-Here is a simple description of the key steps and components:
-
-Build & Package: The "App/WL Owner" creates and publishes container images (like Docker images) to an "Artifact Repository." They also publish evidence of this process to an "Evidences Registry."
-
-Deploy & Launch: The "Artifact Repository" provides the container images for deployment. A "Runtime System(s)" pulls these images and launches them. This is often done under the control of a "Deploy & Launch" service.
-
-Attest: During this process, a "Remote Attestation Service" checks the "Evidences Registry" to verify the trustworthiness of the code. This service attests to the integrity of the runtime environment, ensuring it's running as expected. A dedicated "Attest" service verifies the trustworthiness of the launched container and its artifacts at runtime. This process involves the "App/WL Owner," "Data/Model Owner," and "End User" all attesting to the trustworthiness of the system.
-
-In essence, this workflow ensures that the software running on a system is exactly what it is supposed to be, providing a high level of security and trust by continuously verifying the code, data, and runtime environment.
-
-![Deployment Architecture](./images/deployment_architecture.png) 
 
 ---
-## Workflow Steps
+
+## Appendix 1: Strawman Workflows
 ### Build and Publish
 #### Create a Test Key Pair
 
