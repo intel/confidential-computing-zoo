@@ -48,7 +48,7 @@ Build & Package: The "App/WL Owner" creates and publishes container images (like
 Workflow Pipeline Mgmt initiates the build process. Communicates with the tc_api interface to trigger the build and pacakge process.
 
 + Build & Packaging
-tc_api agent drives the Build and Package Mgmt. Tools to execute the application build and packaging tasks, which may include application, user data, user model etc. In the end, it shall publishes the generated image and SBOM (Software Bill of Materials) to the Artifact Repository. 
+tc_api agent drives the Build and Package Mgmt. Tools to execute the application build and packaging tasks, which may include application, user data, user model etc. In the end, it shall publishes the generated image and SBOM (Software Bill of Materials) to the Artifact Repository. In addition, this step also involves publishing the key metadata and corresponding evidence to the KBS (Key Management System) and Trusted Log System.
 
 + Trusted Evidence Collection
 Trusted Log Agent interacts with the build tools via API to collect the evidence which can be used to provide the trustworthy of the build and packaging, e.g., build steps, configurations, signatures.
