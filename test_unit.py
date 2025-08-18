@@ -3,9 +3,15 @@ import requests
 import json
 import time
 from unittest.mock import patch, MagicMock
+from fastapi.testclient import TestClient
+import base64
+from main import app
+from datetime import datetime
 
 # Test configuration
 BASE_URL = "http://localhost:8000"
+
+client = TestClient(app)
 
 @pytest.fixture
 def sample_data():
@@ -24,6 +30,44 @@ MIIDXTCCAkWgAwIBAgIJAOgvuFyOHqR9MA0GCSqGSIb3DQEBCwUAMEUxCzAJBgNV
         "public_key": """-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1L7VLPHCAVMM6liA
 -----END PUBLIC KEY-----"""
+    }
+
+@pytest.fixture
+def sample_build_request():
+    """Fixture for build package request data"""
+    return {
+        "dockerfile": "FROM python:3.9\nWORKDIR /app\nCOPY . .",
+        "app_binary": base64.b64encode(b"test binary").decode(),
+        "configs": [base64.b64encode(b"config1").decode()],
+        "data": [base64.b64encode(b"data1").decode()],
+        "sign_key": "test-key",
+        "cert": "test-cert",
+        "encrypt": True,
+        "user_id": "test-user"
+    }
+
+@pytest.fixture
+def sample_publish_request():
+    """Fixture for publish package request data"""
+    return {
+        "image_id": "sha256:test123",
+        "user_id": "test-user",
+        "log_evidence": True,
+        "metadata": {
+            "tags": ["latest", "v1.0"],
+            "description": "Test image"
+        }
+    }
+
+@pytest.fixture
+def sample_launch_request():
+    """Fixture for deploy launch request data"""
+    return {
+        "image_id": "sha256:test123",
+        "user_id": "test-user",
+        "image_url": "docker.io/myrepo/test:latest",
+        "sbom_url": "https://registry.example.com/sbom.json",
+        "attestation_required": True
     }
 
 class TestTCAPI:
@@ -111,36 +155,13 @@ class TestTCAPI:
         assert "updated_at" in data
         assert data["build_id"] == build_id
     
-    def test_publish_package(self):
+    def test_publish_package(self, sample_publish_request):
         """Test publish package endpoint"""
-        import base64
-        
-        sample_tar_data = b"sample tar file content"
-        sample_sbom = {
-            "spdxVersion": "SPDX-2.3",
-            "dataLicense": "CC0-1.0",
-            "name": "test-sbom"
-        }
-        
-        payload = {
-            "image_tar": base64.b64encode(sample_tar_data).decode('utf-8'),
-            "sbom": json.dumps(sample_sbom),
-            "image_id": "sha256:test123",
-            "user_id": "test-user-001",
-            "metadata": {
-                "tags": ["latest"],
-                "signed": True
-            }
-        }
-        
-        response = requests.put(f"{BASE_URL}/api/publish-package", json=payload)
+        response = client.put("/api/publish-package", json=sample_publish_request)
         assert response.status_code == 200
-        
         data = response.json()
         assert data["status"] == "success"
-        assert "message" in data
-        assert "image_url" in data
-    
+
     def test_register_key(self, sample_data):
         """Test key registration endpoint"""
         payload = {
@@ -193,6 +214,19 @@ class TestTCAPI:
         # Try to get artifact (may not exist in mock implementation)
         response = requests.get(f"{BASE_URL}/api/artifacts/{build_id}/sbom.json")
         # Accept either 200 (found) or 404 (not found in mock)
+        assert response.status_code in [200, 404]
+
+    def test_deploy_launch(self, sample_launch_request):
+        """Test deploy launch endpoint"""
+        response = client.post("/api/deploy-launch", json=sample_launch_request)
+        assert response.status_code == 200
+        data = response.json()
+        assert "launch_id" in data
+        assert data["status"] == "initiated"
+
+    def test_get_launch_result(self):
+        launch_id = "launch-test123"
+        response = client.get(f"/api/launch-result/{launch_id}")
         assert response.status_code in [200, 404]
 
 # Integration test class

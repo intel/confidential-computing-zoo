@@ -3,22 +3,30 @@ import uuid
 import os
 import json
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
 from models import BuildResult
 from config import *
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 class DockerService:
     def __init__(self):
         self.builds: Dict[str, BuildResult] = {}
     
-    def generate_build_id(self) -> str:
-        """Generate a unique build ID"""
-        return f"bld-{str(uuid.uuid4())[:8]}"
+    def generate_uuid(self, prefix: str = "bld") -> str:
+        """
+        Generate a unique ID with specified prefix
+        
+        Args:
+            prefix: Prefix for the ID ("bld" for build, "launch" for launch)
+            
+        Returns:
+            str: Generated ID in format "{prefix}-{uuid}"
+        """
+        return f"{prefix}-{uuid.uuid4().hex[:7]}"
     
     def build_image(self, dockerfile_content: str, build_id: str, user_id: str) -> bool:
         """Build Docker image from dockerfile content with optimized error handling"""
@@ -455,3 +463,115 @@ class DockerService:
         except Exception as e:
             logger.error(f"Error inspecting image: {str(e)}")
             return None
+    
+    async def verify_attestation(self, image_id: str, user_id: str) -> Tuple[str, Optional[str]]:
+        """
+        Verify attestation and retrieve decryption key if successful
+        
+        Args:
+            image_id: ID of the image to verify
+            user_id: ID of the user requesting verification
+            
+        Returns:
+            Tuple[str, Optional[str]]: (attestation_result, decryption_key)
+            attestation_result can be "trusted", "untrusted", or "failed"
+            decryption_key is None if attestation fails
+        """
+        try:
+            # Get attestation report from worker node
+            attestation_report = await self._get_attestation_report(image_id)
+            
+            # Verify with KBS service
+            attestation_result, decryption_key = await self.kbs_service.verify_attestation(
+                attestation_report=attestation_report,
+                image_id=image_id,
+                user_id=user_id
+            )
+            
+            return attestation_result, decryption_key
+            
+        except Exception as e:
+            logger.error(f"Attestation failed: {str(e)}")
+            return "failed", None
+
+    def decrypt_image(self, image_id: str, decryption_key: str) -> Optional[str]:
+        """
+        Decrypt an encrypted container image
+        
+        Args:
+            image_id: ID of the encrypted image
+            decryption_key: Key received from KBS after successful attestation
+            
+        Returns:
+            Optional[str]: URL of decrypted image if successful, None otherwise
+        """
+        try:
+            # Create temporary file for decryption key
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.key', delete=False) as f:
+                f.write(decryption_key)
+                key_path = f.name
+                
+            try:
+                # Use skopeo to decrypt the image
+                encrypted_ref = f"docker://{self.registry}/{image_id}"
+                decrypted_ref = f"docker://{self.registry}/{image_id}-decrypted"
+                
+                cmd = [
+                    "skopeo", "copy",
+                    "--decryption-key", key_path,
+                    encrypted_ref,
+                    decrypted_ref
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    logger.error(f"Image decryption failed: {result.stderr}")
+                    return None
+                    
+                return decrypted_ref
+                
+            finally:
+                os.unlink(key_path)
+                
+        except Exception as e:
+            logger.error(f"Decryption error: {str(e)}")
+            return None
+    
+    def generate_cosign_keypair(self, build_id: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Generate a cosign key pair for signing and encryption
+        
+        Args:
+            build_id: Build ID for key file naming
+            
+        Returns:
+            Tuple[Optional[str], Optional[str]]: (private_key, certificate) content
+            Returns (None, None) if generation fails
+        """
+        try:
+            key_path = os.path.join(BUILD_DIR, build_id, "cosign.key")
+            cert_path = os.path.join(BUILD_DIR, build_id, "cosign.crt")
+            logger.info(f"Generating cosign key pair at {key_path} and {cert_path}")
+            # Generate key pair using cosign
+            cmd = [
+                "cosign", "generate-key-pair",
+                "--output-key-file", key_path,
+                "--output-cert-file", cert_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                logger.error(f"Failed to generate cosign keys: {result.stderr}")
+                return None, None
+            
+            # Read generated keys
+            with open(key_path, 'r') as f:
+                private_key = f.read()
+            with open(cert_path, 'r') as f:
+                certificate = f.read()
+                
+            return private_key, certificate
+            
+        except Exception as e:
+            logger.error(f"Key generation failed: {str(e)}")
+            return None, None
