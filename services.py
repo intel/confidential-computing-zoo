@@ -555,7 +555,7 @@ class DockerService:
             # Generate key pair using cosign
             cmd = [
                 "cosign", "generate-key-pair",
-                "--output-key-file", key_path,
+                "--output-file", key_path,
                 "--output-cert-file", cert_path
             ]
             result = subprocess.run(cmd, capture_output=True, text=True)

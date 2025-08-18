@@ -1,37 +1,135 @@
 # TC API - Trusted Container Build and Publish Service
 
-A RESTful API service framework built with Python and FastAPI for handling Docker image building, publishing, signing, and encryption workflows.
+A RESTful API service framework built with Python and FastAPI for handling Docker image building, packing, launching, deploying of applications runtime in a secure and auditable manner.
 
 ## Features
 
-- **Container Image Building**: Support building custom images via uploaded Dockerfile
-- **SBOM Generation**: Automatically generate SPDX JSON format Software Bill of Materials using Syft
-- **Image Encryption**: Encrypt images using Skopeo
-- **Digital Signing**: Sign images and SBOMs using Cosign
-- **Image Publishing**: Support publishing to Docker Hub and other image registries
-- **Key Management**: Integrate with KBS (Key Broker Service) for key registration and management
+- **Container Image Building**: Build and package container images with Dockerfile and application components
+- **SBOM Generation**: Generate and sign SPDX format Software Bill of Materials (SBOM) using Syft
+- **Image Security**: Support image encryption using Skopeo and digital signing using Cosign
+- **Image Publishing**: Publish signed images and SBOMs to container registries with policy management
+- **Key Management**: Integrate with KBS for key management and RVPS for verification policies
+- **Secure Deployment**: Support secure container launch with remote attestation in CVM
+- **Audit Logging**: Record build and deploy evidence in Transparent Log System
+- **Runtime Security**: Enable secure container upgrades during runtime
 
 ## API Endpoints
 
-### 1. Build and Package Request
+### 1. Build and Package
 `POST /api/build-package`
 
-Submit container image build tasks with support for Dockerfile, signing keys, certificates, and other parameters.
+Submit container build requests with Dockerfile, application binary, configs, and optional signing/encryption.
 
-### 2. Publish Image and SBOM  
-`PUT /api/publish-package`
+**Request Body:**
+```json
+{
+  "dockerfile": "<file>",           
+  "app_binary": "<file>",           
+  "configs": ["file1", "file2"],   
+  "data": ["file3"],                
+  "sign_key": "<private_key.pem>",
+  "cert": "<cert.pem>",            
+  "encrypt": true,               
+  "user_id": "user-001"           
+}
+```
 
-Publish built images and SBOMs to image repositories.
+**Response:**
+```json
+{
+  "build_id": "bld-######",       
+  "status": "submitted"          
+}
+```
 
-### 3. Register Key Metadata
-`POST /api/keys/register`
-
-Register key metadata with KBS, including public keys, certificates, and usage policies.
-
-### 4. Query Build Results
+### 2. Build Result Query
 `GET /api/build-result/{build_id}`
 
-Query build status and result information by build ID.
+Query build status and results including image ID, SBOM URL and certificates.
+
+**Response:**
+```json
+{
+  "build_id": "bld-8de9932",           
+  "status": "success",                 
+  "image_id": "sha256:abcd1234",        
+  "sbom_url": "https://.../sbom.json",  
+  "image_url": "docker.io/myrepo/secure-app", 
+  "cert_url": "https://.../cert.pem"  
+}
+```
+
+### 3. Publish Package
+`PUT /api/publish-package`
+
+Publish built image and SBOM with key management and evidence logging.
+
+**Request:**
+```json
+{
+  "image_id": "sha256:abcd1234",   
+  "user_id": "user-001",          
+  "log_evidence": true,        
+  "metadata": {
+    "tags": ["latest"],             
+    "description": "Secure application image"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",                
+  "image_url": "docker.io/myrepo/secure-app:latest",
+  "sbom_url": "https://.../sbom.json", 
+  "log_id": "tx-xxxxxxx"      
+}
+```
+
+### 4. Deploy Launch
+`POST /api/deploy-launch`
+
+Launch container with attestation and secure deployment.
+
+**Request:**
+```json
+{
+  "image_url": "docker.io/secure/app:latest",    
+  "image_id": "sha256:abcd1234",              
+  "sbom_url": "https://registry.example.com/sbom.json", 
+  "user_id": "user-001",                           
+  "attestation_required": true                    
+}
+```
+
+**Response:**
+```json
+{
+  "launch_id": "launch-#######",       
+  "status": "initiated"                
+}
+```
+
+### 5. Launch Result Query
+`GET /api/launch-result/{launch_id}`
+
+Query launch status and attestation results.
+
+**Response:**
+```json
+{
+  "launch_id": "launch-######",           
+  "status": "success",                     
+  "validation": "passed",                  
+  "attestation": "trusted",             
+  "log_id": "tx-xxxxxxx",              
+  "instance_id": [                        
+    "inst-#####1",
+    "inst-#####2"
+  ]
+}
+```
 
 ## Quick Start
 
