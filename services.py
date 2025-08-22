@@ -3,6 +3,7 @@ import uuid
 import os
 import json
 import logging
+import time
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
 from models import BuildResult
@@ -31,6 +32,7 @@ class DockerService:
     def build_image(self, dockerfile_content: str, build_id: str, user_id: str) -> bool:
         """Build Docker image from dockerfile content with optimized error handling"""
         try:
+            self.update_build_status(build_id, "preparing", step="Setting up build environment")
             build_path = os.path.join(BUILD_DIR, build_id)
             os.makedirs(build_path, exist_ok=True)
             
@@ -57,6 +59,7 @@ class DockerService:
             logger.info(f"Building image: {image_name}")
             logger.debug(f"Build command: {' '.join(cmd)}")
             
+            self.update_build_status(build_id, "building", step="Building container image")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             
             if result.returncode == 0:
@@ -141,9 +144,13 @@ class DockerService:
     def encrypt_image(self, image_name: str, build_id: str, public_key_path: str) -> Optional[str]:
         """Encrypt image using skopeo with optimized workflow"""
         try:
-            encrypted_name = f"{image_name}-encrypted"
-            work_dir = os.path.join(BUILD_DIR, build_id, "encryption")
-            os.makedirs(work_dir, exist_ok=True)
+            # Setup paths for encrypted image
+            build_path = os.path.join(BUILD_DIR, build_id)
+            # Extract user_id from image_name (format: user_id-build_id:latest)
+            user_id = image_name.split('-')[0]
+            # Create OCI storage path with user_id-build_id format
+            encrypted_path = os.path.join(build_path, f"{user_id}-{build_id}")
+            os.makedirs(encrypted_path, exist_ok=True)
             
             # Validate public key exists
             if not os.path.exists(public_key_path):
@@ -152,30 +159,21 @@ class DockerService:
             
             logger.info(f"Starting encryption process for image: {image_name}")
             
-            # Direct encryption: docker-daemon -> docker-daemon with encryption
-            # This skips intermediate OCI storage for better performance
+            # Use OCI format for encrypted image storage in build directory with user_id
             cmd = [
                 SKOPEO_CMD, "copy",
-                "--encryption-key", public_key_path,
-                f"docker-daemon:{image_name}",
-                f"docker-daemon:{encrypted_name}"
+                "--encryption-key", f"jwe:{public_key_path}",
+                f"docker-daemon:{image_name}",  # image_name already contains :latest
+                f"oci:{encrypted_path}:latest-encrypted"
             ]
             
             logger.debug(f"Executing encryption command: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             
             if result.returncode == 0:
-                logger.info(f"Successfully encrypted image: {image_name} -> {encrypted_name}")
-                
-                # Verify encrypted image exists
-                verify_cmd = [DOCKER_CMD, "images", encrypted_name, "--quiet"]
-                verify_result = subprocess.run(verify_cmd, capture_output=True, text=True)
-                
-                if verify_result.returncode == 0 and verify_result.stdout.strip():
-                    return encrypted_name
-                else:
-                    logger.error(f"Encrypted image verification failed: {encrypted_name}")
-                    return None
+                logger.info(f"Successfully encrypted image {image_name} to {encrypted_path}")
+                # Return OCI reference in the correct format
+                return f"oci:{encrypted_path}"  # Return absolute path for skopeo
             else:
                 logger.error(f"Image encryption failed: {result.stderr}")
                 logger.debug(f"Encryption stdout: {result.stdout}")
@@ -191,54 +189,85 @@ class DockerService:
             logger.error(f"Unexpected error during image encryption: {str(e)}")
             return None
     
-    def sign_image(self, image_name: str, private_key_path: str) -> bool:
-        """Sign image with cosign with enhanced validation"""
+    def sign_image(self, image_name: str, private_key_path: str) -> Tuple[bool, Optional[str]]:
+        """
+        Sign image with cosign with enhanced validation. Handles remote registry images.
+        
+        Args:
+            image_name: Image name/reference. If not a full registry path, it will be constructed
+            private_key_path: Path to the cosign private key for signing
+            
+        Returns:
+            Tuple[bool, Optional[str]]: (success, signature_path)
+                - success: True if signing successful, False otherwise
+                - signature_path: Full registry reference to the signature if successful, None otherwise
+        """
         try:
             # Validate private key exists
             if not os.path.exists(private_key_path):
                 logger.error(f"Private key file not found: {private_key_path}")
-                return False
+                return False, None
+            
+            # Extract proper base name and construct registry reference
+            base_name = self._extract_base_name(image_name)
+            full_image_ref = f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{base_name}"
+            
+            logger.info(f"Constructed full image reference: {full_image_ref}")
             
             # Set environment to skip password prompt for testing
             env = os.environ.copy()
             env['COSIGN_PASSWORD'] = ''  # Empty password for testing keys
             
-            cmd = [COSIGN_CMD, "sign", "--key", private_key_path, image_name, "--yes"]
+            cmd = [COSIGN_CMD, "sign", "--key", private_key_path, full_image_ref, "--yes"]
             
-            logger.info(f"Signing image: {image_name}")
-            logger.debug(f"Sign command: {' '.join(cmd[:4])} [key-file] {image_name} --yes")
+            logger.info(f"Signing image: {full_image_ref}")
+            logger.debug(f"Sign command: {' '.join(cmd[:4])} [key-file] {full_image_ref} --yes")
             
             result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120)
             
             if result.returncode == 0:
-                logger.info(f"Successfully signed image {image_name}")
-                return True
+                logger.info(f"Successfully signed image {full_image_ref}")
+                # Signature reference follows cosign format: registry/repo/image:tag.sig
+                signature_ref = f"{full_image_ref}.sig"
+                return True, signature_ref
             else:
                 logger.error(f"Failed to sign image: {result.stderr}")
                 logger.debug(f"Sign stdout: {result.stdout}")
-                return False
+                return False, None
                 
         except subprocess.TimeoutExpired:
             logger.error(f"Image signing timed out for: {image_name}")
-            return False
+            return False, None
         except FileNotFoundError:
             logger.error(f"Cosign command not found: {COSIGN_CMD}")
-            return False
+            return False, None
         except Exception as e:
             logger.error(f"Unexpected error signing image: {str(e)}")
-            return False
+            return False, None
     
-    def create_sbom_attestation(self, image_name: str, sbom_path: str, private_key_path: str) -> bool:
-        """Create and publish SBOM attestation with validation"""
+    def create_sbom_attestation(self, image_name: str, sbom_path: str, private_key_path: str) -> Tuple[bool, Optional[str]]:
+        """
+        Create and publish SBOM attestation for remote registry images
+        
+        Args:
+            image_name: Image name/reference (e.g., user-id-bld-id or full path)
+            sbom_path: Path to the SBOM JSON file
+            private_key_path: Path to the cosign private key for signing
+            
+        Returns:
+            Tuple[bool, Optional[str]]: (success, attestation_path)
+                - success: True if attestation successful, False otherwise
+                - attestation_path: Full registry reference to the SBOM attestation if successful, None otherwise
+        """
         try:
             # Validate inputs
             if not os.path.exists(sbom_path):
                 logger.error(f"SBOM file not found: {sbom_path}")
-                return False
+                return False, None
             
             if not os.path.exists(private_key_path):
                 logger.error(f"Private key file not found: {private_key_path}")
-                return False
+                return False, None
             
             # Validate SBOM content
             try:
@@ -248,7 +277,13 @@ class DockerService:
                     logger.warning("SBOM may be invalid - missing spdxVersion")
             except (json.JSONDecodeError, Exception) as e:
                 logger.error(f"Invalid SBOM file: {e}")
-                return False
+                return False, None
+            
+            # Extract proper base name and construct registry reference
+            base_name = self._extract_base_name(image_name)
+            full_image_ref = f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{base_name}"
+            
+            logger.info(f"Constructed full image reference: {full_image_ref}")
             
             # Set environment for cosign
             env = os.environ.copy()
@@ -259,96 +294,144 @@ class DockerService:
                 "--key", private_key_path,
                 "--predicate", sbom_path,
                 "--type", "spdx",
-                image_name,
+                full_image_ref,
                 "--yes"
             ]
             
-            logger.info(f"Creating SBOM attestation for: {image_name}")
-            logger.debug(f"Attest command: {' '.join(cmd[:6])} [key-file] --predicate [sbom-file] --type spdx {image_name} --yes")
+            logger.info(f"Creating SBOM attestation for: {full_image_ref}")
+            logger.debug(f"Attest command: {' '.join(cmd[:6])} [key-file] --predicate [sbom-file] --type spdx {full_image_ref} --yes")
             
             result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120)
             
             if result.returncode == 0:
-                logger.info(f"Successfully created SBOM attestation for {image_name}")
-                return True
+                logger.info(f"Successfully created SBOM attestation for {full_image_ref}")
+                # Attestation reference follows cosign format: registry/repo/image:tag.att.<type>
+                attestation_ref = f"{full_image_ref}.att.sbom"
+                return True, attestation_ref
             else:
                 logger.error(f"Failed to create SBOM attestation: {result.stderr}")
                 logger.debug(f"Attestation stdout: {result.stdout}")
-                return False
+                return False, None
                 
         except subprocess.TimeoutExpired:
             logger.error(f"SBOM attestation timed out for: {image_name}")
-            return False
+            return False, None
         except FileNotFoundError:
             logger.error(f"Cosign command not found: {COSIGN_CMD}")
-            return False
+            return False, None
         except Exception as e:
             logger.error(f"Unexpected error creating SBOM attestation: {str(e)}")
-            return False
+            return False, None
     
-    def push_image(self, image_name: str, registry_repo: str) -> bool:
-        """Push image to registry with retry logic"""
-        try:
-            remote_name = f"{registry_repo}/{image_name}"
+    def push_image(self, source_ref: str, dest_ref: str, max_retries: int = 3, retry_delay: int = 5) -> bool:
+        """
+        Push image using skopeo copy with retry mechanism.
+        
+        Args:
+            source_ref: Complete source reference (e.g., 'oci:/path:tag' or 'docker-daemon:image:tag')
+            dest_ref: Complete destination reference (e.g., 'docker://registry/repo:tag')
+                For registry destinations, format should be: docker://registry/repository:tag
+            max_retries: Maximum number of retry attempts (default: 3)
+            retry_delay: Delay between retries in seconds (default: 5)
             
-            logger.info(f"Pushing image: {image_name} -> {remote_name}")
+        Returns:
+            bool: True if push successful, False otherwise
+        """
+        # Extract image name for registry destination
+        def extract_image_name(ref: str) -> str:
+            # For path like 'oci:/path/to/builds/bld-123/user-id-bld-123'
+            # Return 'user-id-bld-123:latest-encrypted'
+            parts = ref.split('/')
+            image_name = parts[-1]
+            if ':' not in image_name:
+                image_name += ':latest-encrypted'
+            return image_name
             
-            # Tag the image
-            tag_cmd = [DOCKER_CMD, "tag", image_name, remote_name]
-            logger.debug(f"Tag command: {' '.join(tag_cmd)}")
+        # Fix source reference format if it's an OCI reference
+        if source_ref.startswith('oci:'):
+            # Remove any duplicate 'oci:' prefixes
+            source_ref = 'oci:' + source_ref.replace('oci:', '')
             
-            tag_result = subprocess.run(tag_cmd, capture_output=True, text=True, timeout=60)
-            
-            if tag_result.returncode != 0:
-                logger.error(f"Failed to tag image: {tag_result.stderr}")
-                return False
-            
-            # Push the image with retry logic
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    push_cmd = [DOCKER_CMD, "push", remote_name]
-                    logger.debug(f"Push command (attempt {attempt + 1}): {' '.join(push_cmd)}")
-                    
-                    push_result = subprocess.run(push_cmd, capture_output=True, text=True, timeout=300)
-                    
-                    if push_result.returncode == 0:
-                        logger.info(f"Successfully pushed image to {remote_name}")
-                        return True
-                    else:
-                        logger.warning(f"Push attempt {attempt + 1} failed: {push_result.stderr}")
-                        if attempt < max_retries - 1:
-                            logger.info(f"Retrying push in 5 seconds...")
-                            import time
-                            time.sleep(5)
-                        
-                except subprocess.TimeoutExpired:
-                    logger.warning(f"Push attempt {attempt + 1} timed out")
-                    if attempt < max_retries - 1:
-                        logger.info(f"Retrying push...")
-            
-            logger.error(f"Failed to push image after {max_retries} attempts")
-            return False
+        # Fix destination reference format for registry
+        if dest_ref.startswith('docker://'):
+            registry = dest_ref.split('/')[2]  # Get registry name
+            image_name = extract_image_name(source_ref)
+            dest_ref = f"docker://{registry}/{image_name}"
+        attempt = 0
+        while attempt < max_retries:
+            try:
+                attempt += 1
+                logger.info(f"Pushing image (attempt {attempt}/{max_retries}): {source_ref} -> {dest_ref}")
                 
-        except FileNotFoundError:
-            logger.error(f"Docker command not found: {DOCKER_CMD}")
-            return False
-        except Exception as e:
-            logger.error(f"Unexpected error pushing image: {str(e)}")
-            return False
+                cmd = [SKOPEO_CMD, "copy", source_ref, dest_ref]
+                logger.debug(f"Push command: {' '.join(cmd)}")
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                
+                if result.returncode == 0:
+                    logger.info(f"Successfully pushed image to {dest_ref}")
+                    return True
+                else:
+                    logger.warning(f"Push attempt {attempt} failed: {result.stderr}")
+                    logger.debug(f"Push stdout: {result.stdout}")
+                    
+                    if attempt < max_retries:
+                        logger.info(f"Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                    else:
+                        logger.error(f"All push attempts failed after {max_retries} tries")
+                        return False
+                
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Push attempt {attempt} timed out")
+                if attempt < max_retries:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"All push attempts timed out after {max_retries} tries")
+                    return False
+            except FileNotFoundError:
+                logger.error(f"Skopeo command not found: {SKOPEO_CMD}")
+                return False  # Don't retry if command not found
+            except Exception as e:
+                logger.warning(f"Push attempt {attempt} failed with error: {str(e)}")
+                if attempt < max_retries:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"All push attempts failed after {max_retries} tries: {str(e)}")
+                    return False
+        
+        return False
     
     def get_build_status(self, build_id: str) -> Optional[BuildResult]:
         """Get build status by build_id"""
         return self.builds.get(build_id)
     
-    def update_build_status(self, build_id: str, status: str, **kwargs):
-        """Update build status with enhanced tracking"""
+    def update_build_status(self, build_id: str, status: str, step: str = None, **kwargs):
+        """
+        Update build status with enhanced tracking and step information
+        
+        Status can be one of:
+        - submitted: Initial build request received
+        - preparing: Setting up build environment
+        - building: Building container image
+        - generating_sbom: Generating SBOM
+        - encrypting: Encrypting image (if requested)
+        - pushing: Pushing to registry
+        - signing: Signing image and SBOM
+        - success: Build completed successfully
+        - failed: Build failed
+        """
         try:
             if build_id in self.builds:
                 build_result = self.builds[build_id]
                 old_status = build_result.status
                 build_result.status = status
                 build_result.updated_at = datetime.now()
+                
+                if step:
+                    build_result.current_step = step
                 
                 # Log status changes
                 if old_status != status:
@@ -537,41 +620,117 @@ class DockerService:
             logger.error(f"Decryption error: {str(e)}")
             return None
     
-    def generate_cosign_keypair(self, build_id: str) -> Tuple[Optional[str], Optional[str]]:
+    def generate_key(self, build_id: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
         """
-        Generate a cosign key pair for signing and encryption
+        Generate a cosign key pair for signing and an openssl key for encryption.
         
         Args:
             build_id: Build ID for key file naming
             
         Returns:
-            Tuple[Optional[str], Optional[str]]: (private_key, certificate) content
-            Returns (None, None) if generation fails
+            Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]: 
+                (private_signing_key_path, public_signing_key_path, 
+                 private_encryption_key_path, public_encryption_key_path)
+            Returns (None, None, None, None) if generation fails.
         """
         try:
-            key_path = os.path.join(BUILD_DIR, build_id, "cosign.key")
-            cert_path = os.path.join(BUILD_DIR, build_id, "cosign.crt")
-            logger.info(f"Generating cosign key pair at {key_path} and {cert_path}")
-            # Generate key pair using cosign
-            cmd = [
-                "cosign", "generate-key-pair",
-                "--output-file", key_path,
-                "--output-cert-file", cert_path
+            key_dir = os.path.join(BUILD_DIR, build_id)
+            os.makedirs(key_dir, exist_ok=True)
+
+            # 1. Generate Cosign signing key pair
+            cosign_key_prefix = os.path.join(key_dir, f"{build_id}-cosign")
+            private_signing_key_path = f"{cosign_key_prefix}.key"
+            public_signing_key_path = f"{cosign_key_prefix}.pub"
+
+            logger.info(f"Generating cosign key pair with prefix {cosign_key_prefix}")
+            env = os.environ.copy()
+            env['COSIGN_PASSWORD'] = ''
+            
+            cosign_cmd = [
+                COSIGN_CMD, "generate-key-pair",
+                f"--output-key-prefix={cosign_key_prefix}"
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            cosign_result = subprocess.run(cosign_cmd, capture_output=True, text=True, env=env)
             
-            if result.returncode != 0:
-                logger.error(f"Failed to generate cosign keys: {result.stderr}")
-                return None, None
+            if cosign_result.returncode != 0:
+                logger.error(f"Failed to generate cosign keys: {cosign_result.stderr}")
+                return None, None, None, None
+
+            # 2. Generate OpenSSL encryption key pair
+            openssl_priv_key_path = os.path.join(key_dir, f"{build_id}-openssl.key")
+            public_encryption_key_path = os.path.join(key_dir, f"{build_id}-openssl.pub")
+
+            logger.info(f"Generating openssl key pair in {key_dir}")
             
-            # Read generated keys
-            with open(key_path, 'r') as f:
-                private_key = f.read()
-            with open(cert_path, 'r') as f:
-                certificate = f.read()
-                
-            return private_key, certificate
+            # Generate private key
+            openssl_priv_cmd = [
+                "openssl", "genpkey",
+                "-algorithm", "RSA",
+                "-out", openssl_priv_key_path,
+                "-pkeyopt", "rsa_keygen_bits:2048"
+            ]
+            openssl_priv_result = subprocess.run(openssl_priv_cmd, capture_output=True, text=True)
+            if openssl_priv_result.returncode != 0:
+                logger.error(f"Failed to generate openssl private key: {openssl_priv_result.stderr}")
+                return None, None, None, None
+
+            # Generate public key from private key
+            openssl_pub_cmd = [
+                "openssl", "rsa",
+                "-pubout",
+                "-in", openssl_priv_key_path,
+                "-out", public_encryption_key_path
+            ]
+            openssl_pub_result = subprocess.run(openssl_pub_cmd, capture_output=True, text=True)
+            if openssl_pub_result.returncode != 0:
+                logger.error(f"Failed to generate openssl public key: {openssl_pub_result.stderr}")
+                return None, None, None, None
+
+            return private_signing_key_path, public_signing_key_path, openssl_priv_key_path, public_encryption_key_path
             
         except Exception as e:
             logger.error(f"Key generation failed: {str(e)}")
-            return None, None
+            return None, None, None, None
+
+    def _extract_base_name(self, image_name: str) -> str:
+        """
+        Extract clean base name from image reference for registry
+        
+        Args:
+            image_name: Raw image name/reference (can be path or registry format)
+            
+        Returns:
+            str: Clean base name in format 'test-bld-id:latest-encrypted'
+        """
+        # Remove any registry prefix if present
+        if '://' in image_name:
+            image_name = image_name.split('://', 1)[1]
+            
+        # Split path and get last component
+        parts = image_name.split('/')
+        base_name = parts[-1]
+        
+        # Handle local file paths in the name
+        if '.' in base_name:
+            # For paths like ./builds/bld-id/test-bld-id, get test-bld-id
+            path_parts = base_name.split('.')
+            if len(path_parts) > 1 and path_parts[-1] in ['json', 'sig', 'att']:
+                # Remove file extensions like .json, .sig, .att
+                base_name = path_parts[-2]
+            else:
+                base_name = path_parts[-1]
+                
+        # If it's just a build ID, add test- prefix
+        if base_name.startswith('bld-'):
+            base_name = f"test-{base_name}"
+        # If it doesn't have test- prefix but has build id, add it
+        elif not base_name.startswith('test-') and '-bld-' in base_name:
+            base_name = f"test-{base_name.split('-bld-')[1]}"
+            
+        # Ensure proper tag
+        if ':' not in base_name:
+            base_name += ':latest-encrypted'
+        elif not base_name.endswith('-encrypted'):
+            base_name = base_name.split(':')[0] + ':latest-encrypted'
+            
+        return base_name

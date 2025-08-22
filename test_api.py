@@ -14,7 +14,7 @@ def test_health_check():
     print(f"Response: {response.json()}")
 
 def test_build_package():
-    """Test build package endpoint"""
+    """Test build package endpoint with status monitoring"""
     print("\nTesting build package...")
     
     payload = {
@@ -26,13 +26,55 @@ def test_build_package():
         "user_id": "test-user"
     }
     
+    # Submit build request
     response = requests.post(f"{BASE_URL}/api/build-package", json=payload)
-    print(f"Status: {response.status_code}")
-    if response.status_code == 200:
-        data = response.json()
-        print(f"Build ID: {data['build_id']}")
-        print(f"Status: {data['status']}")
-        return data['build_id']
+    print(f"Initial Status: {response.status_code}")
+    
+    if response.status_code != 200:
+        print(f"Build submission failed: {response.text}")
+        return None
+        
+    data = response.json()
+    build_id = data['build_id']
+    print(f"Build ID: {build_id}")
+    print(f"Initial Status: {data['status']}")
+    
+    # Monitor build status
+    max_attempts = 30  # Maximum number of status checks
+    check_interval = 5 # Time between checks in seconds
+    current_attempt = 0
+    
+    while current_attempt < max_attempts:
+        time.sleep(check_interval)
+        status_response = requests.get(f"{BASE_URL}/api/build-result/{build_id}")
+        
+        if status_response.status_code != 200:
+            print(f"Failed to get build status: {status_response.text}")
+            return None
+            
+        status_data = status_response.json()
+        current_status = status_data.get('status')
+        print(f"Current Status: {current_status}")
+        
+        # Check for terminal states
+        if current_status == "success":
+            print("Build completed successfully!")
+            print(f"Image URL: {status_data.get('image_url')}")
+            print(f"SBOM URL: {status_data.get('sbom_url')}")
+            return build_id
+        elif current_status == "failed":
+            print(f"Build failed: {status_data.get('error_message')}")
+            return None
+        elif current_status in ["submitted", "preparing", "building", "generating_sbom", "encrypting", "pushing", "signing"]:
+            current_step = status_data.get('current_step', 'In progress')
+            print(f"Build in progress... ({current_attempt + 1}/{max_attempts})")
+            print(f"Current step: {current_step}")
+        else:
+            print(f"Unknown status: {current_status}")
+            
+        current_attempt += 1
+    
+    print("Build monitoring timed out")
     return None
 
 def test_publish_package(image_id="sha256:test123"):
@@ -94,8 +136,8 @@ def run_comprehensive_tests():
         
         # Test build package
         build_id = test_build_package()
-        if build_id:
-            time.sleep(2)  # Wait for processing
+        if not build_id:
+            print("Build package test failed, skipping remaining tests")
             
         # Test publish package
         test_publish_package()

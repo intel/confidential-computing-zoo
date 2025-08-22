@@ -37,7 +37,8 @@ class PublishPackageResponse(BaseModel):
 
 class BuildResult(BaseModel):
     build_id: str
-    status: str = "pending"  # pending, building, success, failed
+    status: str = "pending"  # pending, preparing, building, generating_sbom, encrypting, pushing, signing, success, failed
+    current_step: Optional[str] = None  # Detailed description of current operation
     image_id: Optional[str] = None
     sbom_url: Optional[str] = None
     image_url: Optional[str] = None  

@@ -139,6 +139,36 @@ Query launch status and attestation results.
 pip install -r requirements.txt
 ```
 
+### Set Up Environment
+
+Before running the tests, make sure you have configured your Docker Hub (`docker.io`) account.  
+Otherwise, tests involving image build, push, and deployment will fail.
+
+#### Configure docker.io account
+1. Log in using the CLI:
+
+```bash
+   docker login docker.io
+```
+
+Enter your Docker Hub username and password (or Personal Access Token).
+
+2. Verify login:
+
+```bash
+   docker info
+```
+This should show your username under "Username" and confirm you are logged in.
+
+3. For CI/CD environments, you can pass credentials via environment variables:
+
+```bash
+export DOCKER_USERNAME=<your-username>
+export DOCKER_PASSWORD=<your-password-or-token>
+echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin docker.io
+```
+Please note, you need to update DOCKER_REPOSITORY in `config.py` to your Docker Hub repository name before running the tests.
+
 ### Run Service
 
 ```bash

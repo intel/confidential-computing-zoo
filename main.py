@@ -11,7 +11,10 @@ import logging
 from models import *
 from services import DockerService
 from kbs_service import KBSService
-from config import HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR
+from config import (
+    HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR,
+    DOCKER_REGISTRY, DOCKER_REPOSITORY
+)
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
@@ -99,6 +102,7 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
         )
         logger.info(f"Started background build task for build ID: {build_id}")
         
+        # Return immediately with submitted status
         return BuildPackageResponse(
             build_id=build_id,
             status="submitted",
@@ -109,124 +113,169 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
         logger.error(f"Build package request failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to start build: {str(e)}")
 
-async def build_container_async(request: BuildPackageRequest, build_id: str):
-    """Async function to build container in background"""
+def build_container_async(request: BuildPackageRequest, build_id: str):
+    """Function to build container in background with detailed status tracking"""
     try:
-        # Update status to building
-        docker_service.update_build_status(build_id, "building")
+        # Start with preparing status
+        docker_service.update_build_status(build_id, "preparing", step="Initializing build process")
         logger.info(f"Starting build process for build ID: {build_id}")
         
         # Build the image
         image_name = f"{request.user_id}-{build_id}:latest"
         logger.debug(f"Building image: {image_name}")
+        docker_service.update_build_status(build_id, "building", step="Building container image")
         build_success = docker_service.build_image(request.dockerfile, build_id, request.user_id)
         
         if not build_success:
             logger.error(f"Docker build failed for build ID: {build_id}")
-            docker_service.update_build_status(build_id, "failed", error_message="Docker build failed")
+            docker_service.update_build_status(build_id, "failed", step="Container build failed")
             return
 
-        # Generate cosign keys if not provided
-        logger.debug(f"cheking sign_key and cert for build ID: {build_id} {request.sign_key} {request.cert}")
+        # Generate keys if not provided
+        public_encryption_key = None
+        private_encryption_key = None
+        logger.debug(f"Checking for provided sign_key and cert for build ID: {build_id}")
         if not request.sign_key or not request.cert:
-            logger.info(f"Generating cosign keys for build ID: {build_id}")
-            sign_key, cert = docker_service.generate_cosign_keypair(build_id)
+            docker_service.update_build_status(build_id, "preparing", step="Generating signing and encryption keys")
+            logger.info(f"Generating keys for build ID: {build_id}")
+            sign_key, cert, priv_enc_key, pub_enc_key = docker_service.generate_key(build_id)
             
-            if not sign_key or not cert:
-                logger.error(f"Failed to generate signing keys for build ID: {build_id}")
+            if not sign_key or not cert or not priv_enc_key or not pub_enc_key:
+                logger.error(f"Failed to generate keys for build ID: {build_id}")
                 docker_service.update_build_status(
                     build_id, 
                     "failed",
-                    error_message="Failed to generate signing keys"
+                    step="Key generation failed",
+                    error_message="Failed to generate keys"
                 )
                 return
                 
             request.sign_key = sign_key
             request.cert = cert
-            logger.debug(f"Successfully generated cosign keys for build ID: {build_id}")
+            private_encryption_key = priv_enc_key
+            public_encryption_key = pub_enc_key
+            logger.debug(f"Successfully generated keys for build ID: {build_id}")
             
-            # Update build info with key locations
             docker_service.update_build_status(
                 build_id,
-                "building",
-                cert_url=f"/api/artifacts/{build_id}/cosign.crt"
+                "preparing",
+                step="Keys generated successfully",
+                cert_url=f"/api/artifacts/{build_id}/{os.path.basename(cert)}"
             )
 
-        # Sign and encrypt image if keys are available
+        # Generate SBOM and handle encryption
+        try:
+            # Generate SBOM
+            docker_service.update_build_status(build_id, "generating_sbom", step="Generating SBOM")
+            logger.info(f"Generating SBOM for image {image_name}")
+            sbom_path = docker_service.generate_sbom(
+                image_name,
+                build_id
+            )
+            if not sbom_path:
+                raise Exception("SBOM generation failed")
+            logger.debug(f"Successfully generated SBOM at {sbom_path}")
+
+            # Encrypt image if requested
+            if request.encrypt:
+                if not public_encryption_key:
+                    logger.error(f"Encryption requested for build {build_id}, but no encryption key available.")
+                    raise Exception("Encryption requested, but no encryption key available")
+
+                docker_service.update_build_status(build_id, "encrypting", step="Encrypting container image")
+                logger.info(f"Encrypting image {image_name}")
+                encrypted_image_name = docker_service.encrypt_image(
+                    image_name,
+                    build_id,
+                    public_encryption_key
+                )
+                if not encrypted_image_name:
+                    raise Exception("Image encryption failed")
+                logger.debug(f"Successfully encrypted image {image_name}")
+                image_name = encrypted_image_name
+
+        except Exception as e:
+            logger.error(f"Image encryption or SBOM generation failed for build ID {build_id}: {str(e)}")
+            docker_service.update_build_status(
+                build_id,
+                "failed",
+                step="SBOM/Encryption failed",
+                error_message=f"Image encryption or SBOM generation failed: {str(e)}"
+            )
+            return
+
+        # Push the image to the registry
+        try:
+            docker_service.update_build_status(build_id, "pushing", step="Pushing image to registry")
+            logger.info(f"Pushing image {image_name} to registry")
+            
+            if request.encrypt:
+                source_ref = f"oci:{image_name}"
+            else:
+                source_ref = f"docker-daemon:{image_name}"
+            
+            dest_ref = f"docker://{DOCKER_REPOSITORY}/{image_name}"
+            
+            push_success = docker_service.push_image(source_ref, dest_ref)
+            if not push_success:
+                raise Exception("Image push failed")
+            logger.debug(f"Successfully pushed image to {dest_ref}")
+
+        except Exception as e:
+            logger.error(f"Image push failed for build ID {build_id}: {str(e)}")
+            docker_service.update_build_status(
+                build_id,
+                "failed",
+                step="Image push failed",
+                error_message=f"Image push failed: {str(e)}"
+            )
+            return
+
+        # Sign the image and SBOM
         if request.sign_key and request.cert:
             try:
+                docker_service.update_build_status(build_id, "signing", step="Signing image and SBOM")
+                
                 # Sign image
                 logger.info(f"Signing image {image_name}")
                 sign_success = docker_service.sign_image(
                     image_name,
-                    request.sign_key,
-                    request.cert
+                    request.sign_key
                 )
                 if not sign_success:
                     raise Exception("Image signing failed")
                 logger.debug(f"Successfully signed image {image_name}")
-                
-                # Encrypt image if requested
-                if request.encrypt:
-                    logger.info(f"Encrypting image {image_name}")
-                    encrypt_success = docker_service.encrypt_image(
-                        image_name,
-                        request.cert
-                    )
-                    if not encrypt_success:
-                        raise Exception("Image encryption failed")
-                    logger.debug(f"Successfully encrypted image {image_name}")
+
+                # Create SBOM attestation
+                logger.info(f"Creating SBOM attestation for build ID {build_id}")
+                sbom_attestation_success = docker_service.create_sbom_attestation(
+                    image_name,
+                    sbom_path,
+                    request.sign_key
+                )
+                if not sbom_attestation_success:
+                    raise Exception("SBOM attestation failed")
+                logger.debug(f"Successfully created SBOM attestation for build ID {build_id}")
                 
             except Exception as e:
-                logger.error(f"Image signing/encryption failed for build ID {build_id}: {str(e)}")
+                logger.error(f"Image signing or SBOM attestation failed for build ID {build_id}: {str(e)}")
                 docker_service.update_build_status(
                     build_id,
                     "failed",
-                    error_message=f"Image signing/encryption failed: {str(e)}"
+                    step="Signing failed",
+                    error_message=f"Image signing or SBOM attestation failed: {str(e)}"
                 )
                 return
-
-        # Generate and sign SBOM
-        try:
-            logger.info(f"Generating SBOM for image {image_name}")
-            sbom_path = os.path.join(BUILD_DIR, build_id, "sbom.json")
-            sbom_success = docker_service.generate_sbom(
-                image_name,
-                sbom_path
-            )
-            if not sbom_success:
-                raise Exception("SBOM generation failed")
-            logger.debug(f"Successfully generated SBOM at {sbom_path}")
-            
-            # Sign SBOM if keys are available
-            if request.sign_key and request.cert:
-                logger.info(f"Signing SBOM for build ID {build_id}")
-                sbom_sign_success = docker_service.sign_sbom(
-                    sbom_path,
-                    request.sign_key,
-                    request.cert
-                )
-                if not sbom_sign_success:
-                    raise Exception("SBOM signing failed")
-                logger.debug(f"Successfully signed SBOM for build ID {build_id}")
-                
-        except Exception as e:
-            logger.error(f"SBOM processing failed for build ID {build_id}: {str(e)}")
-            docker_service.update_build_status(
-                build_id,
-                "failed",
-                error_message=f"SBOM processing failed: {str(e)}"
-            )
-            return
 
         # Update build status with success
         logger.info(f"Build completed successfully for build ID: {build_id}")
         docker_service.update_build_status(
             build_id,
             "success",
+            step="Build completed successfully",
             image_id=image_name,
-            sbom_url=f"/api/artifacts/{build_id}/sbom.json",
-            image_url=f"docker.io/myrepo/{image_name}",
+            sbom_url=f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{image_name}.sbom.json",
+            image_url=f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{image_name}",
             cert_url=f"/api/artifacts/{build_id}/cosign.crt"
         )
         
@@ -235,6 +284,7 @@ async def build_container_async(request: BuildPackageRequest, build_id: str):
         docker_service.update_build_status(
             build_id,
             "failed",
+            step="Unexpected error",
             error_message=str(e)
         )
 
@@ -245,10 +295,12 @@ async def publish_package(request: PublishPackageRequest):
         # Extract image name and tags from metadata
         tags = request.metadata.get("tags", ["latest"])
         image_name = f"{request.user_id}-{request.image_id}:{tags[0]}"
-        registry_repo = "docker.io/myrepo"
+        registry_repo = f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}"
         
         # 1. Push image and SBOM to registry
-        push_success = docker_service.push_image(image_name, registry_repo)
+        source_ref = f"docker-daemon:{image_name}"
+        dest_ref = f"docker://{registry_repo}/{image_name}"
+        push_success = docker_service.push_image(source_ref, dest_ref)
         if not push_success:
             raise HTTPException(status_code=500, detail="Failed to push image to registry")
             

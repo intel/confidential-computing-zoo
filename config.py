@@ -7,7 +7,7 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 
 # Docker Configuration
 DOCKER_REGISTRY = config("DOCKER_REGISTRY", default="docker.io")
-DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="myrepo")
+DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="chamidou2k")
 
 # File Storage Configuration
 UPLOAD_DIR = config("UPLOAD_DIR", default="./uploads")
@@ -19,7 +19,12 @@ DOCKER_CMD = config("DOCKER_CMD", default="docker")
 COSIGN_CMD = config("COSIGN_CMD", default="cosign")
 SYFT_CMD = config("SYFT_CMD", default="syft")
 SKOPEO_CMD = config("SKOPEO_CMD", default="skopeo")
+SKOPEO_SOURCE = config("SKOPEO_SOURCE", default="docker-daemon")
+SKOPEO_DESTINATION = config("SKOPEO_DESTINATION", default="oci")
 
 # KBS Configuration
-KBS_ENDPOINT = config("KBS_ENDPOINT", default="http://localhost:8080")
+KBS_URL = config("KBS_URL", default="http://127.0.0.1:8080")
+KBS_ENDPOINT = config("KBS_ENDPOINT", default="/kbs/v0")
 KBS_CLIENT_CMD = config("KBS_CLIENT_CMD", default="kbs-client")
+
+
