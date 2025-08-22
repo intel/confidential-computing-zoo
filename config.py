@@ -7,7 +7,7 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 
 # Docker Configuration
 DOCKER_REGISTRY = config("DOCKER_REGISTRY", default="docker.io")
-DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="chamidou2k")
+DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="######")
 
 # File Storage Configuration
 UPLOAD_DIR = config("UPLOAD_DIR", default="./uploads")
