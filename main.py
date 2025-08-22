@@ -298,12 +298,13 @@ async def publish_package(request: PublishPackageRequest):
         registry_repo = f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}"
         
         # 1. Push image and SBOM to registry
+        '''
         source_ref = f"docker-daemon:{image_name}"
         dest_ref = f"docker://{registry_repo}/{image_name}"
         push_success = docker_service.push_image(source_ref, dest_ref)
         if not push_success:
             raise HTTPException(status_code=500, detail="Failed to push image to registry")
-            
+        '''    
         # Push SBOM
         '''
         sbom_success = docker_service.push_sbom(image_name, registry_repo)
