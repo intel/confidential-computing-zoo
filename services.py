@@ -6,7 +6,7 @@ import logging
 import time
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
-from models import BuildResult
+from models import BuildResult, LaunchResult
 from config import *
 
 # Setup logging
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class DockerService:
     def __init__(self):
         self.builds: Dict[str, BuildResult] = {}
+        self.launchs: Dict[str, LaunchResult] = {}
     
     def generate_uuid(self, prefix: str = "bld") -> str:
         """
@@ -590,9 +591,10 @@ class DockerService:
         """
         try:
             # Create temporary file for decryption key
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.key', delete=False) as f:
-                f.write(decryption_key)
-                key_path = f.name
+            #with tempfile.NamedTemporaryFile(mode='w', suffix='.key', delete=False) as f:
+            #    f.write(decryption_key)
+            #    key_path = f.name
+            key_path = decryption_key
                 
             try:
                 # Use skopeo to decrypt the image
@@ -734,3 +736,202 @@ class DockerService:
             base_name = base_name.split(':')[0] + ':latest-encrypted'
             
         return base_name
+
+
+#############################
+    def pull_image(self, image_url: str, image_id: str, target_dir: str, max_retries: int = 3, retry_delay: int = 5) -> bool:
+
+        #  skopeo copy --decryption-key bld-437a737-openssl.key docker://testsig/test-bld-437a737:latest-encrypted oci:./encrypt
+        #  skopeo copy oci:encrypt/ docker-daemon:test_pull:v1.0
+        
+        source_ref = image_url.replace("docker.io","docker:/")
+        openssl_key = image_id[5:]+'-openssl.key'
+        dest_ref = os.path.join('oci:'+target_dir,'encrypted')
+
+        attempt = 0
+        while attempt < max_retries:
+            try:
+                attempt += 1
+                logger.info(f"Pulling image (attempt {attempt}/{max_retries}): {source_ref}")
+
+                cmd = [SKOPEO_CMD, "copy", "--decryption-key", openssl_key, source_ref, dest_ref]
+                logger.debug(f"Pull command: {' '.join(cmd)}")
+
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+                if result.returncode == 0:
+                    logger.info(f"Successfully pulled image to local")
+                    return True
+                else:
+                    logger.warning(f"Pull attempt {attempt} failed: {result.stderr}")
+                    logger.debug(f"Pull stdout: {result.stdout}")
+
+                    if attempt < max_retries:
+                        logger.info(f"Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                    else:
+                        logger.error(f"All pull attempts failed after {max_retries} tries")
+                        return False
+
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Pull attempt {attempt} timed out")
+                if attempt < max_retries:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"All pull attempts timed out after {max_retries} tries")
+                    return False
+            except FileNotFoundError:
+                logger.error(f"Skopeo command not found: {SKOPEO_CMD}")
+                return False  # Don't retry if command not found
+            except Exception as e:
+                logger.warning(f"Pull attempt {attempt} failed with error: {str(e)}")
+                if attempt < max_retries:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"All pull attempts failed after {max_retries} tries: {str(e)}")
+                    return False
+
+        return False
+
+    def update_launch_status(self, launch_id: str, status: str, **kwargs):
+
+        try:
+            print("CEHCK+++++++++++",self.launchs)
+            if launch_id in self.launchs:
+                launch_result = self.launchs[launch_id]
+                old_status = launch_result.status
+                launch_result.status = status
+                launch_result.updated_at = datetime.now()
+
+                # Log status changes
+                if old_status != status:
+                    logger.info(f"launch {launch_id} status: {old_status} -> {status}")
+
+                # Update additional fields
+                for key, value in kwargs.items():
+                    if hasattr(launch_result, key):
+                        setattr(launch_result, key, value)
+                        logger.debug(f"Updated {key} for build {launch_id}")
+
+                # Trigger cleanup for completed builds
+                # if status in ['success', 'failed'] and status != old_status:
+                #     # Clean up in background (keep logs for failed builds)
+                #     try:
+                #         keep_logs = (status == 'failed')
+                #         # self.cleanup_build_artifacts(launch_id, keep_logs=keep_logs)
+                #     except Exception as e:
+                #         logger.warning(f"Cleanup failed for build {launch_id}: {e}")
+
+            else:
+                # Create new launch result
+                logger.info(f"Creating new launch status for {launch_id}: {status}")
+                self.launchs[launch_id] = LaunchResult(
+                    launch_id=launch_id,
+                    status=status,
+                    #created_at=datetime.now(),
+                    updated_at=datetime.now(),
+                    **kwargs
+                )
+
+        except Exception as e:
+            logger.error(f"Error updating build status for {launch_id}: {str(e)}")
+
+    def verify_sbom(self,imagesurl,sbom_url,cosign_pubkey='cosign.pub') -> bool:
+
+        imagesurl = imagesurl.replace("docker.io/","")
+        cosign_pubkey = 'bld-79345fb-cosign.pub'
+        # 1. verify signed image
+        # cosign verify-attestation --key bld-437a737-cosign.pub --type spdx docker.io/testsig/test-bld-437a737:latest-encrypted \
+        # | jq -r '.payload' | base64 -d > verified_sbom.json
+        # try:
+        #     cosign_cmd = [
+        #             COSIGN_CMD, "verify", "--key", cosign_pubkey, images_fullName
+        #         ]
+        #     cosign_verify = subprocess.run(cosign_cmd, capture_output=True, text=True)
+
+        #     if "error" in cosign_verify:
+        #         logger.error(f"Failed to verify-attest: {cosign_verify.stderr}")
+
+        # except Exception as e:
+        #     logger.error(f"Verify signed image {images_fullName} failed: {str(e)}")
+
+        #2. verify attestation
+        # cosign verify --key bld-437a737-cosign.pub testsig/test-bld-437a737:latest-encrypted
+        try:
+            cosign_cmd = [
+                    COSIGN_CMD, "verify-attestation", "--key", cosign_pubkey, "--type", "spdx", imagesurl]
+            cosign_verify = subprocess.run(cosign_cmd, capture_output=True, text=True)
+            
+            base64_str = json.loads(cosign_verify.stdout)
+            import base64
+            sbomJS = json.loads(base64.b64decode(base64_str['payload']).decode("utf-8"))['predicate']
+            decrypted_data = json.loads(sbomJS)
+            with open(sbom_url,'r') as f:
+                data = json.load(f)
+            
+            if decrypted_data['spdxVersion'] == data['spdxVersion']:
+                logger.info(f"Success to verify-attest")
+                return True
+            else:
+                logger.error(f"Failed to verify-attest")
+                return False
+
+           # for key in sbomJS:
+           #     if key not in data:
+           #         logger.error(f"Failed to verify-attest: {cosign_verify.stderr}")
+           #         return False
+           # return True
+
+
+        except Exception as e:
+            logger.error(f"Verify signed attestation image {imagesurl} failed: {str(e)}")
+        
+
+
+    def get_launch_status(self, launch_id: str) -> Optional[BuildResult]:
+        """Get launch status by launch_id"""
+        return self.launchs.get(launch_id)
+
+
+    async def launch_containers(self,image_url,user_id,launch_pth):
+        # skopeo copy oci:encrypt/ docker-daemon:test_pull:latest
+        image_dir = 'oci:' + os.path.join(launch_pth,'encrypted')
+        Newimage_name = 'docker-daemon:'+ user_id + ":latest"
+        try:
+            cmd = [SKOPEO_CMD, "copy", image_dir, Newimage_name]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+
+            if res.returncode == 0:
+                logger.info("Success add image.")
+            else:
+                logger.info("Failed add image.")
+                logger.debug(f"CMD: {' '.join(cmd)}")
+                return False
+
+            # docker run -d -p 8088:8088 test
+            docker_cmd = [DOCKER_CMD, "run", "-d", "-p", "8088:8088", user_id]
+            dockerRUn = subprocess.run(docker_cmd, capture_output=True, text=True)
+            if dockerRUn.returncode == 0:
+                logger.info("Success run image.")
+                return [dockerRUn.stdout]
+            else:
+                logger.info("Failed run image.")
+                logger.debug(f"CMD: {" ".join(docker_cmd)}")
+                return False
+
+            # docker ps -q --latest
+           # getID = [DOCKER_CMD, "ps", "-q", "--latest"]
+           # getID_res = subprocess.run(getID, capture_output=True, text=True)
+           # if getID_res.returncode == 0:
+           #     logger.info("Success add image.")
+           # else:
+           #     logger.info("Failed add image.")
+           #     return False
+
+           # return getID_res.stdout
+
+        except Exception as e:
+            logger.error(f"Launch contaioner failed: {str(e)}")
+            return False

@@ -95,26 +95,64 @@ def test_publish_package(image_id="sha256:test123"):
     print(f"Status: {response.status_code}")
     print(f"Response: {response.json()}")
 
-def test_deploy_launch(image_id="sha256:test123"):
+def test_deploy_launch(image_id="test-bld-79345fb"):
     """Test deploy launch endpoint"""
     print("\nTesting deploy launch...")
     
     payload = {
         "image_id": image_id,
-        "user_id": "test-user",
-        "image_url": "docker.io/myrepo/test:latest",
-        "sbom_url": "https://registry.example.com/sbom.json",
+        "user_id": "testsig",
+        "image_url": "docker.io/testsig/test-bld-79345fb:latest-encrypted",
+        "sbom_url": "./builds/bld-79345fb/bld-79345fb-sbom.json",
         "attestation_required": True
     }
     
     response = requests.post(f"{BASE_URL}/api/deploy-launch", json=payload)
     print(f"Status: {response.status_code}")
-    if response.status_code == 200:
-        data = response.json()
-        print(f"Launch ID: {data['launch_id']}")
-        print(f"Status: {data['status']}")
-        return data['launch_id']
+    if response.status_code != 200:
+        print(f"Launch failed: {response.text}")
+
+    data = response.json()
+    print(f"Launch ID: {data['launch_id']}")
+    print(f"Status: {data['status']}")
+
+    # Monitor build status
+    max_attempts = 30  # Maximum number of status checks
+    check_interval = 3 # Time between checks in seconds
+    current_attempt = 0
+    
+    while current_attempt < max_attempts:
+        time.sleep(check_interval)
+        status_response = requests.get(f"{BASE_URL}/api/launch-result/{data['launch_id']}")
+        
+        if status_response.status_code != 200:
+            print(f"Failed to get launch status: {status_response.text}")
+            return None
+            
+        status_data = status_response.json()
+        current_status = status_data.get('status')
+        print(f"Current Status: {current_status}")
+        
+        # Check for terminal states
+        if current_status == "success":
+            print("Launch completed successfully!")
+            #print(f"Image URL: {status_data.get('image_url')}")
+            #print(f"SBOM URL: {status_data.get('sbom_url')}")
+            return None
+        elif current_status == "failed":
+            print(f"Launch failed: {status_data.get('error_message')}")
+            return None
+        elif current_status in ["initiated", "launching"]:
+            print(f"Launch in progress... ({current_attempt + 1}/{max_attempts})")
+            print(f"Current step: {current_status}")
+        else:
+            print(f"Unknown status: {current_status}")
+            
+        current_attempt += 1
+    
+    print("Launch monitoring timed out")
     return None
+
 
 def test_launch_result(launch_id):
     """Test launch result endpoint"""

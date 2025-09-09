@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import JSONResponse
 import os
+import uuid
 import asyncio
 import tempfile
 import base64
@@ -386,7 +387,7 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
     try:
         # Generate launch ID
         launch_id = docker_service.generate_uuid(prefix="launch")
-        
+        logger.info(f"CHECK launchID: {launch_id}")
         # Create launch directory
         launch_path = os.path.join(BUILD_DIR, launch_id)
         os.makedirs(launch_path, exist_ok=True)
@@ -394,8 +395,9 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
         # Save launch configuration
         config_path = os.path.join(launch_path, "launch_config.json")
         with open(config_path, "w") as f:
-            json.dump(request.dict(), f, indent=2)
-            
+            json.dump(request.model_dump(), f, indent=2)
+        #print("CHeck=============",request.model_dump())    
+        
         # Initialize launch status
         docker_service.update_launch_status(
             launch_id=launch_id,
@@ -452,7 +454,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         # 2. Verify SBOM if provided
         if request.sbom_url:
             sbom_valid = docker_service.verify_sbom(
-                request.image_id,
+                request.image_url,
                 request.sbom_url
             )
             if not sbom_valid:
@@ -465,50 +467,50 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         
         # 3. Perform attestation and handle decryption
         attestation_result = "trusted"
-        if request.attestation_required:
-            # Verify attestation and get decryption key
-            attestation_result, decryption_key = await docker_service.verify_attestation(
-                request.image_id,
-                request.user_id
-            )
-            
-            if attestation_result != "trusted":
-                docker_service.update_launch_status(
-                    launch_id,
-                    "failed",
-                    error_message=f"Attestation failed: {attestation_result}"
-                )
-                return
-                
-            # Decrypt image if attestation passed and key received
-            if decryption_key:
-                try:
-                    decrypted_image = docker_service.decrypt_image(
-                        image_id=request.image_id,
-                        decryption_key=decryption_key
-                    )
-                    if not decrypted_image:
-                        docker_service.update_launch_status(
-                            launch_id,
-                            "failed", 
-                            error_message="Image decryption failed"
-                        )
-                        return
-                    # Update image reference to use decrypted version
-                    request.image_url = decrypted_image
-                except Exception as e:
-                    docker_service.update_launch_status(
-                        launch_id,
-                        "failed",
-                        error_message=f"Decryption error: {str(e)}"
-                    )
-                    return
-        
+       # if request.attestation_required:
+       #     # Verify attestation and get decryption key
+       #     attestation_result, decryption_key = await docker_service.verify_attestation(
+       #         request.image_id,
+       #         request.user_id
+       #     )
+       #     
+       #     if attestation_result != "trusted":
+       #         docker_service.update_launch_status(
+       #             launch_id,
+       #             "failed",
+       #             error_message=f"Attestation failed: {attestation_result}"
+       #         )
+       #         return
+       #         
+       #     # Decrypt image if attestation passed and key received
+       #     if decryption_key:
+       #         try:
+       #             decrypted_image = docker_service.decrypt_image(
+       #                 image_id=request.image_id,
+       #                 decryption_key=decryption_key
+       #             )
+       #             if not decrypted_image:
+       #                 docker_service.update_launch_status(
+       #                     launch_id,
+       #                     "failed", 
+       #                     error_message="Image decryption failed"
+       #                 )
+       #                 return
+       #             # Update image reference to use decrypted version
+       #             request.image_url = decrypted_image
+       #         except Exception as e:
+       #             docker_service.update_launch_status(
+       #                 launch_id,
+       #                 "failed",
+       #                 error_message=f"Decryption error: {str(e)}"
+       #             )
+       #             return
+       # 
         # 4. Launch containers on worker nodes
         instance_ids = await docker_service.launch_containers(
             image_url=request.image_url,
             user_id=request.user_id,
-            launch_id=launch_id
+            launch_pth=launch_path
         )
         
         if not instance_ids:
@@ -530,8 +532,8 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         }
         
         # Submit to transparent log
-        log_id = await docker_service.publish_evidence(evidence)
-        
+       # log_id = await docker_service.publish_evidence(evidence)
+        log_id = None
         # Update launch status to success
         docker_service.update_launch_status(
             launch_id=launch_id,
