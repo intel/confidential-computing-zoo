@@ -36,6 +36,7 @@ class PublishPackageResponse(BaseModel):
 
 
 class BuildResult(BaseModel):
+    #user_id: str
     build_id: str
     status: str = "pending"  # pending, preparing, building, generating_sbom, encrypting, pushing, signing, success, failed
     current_step: Optional[str] = None  # Detailed description of current operation
@@ -60,12 +61,13 @@ class LaunchResponse(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
 class LaunchResult(BaseModel):
+    #user_id: str
     launch_id: str
     status: str
-    validation: Optional[str]
-    attestation: Optional[str]
-    log_id: Optional[str]
+    validation: Optional[str] = None
+    attestation: Optional[str] = None
+    log_id: Optional[str] = None
     instance_ids: List[str] = []
-    error_message: Optional[str]
+    error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime = Field(default_factory=datetime.now)

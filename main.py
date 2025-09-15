@@ -137,6 +137,20 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
         private_encryption_key = None
         logger.debug(f"Checking for provided sign_key and cert for build ID: {build_id}")
         if not request.sign_key or not request.cert:
+            docker_service.update_build_status(build_id, "preparing", step="Get signing and encryption keys")
+            logger.info(f"Get keys for build ID: {build_id}")
+            # Get key from kbs
+            logger.info(f"Starting get key from KBS")
+            attestation_result, decryption_key = docker_service.get_pubKey_from_KBS()
+            if attestation_result != "trusted":
+                docker_service.update_build_status(
+                    build_id,
+                    "failed",
+                    error_message=f"Attestation failed: get key failed."
+                )
+                logger.debug(f"get key failed")
+                return
+            
             docker_service.update_build_status(build_id, "preparing", step="Generating signing and encryption keys")
             logger.info(f"Generating keys for build ID: {build_id}")
             sign_key, cert, priv_enc_key, pub_enc_key = docker_service.generate_key(build_id)
@@ -179,7 +193,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
 
             # Encrypt image if requested
             if request.encrypt:
-                if not public_encryption_key:
+                if not decryption_key:
                     logger.error(f"Encryption requested for build {build_id}, but no encryption key available.")
                     raise Exception("Encryption requested, but no encryption key available")
 
@@ -188,7 +202,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
                 encrypted_image_name = docker_service.encrypt_image(
                     image_name,
                     build_id,
-                    public_encryption_key
+                    decryption_key['opensslPub']
                 )
                 if not encrypted_image_name:
                     raise Exception("Image encryption failed")
@@ -233,7 +247,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
             return
 
         # Sign the image and SBOM
-        if request.sign_key and request.cert:
+        if decryption_key:
             try:
                 docker_service.update_build_status(build_id, "signing", step="Signing image and SBOM")
                 
@@ -241,7 +255,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
                 logger.info(f"Signing image {image_name}")
                 sign_success = docker_service.sign_image(
                     image_name,
-                    request.sign_key
+                    decryption_key['cosignKey']
                 )
                 if not sign_success:
                     raise Exception("Image signing failed")
@@ -252,7 +266,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
                 sbom_attestation_success = docker_service.create_sbom_attestation(
                     image_name,
                     sbom_path,
-                    request.sign_key
+                    decryption_key['cosignKey']
                 )
                 if not sbom_attestation_success:
                     raise Exception("SBOM attestation failed")
@@ -275,8 +289,8 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
             "success",
             step="Build completed successfully",
             image_id=image_name,
-            sbom_url=f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{image_name}.sbom.json",
-            image_url=f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{image_name}",
+            sbom_url=f"{image_name[4:]}.sbom.json",
+            image_url=f"{image_name[4:]}",
             cert_url=f"/api/artifacts/{build_id}/cosign.crt"
         )
         
@@ -395,8 +409,7 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
         # Save launch configuration
         config_path = os.path.join(launch_path, "launch_config.json")
         with open(config_path, "w") as f:
-            json.dump(request.model_dump(), f, indent=2)
-        #print("CHeck=============",request.model_dump())    
+            json.dump(request.model_dump(), f, indent=2) 
         
         # Initialize launch status
         docker_service.update_launch_status(
@@ -437,11 +450,30 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         with open(log_file, "w") as f:
             f.write(f"Launch started at {datetime.now().isoformat()}\n")
 
+        # 3. Perform attestation and handle decryption
+        attestation_result = "trusted"
+        if request.attestation_required:
+            # Verify attestation and get decryption key
+            logger.info("Attestation Verity and get keys")
+            attestation_result, decryption_key = await docker_service.verify_attestation(
+                request.image_id,
+                request.user_id
+            )
+            if attestation_result != "trusted":
+                docker_service.update_launch_status(
+                    launch_id,
+                    "failed",
+                    error_message=f"Attestation failed: {attestation_result}"
+                )
+                logger.debug("Attestation Verity and get keys failed")
+                return
+
         # 1. Pull and verify image
+        logger.info("Get encrypted iamge and decrypt")
         pull_success = docker_service.pull_image(
             image_url=request.image_url,
-            image_id=request.image_id,
-            target_dir=launch_path
+            target_dir=launch_path,
+            openssl_key=decryption_key['opensslKey']
         )
         if not pull_success:
             docker_service.update_launch_status(
@@ -449,13 +481,16 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                 "failed",
                 error_message="Image pull failed"
             )
+            logger.debug("Get encrypted iamge and decrypt failed")
             return
             
         # 2. Verify SBOM if provided
+        logger.info("Verify SBOM")
         if request.sbom_url:
             sbom_valid = docker_service.verify_sbom(
                 request.image_url,
-                request.sbom_url
+                request.sbom_url,
+                decryption_key['cosignPub']
             )
             if not sbom_valid:
                 docker_service.update_launch_status(
@@ -463,50 +498,11 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                     "failed",
                     error_message="SBOM verification failed"
                 )
+                logger.debug("Verify SBOM failed")
                 return
         
-        # 3. Perform attestation and handle decryption
-        attestation_result = "trusted"
-       # if request.attestation_required:
-       #     # Verify attestation and get decryption key
-       #     attestation_result, decryption_key = await docker_service.verify_attestation(
-       #         request.image_id,
-       #         request.user_id
-       #     )
-       #     
-       #     if attestation_result != "trusted":
-       #         docker_service.update_launch_status(
-       #             launch_id,
-       #             "failed",
-       #             error_message=f"Attestation failed: {attestation_result}"
-       #         )
-       #         return
-       #         
-       #     # Decrypt image if attestation passed and key received
-       #     if decryption_key:
-       #         try:
-       #             decrypted_image = docker_service.decrypt_image(
-       #                 image_id=request.image_id,
-       #                 decryption_key=decryption_key
-       #             )
-       #             if not decrypted_image:
-       #                 docker_service.update_launch_status(
-       #                     launch_id,
-       #                     "failed", 
-       #                     error_message="Image decryption failed"
-       #                 )
-       #                 return
-       #             # Update image reference to use decrypted version
-       #             request.image_url = decrypted_image
-       #         except Exception as e:
-       #             docker_service.update_launch_status(
-       #                 launch_id,
-       #                 "failed",
-       #                 error_message=f"Decryption error: {str(e)}"
-       #             )
-       #             return
-       # 
         # 4. Launch containers on worker nodes
+        logger.info("Launch container")
         instance_ids = await docker_service.launch_containers(
             image_url=request.image_url,
             user_id=request.user_id,
@@ -519,6 +515,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                 "failed",
                 error_message="Container launch failed"
             )
+            logger.debug("Launch container failed")
             return
             
         # 5. Create launch evidence
