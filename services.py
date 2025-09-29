@@ -33,7 +33,7 @@ class DockerService:
     def build_image(self, dockerfile_content: str, build_id: str, user_id: str) -> bool:
         """Build Docker image from dockerfile content with optimized error handling"""
         try:
-            self.update_build_status(build_id, "preparing", step="Setting up build environment")
+            self.update_build_status(user_id, build_id, "preparing", step="Setting up build environment")
             build_path = os.path.join(BUILD_DIR, build_id)
             os.makedirs(build_path, exist_ok=True)
             
@@ -60,7 +60,7 @@ class DockerService:
             logger.info(f"Building image: {image_name}")
             logger.debug(f"Build command: {' '.join(cmd)}")
             
-            self.update_build_status(build_id, "building", step="Building container image")
+            self.update_build_status(user_id, build_id, "building", step="Building container image")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             
             if result.returncode == 0:
@@ -412,7 +412,7 @@ class DockerService:
         """Get build status by build_id"""
         return self.builds.get(build_id)
     
-    def update_build_status(self, build_id: str, status: str, step: str = None, **kwargs):
+    def update_build_status(self,user_id: str, build_id: str, status: str, step: str = None, **kwargs):
         """
         Update build status with enhanced tracking and step information
         
@@ -460,6 +460,7 @@ class DockerService:
                 # Create new build result
                 logger.info(f"Creating new build status for {build_id}: {status}")
                 self.builds[build_id] = BuildResult(
+                    user_id=user_id,
                     build_id=build_id,
                     status=status,
                     created_at=datetime.now(),
@@ -565,10 +566,6 @@ class DockerService:
             decryption_key is None if attestation fails
         """
         try:
-            # Get attestation report from worker node
-            #attestation_report = await self._get_attestation_report(image_id)
-            
-            # Verify with KBS service
             attestation_result, decryption_key = self.get_pubKey_from_KBS() 
             return attestation_result, decryption_key
             
@@ -737,12 +734,8 @@ class DockerService:
 
 
     def pull_image(self, image_url: str, openssl_key: str, target_dir: str, max_retries: int = 3, retry_delay: int = 5) -> bool:
-
-        #  skopeo copy --decryption-key bld-437a737-openssl.key docker://testsig/test-bld-437a737:latest-encrypted oci:./encrypt
-        #  skopeo copy oci:encrypt/ docker-daemon:test_pull:v1.0
         
         source_ref = image_url.replace("docker.io","docker:/")
-        #openssl_key = image_id[5:]+'-openssl.key'
         dest_ref = os.path.join('oci:'+target_dir,'encrypted')
 
         attempt = 0
@@ -792,7 +785,7 @@ class DockerService:
 
         return False
 
-    def update_launch_status(self, launch_id: str, status: str, **kwargs):
+    def update_launch_status(self,user_id: str, launch_id: str, status: str, **kwargs):
 
         try:
             if launch_id in self.launchs:
@@ -810,11 +803,11 @@ class DockerService:
                     if hasattr(launch_result, key):
                         setattr(launch_result, key, value)
                         logger.debug(f"Updated {key} for build {launch_id}")
-
             else:
                 # Create new launch result
                 logger.info(f"Creating new launch status for {launch_id}: {status}")
                 self.launchs[launch_id] = LaunchResult(
+                    user_id=user_id,
                     launch_id=launch_id,
                     status=status,
                     #created_at=datetime.now(),
@@ -829,7 +822,6 @@ class DockerService:
 
         images_fullName = imagesurl.replace("docker.io/","")
         # 1. verify signed image
-        # cosign verify images : cosign verify --key keyfile image_name
         try:
             cosign_cmd = [
                     COSIGN_CMD, "verify", "--key", cosign_pubkey, images_fullName
@@ -845,7 +837,6 @@ class DockerService:
             logger.error(f"Verify signed image {images_fullName} failed: {str(e)}")
 
         #2. verify attestation
-        # cosign verify-attestation --key keyfile --type spdx image_name | jq -r '.payload' | base64 -d > verified_sbom.json
         try:
             cosign_attcmd = [
                     COSIGN_CMD, "verify-attestation", "--key", cosign_pubkey, "--type", "spdx", imagesurl]
@@ -856,8 +847,6 @@ class DockerService:
             if cosign_attverify.returncode != 0:
                 logger.debug(f"Failed to verify: {cosign_attverify.stderr}")
                 return False
-            
-            # verify sbom file for detial
             ''' base64_str = json.loads(cosign_verify.stdout)
             import base64
             sbomJS = json.loads(base64.b64decode(base64_str['payload']).decode("utf-8"))['predicate']
@@ -927,27 +916,21 @@ class DockerService:
             cosignPub_cmd = ["curl", KBS_URL+"cosign.pub", "-o","cosign.pub"]
             opensslPub_cmd = ["curl", KBS_URL+"openssl.pub", "-o","openssl.pub"]
             cosignKey_cmd = ["curl", KBS_URL+"cosign.key", "-o","cosign.key"]
+
             opensslKey_res = subprocess.run(opensslKey_cmd, capture_output=True, text=True)
             cosignPub_res = subprocess.run(cosignPub_cmd, capture_output=True, text=True)
             opensslPub_res = subprocess.run(opensslPub_cmd, capture_output=True, text=True)
             cosignKey_res = subprocess.run(cosignKey_cmd, capture_output=True, text=True)
 
-            if (opensslKey_res.returncode != 0) or (cosignPub_res.returncode != 0):
-                logger.info(f"excute get key cmd failed!Error: {cosignPub_res.stderr}")
-                logger.info(f"excute get key cmd failed!Error: {opensslKey_res.stderr}")
+            key_dict = {'opensslKey':'openssl.key', 'cosignKey':'cosign.key', 'opensslPub':'openssl.pub', 'cosignPub':'cosign.pub'}
+            for key,value in key_dict.items():
+                if not os.path.exists(value):
+                    logger.info(f"Failed get {key}!")
+                    return False, None
+                else:
+                    key_dict[key] = os.path.realpath(value)
+            return 'trusted', key_dict
 
-            if os.path.exists("openssl.key") and os.path.exists("cosign.pub") and os.path.exists("openssl.pub") and os.path.exists("cosign.key"):
-                logger.info("Success get key!")
-                opssl_key = os.path.realpath('openssl.key')
-                cosign_key = os.path.realpath('cosign.key')
-                opssl_pub = os.path.realpath('openssl.pub')
-                cosign_pub = os.path.realpath('cosign.pub')
-
-            else:
-                logger.info("Failed get key!")
-                return False, None
-
-            return 'trusted', {'opensslKey':opssl_key, 'cosignKey':cosign_key, 'opensslPub':opssl_pub, 'cosignPub':cosign_pub}
         except Exception as e:
-            logger.error(f"Launch contaioner failed: {str(e)}")
+            logger.error(f"Get Keys failed: {str(e)}")
             return False, None

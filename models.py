@@ -16,8 +16,11 @@ class BuildPackageResponse(BaseModel):
     build_id: str
     status: str
     estimated_time: str
+    user_id: str
 
 class PublishPackageRequest(BaseModel):
+    build_id: str
+    sbom_url: str
     image_id: str
     user_id: str
     log_evidence: bool = True
@@ -27,8 +30,10 @@ class PublishPackageRequest(BaseModel):
         arbitrary_types_allowed = True
 
 class PublishPackageResponse(BaseModel):
+    build_id: str
     status: str
     image_url: str
+    user_id: str
     sbom_url: Optional[str] = None
     log_id: Optional[str] = None
     published_at: datetime = Field(default_factory=datetime.now)
@@ -36,7 +41,7 @@ class PublishPackageResponse(BaseModel):
 
 
 class BuildResult(BaseModel):
-    #user_id: str
+    user_id: str
     build_id: str
     status: str = "pending"  # pending, preparing, building, generating_sbom, encrypting, pushing, signing, success, failed
     current_step: Optional[str] = None  # Detailed description of current operation
@@ -58,10 +63,11 @@ class LaunchRequest(BaseModel):
 class LaunchResponse(BaseModel):
     launch_id: str
     status: str
+    user_id: str
     created_at: datetime = Field(default_factory=datetime.now)
 
 class LaunchResult(BaseModel):
-    #user_id: str
+    user_id: str
     launch_id: str
     status: str
     validation: Optional[str] = None
