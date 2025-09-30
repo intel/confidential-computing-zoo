@@ -83,5 +83,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 
 #Run the application
 RUN chmod +x *service.sh
-ENTRYPOINT ["./bld_service.sh"]
-#ENTRYPOINT ["./luh_service.sh"]
+ENTRYPOINT ["./trust_service.sh"]
+
