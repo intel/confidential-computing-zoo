@@ -133,12 +133,6 @@ Query launch status and attestation results.
 
 ## Quick Start
 
-### Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
 ### Set Up Environment
 
 Before running the tests, make sure you have configured your Docker Hub (`docker.io`) account.  
@@ -150,7 +144,10 @@ Otherwise, tests involving image build, push, and deployment will fail.
 ```bash
    docker login docker.io
 ```
-
+or
+```bash
+   skopeo login docker.io
+```
 Enter your Docker Hub username and password (or Personal Access Token).
 
 2. Verify login:
@@ -169,6 +166,26 @@ echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin do
 ```
 Please note, you need to update DOCKER_REPOSITORY in `config.py` to your Docker Hub repository name before running the tests.
 
+### Install Dependencies and use python virtual env(python is already installed)
+
+1. Create & active virtual environment
+
+```bash
+python -m venv {env-name}
+source {env-name}/bin/activate
+```
+
+2. Install dependencies
+
+```bash
+cd tc_api
+pip install -r requirements.txt
+```
+
+3. Start ASR && AA && CDH && KBS
+
+Please refer to: [https://github.com/RodgerZhu/deploy-encrypted-image-in-tdvm?tab=readme-ov-file](https://github.com/RodgerZhu/deploy-encrypted-image-in-tdvm?tab=readme-ov-file).
+
 ### Run Service
 
 ```bash
@@ -177,15 +194,25 @@ python main.py
 
 The service will start at http://localhost:8000.
 
-### Deploy with Docker
+### Deploy with Docker in TDVM
+
+### Build image & start service in container
+1. Build tc_api image
 
 ```bash
-# Build image
-docker build -t tc-api:latest .
+# Build image(if proxy needed, add --build-arg http_proxy=xxx in follow command line)
+docker build -t {image_name:image_tag} .
 
-# Run container
-docker run -p 8000:8000 tc-api:latest
+# Run container(if proxy needed, add -e http_proxy=xxx in follow command line)
+docker run -it --network host --privileged \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /dev/tdx_guest:/dev/tdx_guest \
+  -v /etc/tdx-attest.conf:/etc/tdx-attest.conf \
+  -p 8001:8001 -p 8006:8006 -p 8000:8000 \
+  {image_name:image_tag}
 ```
+
+##### Notice: Check the port in Dockerfile to ensure the ports are not in use. 
 
 ## Configuration
 
