@@ -1,13 +1,18 @@
+import asyncio
 import subprocess
 import uuid
 import os
 import json
 import logging
 import time
+import re
+from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
 from models import BuildResult, LaunchResult
 from config import *
+from sigstore.verify import policy
+from trusted_container_log import ChainedTransparencyLogSigner
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
@@ -902,7 +907,7 @@ class DockerService:
                 return [dockerRUn.stdout]
             else:
                 logger.info("Failed run image.")
-                logger.debug(f"CMD: {" ".join(docker_cmd)}")
+                logger.debug(f"CMD: {' '.join(docker_cmd)}")
                 return False
 
         except Exception as e:
@@ -934,3 +939,147 @@ class DockerService:
         except Exception as e:
             logger.error(f"Get Keys failed: {str(e)}")
             return False, None
+
+
+    async def verify_tlog(self,
+                          raw_file: Dict[str, str],
+                          bundle_file: Dict[str, str],
+                          chain_file: Dict[str, str],
+                          email_addr: str) -> Dict[str, Any]:
+        """
+        Verify the transparency log
+
+        Returns:
+            Dict[str, Any]: Verification result with summary
+        """
+
+        print("Verifying chain...")
+
+        try:
+            if len(chain_file) != 1:
+                return {
+                    "success": False,
+                    "summary": None,
+                    "error": "Invalid chain file count"
+                }
+
+            # Validate filename formats
+            validate_filenames(raw_file, "raw", r'^.*\.json$', "*.json")
+            validate_filenames(bundle_file, "bundle", r'^entry.*\.sigstore\.json$', "entry*.sigstore.json")
+            validate_filenames(chain_file, "chain", r'^chain\.sigstore\.json$', "chain.sigstore.json")
+
+            my_policy = policy.Identity(
+                identity=email_addr,
+                issuer="https://github.com/login/oauth",
+            )
+
+            for filename, content in raw_file.items():
+                file_path = os.path.join(filename)
+                await save_file_async(file_path, content)
+
+            for filename, content in bundle_file.items():
+                file_path = os.path.join(filename)
+                await save_file_async(file_path, content)
+
+            for filename, content in chain_file.items():
+                file_path = os.path.join(filename)
+                await save_file_async(file_path, content)
+
+            signer = ChainedTransparencyLogSigner.from_backup_file(
+                backup_file_path="chain.sigstore.json"
+            )
+            print(f"Successfully restored chain: {signer.chain_id}")
+            print(f"Chain length: {signer.chain_length}")
+            print(f"Chain summary: {signer.get_chain_summary()}")
+
+            # Get sigstore files and verify chain
+            sigstore_files = list(Path(".").glob("entry*.sigstore.json"))
+            result = signer.verify_chain(
+                sigstore_file_list=sigstore_files,
+                policy=my_policy,
+            )
+
+            if result.success:
+                # Get verification summary
+                summary = signer.get_verification_summary()
+                print("Verification summary:", json.dumps(summary, indent=2))
+
+                return {
+                    "success": True,
+                    "summary": summary,
+                    "error": None
+                }
+        except ValueError as e:
+            error_msg = f"Filename validation error: {e}"
+            print(error_msg)
+            return {
+                "success": False,
+                "summary": None,
+                "error": error_msg
+            }
+        except (FileNotFoundError, ValueError) as e:
+            error_msg = f"Failed to restore from backup: {e}"
+            print(error_msg)
+            return {
+                "success": False,
+                "summary": None,
+                "error": error_msg
+            }
+        except Exception as e:
+            error_msg = f"Unexpected error during verification: {e}"
+            print(error_msg)
+            return {
+                "success": False,
+                "summary": None,
+                "error": error_msg
+            }
+
+
+async def save_file_async(file_path: str, content: str):
+    directory = os.path.dirname(file_path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+    def write_file():
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, write_file)
+
+def validate_filenames(file_dict: Dict[str, str], file_type: str, pattern: str, format_description: str):
+    """
+    Validate filename formats in the file dictionary
+
+    Args:
+        file_dict: File dictionary with filename as key and content as value
+        file_type: File type description (e.g., "raw", "bundle", "chain")
+        pattern: Regular expression pattern for validation
+        format_description: Format description (e.g., "*.json", "entry*.sigstore.json", "chain.sigstore.json")
+
+    Raises:
+        ValueError: If filename format does not meet requirements
+    """
+    invalid_files = []
+
+    for filename in file_dict.keys():
+        if not re.match(pattern, filename):
+            invalid_files.append(filename)
+
+    if invalid_files:
+        # Generate different examples based on file type
+        if file_type.lower() == "raw":
+            examples = "manifest.json, signature.json, metadata.json"
+        elif file_type.lower() == "bundle":
+            examples = "entry1.sigstore.json, entry_abc.sigstore.json, entry123.sigstore.json"
+        elif file_type.lower() == "chain":
+            examples = "chain.sigstore.json"
+        else:
+            examples = "please refer to the corresponding format requirements"
+
+        raise ValueError(
+            f"{file_type.capitalize()} file name format error. The following filenames do not conform to '{format_description}' format: {invalid_files}\n"
+            f"Correct format examples: {examples}"
+        )
+
+    print(f"{file_type.capitalize()} filename format validation passed, total {len(file_dict)} files")

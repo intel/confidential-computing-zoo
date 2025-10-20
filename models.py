@@ -38,8 +38,6 @@ class PublishPackageResponse(BaseModel):
     log_id: Optional[str] = None
     published_at: datetime = Field(default_factory=datetime.now)
 
-
-
 class BuildResult(BaseModel):
     user_id: str
     build_id: str
@@ -60,6 +58,7 @@ class LaunchRequest(BaseModel):
     sbom_url: Optional[str] = None
     attestation_required: bool = True
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
 class LaunchResponse(BaseModel):
     launch_id: str
     status: str
@@ -77,3 +76,14 @@ class LaunchResult(BaseModel):
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime = Field(default_factory=datetime.now)
+
+class VerifyTlogRequest(BaseModel):
+    raw_file: Dict[str, str]
+    bundle_file: Dict[str, str]
+    chain_file: Dict[str, str]
+    email_addr: str
+
+class VerificationSummaryResponse(BaseModel):
+    success: bool
+    summary: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None

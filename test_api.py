@@ -2,7 +2,10 @@ import requests
 import json
 import time
 import base64
-from datetime import datetime
+import glob
+import os
+from pathlib import Path
+
 
 BASE_URL = "http://localhost:8000"
 
@@ -308,6 +311,55 @@ def test_build_launch():
     return None
 
 
+def test_verify_tlog():
+    """Test verify transparency log endpoint"""
+
+    print("\nTesting verify transparency log...")
+
+    PATH_PREFIX = "tlog/"
+    RAW_FILE_LIST = sorted([os.path.basename(f) for f in glob.glob("tlog/*.json") if not f.endswith('.sigstore.json')])
+    BUNDLE_FILE_LIST = sorted([os.path.basename(f) for f in glob.glob("tlog/entry*.sigstore.json")])
+    CHAIN_FILE = "chain.sigstore.json"
+    email_addr = "siyuan.hui@intel.com"
+
+    print(f"Raw files: {RAW_FILE_LIST}")
+    print(f"Bundle files: {BUNDLE_FILE_LIST}")
+    print(f"Chain file: {CHAIN_FILE}")
+
+    raw_file = {}
+    bundle_file = {}
+    for RAW_FILE, BUNDLE_FILE in zip(RAW_FILE_LIST, BUNDLE_FILE_LIST):
+        raw_file_content = Path(PATH_PREFIX + RAW_FILE).read_text(encoding='utf-8')
+        raw_file.update({RAW_FILE: raw_file_content})
+
+        bundle_file_content = Path(PATH_PREFIX + BUNDLE_FILE).read_text(encoding='utf-8')
+        bundle_file.update({BUNDLE_FILE: bundle_file_content})
+
+    chain_file_content = Path(PATH_PREFIX + CHAIN_FILE).read_text(encoding='utf-8')
+    chain_file = {CHAIN_FILE: chain_file_content}
+
+    payload = {
+        "raw_file": raw_file,
+        "bundle_file": bundle_file,
+        "chain_file": chain_file,
+        "email_addr": email_addr
+    }
+
+    response = requests.post(f"{BASE_URL}/api/verify-tlog", json=payload)
+    print(f"Status: {response.status_code}")
+
+    if response.status_code == 200:
+        result = response.json()
+        print(f"Verification Success: {result['success']}")
+
+        if result['success'] and result['summary']:
+            print("Verification Summary:")
+            print(json.dumps(result['summary'], indent=2))
+        elif not result['success'] and result['error']:
+            print(f"Verification Error: {result['error']}")
+    else:
+        print(f"Request failed: {response.text}")
+
 if __name__ == "__main__":
     import sys
     
@@ -323,5 +375,7 @@ if __name__ == "__main__":
             test_deploy_launch()
         elif test_name == "build_launch":
             test_build_launch()
+        elif test_name == "verify_tlog":
+            test_verify_tlog()
     else:
         run_comprehensive_tests()

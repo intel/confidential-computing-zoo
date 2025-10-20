@@ -1,9 +1,6 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 import os
 import uuid
-import asyncio
-import tempfile
 import base64
 from datetime import datetime
 import json
@@ -251,7 +248,8 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
 async def publish_package(request: PublishPackageRequest):
     """Publish image and SBOM to registry with key management and logging"""
     try:
-        registry_repo = f"{DOCKER_REPOSITORY}/{request.image_id.split("/")[-1]}:latest-encrypted"
+        image_name = request.image_id.split("/")[-1]
+        registry_repo = f"{DOCKER_REPOSITORY}/{image_name}:latest-encrypted"
         # 1. Push image and SBOM to registry
         try:
             docker_service.update_build_status(request.user_id, request.build_id, "pushing", step="Pushing image to registry")
@@ -552,6 +550,29 @@ async def get_launch_result(launch_id: str):
             status_code=500,
             detail=f"Failed to get launch result: {str(e)}"
         )
+
+@app.post("/api/verify-tlog", response_model=VerificationSummaryResponse)
+async def verify_tlog(request: VerifyTlogRequest):
+    """Verify transparency log"""
+
+    try:
+        verify_result = await docker_service.verify_tlog(
+            request.raw_file,
+            request.bundle_file,
+            request.chain_file,
+            request.email_addr
+        )
+
+        return verify_result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to verify transparency log: {str(e)}"
+        )
+
 
 if __name__ == "__main__":
     import uvicorn

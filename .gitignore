@@ -106,3 +106,7 @@ logs/
 *.pem
 *.pub
 *.crt
+
+# transparency log
+./entry*.json
+./chain.sigstore.json
