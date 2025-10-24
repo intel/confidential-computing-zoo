@@ -985,7 +985,7 @@ class DockerService:
                 file_path = os.path.join(filename)
                 await save_file_async(file_path, content)
 
-            chian_tlog = ChainedTransparencyLog.from_backup_file(
+            chain_tlog = ChainedTransparencyLog.from_backup_file(
                 backup_file_path="chain.sigstore.json"
             )
             print(f"Successfully restored chain: {chain_tlog.chain_id}")
