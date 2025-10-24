@@ -12,7 +12,7 @@ from datetime import datetime
 from models import BuildResult, LaunchResult
 from config import *
 from sigstore.verify import policy
-from trusted_container_log import ChainedTransparencyLogSigner
+from trusted_container_log import ChainedTransparencyLog
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
@@ -985,23 +985,23 @@ class DockerService:
                 file_path = os.path.join(filename)
                 await save_file_async(file_path, content)
 
-            signer = ChainedTransparencyLogSigner.from_backup_file(
+            chian_tlog = ChainedTransparencyLog.from_backup_file(
                 backup_file_path="chain.sigstore.json"
             )
-            print(f"Successfully restored chain: {signer.chain_id}")
-            print(f"Chain length: {signer.chain_length}")
-            print(f"Chain summary: {signer.get_chain_summary()}")
+            print(f"Successfully restored chain: {chain_tlog.chain_id}")
+            print(f"Chain length: {chain_tlog.chain_length}")
+            print(f"Chain summary: {chain_tlog.get_chain_summary()}")
 
             # Get sigstore files and verify chain
             sigstore_files = list(Path(".").glob("entry*.sigstore.json"))
-            result = signer.verify_chain(
+            result = chain_tlog.verify_chain(
                 sigstore_file_list=sigstore_files,
                 policy=my_policy,
             )
 
             if result.success:
                 # Get verification summary
-                summary = signer.get_verification_summary()
+                summary = chain_tlog.get_verification_summary()
                 print("Verification summary:", json.dumps(summary, indent=2))
 
                 return {
