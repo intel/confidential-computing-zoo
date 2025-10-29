@@ -7,7 +7,7 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 
 # Docker Configuration
 DOCKER_REGISTRY = config("DOCKER_REGISTRY", default="docker.io")
-DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="######")
+DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="####")
 
 # File Storage Configuration
 UPLOAD_DIR = config("UPLOAD_DIR", default="./uploads")
@@ -23,8 +23,10 @@ SKOPEO_SOURCE = config("SKOPEO_SOURCE", default="docker-daemon")
 SKOPEO_DESTINATION = config("SKOPEO_DESTINATION", default="oci")
 
 # KBS Configuration
-KBS_URL = config("KBS_URL", default="http://127.0.0.1:8006/cdh/resource/default/image-decryption-keys")
+KBS_URL = config("KBS_URL", default="http://127.0.0.1:8006/cdh/resource/default/image-decryption-keys/")
 KBS_ENDPOINT = config("KBS_ENDPOINT", default="/kbs/v0")
 KBS_CLIENT_CMD = config("KBS_CLIENT_CMD", default="kbs-client")
 
+# Sigstore author Configuration
+GIT_EMAIL = config("GIT_EMAIL", default="####@i###.com")
 

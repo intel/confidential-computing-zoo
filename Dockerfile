@@ -1,4 +1,4 @@
-# Use ubuntu 24.04 as base
+# Use Python 3.11 slim image as base
 FROM ubuntu:24.04
 
 # set env to aviod interactive
@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libsox-fmt-all \
     python3-pip \
-    net-tools \
+    net-tools \ 
     supervisor \
     && rm -rf /var/lib/apt/lists/*
 
@@ -49,17 +49,18 @@ RUN wget https://github.com/anchore/syft/releases/download/v0.96.0/syft_0.96.0_l
 RUN apt-get update && apt-get install -y skopeo \
     && rm -rf /var/lib/apt/lists/*
 
-#COPY file
+# Copy requirements and install Python dependencies
+#COPY requirements.txt .
 COPY . /app/
 RUN mv libtdx_attest.so* /usr/lib/x86_64-linux-gnu/ \
     && ln -s /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1.21.100.3 /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1 \
     && ln -s /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1 /usr/lib/x86_64-linux-gnu/libtdx_attest.so
 
-#RUN pip3 install --no-cache-dir -r requirements.txt
 RUN python3 -m venv /app/venv
 RUN if [ -f "requirements.txt" ]; then \
         /app/venv/bin/pip install --no-cache-dir -r requirements.txt; \
     fi
+#RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Create necessary directories
 RUN mkdir -p /app/uploads /app/builds /app/logs /app/certs
@@ -79,9 +80,8 @@ ENV LOGS_DIR=/app/logs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8002/ || exit 1
+    CMD curl -f http://localhost:8000/ || exit 1
 
 #Run the application
 RUN chmod +x *service.sh
 ENTRYPOINT ["./trust_service.sh"]
-
