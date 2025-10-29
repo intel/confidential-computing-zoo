@@ -7,7 +7,7 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 
 # Docker Configuration
 DOCKER_REGISTRY = config("DOCKER_REGISTRY", default="docker.io")
-DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="testsig")
+DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="####")
 
 # File Storage Configuration
 UPLOAD_DIR = config("UPLOAD_DIR", default="./uploads")
@@ -28,5 +28,5 @@ KBS_ENDPOINT = config("KBS_ENDPOINT", default="/kbs/v0")
 KBS_CLIENT_CMD = config("KBS_CLIENT_CMD", default="kbs-client")
 
 # Sigstore author Configuration
-GIT_EMAIL = config("GIT_EMAIL", default="qingchengx.zeng@intel.com")
+GIT_EMAIL = config("GIT_EMAIL", default="####@i###.com")
 
