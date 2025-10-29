@@ -1,18 +1,26 @@
 import asyncio
+import re
+from pathlib import Path
+import base64
 import subprocess
 import uuid
 import os
 import json
 import logging
 import time
-import re
-from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
-from models import BuildResult, LaunchResult
+from models import BuildResult, LaunchResult, TransparencyResult
 from config import *
+import hashlib
+from sigstore.oidc import Issuer
+from sigstore.verify.verifier import Verifier
 from sigstore.verify import policy
+from sigstore.models import Bundle
+from sigstore import hashes as sigstore_hashes
 from trusted_container_log import ChainedTransparencyLog
+from pathlib import Path
+from sigstore.verify import policy
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
@@ -22,7 +30,8 @@ class DockerService:
     def __init__(self):
         self.builds: Dict[str, BuildResult] = {}
         self.launchs: Dict[str, LaunchResult] = {}
-    
+        self.transparencyLog: Dict[str, TransparencyResult] = {}
+
     def generate_uuid(self, prefix: str = "bld") -> str:
         """
         Generate a unique ID with specified prefix
@@ -35,7 +44,7 @@ class DockerService:
         """
         return f"{prefix}-{uuid.uuid4().hex[:7]}"
     
-    def build_image(self, dockerfile_content: str, build_id: str, user_id: str) -> bool:
+    def build_image(self, dockerfile_content: str, build_id: str, user_id: str, tl_signer: ChainedTransparencyLog) -> bool:
         """Build Docker image from dockerfile content with optimized error handling"""
         try:
             self.update_build_status(user_id, build_id, "preparing", step="Setting up build environment")
@@ -67,7 +76,16 @@ class DockerService:
             
             self.update_build_status(user_id, build_id, "building", step="Building container image")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-            
+
+            build_log = {
+                "command: ": " ".join(cmd),
+                "exit_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "status": "success" if result.returncode == 0 else "failed"
+            }
+            tl_signer.add_entry({"build_image": build_log})
+
             if result.returncode == 0:
                 logger.info(f"Successfully built image {image_name}")
                 
@@ -99,7 +117,7 @@ class DockerService:
             logger.error(f"Unexpected error building image: {str(e)}")
             return False
     
-    def generate_sbom(self, image_name: str, build_id: str) -> Optional[str]:
+    def generate_sbom(self, image_name: str, build_id: str, tl_signer: ChainedTransparencyLog) -> Optional[str]:
         """Generate SBOM for the image with enhanced error handling"""
         try:
             build_path = os.path.join(BUILD_DIR, build_id)
@@ -131,23 +149,81 @@ class DockerService:
                     f.write(result.stdout)
                 
                 logger.info(f"Successfully generated SBOM: {sbom_path}")
+
+                sbom_log = {
+                        "command": " ".join(cmd),
+                        "exit_code": result.returncode,
+                        "stderr": result.stderr,
+                        "validation": {
+                            "spdx_version_present": bool(sbom_data.get('spdxVersion')),
+                            "is_valid_json": True
+                        },
+                        "output_path": sbom_path,
+                        "status": "success"
+                }
+                tl_signer.add_entry({"sbom_generation": sbom_log})
+
                 return sbom_path
             else:
                 logger.error(f"Failed to generate SBOM: {result.stderr}")
                 logger.debug(f"SBOM stdout: {result.stdout}")
+
+                sbom_log = {
+                    "command": " ".join(cmd),
+                    "exit_code": result.returncode,
+                    "stdout": json.loads(result.stdout),
+                    "stderr": json.loads(result.stderr),
+                    "status": "failed",
+                    "error": {
+                        "type": "subprocess.CalledProcessError",
+                        "message": json.loads(result.stderr)
+                    }
+                }
+                tl_signer.add_entry({"sbom_generation": sbom_log})
                 return None
                 
         except subprocess.TimeoutExpired:
             logger.error(f"SBOM generation timed out for: {image_name}")
+
+            sbom_log = {
+                "command": " ".join(cmd),
+                "status": "timeout",
+                "error": {
+                    "type": "subprocess.TimeoutExpired",
+                    "message": f"SBOM generation timed out for: {image_name}"
+                }
+            }
+            tl_signer.add_entry({"sbom_generation": sbom_log})
+
             return None
         except FileNotFoundError:
             logger.error(f"Syft command not found: {SYFT_CMD}")
+
+            sbom_log = {
+                "status": "failed",
+                "error": {
+                    "type": "FileNotFoundError",
+                    "message": f"Syft command not found: {SYFT_CMD}"
+                }
+            }
+            tl_signer.add_entry({"sbom_generation": sbom_log})
+
             return None
         except Exception as e:
             logger.error(f"Unexpected error generating SBOM: {str(e)}")
+
+            sbom_log = {
+                "status": "failed",
+                "error": {
+                    "type": str(type(e)),
+                    "message": str(e)
+                }
+            }
+            tl_signer.add_entry({"sbom_generation": sbom_log})
+
             return None
     
-    def encrypt_image(self, image_name: str, build_id: str, public_key_path: str) -> Optional[str]:
+    def encrypt_image(self, image_name: str, build_id: str, public_key_path: str, tl_signer: ChainedTransparencyLog) -> Optional[str]:
         """Encrypt image using skopeo with optimized workflow"""
         try:
             # Setup paths for encrypted image
@@ -161,6 +237,15 @@ class DockerService:
             # Validate public key exists
             if not os.path.exists(public_key_path):
                 logger.error(f"Public key file not found: {public_key_path}")
+
+                encryption_log = {
+                    "status": "failed",
+                    "error": {
+                        "type": "FileNotFoundError",
+                        "message": f"Public key file not found: {public_key_path}"
+                    }
+                }
+                tl_signer.add_entry({"image_encryption": encryption_log})
                 return None
             
             logger.info(f"Starting encryption process for image: {image_name}")
@@ -178,24 +263,72 @@ class DockerService:
             
             if result.returncode == 0:
                 logger.info(f"Successfully encrypted image {image_name} to {encrypted_path}")
+
+                encryption_log = {
+                    "command": " ".join(cmd),
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "output_path": encrypted_path,
+                    "status": "success"
+                }
+                tl_signer.add_entry({"image_encryption": encryption_log})
+
                 # Return OCI reference in the correct format
                 return f"oci:{encrypted_path}"  # Return absolute path for skopeo
             else:
                 logger.error(f"Image encryption failed: {result.stderr}")
                 logger.debug(f"Encryption stdout: {result.stdout}")
+
+                encryption_log = {
+                    "command": " ".join(cmd),
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "status": "failed",
+                    "error": {
+                        "type": "subprocess.CalledProcessError",
+                        "message": result.stderr
+                    }
+                }
+                tl_signer.add_entry({"image_encryption": encryption_log})
+
                 return None
                 
         except subprocess.TimeoutExpired:
             logger.error(f"Image encryption timed out for: {image_name}")
+            
+            encryption_log = {
+                "command": " ".join(cmd),
+                "status": "timeout",
+                "error": {
+                    "type": "subprocess.TimeoutExpired",
+                    "message": f"Image encryption timed out for: {image_name}"
+                }
+            }
+            tl_signer.add_entry({"image_encryption": encryption_log})
+
             return None
         except FileNotFoundError:
             logger.error(f"Skopeo command not found: {SKOPEO_CMD}")
+            
+            encryption_log = {
+                "image_encryption": {
+                    "status": "failed",
+                    "error": {
+                        "type": "FileNotFoundError",
+                        "message": f"Skopeo command not found: {SKOPEO_CMD}"
+                    }
+                }
+            }
+            tl_signer.add_entry({"image_encryption": encryption_log})
+
             return None
         except Exception as e:
             logger.error(f"Unexpected error during image encryption: {str(e)}")
             return None
     
-    def sign_image(self, image_name: str, private_key_path: str) -> Tuple[bool, Optional[str]]:
+    def sign_image(self, image_name: str, private_key_path: str, tl_signer: ChainedTransparencyLog) -> Tuple[bool, Optional[str]]:
         """
         Sign image with cosign with enhanced validation. Handles remote registry images.
         
@@ -212,6 +345,16 @@ class DockerService:
             # Validate private key exists
             if not os.path.exists(private_key_path):
                 logger.error(f"Private key file not found: {private_key_path}")
+
+                signing_log = {
+                        "status": "failed",
+                        "error": {
+                            "type": "FileNotFoundError",
+                            "message": f"Private key file not found: {private_key_path}"
+                        }
+                }
+                tl_signer.add_entry({"image_signing": signing_log})
+
                 return False, None
             
             # Extract proper base name and construct registry reference
@@ -236,23 +379,71 @@ class DockerService:
                 logger.info(f"Successfully signed image {full_image_ref}")
                 # Signature reference follows cosign format: registry/repo/image:tag.sig
                 signature_ref = f"{full_image_ref}.sig"
+                
+                signing_log = {
+                    "command": " ".join(cmd),
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "private_key_path": private_key_path,
+                    "signature_ref": signature_ref,
+                    "status": "success"
+                }
+                tl_signer.add_entry({"image_signing": signing_log})
+
                 return True, signature_ref
             else:
                 logger.error(f"Failed to sign image: {result.stderr}")
                 logger.debug(f"Sign stdout: {result.stdout}")
+                
+                signing_log = {
+                    "command": " ".join(cmd),
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "private_key_path": private_key_path,
+                    "status": "failed",
+                    "error": {
+                        "type": "subprocess.CalledProcessError",
+                        "message": result.stderr
+                    }
+                }
+                tl_signer.add_entry({"image_signing": signing_log})
+
                 return False, None
                 
         except subprocess.TimeoutExpired:
             logger.error(f"Image signing timed out for: {image_name}")
+            
+            signing_log = {
+                "command": " ".join(cmd),
+                "status": "timeout",
+                "error": {
+                    "type": "subprocess.TimeoutExpired",
+                    "message": f"Image signing timed out for: {image_name}"
+                }
+            }
+            tl_signer.add_entry({"image_signing": signing_log})
+
             return False, None
         except FileNotFoundError:
             logger.error(f"Cosign command not found: {COSIGN_CMD}")
+            
+            signing_log = {
+                "status": "failed",
+                "error": {
+                    "type": "FileNotFoundError",
+                    "message": f"Cosign command not found: {COSIGN_CMD}"
+                }
+            }
+            tl_signer.add_entry({"image_signing": signing_log})
+
             return False, None
         except Exception as e:
             logger.error(f"Unexpected error signing image: {str(e)}")
             return False, None
     
-    def create_sbom_attestation(self, image_name: str, sbom_path: str, private_key_path: str) -> Tuple[bool, Optional[str]]:
+    def create_sbom_attestation(self, image_name: str, sbom_path: str, private_key_path: str, tl_signer: ChainedTransparencyLog) -> Tuple[bool, Optional[str]]:
         """
         Create and publish SBOM attestation for remote registry images
         
@@ -270,10 +461,30 @@ class DockerService:
             # Validate inputs
             if not os.path.exists(sbom_path):
                 logger.error(f"SBOM file not found: {sbom_path}")
+
+                attestation_log = {
+                    "status": "failed",
+                    "error": {
+                        "type": "FileNotFoundError",
+                        "message": f"SBOM file not found: {sbom_path}"
+                    }
+                }
+                tl_signer.add_entry({"sbom_attestation": attestation_log})
+
                 return False, None
             
             if not os.path.exists(private_key_path):
                 logger.error(f"Private key file not found: {private_key_path}")
+
+                attestation_log = {
+                    "status": "failed",
+                    "error": {
+                        "type": "FileNotFoundError",
+                        "message": f"Private key file not found: {private_key_path}"
+                    }
+                }
+                tl_signer.add_entry({"sbom_attestation": attestation_log})
+
                 return False, None
             
             # Validate SBOM content
@@ -284,6 +495,16 @@ class DockerService:
                     logger.warning("SBOM may be invalid - missing spdxVersion")
             except (json.JSONDecodeError, Exception) as e:
                 logger.error(f"Invalid SBOM file: {e}")
+                
+                attestation_log = {
+                    "status": "failed",
+                    "error": {
+                        "type": "json.JSONDecodeError",
+                        "message": f"Invalid SBOM file: {e}"
+                    }
+                }
+                tl_signer.add_entry({"sbom_attestation": attestation_log})
+
                 return False, None
             
             # Extract proper base name and construct registry reference
@@ -315,23 +536,85 @@ class DockerService:
                 logger.info(f"Successfully created SBOM attestation for {full_image_ref}")
                 # Attestation reference follows cosign format: registry/repo/image:tag.att.<type>
                 attestation_ref = f"{full_image_ref}.att.sbom"
+                
+                attestation_log = {
+                    "command": " ".join(cmd),
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "validation": {
+                        "spdx_version_present": bool(sbom_data.get('spdxVersion')),
+                        "is_valid_json": True
+                    },
+                    "input_files": {
+                        "sbom_path": sbom_path,
+                        "private_key_path": private_key_path
+                    },
+                    "output_ref": attestation_ref,
+                    "status": "success"
+                }
+                tl_signer.add_entry({"sbom_attestation": attestation_log})
+
                 return True, attestation_ref
             else:
                 logger.error(f"Failed to create SBOM attestation: {result.stderr}")
                 logger.debug(f"Attestation stdout: {result.stdout}")
+                
+                attestation_log = {
+                    "command": " ".join(cmd),
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "validation": {
+                        "spdx_version_present": bool(sbom_data.get('spdxVersion')),
+                        "is_valid_json": True
+                    },
+                    "input_files": {
+                        "sbom_path": sbom_path,
+                        "private_key_path": private_key_path
+                    },
+                    "status": "failed",
+                    "error": {
+                        "type": "subprocess.CalledProcessError",
+                        "message": result.stderr
+                    }
+                }
+                tl_signer.add_entry({"sbom_attestation": attestation_log})
+
                 return False, None
                 
         except subprocess.TimeoutExpired:
             logger.error(f"SBOM attestation timed out for: {image_name}")
+            
+            attestation_log = {
+                "command": " ".join(cmd),
+                "status": "timeout",
+                "error": {
+                    "type": "subprocess.TimeoutExpired",
+                    "message": f"SBOM attestation timed out for: {image_name}"
+                }
+            }
+            tl_signer.add_entry({"sbom_attestation": attestation_log})
+
             return False, None
         except FileNotFoundError:
             logger.error(f"Cosign command not found: {COSIGN_CMD}")
+            
+            attestation_log = {
+                "status": "failed",
+                "error": {
+                    "type": "FileNotFoundError",
+                    "message": f"Cosign command not found: {COSIGN_CMD}"
+                }
+            }
+            tl_signer.add_entry({"sbom_attestation": attestation_log})
+
             return False, None
         except Exception as e:
             logger.error(f"Unexpected error creating SBOM attestation: {str(e)}")
             return False, None
     
-    def push_image(self, source_ref: str, dest_ref: str, max_retries: int = 3, retry_delay: int = 5) -> bool:
+    def push_image(self, source_ref: str, dest_ref: str, tl_signer: ChainedTransparencyLog, max_retries: int = 3, retry_delay: int = 5) -> bool:
         """
         Push image using skopeo copy with retry mechanism.
         
@@ -379,6 +662,21 @@ class DockerService:
                 
                 if result.returncode == 0:
                     logger.info(f"Successfully pushed image to {dest_ref}")
+                    
+                    push_log = {
+                        "command": " ".join(cmd),
+                        "exit_code": result.returncode,
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                        "retry_attempts": attempt,
+                        "max_retries": max_retries,
+                        "retry_delay": retry_delay,
+                        "source_ref": source_ref,
+                        "dest_ref": dest_ref,
+                        "status": "success"
+                    }
+                    tl_signer.add_entry({"image_push": push_log})
+
                     return True
                 else:
                     logger.warning(f"Push attempt {attempt} failed: {result.stderr}")
@@ -389,6 +687,25 @@ class DockerService:
                         time.sleep(retry_delay)
                     else:
                         logger.error(f"All push attempts failed after {max_retries} tries")
+                        
+                        push_log = {
+                            "command": " ".join(cmd),
+                            "exit_code": result.returncode,
+                            "stdout": result.stdout,
+                            "stderr": result.stderr,
+                            "retry_attempts": attempt,
+                            "max_retries": max_retries,
+                            "retry_delay": retry_delay,
+                            "source_ref": source_ref,
+                            "dest_ref": dest_ref,
+                            "status": "failed",
+                            "error": {
+                                "type": "subprocess.CalledProcessError",
+                                "message": result.stderr
+                            }
+                        }
+                        tl_signer.add_entry({"image_push": push_log})
+
                         return False
                 
             except subprocess.TimeoutExpired:
@@ -398,9 +715,35 @@ class DockerService:
                     time.sleep(retry_delay)
                 else:
                     logger.error(f"All push attempts timed out after {max_retries} tries")
+                    
+                    push_log = {
+                        "command": " ".join(cmd),
+                        "retry_attempts": attempt,
+                        "max_retries": max_retries,
+                        "retry_delay": retry_delay,
+                        "source_ref": source_ref,
+                        "dest_ref": dest_ref,
+                        "status": "timeout",
+                        "error": {
+                            "type": "subprocess.TimeoutExpired",
+                            "message": f"Push attempt {attempt} timed out"
+                        }
+                    }
+                    tl_signer.add_entry({"image_push": push_log})
+
                     return False
             except FileNotFoundError:
                 logger.error(f"Skopeo command not found: {SKOPEO_CMD}")
+                
+                push_log = {
+                    "status": "failed",
+                    "error": {
+                        "type": "FileNotFoundError",
+                        "message": f"Skopeo command not found: {SKOPEO_CMD}"
+                    }
+                }
+                tl_signer.add_entry({"image_push": push_log})
+
                 return False  # Don't retry if command not found
             except Exception as e:
                 logger.warning(f"Push attempt {attempt} failed with error: {str(e)}")
@@ -557,7 +900,7 @@ class DockerService:
             logger.error(f"Error inspecting image: {str(e)}")
             return None
     
-    async def verify_attestation(self, image_id: str, user_id: str) -> Tuple[str, Optional[str]]:
+    async def verify_attestation(self, image_id: str, user_id: str,  tl_signer: ChainedTransparencyLog) -> Tuple[str, Optional[str]]:
         """
         Verify attestation and retrieve decryption key if successful
         
@@ -571,7 +914,7 @@ class DockerService:
             decryption_key is None if attestation fails
         """
         try:
-            attestation_result, decryption_key = self.get_pubKey_from_KBS() 
+            attestation_result, decryption_key = self.get_pubKey_from_KBS(tl_signer)
             return attestation_result, decryption_key
             
         except Exception as e:
@@ -591,9 +934,6 @@ class DockerService:
         """
         try:
             # Create temporary file for decryption key
-            #with tempfile.NamedTemporaryFile(mode='w', suffix='.key', delete=False) as f:
-            #    f.write(decryption_key)
-            #    key_path = f.name
             key_path = decryption_key
                 
             try:
@@ -622,7 +962,7 @@ class DockerService:
             logger.error(f"Decryption error: {str(e)}")
             return None
     
-    def generate_key(self, build_id: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    def generate_key(self, build_id: str, tl_signer: ChainedTransparencyLog) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
         """
         Generate a cosign key pair for signing and an openssl key for encryption.
         
@@ -656,6 +996,20 @@ class DockerService:
             
             if cosign_result.returncode != 0:
                 logger.error(f"Failed to generate cosign keys: {cosign_result.stderr}")
+                
+                key_log = {
+                    "cosign_command": " ".join(cosign_cmd),
+                    "cosign_exit_code": cosign_result.returncode,
+                    "cosign_stdout": cosign_result.stdout,
+                    "cosign_stderr": cosign_result.stderr,
+                    "status": "failed",
+                    "error": {
+                        "type": "subprocess.CalledProcessError",
+                        "message": f"Failed to generate cosign keys: {cosign_result.stderr}"
+                    }
+                }
+                tl_signer.add_entry({"key_generation": key_log})
+
                 return None, None, None, None
 
             # 2. Generate OpenSSL encryption key pair
@@ -674,6 +1028,20 @@ class DockerService:
             openssl_priv_result = subprocess.run(openssl_priv_cmd, capture_output=True, text=True)
             if openssl_priv_result.returncode != 0:
                 logger.error(f"F:set nuailed to generate openssl private key: {openssl_priv_result.stderr}")
+                
+                key_log = {
+                    "openssl_command": " ".join(openssl_priv_cmd),
+                    "openssl_exit_code": openssl_priv_result.returncode,
+                    "openssl_stdout": openssl_priv_result.stdout,
+                    "openssl_stderr": openssl_priv_result.stderr,
+                    "status": "failed",
+                    "error": {
+                        "type": "subprocess.CalledProcessError",
+                        "message": f"Failed to generate openssl private key: {openssl_priv_result.stderr}"
+                    }
+                }
+                tl_signer.add_entry({"key_generation": key_log})
+
                 return None, None, None, None
 
             # Generate public key from private key
@@ -686,7 +1054,41 @@ class DockerService:
             openssl_pub_result = subprocess.run(openssl_pub_cmd, capture_output=True, text=True)
             if openssl_pub_result.returncode != 0:
                 logger.error(f"Failed to generate openssl public key: {openssl_pub_result.stderr}")
+                
+                key_log = {
+                    "openssl_command": " ".join(openssl_pub_cmd),
+                    "openssl_exit_code": openssl_pub_result.returncode,
+                    "openssl_stdout": openssl_pub_result.stdout,
+                    "openssl_stderr": openssl_pub_result.stderr,
+                    "status": "failed",
+                    "error": {
+                        "type": "subprocess.CalledProcessError",
+                        "message": f"Failed to generate openssl public key: {openssl_pub_result.stderr}"
+                    }
+                }
+                tl_signer.add_entry({"key_generation": key_log})
+
                 return None, None, None, None
+
+            key_log = {
+                "cosign_command": " ".join(cosign_cmd),
+                "cosign_exit_code": cosign_result.returncode,
+                "cosign_stdout": cosign_result.stdout,
+                "cosign_stderr": cosign_result.stderr,
+                "openssl_command": " ".join(openssl_priv_cmd),
+                "openssl_exit_code": openssl_priv_result.returncode,
+                "openssl_stdout": openssl_priv_result.stdout,
+                "openssl_stderr": openssl_priv_result.stderr,
+                "output_files": {
+                    "private_signing_key_path": private_signing_key_path,
+                    "public_signing_key_path": public_signing_key_path,
+                    "private_encryption_key_path": openssl_priv_key_path,
+                    "public_encryption_key_path": public_encryption_key_path
+                },
+                "status": "success"
+            }
+            tl_signer.add_entry({"key_generation": key_log})
+
 
             return private_signing_key_path, public_signing_key_path, openssl_priv_key_path, public_encryption_key_path
             
@@ -738,7 +1140,7 @@ class DockerService:
         return base_name
 
 
-    def pull_image(self, image_url: str, openssl_key: str, target_dir: str, max_retries: int = 3, retry_delay: int = 5) -> bool:
+    def pull_image(self, tl_signer: ChainedTransparencyLog, image_url: str, openssl_key: str, target_dir: str, max_retries: int = 3, retry_delay: int = 5) -> bool:
         
         source_ref = image_url.replace("docker.io","docker:/")
         dest_ref = os.path.join('oci:'+target_dir,'encrypted')
@@ -756,6 +1158,12 @@ class DockerService:
 
                 if result.returncode == 0:
                     logger.info(f"Successfully pulled image to local")
+                    
+                    tl_signer.add_entry({"pull_image": "success",
+                                         "result_stdout": result.stdout,
+                                         "result_stderr": result.stderr,
+                                         "pull_cmd": " ".join(cmd)
+                                        })
                     return True
                 else:
                     logger.warning(f"Pull attempt {attempt} failed: {result.stderr}")
@@ -766,6 +1174,13 @@ class DockerService:
                         time.sleep(retry_delay)
                     else:
                         logger.error(f"All pull attempts failed after {max_retries} tries")
+                        
+                        tl_signer.add_entry({"pull_image": "failed",
+                                            "result_stdout": result.stdout,
+                                            "result_stderr": result.stderr,
+                                            "pull_cmd": " ".join(cmd),
+                                            "error": f"All pull attempts failed after {max_retries} tries"
+                                            })
                         return False
 
             except subprocess.TimeoutExpired:
@@ -778,8 +1193,12 @@ class DockerService:
                     return False
             except FileNotFoundError:
                 logger.error(f"Skopeo command not found: {SKOPEO_CMD}")
+                tl_signer.add_entry({"pull_image": "failed",
+                                     "error": f"Skopeo command not found: {SKOPEO_CMD}"})
                 return False  # Don't retry if command not found
             except Exception as e:
+                tl_signer.add_entry({"pull_image": "failed",
+                                     "error": f"{e}"})
                 logger.warning(f"Pull attempt {attempt} failed with error: {str(e)}")
                 if attempt < max_retries:
                     logger.info(f"Retrying in {retry_delay} seconds...")
@@ -808,6 +1227,7 @@ class DockerService:
                     if hasattr(launch_result, key):
                         setattr(launch_result, key, value)
                         logger.debug(f"Updated {key} for build {launch_id}")
+
             else:
                 # Create new launch result
                 logger.info(f"Creating new launch status for {launch_id}: {status}")
@@ -815,7 +1235,6 @@ class DockerService:
                     user_id=user_id,
                     launch_id=launch_id,
                     status=status,
-                    #created_at=datetime.now(),
                     updated_at=datetime.now(),
                     **kwargs
                 )
@@ -823,7 +1242,58 @@ class DockerService:
         except Exception as e:
             logger.error(f"Error updating build status for {launch_id}: {str(e)}")
 
-    def verify_sbom(self,imagesurl,sbom_url,cosign_pubkey='cosign.pub') -> bool:
+    def update_transparencylog_status(self,user_id: str, log_id: str, status: str, build_id: str, **kwargs):
+
+        try:
+            if log_id in self.transparencyLog:
+                tlog_result = self.transparencyLog[log_id]
+                old_status = tlog_result.status
+                tlog_result.status = status
+
+                # Log status changes
+                if old_status != status:
+                    logger.info(f"transparency log {log_id} status: {old_status} -> {status}")
+
+                # Update additional fields
+                for key, value in kwargs.items():
+                    if hasattr(tlog_result, key):
+                        setattr(tlog_result, key, value)
+                        logger.debug(f"Updated {key} for transparency log {log_id}")
+            else:
+                # Create new launch result
+                logger.info(f"Creating new transparency log status for {log_id}: {status}")
+                # get transparency log
+                tlog_path = os.path.join(BUILD_DIR, build_id)
+                tlog_file = ''
+                data = ''
+                for i in os.listdir(tlog_path):
+                    if i.endswith("transparency.json"):
+                        tlog_file = os.path.join(tlog_path,i)
+                        break
+                if os.path.exists(tlog_file):
+                    with open(tlog_file,'r',encoding='utf-8') as f:
+                        #tlog_result.transparency_log = json.load(f)
+                        data = json.load(f)
+                else:
+                    logger.debug(f"Transparency log not found.")
+                #print("CEHCK______",type(json.dumps(data,indent=4)))
+                self.transparencyLog[log_id] = TransparencyResult(
+                    user_id=user_id,
+                    build_id=build_id,
+                    log_id=str(log_id),
+                    status=status,
+                    transparency_log=json.dumps(data,indent=4),
+                    **kwargs
+                )
+
+        except Exception as e:
+            logger.error(f"Error updating transparency log status for {log_id}: {str(e)}")
+
+    def get_transparencyLog_status(self, log_id: str) -> Optional[TransparencyResult]:
+        """Get transparency log status by log_id"""
+        return self.transparencyLog.get(log_id)
+
+    def verify_sbom(self,imagesurl,sbom_url,tl_signer: ChainedTransparencyLog, cosign_pubkey='cosign.pub') -> bool:
 
         images_fullName = imagesurl.replace("docker.io/","")
         # 1. verify signed image
@@ -833,13 +1303,17 @@ class DockerService:
                 ]
             cosign_verify = subprocess.run(cosign_cmd, capture_output=True, text=True)
             logger.info(f"Vertify CMD: {' '.join(cosign_cmd)}")
+            tl_signer.add_entry({"verify_sbom_cmd": " ".join(cosign_cmd)})
 
             if cosign_verify.returncode != 0:
                 logger.debug(f"Failed to verify: {cosign_verify.stderr}")
+                tl_signer.add_entry({"verify_sbom_status": "failed"})
                 return False
+            tl_signer.add_entry({"verify_sbom_status": "success"})
 
         except Exception as e:
             logger.error(f"Verify signed image {images_fullName} failed: {str(e)}")
+            tl_signer.add_entry({"error": f"{e}"})
 
         #2. verify attestation
         try:
@@ -848,10 +1322,13 @@ class DockerService:
             
             cosign_attverify = subprocess.run(cosign_attcmd, capture_output=True, text=True)
             logger.info(f"Attestation_Vertify CMD: {' '.join(cosign_attcmd)}")
+            tl_signer.add_entry({"verify_attestation_cmd": " ".join(cosign_attcmd)})
 
             if cosign_attverify.returncode != 0:
                 logger.debug(f"Failed to verify: {cosign_attverify.stderr}")
+                tl_signer.add_entry({"verify_attestation_status": "failed"})
                 return False
+
             ''' base64_str = json.loads(cosign_verify.stdout)
             import base64
             sbomJS = json.loads(base64.b64decode(base64_str['payload']).decode("utf-8"))['predicate']
@@ -876,7 +1353,7 @@ class DockerService:
             
         except Exception as e:
             logger.error(f"Verify signed attestation image {imagesurl} failed: {str(e)}")
-        
+            tl_signer.add_entry({"error": f"{str(e)}"})
 
 
     def get_launch_status(self, launch_id: str) -> Optional[BuildResult]:
@@ -884,7 +1361,7 @@ class DockerService:
         return self.launchs.get(launch_id)
 
 
-    async def launch_containers(self,image_url,user_id,launch_pth):
+    async def launch_containers(self,  tl_signer: ChainedTransparencyLog, image_url, user_id, launch_pth):
         # skopeo copy oci:encrypt/ docker-daemon:test_pull:latest
         image_dir = 'oci:' + os.path.join(launch_pth,'encrypted')
         Newimage_name = 'docker-daemon:'+ user_id + ":latest"
@@ -893,30 +1370,90 @@ class DockerService:
             res = subprocess.run(cmd, capture_output=True, text=True)
 
             if res.returncode == 0:
-                logger.info("Success add image.")
+                logger.info(f"Success add {Newimage_name} image.")
+                tl_signer.add_entry({"pullImage_cmd": " ".join(cmd), "pullImage_status": "success"})
             else:
                 logger.info("Failed add image.")
                 logger.debug(f"CMD: {' '.join(cmd)}")
+                tl_signer.add_entry({"pullImage_status": "failed"})
                 return False
 
-            # docker run -d -p 8088:8088 test
-            docker_cmd = [DOCKER_CMD, "run", "-d", "-p", "8088:8088", user_id]
+            # docker run -d -it -p 8088:8088 test /bin/bash
+            #docker images --format '{{.ID}}'
+            get_imageID = [DOCKER_CMD, "images", "--format", "'{{.ID}}'"]
+            get_imageID_res = subprocess.run(get_imageID, capture_output=True, text=True)
+            image_id = get_imageID_res.stdout.replace("'","").split("\n")[0]
+
+            docker_cmd = [DOCKER_CMD, "run", "-d", "-it",  "-p", "8088:8088", image_id, "/bin/bash"]
             dockerRUn = subprocess.run(docker_cmd, capture_output=True, text=True)
             if dockerRUn.returncode == 0:
-                logger.info("Success run image.")
-                return [dockerRUn.stdout]
+                logger.info(f"Success run image {image_id}.")
+                tl_signer.add_entry({"launch_cmd": " ".join(docker_cmd),
+                                     "launch_status": "success",
+                                     "launch_stdout": dockerRUn.stdout,
+                                     })
             else:
                 logger.info("Failed run image.")
-                logger.debug(f"CMD: {' '.join(docker_cmd)}")
+                logger.debug(f"CMD: {" ".join(docker_cmd)}")
+                tl_signer.add_entry({"launch_status": "failed",
+                                     "launch_stderr": dockerRUn.stderr})
                 return False
+
+            # docker ps -q --latest
+            getID = [DOCKER_CMD, "ps", "-q", "--latest"]
+            getID_res = subprocess.run(getID, capture_output=True, text=True)
+            if getID_res.returncode == 0:
+                containerID = getID_res.stdout.replace("\n","")
+                logger.info(f"Success get image ID {containerID}")
+                tl_signer.add_entry({"getContainerID_cmd": " ".join(getID),
+                                     "getContainerID_status": "success",
+                                     "getID_stdout": getID_res.stdout
+                                     })
+            else:
+                logger.info("Failed get container ID.")
+                tl_signer.add_entry({"getContainerID_status": "failed",
+                                     "getID_stderr": getID_res.stderr
+                                     })
+                return False
+            
+            #docker inspect ID --format '{{.State.Status}}'
+            getStatus = [DOCKER_CMD, "inspect", "--format", "'{{.State.Status}}'", containerID]
+            getStatus_res = subprocess.run(getStatus, capture_output=True, text=True)
+            if getStatus_res.returncode == 0:
+                logger.info(f"Success get container {containerID} status: {getStatus_res.stdout.replace('\n','')}")
+                tl_signer.add_entry({"getStatus_cmd": " ".join(getStatus),
+                                     "get_status": getStatus_res.stdout})
+            else:
+                logger.info("Failed get container status.")
+                logger.error(f"get container status cmd: {" ".join(getStatus)}")
+                tl_signer.add_entry({"get_status": "failed",
+                                     "getStatus_stderr": getStatus_res.stderr
+                                     })
+                return False
+            
+            tl_signer.add_entry({"container_ID": getID_res.stdout, "container_Status": getStatus_res.stdout})
+            return [{"container_ID": getID_res.stdout, "container_Status": getStatus_res.stdout}]
 
         except Exception as e:
             logger.error(f"Launch contaioner failed: {str(e)}")
+            tl_signer.add_entry({"Deploy_launch status": "success"})
             return False
 
 
-    def get_pubKey_from_KBS(self):
+    def get_pubKey_from_KBS(self,  tl_signer: ChainedTransparencyLog = None):
         try:
+            key_dict = {'opensslKey':'openssl.key', 'cosignKey':'cosign.key', 'opensslPub':'openssl.pub', 'cosignPub':'cosign.pub'}
+            if os.path.exists('openssl.pub'):
+                for key,value in key_dict.items():
+                    if not os.path.exists(value):
+                        logger.info(f"Failed get {key}!")
+                        tl_signer.add_entry({"get_key": "failed"})
+                        return False, None
+                    else:
+                        key_dict[key] = os.path.realpath(value)
+                        tl_signer.add_entry({"get_key": "true"})
+                return 'trusted', key_dict
+
             opensslKey_cmd = ["curl", KBS_URL+"openssl.key", "-o","openssl.key"]
             cosignPub_cmd = ["curl", KBS_URL+"cosign.pub", "-o","cosign.pub"]
             opensslPub_cmd = ["curl", KBS_URL+"openssl.pub", "-o","openssl.pub"]
@@ -927,25 +1464,176 @@ class DockerService:
             opensslPub_res = subprocess.run(opensslPub_cmd, capture_output=True, text=True)
             cosignKey_res = subprocess.run(cosignKey_cmd, capture_output=True, text=True)
 
-            key_dict = {'opensslKey':'openssl.key', 'cosignKey':'cosign.key', 'opensslPub':'openssl.pub', 'cosignPub':'cosign.pub'}
             for key,value in key_dict.items():
                 if not os.path.exists(value):
                     logger.info(f"Failed get {key}!")
+                    tl_signer.add_entry({"get_key": "failed"})
                     return False, None
                 else:
                     key_dict[key] = os.path.realpath(value)
+            tl_signer.add_entry({"key": key_dict})
             return 'trusted', key_dict
 
         except Exception as e:
-            logger.error(f"Get Keys failed: {str(e)}")
+            logger.error(f"Launch contaioner failed: {str(e)}")
+            tl_signer.add_entry({"key": f"Get key failed: {e}"})
             return False, None
+
+    def save_transparencyLog(self, api_type, build_id, tl_signer: ChainedTransparencyLog):
+        try:
+            # Save transparencyLog
+            tlog_path = os.path.join(os.path.join(BUILD_DIR, build_id),f'{api_type}-transparency.json')
+            with open(tlog_path, 'w', encoding='utf-8') as f:
+                json.dump(tl_signer.pending_entries, f, ensure_ascii=False)
+            logger.info(f"Create {api_type}-transparency_log file.")
+            bundle = tl_signer.sign_pending_entries()
+            print("check bundle",bundle)
+
+            logger.info(f"Start to create {api_type}-tarnsparencylog id")
+            log_index = bundle.log_entry.log_index
+            logger.info(f"Create {api_type} log id: {log_index}")
+
+            # Save the first bundle
+            logger.info(f"Create {api_type}-transparency_log sigstore file")
+            bundle_filename = f"{api_type}-transparency_log-{log_index}.sigstore.json"
+            bundlef_path = os.path.join(os.path.join(BUILD_DIR, build_id),bundle_filename)
+            with open(bundlef_path, 'w', encoding='utf-8') as f:
+                bundle_data = json.loads(bundle.to_json())
+                json.dump(bundle_data, f, ensure_ascii=False)
+            logger.info(f"Signature completed, Bundle saved to: {bundle_filename}")
+            logger.info(f"Sigstore Url: https://search.sigstore.dev/?logIndex={bundle.log_entry.log_index}")
+
+            # Get chain summary
+            summary = tl_signer.get_chain_summary()
+            logger.info(f"Chain summary: {json.dumps(summary, indent=2)}")
+
+            # Export chain data
+            chain_data = tl_signer.export_chain()
+            with open(os.path.join(os.path.join(BUILD_DIR, build_id),f"{api_type}-chain.sigstore.json"), "w") as f:
+                json.dump(chain_data, f, ensure_ascii=False)
+            logger.info("Chain data exported to chain.sigstore.json")
+            logger.info("Signing with chain completed.")
+            return True, str(log_index)
+        except Exception as e:
+            logger.info(f"{str(e)}")
+            return False, None
+
+    def verify_transpaerncyLog(self, api_type, identity_token, build_id):
+        logger.info("Verifying chain transpaerncyLog...")
+        status = 'success'
+        #email_addr = input("Please input the email address used for signing: ").strip()
+        email_addr = GIT_EMAIL
+        my_policy = policy.Identity(
+            identity=email_addr,
+            issuer="https://github.com/login/oauth",
+        )
+
+        try:
+
+            bakfile_path = os.path.join(os.path.join(BUILD_DIR, build_id),f"{api_type}-chain.sigstore.json")
+            signer = ChainedTransparencyLog.from_backup_file(
+                identity_token=identity_token,
+                backup_file_path=bakfile_path
+            )
+            logger.info(f"Successfully restored chain: {signer.chain_id}")
+            logger.info(f"Chain length: {signer.chain_length}")
+            logger.info(f"Chain summary: {signer.get_chain_summary()}")
+
+            sigstore_files = [i.absolute() for i in list(Path(os.path.join(BUILD_DIR, build_id)).glob("*.sigstore.json"))]
+
+            # Verify each entry in the chain
+            result = signer.verify_chain(
+                sigstore_file_list=sigstore_files,
+                policy=my_policy,
+            )
+            if result.success:
+                logger.info("🎉 Chain verification successful!")
+                logger.info(f"Chain ID: {result.chain_id}")
+                logger.info(f"Verified entries: {result.verified_entries}/{result.total_entries}")
+                logger.info("Verification details:", result.details)
+            else:
+                status = 'failed'
+                logger.error("❌ Chain verification failed!")
+                for error in result.errors:
+                    logger.info(f"  - {error}")
+
+            # Get verification summary
+            summary = signer.get_verification_summary()
+            logger.info("Verification summary: %s", json.dumps(summary, indent=2))
+        except (FileNotFoundError, ValueError) as e:
+            logger.debug(f"Failed to restore from backup: {e}")
+
+        return status
+
+    async def get_summaryTransparencylog(self, build_id, launch_id):
+        """"
+        get all transparency log
+        """
+        try:
+            build_path = os.path.join(BUILD_DIR, build_id)
+            logger.info(f"Get build_path: {build_path}")
+            launch_path = os.path.join(BUILD_DIR, launch_id)
+            logger.info(f"Get launch_path: {launch_path}")
+            
+            def get_log(path,api):
+                try:
+                    logid = ''
+                    content = ''
+                    for i in [os.path.join(j) for j in os.listdir(path) if j.startswith(api)]:
+                        if f"{api}-transparency_log" in i:
+                            logid = i.split("-")[-1][:9]
+                            logger.info(f"Get {api}_logId: {api}_{logid}")
+
+                        if f"{api}-transparency.json" == i:
+                            log_path = os.path.join(path,i)
+                            logger.info(f"Get {api}_log for: {i}")
+                            with open(log_path, 'r', encoding='utf-8') as f:
+                                content = json.load(f)
+                            if not content:
+                                logger.error(f"get {api}-transparency log failed")
+                    
+                    if (not logid) or (not content):
+                        logger.debug("Get transparency log failed.")
+                        return None, None
+                    else:
+                        return logid, content
+                
+                except Exception as e:
+                    logger.debug(f"Get transparency log failed. {e}")
+                    return None, None
+
+            # get build transparency log
+            build_logId, build_content = get_log(build_path,"build")
+
+            publish_logId, publish_content = get_log(build_path,"publish")
+
+            launch_logId, launch_content = get_log(launch_path,"launch")
+
+            # get log id
+            logids = {"build": build_logId,
+                      "publish": publish_logId,
+                      "launch": launch_logId
+                      }
+
+            summary = {"build": f"{json.dumps(build_content,indent=2)}",
+                       "publish": f"{json.dumps(publish_content,indent=2)}",
+                       "launch": f"{json.dumps(launch_content,indent=2)}"
+                       }
+
+            respone = {"build_id": build_id, "launch_id": launch_id, "log_id": logids, "transparencylog": summary}
+
+            return respone
+        except Exception as e:
+            logger.error(f"Get Workflow transparency log failed")
+            return None
 
 
     async def verify_tlog(self,
                           raw_file: Dict[str, str],
                           bundle_file: Dict[str, str],
                           chain_file: Dict[str, str],
-                          email_addr: str) -> Dict[str, Any]:
+                          email_addr: str,
+                          identityToken) -> Dict[str, Any]:
         """
         Verify the transparency log
 
@@ -962,6 +1650,7 @@ class DockerService:
                     "summary": None,
                     "error": "Invalid chain file count"
                 }
+                logger.error("Invalid chain file count")
 
             # Validate filename formats
             validate_filenames(raw_file, "raw", r'^.*\.json$', "*.json")
@@ -985,24 +1674,28 @@ class DockerService:
                 file_path = os.path.join(filename)
                 await save_file_async(file_path, content)
 
-            chain_tlog = ChainedTransparencyLog.from_backup_file(
+            import pickle
+            identity_token = pickle.loads(base64.b64decode(identityToken.encode('utf-8')))
+
+            signer = ChainedTransparencyLog.from_backup_file(
+                identity_token=identity_token,
                 backup_file_path="chain.sigstore.json"
             )
-            print(f"Successfully restored chain: {chain_tlog.chain_id}")
-            print(f"Chain length: {chain_tlog.chain_length}")
-            print(f"Chain summary: {chain_tlog.get_chain_summary()}")
+            logger.info(f"Successfully restored chain: {signer.chain_id}")
+            logger.info(f"Chain length: {signer.chain_length}")
+            logger.info(f"Chain summary: {signer.get_chain_summary()}")
 
             # Get sigstore files and verify chain
             sigstore_files = list(Path(".").glob("entry*.sigstore.json"))
-            result = chain_tlog.verify_chain(
+            result = signer.verify_chain(
                 sigstore_file_list=sigstore_files,
                 policy=my_policy,
             )
 
             if result.success:
                 # Get verification summary
-                summary = chain_tlog.get_verification_summary()
-                print("Verification summary:", json.dumps(summary, indent=2))
+                summary = signer.get_verification_summary()
+                logger.info(f"Verification summary: {json.dumps(summary, indent=2)}")
 
                 return {
                     "success": True,
@@ -1011,7 +1704,7 @@ class DockerService:
                 }
         except ValueError as e:
             error_msg = f"Filename validation error: {e}"
-            print(error_msg)
+            logger.error(error_msg)
             return {
                 "success": False,
                 "summary": None,
@@ -1019,7 +1712,7 @@ class DockerService:
             }
         except (FileNotFoundError, ValueError) as e:
             error_msg = f"Failed to restore from backup: {e}"
-            print(error_msg)
+            logger.error(error_msg)
             return {
                 "success": False,
                 "summary": None,
@@ -1027,13 +1720,12 @@ class DockerService:
             }
         except Exception as e:
             error_msg = f"Unexpected error during verification: {e}"
-            print(error_msg)
+            logger.error(error_msg)
             return {
                 "success": False,
                 "summary": None,
                 "error": error_msg
             }
-
 
 async def save_file_async(file_path: str, content: str):
     directory = os.path.dirname(file_path)
@@ -1082,4 +1774,5 @@ def validate_filenames(file_dict: Dict[str, str], file_type: str, pattern: str, 
             f"Correct format examples: {examples}"
         )
 
-    print(f"{file_type.capitalize()} filename format validation passed, total {len(file_dict)} files")
+    logger.info(f"{file_type.capitalize()} filename format validation passed, total {len(file_dict)} files")
+

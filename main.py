@@ -1,11 +1,18 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi.responses import JSONResponse
 import os
 import uuid
+import asyncio
+import tempfile
 import base64
 from datetime import datetime
 import json
 import shutil
 import logging
+import hashlib
+import pickle
+from sigstore.oidc import Issuer
+from trusted_container_log import ChainedTransparencyLog
 from models import *
 from services import DockerService
 from kbs_service import KBSService
@@ -13,7 +20,7 @@ from config import (
     HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR,
     DOCKER_REGISTRY, DOCKER_REPOSITORY
 )
-
+import time
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -50,10 +57,15 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
         build_id = docker_service.generate_uuid(prefix="bld")
         logger.debug(f"Generated build ID: {build_id}")
         
+        tl_signer = ChainedTransparencyLog()
+        tl_signer.add_entry({"build_id": build_id})
+
         # Create build directory
         build_path = os.path.join(BUILD_DIR, build_id)
         os.makedirs(build_path, exist_ok=True)
         logger.debug(f"Created build directory: {build_path}")
+
+        tl_signer.add_entry({"build_path": build_path})
 
         # Save dockerfile content
         dockerfile_path = os.path.join(build_path, "Dockerfile")
@@ -68,6 +80,9 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
                 f.write(base64.b64decode(request.app_binary))
             logger.debug(f"Saved app binary to: {binary_path}")
 
+        binary_hash = hashlib.sha256(base64.b64decode(request.app_binary)).hexdigest()
+        tl_signer.add_entry({"app_binary_path": binary_path, "app_binary_hash": binary_hash})
+        
         # Save config files if provided
         if request.configs:
             config_dir = os.path.join(build_path, "configs")
@@ -77,6 +92,10 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
                 with open(config_path, "wb") as f:
                     f.write(base64.b64decode(config))
             logger.debug(f"Saved {len(request.configs)} config files")
+            config_hashes = [hashlib.sha256(base64.b64decode(c)).hexdigest() for c in request.configs]
+            tl_signer.add_entry({"config_dir": config_dir,
+                                 "config_count": len(request.configs),
+                                 "config_hashes": config_hashes})
 
         # Save data files if provided
         if request.data:
@@ -87,16 +106,20 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
                 with open(data_path, "wb") as f:
                     f.write(base64.b64decode(data))
             logger.debug(f"Saved {len(request.data)} data files")
+            data_hashes = [hashlib.sha256(base64.b64decode(d)).hexdigest() for d in request.data]
+            tl_signer.add_entry({"data_dir": data_dir,
+                                 "data_count": len(request.data),
+                                 "data_hashes": data_hashes})
         
         # Initialize build status
         docker_service.update_build_status(request.user_id, build_id, "submitted")
         logger.info(f"Build {build_id} status updated to: submitted")
-       
         # Start background build process
         background_tasks.add_task(
             build_container_async, 
             request, 
-            build_id
+            build_id,
+            tl_signer
         )
         logger.info(f"Started background build task for build ID: {build_id}")
         
@@ -112,7 +135,7 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
         logger.error(f"Build package request failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to start build: {str(e)}")
 
-def build_container_async(request: BuildPackageRequest, build_id: str):
+def build_container_async(request: BuildPackageRequest, build_id: str, tl_signer: ChainedTransparencyLog):
     """Function to build container in background with detailed status tracking"""
     try:
         # Start with preparing status
@@ -122,8 +145,9 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
         # Build the image
         image_name = f"{request.user_id}-{build_id}:latest"
         logger.debug(f"Building image: {image_name}")
+        tl_signer.add_entry({"image_name": image_name})
         docker_service.update_build_status(request.user_id, build_id, "building", step="Building container image")
-        build_success = docker_service.build_image(request.dockerfile, build_id, request.user_id)
+        build_success = docker_service.build_image(request.dockerfile, build_id, request.user_id, tl_signer)
         
         if not build_success:
             logger.error(f"Docker build failed for build ID: {build_id}")
@@ -139,7 +163,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
             logger.info(f"Get keys for build ID: {build_id}")
             # Get key from kbs
             logger.info(f"Starting get key from KBS")
-            attestation_result, decryption_key = docker_service.get_pubKey_from_KBS()
+            attestation_result, decryption_key = docker_service.get_pubKey_from_KBS(tl_signer)
             if attestation_result != "trusted":
                 docker_service.update_build_status(
                     request.user_id,
@@ -152,7 +176,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
             
             docker_service.update_build_status(request.user_id, build_id, "preparing", step="Generating signing and encryption keys")
             logger.info(f"Generating keys for build ID: {build_id}")
-            sign_key, cert, priv_enc_key, pub_enc_key = docker_service.generate_key(build_id)
+            sign_key, cert, priv_enc_key, pub_enc_key = docker_service.generate_key(build_id, tl_signer)
             
             if not sign_key or not cert or not priv_enc_key or not pub_enc_key:
                 logger.error(f"Failed to generate keys for build ID: {build_id}")
@@ -186,7 +210,8 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
             logger.info(f"Generating SBOM for image {image_name}")
             sbom_path = docker_service.generate_sbom(
                 image_name,
-                build_id
+                build_id,
+                tl_signer
             )
             if not sbom_path:
                 raise Exception("SBOM generation failed")
@@ -203,7 +228,8 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
                 encrypted_image_name = docker_service.encrypt_image(
                     image_name,
                     build_id,
-                    decryption_key['opensslPub']
+                    decryption_key['opensslPub'],
+                    tl_signer
                 )
                 if not encrypted_image_name:
                     raise Exception("Image encryption failed")
@@ -221,6 +247,36 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
             )
             return
 
+		# Save transparencyLog
+        logger.info("Save transparencyLog")
+        #docker_service.update_transparencylog_status(request.user_id, 'LogID', "adding", build_id)
+        os.environ['http_proxy'] = "http://child-prc.intel.com:913"
+        os.environ['https_proxy'] = "http://child-prc.intel.com:913"
+
+        if "http_proxy" in os.environ:
+            print("Proxy is setted.")
+        else:
+            print("Proxy is unsetted.")
+
+        from sigstore.oidc import Issuer
+        issuer = Issuer.production()
+        identity_token = issuer.identity_token()
+
+        tl_signer.set_identity_token(identity_token)
+        tlog_status, tlog_id = docker_service.save_transparencyLog("build",build_id,tl_signer)
+        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", build_id)
+        if tlog_status:
+            logger.info(f"Save build transparency success.")
+        else:
+            logger.info(f"Save build transparency failed.")
+
+		# Verify transparencyLog
+        logger.info("Verify transparencyLog")
+        verify_tlog_status = docker_service.verify_transpaerncyLog("build", identity_token, build_id)
+
+        del os.environ['http_proxy']
+        del os.environ['https_proxy']
+
         # Update build status with success
         logger.info(f"Build completed successfully for build ID: {build_id}")
         docker_service.update_build_status(
@@ -229,8 +285,10 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
             "success",
             step="Build completed successfully",
             image_id=image_name,
-            sbom_url=f"{image_name[4:]}.sbom.json",
+            log_id=tlog_id,
+            sbom_url=f"{image_name[4:].replace('test-','')}-sbom.json",
             image_url=f"{image_name[4:]}",
+            transparencyLog_verify=verify_tlog_status,
             cert_url=f"/api/artifacts/{build_id}/cosign.crt"
         )
         
@@ -241,6 +299,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str):
             build_id,
             "failed",
             step="Unexpected error",
+            log_id=f"{tlog_id}" if tlog_id else f"uuid-{uuid.uuid4()}",
             error_message=str(e)
         )
 
@@ -250,18 +309,32 @@ async def publish_package(request: PublishPackageRequest):
     try:
         image_name = request.image_id.split("/")[-1]
         registry_repo = f"{DOCKER_REPOSITORY}/{image_name}:latest-encrypted"
+
+        tl_signer = ChainedTransparencyLog()
+
         # 1. Push image and SBOM to registry
         try:
             docker_service.update_build_status(request.user_id, request.build_id, "pushing", step="Pushing image to registry")
             logger.info(f"Pushing image {request.image_id} to registry")
-
+            
             source_ref = f"oci:{request.image_id}"
             dest_ref = f"docker://{registry_repo}"
 
-            push_success = docker_service.push_image(source_ref, dest_ref)
+            os.environ['http_proxy'] = "http://child-prc.intel.com:913"
+            os.environ['https_proxy'] = "http://child-prc.intel.com:913"
+
+            if "http_proxy" in os.environ:
+                print("Proxy is setted.")
+            else:
+                print("Proxy is unsetted.")
+
+            push_success = docker_service.push_image(source_ref, dest_ref, tl_signer)
             if not push_success:
                 raise Exception("Image push failed")
             logger.debug(f"Successfully pushed image to {dest_ref}")
+            
+            #del os.environ['http_proxy']
+            #del os.environ['https_proxy']
 
         except Exception as e:
             logger.error(f"Image push failed for build ID {request.build_id}: {str(e)}")
@@ -274,17 +347,19 @@ async def publish_package(request: PublishPackageRequest):
             )
             return
         
-        # Sign & Push the image and SBOM
+        # Push SBOM
         logger.info(f"Starting get key from KBS")
-        attestation_result, decryption_key = docker_service.get_pubKey_from_KBS()
+        attestation_result, decryption_key = docker_service.get_pubKey_from_KBS(tl_signer)
         if decryption_key:
+        # if request.sign_key and request.cert:
             try:
                 docker_service.update_build_status(request.user_id, request.build_id, "signing", step="Signing image and SBOM")
                 # Sign image
                 logger.info(f"Signing image {request.image_id}")
                 sign_success = docker_service.sign_image(
                     request.image_id,
-                    decryption_key['cosignKey']
+                    decryption_key['cosignKey'],
+                    tl_signer
                 )
                 if not sign_success:
                     raise Exception("Image signing failed")
@@ -295,14 +370,18 @@ async def publish_package(request: PublishPackageRequest):
                 sbom_attestation_success = docker_service.create_sbom_attestation(
                     request.image_id,
                     request.sbom_url,
-                    decryption_key['cosignKey']
+                    decryption_key['cosignKey'],
+                    tl_signer
                 )
+                tl_signer.add_entry({"verfiy_sbom_status": sbom_attestation_success})
                 if not sbom_attestation_success:
+                    tl_signer.add_entry({"verfiy_sbom_status": sbom_attestation_success})
                     raise Exception("SBOM attestation failed")
                 logger.debug(f"Successfully created SBOM attestation for build ID {request.build_id}")
                 
             except Exception as e:
                 logger.error(f"Image signing or SBOM attestation failed for build ID {request.build_id}: {str(e)}")
+                tl_signer.add_entry({"error": f"{e}"})
                 docker_service.update_build_status(
                     request.user_id,
                     request.build_id,
@@ -313,32 +392,34 @@ async def publish_package(request: PublishPackageRequest):
                 return
 
         # 3. Publish evidence to transparent log if requested
-        log_id = request.build_id
-        '''
-        if request.log_evidence:
-            # Create evidence bundle
-            evidence = {
-                "image_id": request.image_id,
-                "user_id": request.user_id,
-                "timestamp": datetime.now().isoformat(),
-                "build_info": build_info.dict(),
-                "metadata": request.metadata
-            }
-            
-            # Submit to transparent log
-            log_id = await docker_service.publish_evidence(evidence)
-            if not log_id:
-                raise HTTPException(status_code=500, detail="Failed to publish evidence")
-        '''
+
+        from sigstore.oidc import Issuer
+        issuer = Issuer.production()
+        identity_token = issuer.identity_token()
+        tl_signer.set_identity_token(identity_token)
+
+		# Sign and submit to transparency log
+        tlog_status, log_id = docker_service.save_transparencyLog("publish", request.build_id, tl_signer)
+        docker_service.update_transparencylog_status(request.user_id, str(log_id), "added", request.build_id)
+        if tlog_status:
+            logger.info(f"Save publish transparency success.")
+        else:
+            logger.info(f"Save publish transparency failed.")
+
+		# Verify transparencyLog
+        logger.info("Verify transparencyLog")
+        verify_tlog_status = docker_service.verify_transpaerncyLog("publish", identity_token, request.build_id)
+
         return PublishPackageResponse(
             build_id=request.build_id,
             status="success",
-            image_url=f"{registry_repo}",
-            user_id=request.user_id,
-            # sbom_url=f"{registry_repo}.spdx.json",
-            log_id=f"tx-{log_id}" if log_id else f"uuid-{uuid.uuid4()}",
-            published_at=datetime.now()
-        )
+		    image_id=request.image_id.split('/')[-1],
+		    image_url=f"docker.io/{registry_repo}",
+		    user_id=request.user_id,
+		    transparencyLog_verify=verify_tlog_status,
+		    log_id=f"{log_id}" if log_id else f"uuid-{uuid.uuid4()}",
+		    published_at=datetime.now()
+		)
 
     except HTTPException:
         raise
@@ -365,15 +446,37 @@ async def get_build_result(build_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get build result: {str(e)}")
 
+@app.get("/api/transparency-log/{log_id}", response_model=TransparencyResult)
+async def get_transparencyLog(log_id: str):
+    """Get transparency log result by build ID"""
+    try:
+        tlog_result = docker_service.get_transparencyLog_status(log_id)
+
+        if not tlog_result:
+            raise HTTPException(status_code=404, detail="Transparency log not found")
+
+        return tlog_result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get transparency log result: {str(e)}")
+
 
 @app.post("/api/deploy-launch", response_model=LaunchResponse)
 async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTasks):
     """Deploy and launch container on worker nodes"""
     try:
+        tl_signer = ChainedTransparencyLog()
+
         # Generate launch ID
         launch_id = docker_service.generate_uuid(prefix="launch")
+        logger.info(f"CHECK launchID: {launch_id}")
+        tl_signer.add_entry({"launch_id": launch_id})
+
         # Create launch directory
         launch_path = os.path.join(BUILD_DIR, launch_id)
+        tl_signer.add_entry({"launch_path": launch_path})
         os.makedirs(launch_path, exist_ok=True)
 
         # Save launch configuration
@@ -394,7 +497,8 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
             launch_container_async,
             request,
             launch_id,
-            launch_path
+            launch_path,
+            tl_signer
         )
         
         return LaunchResponse(
@@ -412,7 +516,7 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
             detail=f"Failed to initiate launch: {str(e)}"
         )
 
-async def launch_container_async(request: LaunchRequest, launch_id: str, launch_path: str):
+async def launch_container_async(request: LaunchRequest, launch_id: str, launch_path: str, tl_signer: ChainedTransparencyLog):
     """Async function to launch container in background"""
     try:
         docker_service.update_launch_status(request.user_id, launch_id, "launching")
@@ -421,6 +525,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         log_file = os.path.join(launch_path, "launch.log")
         with open(log_file, "w") as f:
             f.write(f"Launch started at {datetime.now().isoformat()}\n")
+        tl_signer.add_entry({"launch-log":log_file})
 
         # 3. Perform attestation and handle decryption
         attestation_result = "trusted"
@@ -429,8 +534,12 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
             logger.info("Attestation Verity and get keys")
             attestation_result, decryption_key = await docker_service.verify_attestation(
                 request.image_id,
-                request.user_id
+                request.user_id,
+                tl_signer
             )
+            tl_signer.add_entry({"verify_image":attestation_result})
+            tl_signer.add_entry({"verify_keys":decryption_key})
+
             if attestation_result != "trusted":
                 docker_service.update_launch_status(
                     request.user_id,
@@ -439,11 +548,21 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                     error_message=f"Attestation failed: {attestation_result}"
                 )
                 logger.debug("Attestation Verity and get keys failed")
+                tl_signer.add_entry({"verify_image":attestation_result})
                 return
+
+        os.environ['http_proxy'] = "http://child-prc.intel.com:913"
+        os.environ['https_proxy'] = "http://child-prc.intel.com:913"
+
+        if "http_proxy" in os.environ:
+            print("Proxy is setted.")
+        else:
+            print("Proxy is unsetted.")
 
         # 1. Pull and verify image
         logger.info("Get encrypted iamge and decrypt")
         pull_success = docker_service.pull_image(
+            tl_signer,
             image_url=request.image_url,
             target_dir=launch_path,
             openssl_key=decryption_key['opensslKey']
@@ -464,8 +583,10 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
             sbom_valid = docker_service.verify_sbom(
                 request.image_url,
                 request.sbom_url,
+                tl_signer,
                 decryption_key['cosignPub']
             )
+            tl_signer.add_entry({"sbom_verify": sbom_valid})
             if not sbom_valid:
                 docker_service.update_launch_status(
                     request.user_id,
@@ -474,16 +595,18 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                     error_message="SBOM verification failed"
                 )
                 logger.debug("Verify SBOM failed")
+                tl_signer.add_entry({"sbom_verify": sbom_valid})
                 return
         
         # 4. Launch containers on worker nodes
         logger.info("Launch container")
         instance_ids = await docker_service.launch_containers(
+            tl_signer,
             image_url=request.image_url,
             user_id=request.user_id,
             launch_pth=launch_path
         )
-        
+        tl_signer.add_entry({"launch_instance_ids": instance_ids})
         if not instance_ids:
             docker_service.update_launch_status(
                 request.user_id,
@@ -492,10 +615,11 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                 error_message="Container launch failed"
             )
             logger.debug("Launch container failed")
+            tl_signer.add_entry({"launch_result": "failed"})
             return
             
         # 5. Create launch evidence
-        evidence = {
+        evidences = {
             "launch_id": launch_id,
             "image_id": request.image_id,
             "user_id": request.user_id,
@@ -505,8 +629,26 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         }
         
         # Submit to transparent log
-       # log_id = await docker_service.publish_evidence(evidence)
-        log_id = None
+
+        from sigstore.oidc import Issuer
+        issuer = Issuer.production()
+        identity_token = issuer.identity_token()
+
+        tl_signer.set_identity_token(identity_token)
+        tlog_status, log_id = docker_service.save_transparencyLog("launch",launch_id,tl_signer)
+        docker_service.update_transparencylog_status(request.user_id, str(log_id), "added", launch_id)
+        if tlog_status:
+            logger.info(f"Save build transparency success.")
+        else:
+            logger.info(f"Save build transparency failed.")
+
+        # Verify transparencyLog
+        logger.info("Verify transparencyLog")
+        verify_tlog_status = docker_service.verify_transpaerncyLog("launch", identity_token, launch_id)
+
+        del os.environ['http_proxy']
+        del os.environ['https_proxy']
+
         # Update launch status to success
         docker_service.update_launch_status(
             request.user_id,
@@ -514,7 +656,8 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
             status="success",
             validation="passed",
             attestation=attestation_result,
-            log_id=f"tx-{log_id}" if log_id else f"uuid-{uuid.uuid4()}",
+            evidence=evidences,
+            log_id=f"{log_id}" if log_id else f"uuid-{uuid.uuid4()}",
             instance_ids=instance_ids
         )
         
@@ -551,16 +694,41 @@ async def get_launch_result(launch_id: str):
             detail=f"Failed to get launch result: {str(e)}"
         )
 
+@app.post("/api/get-summaryTransparencylog", response_model=SummaryTransparencyRespone)
+async def get_summary_transparencylog(request: GetTransparencyRequest):
+    """Get launch result by launch ID"""
+    try:
+        res = await docker_service.get_summaryTransparencylog(request.build_id, request.launch_id)
+
+        if not res:
+            raise HTTPException(
+                status_code=404,
+                detail="Launch not found"
+            )
+
+        return res
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get launch result: {str(e)}"
+        )
+
+
 @app.post("/api/verify-tlog", response_model=VerificationSummaryResponse)
 async def verify_tlog(request: VerifyTlogRequest):
     """Verify transparency log"""
-
+    os.environ["http_proxy"]="http://child-prc.intel.com:913"
+    os.environ["https_proxy"]="http://child-prc.intel.com:913"
     try:
         verify_result = await docker_service.verify_tlog(
             request.raw_file,
             request.bundle_file,
             request.chain_file,
-            request.email_addr
+            request.email_addr,
+            request.identity_token
         )
 
         return verify_result
@@ -572,7 +740,6 @@ async def verify_tlog(request: VerifyTlogRequest):
             status_code=500,
             detail=f"Failed to verify transparency log: {str(e)}"
         )
-
 
 if __name__ == "__main__":
     import uvicorn

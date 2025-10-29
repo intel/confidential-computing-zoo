@@ -32,3 +32,6 @@ pyOpenSSL==23.3.0
 # Monitoring and Logging
 # prometheus-client==0.18.0
 structlog==23.2.0
+
+# Sigstore
+sigstore==3.6.5
