@@ -280,6 +280,33 @@ curl  "http://localhost:8000/api/transparency-log/{log_id}"
   }
 ```
 
+### 10. Get all taransparency log Query
+`POST /api/transparency-log/{log_id}`
+
+Query all transparency log.
+
+***Quick Check***
+```shell
+curl "http://localhost:8000/api/get-summaryTransparencylog" -H "Content-Type:application/json" -d '{"build_id":"{build_id}","launch_id":"{launch_id}"}'
+
+```
+**Response:**
+```json
+{
+  "build_id":"{build_id}",
+  "launch_id":"{launch_id}",
+  "log_id":{
+    "build":"xxxxxxxxx",
+    "publish":"xxxxxxxxx",
+    "launch":"xxxxxxxxx"
+    },
+  "transparencylog":{
+    "build":"<build transparency log coentent>",
+    "publish":"<publish transparency log coentent>",
+    "launch":"<launch transparency log coentent>"
+  }
+}
+```
 
 ## Quick Start
 
