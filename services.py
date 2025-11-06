@@ -10,7 +10,7 @@ import logging
 import time
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
-from models import BuildResult, LaunchResult, TransparencyResult
+from models import BuildResult, LaunchResult, PublishResult, TransparencyResult
 from config import *
 import hashlib
 from sigstore.oidc import Issuer
@@ -30,6 +30,7 @@ class DockerService:
     def __init__(self):
         self.builds: Dict[str, BuildResult] = {}
         self.launchs: Dict[str, LaunchResult] = {}
+        self.publishs: Dict[str, PublishResult] = {}
         self.transparencyLog: Dict[str, TransparencyResult] = {}
 
     def generate_uuid(self, prefix: str = "bld") -> str:
@@ -818,7 +819,60 @@ class DockerService:
                 
         except Exception as e:
             logger.error(f"Error updating build status for {build_id}: {str(e)}")
+
     
+    def get_publish_status(self, build_id: str) -> Optional[PublishResult]:
+        """Get publish status by publish_id"""
+        publishID = "pub-" + build_id.split("-")[-1]
+        return self.publishs.get(publishID)
+    
+    def update_publish_status(self,user_id: str, build_id: str, status: str, publish_id: str, step: str = None, **kwargs):
+        try:
+            if publish_id in self.publishs:
+                publish_result = self.publishs[publish_id]
+                old_status = publish_result.status
+                publish_result.status = status
+                publish_result.updated_at = datetime.now()
+                
+                if step:
+                    publish_result.current_step = step
+                
+                # Log status changes
+                if old_status != status:
+                    logger.info(f"Publish {publish_id} status: {old_status} -> {status}")
+                
+                # Update additional fields
+                for key, value in kwargs.items():
+                    if hasattr(publish_result, key):
+                        setattr(publish_result, key, value)
+                        logger.debug(f"Updated {key} for publish {publish_id}")
+                
+                # Trigger cleanup for completed builds
+                if status in ['success', 'failed'] and status != old_status:
+                    # Clean up in background (keep logs for failed builds)
+                    try:
+                        keep_logs = (status == 'failed')
+                        self.cleanup_build_artifacts(build_id, keep_logs=keep_logs)
+                    except Exception as e:
+                        logger.warning(f"Cleanup failed for build {publish_id}: {e}")
+                        
+            else:
+                # Create new build result
+                logger.info(f"Creating new publish status for {publish_id}: {status}")
+                self.publishs[publish_id] = PublishResult(
+                    user_id=user_id,
+                    publish_id=publish_id,
+                    build_id=build_id,
+                    status=status,
+                    created_at=datetime.now(),
+                    updated_at=datetime.now(),
+                    **kwargs
+                )
+                
+        except Exception as e:
+            logger.error(f"Error updating publish status for {build_id}: {str(e)}")
+
+
     def cleanup_build_artifacts(self, build_id: str, keep_logs: bool = True) -> bool:
         """Clean up temporary build artifacts to save disk space"""
         try:
@@ -1356,21 +1410,23 @@ class DockerService:
             tl_signer.add_entry({"error": f"{str(e)}"})
 
 
-    def get_launch_status(self, launch_id: str) -> Optional[BuildResult]:
+    def get_launch_status(self, launch_id: str) -> Optional[LaunchResult]:
         """Get launch status by launch_id"""
         return self.launchs.get(launch_id)
 
 
-    async def launch_containers(self,  tl_signer: ChainedTransparencyLog, image_url, user_id, launch_pth):
+    async def launch_containers(self, tl_signer, image_url, image_id, launch_pth):
         # skopeo copy oci:encrypt/ docker-daemon:test_pull:latest
         image_dir = 'oci:' + os.path.join(launch_pth,'encrypted')
-        Newimage_name = 'docker-daemon:'+ user_id + ":latest"
+        Newimage_name = 'docker-daemon:'+ image_id + ":latest"
+        
         try:
             cmd = [SKOPEO_CMD, "copy", image_dir, Newimage_name]
-            res = subprocess.run(cmd, capture_output=True, text=True)
-
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            
             if res.returncode == 0:
                 logger.info(f"Success add {Newimage_name} image.")
+                logger.debug(f"CMD: {' '.join(cmd)}")
                 tl_signer.add_entry({"pullImage_cmd": " ".join(cmd), "pullImage_status": "success"})
             else:
                 logger.info("Failed add image.")
@@ -1378,14 +1434,32 @@ class DockerService:
                 tl_signer.add_entry({"pullImage_status": "failed"})
                 return False
 
-            # docker run -d -it -p 8088:8088 test /bin/bash
-            #docker images --format '{{.ID}}'
-            get_imageID = [DOCKER_CMD, "images", "--format", "'{{.ID}}'"]
-            get_imageID_res = subprocess.run(get_imageID, capture_output=True, text=True)
-            image_id = get_imageID_res.stdout.replace("'","").split("\n")[0]
+            #get_imageID = [DOCKER_CMD, "images", "--format", "'{{.ID}}'"]
+            cmd = ["docker", "images","--format", "{{.Repository}} {{.Tag}} {{.ID}}","--no-trunc"]
+            output = subprocess.check_output(cmd, text=True)
+            images = []
+            for line in output.strip().split('\n'):
+                if not line: continue
+                repo, tag, full_id = line.split(' ', 2)
+                short_id = full_id.split(':')[-1][:12]
+                images.append({
+                    "repository": repo,
+                    "tag": tag,
+                    "id": short_id,
+                    "full_id": full_id
+                    })
 
-            docker_cmd = [DOCKER_CMD, "run", "-d", "-it",  "-p", "8088:8088", image_id, "/bin/bash"]
-            dockerRUn = subprocess.run(docker_cmd, capture_output=True, text=True)
+            imageID = ''
+            for i in images:
+                if image_id in i['repository']:
+                    imageID = i['id']
+                    break
+            logger.info(f"Get image id {imageID}")
+
+            # run docker image
+            docker_cmd = [DOCKER_CMD + " run -d -it --privileged -e HF_HUB_OFFLINE=1 -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf -v /dev/tdx_guest:/dev/tdx_guest -v /usr/share/doc/libtdx-attest-dev/examples/:/td-attest/ -v /etc/hosts:/etc/hosts -v /etc/tdx-attest.conf:/etc/tdx-attest.conf --network=host " +imageID]
+            logger.info(f"Runcmd : {" ".join(docker_cmd)}")
+            dockerRUn = subprocess.run(docker_cmd, shell=True, capture_output=True, text=True)
             if dockerRUn.returncode == 0:
                 logger.info(f"Success run image {image_id}.")
                 tl_signer.add_entry({"launch_cmd": " ".join(docker_cmd),
@@ -1603,12 +1677,13 @@ class DockerService:
                     return None, None
 
             # get build transparency log
+            #build_log = [os.path.join(i) for i in os.listdir(build_path) if i.startswith('build')]
             build_logId, build_content = get_log(build_path,"build")
-
+            #publish_log = [os.path.join(i) for i in os.listdir(build_path) if i.startswith('publish')]
             publish_logId, publish_content = get_log(build_path,"publish")
-
+            #launch_log = [os.path.join(i) for i in os.listdir(launch_path) if i.startswith('launch')]
             launch_logId, launch_content = get_log(launch_path,"launch")
-
+            
             # get log id
             logids = {"build": build_logId,
                       "publish": publish_logId,
@@ -1619,9 +1694,10 @@ class DockerService:
                        "publish": f"{json.dumps(publish_content,indent=2)}",
                        "launch": f"{json.dumps(launch_content,indent=2)}"
                        }
-
+            #logger.info(f"Workflow transparency log: {json.dumps(summary, indent=2)}")
             respone = {"build_id": build_id, "launch_id": launch_id, "log_id": logids, "transparencylog": summary}
 
+            #logger.info(f"Workflow transparency log: {json.dumps(respone, indent=2)}")
             return respone
         except Exception as e:
             logger.error(f"Get Workflow transparency log failed")

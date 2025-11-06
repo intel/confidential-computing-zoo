@@ -1,6 +1,6 @@
 #!/bin/bash
 #Login DockerHub
-docker login
+docker login -u {docker_hub account}
 
 export no_proxy="localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,.local"
 echo "Start attestation-agent"

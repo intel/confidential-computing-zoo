@@ -20,102 +20,228 @@ A RESTful API service framework built with Python and FastAPI for handling Docke
 
 Submit container build requests with Dockerfile, application binary, configs, and optional signing/encryption.
 
+***Quick Check***
+```shell
+curl -X POST "http://localhost:8000/api/build-package" -H "Content-Type:application/json" -d '{"dockerfile":"FROM python:3.9-slim\nWORKDIR .\nCOPY . .","app_binary":"dGVzdCBiaW5hcnkK","configs":["Y29uZmlnCg=="],"data":["ZGF0YQo="],"encrypt":true,"user_id":"test-user"}'
+```
+
 **Request Body:**
 ```json
 {
-  "dockerfile": "<file>",           
-  "app_binary": "<file>",           
-  "configs": ["file1", "file2"],   
-  "data": ["file3"],                
-  "sign_key": "<private_key.pem>",
-  "cert": "<cert.pem>",            
-  "encrypt": true,               
-  "user_id": "user-001"           
+  "dockerfile": "<file>",
+  "app_binary": "<file>", // Optional
+  "configs": ["file1", "file2"],  // Optional
+  "data": ["file3"],  // Optional
+  "sign_key": "<private_key.pem>", // Optional
+  "cert": "<cert.pem>",  // Optional
+  "encrypt": true, 
+  "user_id": "test-user"
 }
 ```
 
 **Response:**
 ```json
 {
-  "build_id": "bld-######",       
-  "status": "submitted"          
+  "build_id": "bld-xxx",
+  "status": "", // build image status
+  "estimated_time": "timestamp", 
+  "user_id": "user_id",
+  "transparencyLog_verify": ""
 }
 ```
+
+
 
 ### 2. Build Result Query
 `GET /api/build-result/{build_id}`
 
 Query build status and results including image ID, SBOM URL and certificates.
 
+***Quick Check***
+```shell
+curl  "http://localhost:8000/api/build-result/{build_id}"
+```
+
 **Response:**
 ```json
 {
-  "build_id": "bld-8de9932",           
-  "status": "success",                 
-  "image_id": "sha256:abcd1234",        
-  "sbom_url": "https://.../sbom.json",  
-  "image_url": "docker.io/myrepo/secure-app", 
-  "cert_url": "https://.../cert.pem"  
+  "user_id":"test-user",
+  "build_id":"{build_id}",
+  "status":"success",
+  "current_step":"Build completed successfully",
+  "image_id":"oci:./builds/{build_id}/test-{build_id}",
+  "sbom_url":"./builds/{build_id}/user-{build_id}-sbom.json",
+  "image_url":"./builds/{build_id}/user-{build_id}",
+  "cert_url":"/api/artifacts/{build_id}/cosign.crt",
+  "log_id":"xxxxxxx",
+  "transparencyLog_verify":"success",
+  "error_message":null,
+  "created_at":"<timestamp>",
+  "updated_at":"<timestamp>"
 }
 ```
 
-### 3. Publish Package
-`PUT /api/publish-package`
+### 3. Build transparency Query
+`GET /api/transparency-log/{log_id}`
+
+Query transparency status including transparency log content, build_id and log_id.
+
+***Quick Check***
+```shell
+curl  "http://localhost:8000/api/transparency-log/{log_id}"
+
+```
+**Response:**
+```json
+  {
+    "user_id":"test-user",
+    "build_id":"bld-xxxxxx",
+    "log_id":"xxxxxxxxx",
+    "status":"added",
+    "transparency_log":"<log content>",
+    "transparencyLog_verify":null,
+    "error_message":null
+  }
+```
+
+### 4. Publish Package
+`POST /api/publish-package`
 
 Publish built image and SBOM with key management and evidence logging.
 
+***Quick Check***
+```shell
+curl  curl -X POST "http://localhost:8000/api/publish-package" -H "Content-Type:application/json" -d '{"build_id":"{build_id}","image_id":"{image_id}","user_id":"{user_id}","sbom_url":"{sbom_url}","log_evidence":true}'
+```
+
 **Request:**
 ```json
-{
-  "image_id": "sha256:abcd1234",   
-  "user_id": "user-001",          
-  "log_evidence": true,        
-  "metadata": {
-    "tags": ["latest"],             
-    "description": "Secure application image"
+
+  {
+    "build_id":"{build_id}",
+    "status":"success",
+    "image_url":"docker.io/{docker_account}/test-{build_id}:latest-encrypted", // Optional
+    "user_id":"{user_id}",
+    "image_id":"test-{build_id}",
+    "sbom_url":"./builds/{build_id}/{build_id}-sbom.json",
+    "log_evidence":"True"
   }
-}
+```
+
+**Response:**
+```json
+  {
+    "build_id":"{build_id}",
+    "status":"success",
+    "image_url":"docker.io/trustedzoo/test-{build_id}:latest-encrypted",
+    "user_id":"test-user",
+    "image_id":"test-{build_id}",
+    "sbom_url":"./builds/{build_id}/{build_id}-sbom.json",
+    "log_id":"xxxxxxxxx",
+    "transparencyLog_verify":"success",
+    "published_at":"<timestamp>"
+  }
+```
+
+### 5. Publish Result Query
+`GET /api/publish-result/{build_id}`
+
+Query publish status and results including image ID, SBOM URL ...
+
+***Quick Check***
+```shell
+curl  "http://localhost:8000/api/publish-result/{build_id}"
 ```
 
 **Response:**
 ```json
 {
-  "status": "success",                
-  "image_url": "docker.io/myrepo/secure-app:latest",
-  "sbom_url": "https://.../sbom.json", 
-  "log_id": "tx-xxxxxxx"      
+  "user_id":"test-user",
+  "build_id":"{build_id}",
+  "status":"success",
+  "current_step":"Build completed successfully",
+  "image_id":"oci:./builds/{build_id}/user-{build_id}",
+  "sbom_url":"./builds/{build_id}/user-{build_id}-sbom.json",
+  "image_url":"./builds/{build_id}/user-{build_id}",
+  "cert_url":"/api/artifacts/{build_id}/cosign.crt",
+  "log_id":"xxxxxxx",
+  "transparencyLog_verify":"success",
+  "error_message":null,
+  "created_at":"<timestamp>",
+  "updated_at":"<timestamp>"
 }
 ```
 
-### 4. Deploy Launch
+### 6. Publish transparency Query
+`GET /api/transparency-log/{log_id}`
+
+Query transparency status including transparency log content, build_id and log_id.
+
+***Quick Check***
+```shell
+curl  "http://localhost:8000/api/transparency-log/{log_id}"
+
+```
+**Response:**
+```json
+  {
+    "user_id":"test-user",
+    "build_id":"bld-xxxxxx",
+    "log_id":"xxxxxxxxx",
+    "status":"added",
+    "transparency_log":"<log content>",
+    "transparencyLog_verify":null,
+    "error_message":null
+  }
+
+```
+
+
+
+### 7. Deploy Launch
 `POST /api/deploy-launch`
 
 Launch container with attestation and secure deployment.
 
+***Quick Check***
+```shell
+curl -X POST "http://localhost:8000/api/deploy-launch" -H "Content-Type:application/json" -d '{"image_id":"test-{build_id}","build_id": "{build_id}","user_id":"test-user","image_url":"docker.io/{docker_account}/test-{build_id}:latest-encrypted","sbom_url":null,"attestation_required":true}'
+```
+
 **Request:**
 ```json
 {
-  "image_url": "docker.io/secure/app:latest",    
-  "image_id": "sha256:abcd1234",              
-  "sbom_url": "https://registry.example.com/sbom.json", 
-  "user_id": "user-001",                           
-  "attestation_required": true                    
+  "image_id":"test-{build_id}",
+  "build_id": "{build_id}",
+  "user_id":"test-user",
+  "image_url":"docker.io/{docker_account}/test-{build_id}:latest-encrypted", // Optional
+  "sbom_url":null,  // Optional
+  "attestation_required":true
 }
 ```
 
 **Response:**
 ```json
 {
-  "launch_id": "launch-#######",       
-  "status": "initiated"                
+  "launch_id":"launch-xxxxxxx",
+  "status":"initiated",
+  "user_id":"test-user",
+  "log_id":null,
+  "transparencyLog_verify":null,
+  "created_at":"<timestamp>"
 }
 ```
 
-### 5. Launch Result Query
+### 8. Launch Result Query
 `GET /api/launch-result/{launch_id}`
 
 Query launch status and attestation results.
 
+***Quick Check***
+```shell
+curl "http://localhost:8000/api/launch-result/{launch_id}"
+
+```
 **Response:**
 ```json
 {
@@ -130,6 +256,30 @@ Query launch status and attestation results.
   ]
 }
 ```
+
+### 9. Launch transparency Query
+`GET /api/transparency-log/{log_id}`
+
+Query transparency status including transparency log content, build_id and log_id.
+
+***Quick Check***
+```shell
+curl  "http://localhost:8000/api/transparency-log/{log_id}"
+
+```
+**Response:**
+```json
+  {
+    "user_id":"test-user",
+    "build_id":"bld-xxxxxx",
+    "log_id":"xxxxxxxxx",
+    "status":"added",
+    "transparency_log":"<log content>",
+    "transparencyLog_verify":null,
+    "error_message":null
+  }
+```
+
 
 ## Quick Start
 
