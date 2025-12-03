@@ -26,6 +26,7 @@ class PublishPackageRequest(BaseModel):
     image_id: str
     user_id: str
     log_evidence: bool = True
+    image_url: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
@@ -36,6 +37,8 @@ class PublishPackageResponse(BaseModel):
     status: str
     image_url: str
     user_id: str
+    image_id: str
+    image_url: str
     sbom_url: Optional[str] = None
     log_id: Optional[str] = None
     transparencyLog_verify: str
@@ -74,6 +77,22 @@ class LaunchResponse(BaseModel):
     transparencyLog_verify: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
+class PublishResult(BaseModel):
+    user_id: str
+    publish_id: str
+    build_id: str
+    status: str = "publishing"
+    current_step: Optional[str] = None
+    image_id: Optional[str] = None
+    sbom_url: Optional[str] = None
+    image_url: Optional[str] = None
+    cert_url: Optional[str] = None
+    log_id: Optional[str] = None
+    transparencyLog_verify: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
 class LaunchResult(BaseModel):
     user_id: str
     launch_id: str
@@ -81,7 +100,7 @@ class LaunchResult(BaseModel):
     validation: Optional[str] = None
     attestation: Optional[str] = None
     log_id: Optional[str] = None
-    instance_ids: List[str] = []
+    instance_ids: List[Any] = []
     transparencyLog_verify: Optional[str] = None
     evidence: Dict[str, Any] = {}
     error_message: Optional[str] = None

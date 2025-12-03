@@ -26,8 +26,8 @@ docker==6.1.3
 # skopeo-bin==0.2.3
 
 # Crypto and Security
-cryptography==41.0.5
-pyOpenSSL==23.3.0
+cryptography>=41.0.5
+pyOpenSSL>=23.3.0
 
 # Monitoring and Logging
 # prometheus-client==0.18.0

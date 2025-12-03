@@ -20,7 +20,7 @@ from config import (
     HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR,
     DOCKER_REGISTRY, DOCKER_REPOSITORY
 )
-import time
+
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -314,7 +314,12 @@ async def publish_package(request: PublishPackageRequest):
 
         # 1. Push image and SBOM to registry
         try:
-            docker_service.update_build_status(request.user_id, request.build_id, "pushing", step="Pushing image to registry")
+            # Generate build ID
+            publish_id = "pub-" + request.build_id.split("-")[-1]
+            logger.debug(f"Generated build ID: {publish_id}")
+            tl_signer.add_entry({"publishID": publish_id})
+
+            docker_service.update_publish_status(request.user_id, request.build_id, "pushing", publish_id, step="Pushing image to registry")
             logger.info(f"Pushing image {request.image_id} to registry")
             
             source_ref = f"oci:{request.image_id}"
@@ -332,16 +337,22 @@ async def publish_package(request: PublishPackageRequest):
             if not push_success:
                 raise Exception("Image push failed")
             logger.debug(f"Successfully pushed image to {dest_ref}")
+            tl_signer.add_entry({
+                "publish_source": source_ref,
+                "publish_dest": dest_ref,
+                "publishImage_status": push_success
+                })
             
-            #del os.environ['http_proxy']
-            #del os.environ['https_proxy']
 
         except Exception as e:
             logger.error(f"Image push failed for build ID {request.build_id}: {str(e)}")
+            tl_signer.add_entry({"publish_status": "failed",
+                                "error": str(e)})
             docker_service.update_build_status(
                 request.user_id,
                 request.build_id,
                 "failed",
+                publish_id,
                 step="Image push failed",
                 error_message=f"Image push failed: {str(e)}"
             )
@@ -353,7 +364,7 @@ async def publish_package(request: PublishPackageRequest):
         if decryption_key:
         # if request.sign_key and request.cert:
             try:
-                docker_service.update_build_status(request.user_id, request.build_id, "signing", step="Signing image and SBOM")
+                docker_service.update_publish_status(request.user_id, request.build_id, "signing", publish_id, step="Signing image and SBOM")
                 # Sign image
                 logger.info(f"Signing image {request.image_id}")
                 sign_success = docker_service.sign_image(
@@ -364,6 +375,7 @@ async def publish_package(request: PublishPackageRequest):
                 if not sign_success:
                     raise Exception("Image signing failed")
                 logger.debug(f"Successfully signed image {request.image_id}")
+                tl_signer.add_entry({"publish_sbom": sign_success})
 
                 # Create SBOM attestation
                 logger.info(f"Creating SBOM attestation for build ID {request.build_id}")
@@ -382,16 +394,18 @@ async def publish_package(request: PublishPackageRequest):
             except Exception as e:
                 logger.error(f"Image signing or SBOM attestation failed for build ID {request.build_id}: {str(e)}")
                 tl_signer.add_entry({"error": f"{e}"})
-                docker_service.update_build_status(
+                docker_service.update_publish_status(
                     request.user_id,
                     request.build_id,
                     "failed",
+                    publish_id,
                     step="Signing failed",
+                    #image_id=request.image_id,
+                    #sbom_url=request.sbom_url,
+                    #image_url=request.image_url,
                     error_message=f"Image signing or SBOM attestation failed: {str(e)}"
                 )
                 return
-
-        # 3. Publish evidence to transparent log if requested
 
         from sigstore.oidc import Issuer
         issuer = Issuer.production()
@@ -399,8 +413,8 @@ async def publish_package(request: PublishPackageRequest):
         tl_signer.set_identity_token(identity_token)
 
 		# Sign and submit to transparency log
-        tlog_status, log_id = docker_service.save_transparencyLog("publish", request.build_id, tl_signer)
-        docker_service.update_transparencylog_status(request.user_id, str(log_id), "added", request.build_id)
+        tlog_status, tlog_id = docker_service.save_transparencyLog("publish", request.build_id, tl_signer)
+        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", request.build_id)
         if tlog_status:
             logger.info(f"Save publish transparency success.")
         else:
@@ -410,14 +424,24 @@ async def publish_package(request: PublishPackageRequest):
         logger.info("Verify transparencyLog")
         verify_tlog_status = docker_service.verify_transpaerncyLog("publish", identity_token, request.build_id)
 
+        docker_service.update_publish_status(request.user_id, request.build_id, "success", publish_id,
+                                             step="complete publish verify",
+                                             transparencyLog_verify=verify_tlog_status,
+                                             log_id=tlog_id,
+                                             image_id=request.image_id.split('/')[-1],
+                                             sbom_url=request.sbom_url,
+                                             image_url=f"docker.io/{registry_repo}"
+                                             )
         return PublishPackageResponse(
             build_id=request.build_id,
+            publish_id=publish_id,
             status="success",
 		    image_id=request.image_id.split('/')[-1],
+            sbom_url=request.sbom_url,
 		    image_url=f"docker.io/{registry_repo}",
 		    user_id=request.user_id,
 		    transparencyLog_verify=verify_tlog_status,
-		    log_id=f"{log_id}" if log_id else f"uuid-{uuid.uuid4()}",
+		    log_id=f"{tlog_id}" if tlog_id else f"uuid-{uuid.uuid4()}",
 		    published_at=datetime.now()
 		)
 
@@ -429,6 +453,22 @@ async def publish_package(request: PublishPackageRequest):
             detail=f"Failed to publish package: {str(e)}"
         )
 
+
+@app.get("/api/publish-result/{build_id}", response_model=PublishResult)
+async def get_publish_result(build_id: str):
+    """Get publish result by publish ID"""
+    try:
+        publish_result = docker_service.get_publish_status(build_id)
+        
+        if not publish_result:
+            raise HTTPException(status_code=404, detail="Publish not found")
+        
+        return publish_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get publish result: {str(e)}")
 
 @app.get("/api/build-result/{build_id}", response_model=BuildResult)
 async def get_build_result(build_id: str):
@@ -603,7 +643,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         instance_ids = await docker_service.launch_containers(
             tl_signer,
             image_url=request.image_url,
-            user_id=request.user_id,
+            image_id=request.image_id,
             launch_pth=launch_path
         )
         tl_signer.add_entry({"launch_instance_ids": instance_ids})
@@ -627,8 +667,6 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
             "attestation_result": attestation_result,
             "instance_ids": instance_ids
         }
-        
-        # Submit to transparent log
 
         from sigstore.oidc import Issuer
         issuer = Issuer.production()
@@ -657,6 +695,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
             validation="passed",
             attestation=attestation_result,
             evidence=evidences,
+            transparencyLog_verify=verify_tlog_status,
             log_id=f"{log_id}" if log_id else f"uuid-{uuid.uuid4()}",
             instance_ids=instance_ids
         )
