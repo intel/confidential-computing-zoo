@@ -50,7 +50,7 @@ curl -X POST "http://localhost:8000/api/build-package" -H "Content-Type:applicat
 }
 ```
 
-### 2. Build Result Query
+### 2. Query Build Result 
 `GET /api/build-result/{build_id}`
 
 Query build status and results including image ID, SBOM URL and certificates.
@@ -118,7 +118,7 @@ curl  curl -X POST "http://localhost:8000/api/publish-package" -H "Content-Type:
   }
 ```
 
-### 4. Publish Result Query
+### 4. Query Publish Result
 `GET /api/publish-result/{build_id}`
 
 Query publish status and results including image ID, SBOM URL ...
@@ -182,7 +182,7 @@ curl -X POST "http://localhost:8000/api/deploy-launch" -H "Content-Type:applicat
 }
 ```
 
-### 6. Launch Result Query
+### 6. Query Launch Result
 `GET /api/launch-result/{launch_id}`
 
 Query launch status and attestation results.
