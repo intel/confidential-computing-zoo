@@ -50,8 +50,6 @@ curl -X POST "http://localhost:8000/api/build-package" -H "Content-Type:applicat
 }
 ```
 
-
-
 ### 2. Build Result Query
 `GET /api/build-result/{build_id}`
 
@@ -81,30 +79,7 @@ curl  "http://localhost:8000/api/build-result/{build_id}"
 }
 ```
 
-### 3. Build transparency Query
-`GET /api/transparency-log/{log_id}`
-
-Query transparency status including transparency log content, build_id and log_id.
-
-***Quick Check***
-```shell
-curl  "http://localhost:8000/api/transparency-log/{log_id}"
-
-```
-**Response:**
-```json
-  {
-    "user_id":"test-user",
-    "build_id":"bld-xxxxxx",
-    "log_id":"xxxxxxxxx",
-    "status":"added",
-    "transparency_log":"<log content>",
-    "transparencyLog_verify":null,
-    "error_message":null
-  }
-```
-
-### 4. Publish Package
+### 3. Publish Package
 `POST /api/publish-package`
 
 Publish built image and SBOM with key management and evidence logging.
@@ -143,7 +118,7 @@ curl  curl -X POST "http://localhost:8000/api/publish-package" -H "Content-Type:
   }
 ```
 
-### 5. Publish Result Query
+### 4. Publish Result Query
 `GET /api/publish-result/{build_id}`
 
 Query publish status and results including image ID, SBOM URL ...
@@ -172,33 +147,8 @@ curl  "http://localhost:8000/api/publish-result/{build_id}"
 }
 ```
 
-### 6. Publish transparency Query
-`GET /api/transparency-log/{log_id}`
 
-Query transparency status including transparency log content, build_id and log_id.
-
-***Quick Check***
-```shell
-curl  "http://localhost:8000/api/transparency-log/{log_id}"
-
-```
-**Response:**
-```json
-  {
-    "user_id":"test-user",
-    "build_id":"bld-xxxxxx",
-    "log_id":"xxxxxxxxx",
-    "status":"added",
-    "transparency_log":"<log content>",
-    "transparencyLog_verify":null,
-    "error_message":null
-  }
-
-```
-
-
-
-### 7. Deploy Launch
+### 5. Deploy Launch
 `POST /api/deploy-launch`
 
 Launch container with attestation and secure deployment.
@@ -232,7 +182,7 @@ curl -X POST "http://localhost:8000/api/deploy-launch" -H "Content-Type:applicat
 }
 ```
 
-### 8. Launch Result Query
+### 6. Launch Result Query
 `GET /api/launch-result/{launch_id}`
 
 Query launch status and attestation results.
@@ -257,7 +207,7 @@ curl "http://localhost:8000/api/launch-result/{launch_id}"
 }
 ```
 
-### 9. Launch transparency Query
+### 7. Query transparency log
 `GET /api/transparency-log/{log_id}`
 
 Query transparency status including transparency log content, build_id and log_id.
@@ -280,8 +230,8 @@ curl  "http://localhost:8000/api/transparency-log/{log_id}"
   }
 ```
 
-### 10. Get all taransparency log Query
-`POST /api/transparency-log/{log_id}`
+### 8. Query all taransparency log
+`POST /api/get-summaryTransparencylog`
 
 Query all transparency log.
 

@@ -1458,7 +1458,7 @@ class DockerService:
 
             # run docker image
             docker_cmd = [DOCKER_CMD + " run -d -it --privileged -e HF_HUB_OFFLINE=1 -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf -v /dev/tdx_guest:/dev/tdx_guest -v /usr/share/doc/libtdx-attest-dev/examples/:/td-attest/ -v /etc/hosts:/etc/hosts -v /etc/tdx-attest.conf:/etc/tdx-attest.conf --network=host " +imageID]
-            logger.info(f"Runcmd : {" ".join(docker_cmd)}")
+            logger.info(f"Runcmd : {' '.join(docker_cmd)}")
             dockerRUn = subprocess.run(docker_cmd, shell=True, capture_output=True, text=True)
             if dockerRUn.returncode == 0:
                 logger.info(f"Success run image {image_id}.")
@@ -1468,7 +1468,7 @@ class DockerService:
                                      })
             else:
                 logger.info("Failed run image.")
-                logger.debug(f"CMD: {" ".join(docker_cmd)}")
+                logger.debug(f"CMD: {' '.join(docker_cmd)}")
                 tl_signer.add_entry({"launch_status": "failed",
                                      "launch_stderr": dockerRUn.stderr})
                 return False
