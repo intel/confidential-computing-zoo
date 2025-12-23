@@ -30,4 +30,6 @@ kill %%
 RA_TLS_ALLOW_DEBUG_ENCLAVE_INSECURE=1 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 ./clf_server 
 -S0a85b393078ee06dafc58d6692a7a59bee27fdce2b70ae45730b501af6ae290a -d0 -v0 
 -s58a7129dc07ba462ca8317d578a3d7cb -p4433 -ccerts/server_signed_cert.crt -kcerts/server_private_key.pem
+
+# <server_signed_cert.crt> and <server_private_key.pem> can be created by ~/confidential-computing-zoo/cczoo/cross_lang_framework/tools/gen_cert.sh
 ```
