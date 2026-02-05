@@ -74,6 +74,74 @@ Intel TDX based TEE significantly reduce privileged infrastructure exposure for 
 
 ## 3. OpenClaw-CC Demo Solution
 
+### 3.1 Data at rest protection
+
+Create an encrypted directory to store OpenClaw configuration files, ensuring at rest data security.
+
+Create a LUKS block file and bind it to a free loop device:
+
+```BASH
+# Debian/Ubuntu
+apt install -y cryptsetup
+
+# CentOS
+yum install -y cryptsetup
+
+git clone https://github.com/intel/confidential-computing-zoo.git
+cd confidential-computing-zoo/cczoo/openclaw-cc/luks_tools
+export VFS_SIZE=10G  # Adjust size as needed
+export VIRTUAL_FS=/home/vfS
+./create_encrypted_vfs.sh ${VFS_SIZE} ${VIRTUAL_FS}
+```
+
+According to the loop device number output by the above command (such as `/dev/loop0`), create the `LOOP_DEVICE` environment variable to bind the loop device:
+
+```BASH
+export LOOP_DEVICE=<the binded loop device>
+```
+
+On first execution, the block loop device needs to be formatted as ext4:
+
+```BASH
+mkdir /home/encrypted_storage
+./mount_encrypted_vfs.sh ${LOOP_DEVICE} format
+```
+
+**To secure OpenClaw's at rest data by storing configuration and state directories (sessions, logs, caches) in an encrypted location, configure these environment variables:**
+
+```BASH
+# State directory for mutable data (sessions, logs, caches).
+export OPENCLAW_STATE_DIR="/home/encrypted_storage"
+# Config path for OpenClaw.
+export OPENCLAW_CONFIG_PATH="/home/encrypted_storage"
+```
+
+### 3.2 Install OpenClaw
+
+Install dependencies and OpenClaw:
+
+```shell
+# Debian/Ubuntu
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+apt install -y nodejs
+
+# CentOS
+curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+dnf install -y nodejs cmake
+
+npm install -g pnpm
+
+# Install OpenClaw
+cd <work dir>
+git clone https://github.com/openclaw/openclaw.git
+cd openclaw
+pnpm install
+pnpm setup
+source /root/.bashrc
+pnpm link --global
+openclaw onboard --install-daemon
+```
+
 ## 4. Conclusion and Future Work
 
 OpenClaw-CC demonstrates a robust approach to confidential computing, leveraging TDX based TEEs and attestation to mitigate risks of deploying OpenClaw in multi-tenant infrastructure. By incorporating these technologies, OpenClaw-CC enhances data protection throughout its architecture, from runtime context to long-term memory management. The demo solution showcases practical implementations of these principles, providing a valuable reference for organizations or individuals seeking to adopt confidential computing practices.
