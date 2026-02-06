@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Check whether the current system is an Intel TDX-based TDVM (Trust Domain VM).
+Checks:
+1. /dev/tdx_guest exists and is a character device
+2. lscpu Flags contains tdx_guest
+3. dmesg contains "tdx: Guest detected"
+"""
+
+import os
+import stat  # Use stat to identify character devices
+import subprocess
+
+# Target string in dmesg output (global constant)
+DMESG_TARGET_STR = "tdx: Guest detected"
+
+
+def check_tdx_device():
+    """Check whether /dev/tdx_guest exists and is a character device."""
+    device_path = "/dev/tdx_guest"
+    try:
+        file_stat = os.stat(device_path)
+    except FileNotFoundError:
+        return {
+            "name": "TDX Guest Device (/dev/tdx_guest)",
+            "exists": False,
+            "is_character_device": False,
+            "passed": False
+        }
+    except Exception as e:
+        return {
+            "name": "TDX Guest Device (/dev/tdx_guest)",
+            "error": f"Failed to stat {device_path}: {str(e)}",
+            "passed": False
+        }
+
+    is_char_dev = stat.S_ISCHR(file_stat.st_mode)
+    
+    return {
+        "name": "TDX Guest Device (/dev/tdx_guest)",
+        "exists": True,
+        "is_character_device": is_char_dev,
+        "passed": is_char_dev  # Pass only if it is a character device
+    }
+
+
+def check_lscpu_flags():
+    """Check whether lscpu Flags contains tdx_guest."""
+    try:
+        # Run lscpu, capture stdout (ignore stderr to reduce noise)
+        result = subprocess.run(
+            ["lscpu"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",  # Ignore decode errors to avoid crashes
+            check=False       # Do not raise on non-zero return code
+        )
+        
+        # Check return code
+        if result.returncode != 0:
+            return {
+                "name": "lscpu Flags (tdx_guest)",
+                "error": f"lscpu failed with return code: {result.returncode}",
+                "passed": False
+            }
+        
+        # Parse lscpu output and find the Flags line
+        flags_line = next(
+            (line.strip() for line in result.stdout.splitlines() if line.strip().startswith("Flags:")),
+            None
+        )
+        
+        # Flags line not found
+        if not flags_line:
+            return {
+                "name": "lscpu Flags (tdx_guest)",
+                "error": "Flags line not found in lscpu output",
+                "passed": False
+            }
+        
+        # Extract flags and check for tdx_guest
+        flags = flags_line.split(":", 1)[1].strip().split()
+        has_tdx_guest = "tdx_guest" in flags
+        
+        return {
+            "name": "lscpu Flags (tdx_guest)",
+            "has_tdx_guest": has_tdx_guest,
+            "passed": has_tdx_guest
+        }
+    
+    except Exception as e:
+        return {
+            "name": "lscpu Flags (tdx_guest)",
+            "error": f"Exception during check: {str(e)}",
+            "passed": False
+        }
+
+
+def check_dmesg_tdx():
+    """Check whether dmesg contains 'tdx: Guest detected'."""
+    try:
+        # Run dmesg
+        result = subprocess.run(
+            ["dmesg"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            check=False
+        )
+        
+        # Handle command failure (often due to permissions)
+        if result.returncode != 0:
+            return {
+                "name": f"dmesg ({DMESG_TARGET_STR})",
+                "error": f"dmesg failed (return code: {result.returncode}); may require root (sudo)",
+                "passed": False
+            }
+        
+        # Check for target string
+        has_target = DMESG_TARGET_STR in result.stdout
+        
+        return {
+            "name": f"dmesg ({DMESG_TARGET_STR})",
+            "has_target_string": has_target,
+            "passed": has_target
+        }
+    
+    except PermissionError:
+        return {
+            "name": f"dmesg ({DMESG_TARGET_STR})",
+            "error": "Insufficient permission to run dmesg; use sudo",
+            "passed": False
+        }
+    except Exception as e:
+        return {
+            "name": f"dmesg ({DMESG_TARGET_STR})",
+            "error": f"Exception during check: {str(e)}",
+            "passed": False
+        }
+
+
+def print_tdvm_info():
+    """Print TDVM environment details and verification methods."""
+    print("TDVM (Intel TDX Trust Domain VM) Environment Overview")
+    print("1. What is TDVM:")
+    print("   Intel TDX (Trust Domain Extensions) provides hardware-level")
+    print("   confidential computing. A TDVM runs in an isolated trust domain,")
+    print("   protecting memory and execution from the host kernel/admin.")
+    print("\n2. Further verification methods:")
+    print("   - Get a TDVM Quote (attestation evidence):")
+    print("     Quote is generated by TDX hardware to prove TDVM integrity.")
+    print("     Common methods:")
+    print("     - Use tdx-tools: sudo tdx_guest_quote")
+    print("     - Use TDX Guest API via /dev/tdx_guest")
+    print("\n   - Get TD Eventlog (trusted event log):")
+    print("     Records key boot/runtime events for tamper checking.")
+    print("     Common methods:")
+    print("     - Read sysfs: cat /sys/kernel/security/tdx/eventlog")
+    print("     - Parse dmesg: dmesg | grep -i 'tdx event'")
+
+
+def main():
+    """Run all checks and print results."""
+    print("=" * 60)
+    print("Intel TDX TDVM Detection")
+    print("=" * 60)
+    print()
+
+    # Run all checks
+    checks = [
+        check_tdx_device(),
+        check_lscpu_flags(),
+        check_dmesg_tdx()
+    ]
+
+    # Print each check result
+    all_passed = True
+    for check in checks:
+        print(f"Check: {check['name']}")
+        if "error" in check:
+            print(f"  Status: ERROR - {check['error']}")
+            all_passed = False
+        else:
+            status = "PASS" if check["passed"] else "FAIL"
+            print(f"  Status: {status}")
+            # Detailed output for each check
+            if check["name"].startswith("TDX Guest Device"):
+                print(f"    - Exists: {check['exists']}")
+                print(f"    - Is character device: {check['is_character_device']}")
+            elif check["name"].startswith("lscpu Flags"):
+                print(f"    - Flags contains tdx_guest: {check['has_tdx_guest']}")
+            elif check["name"].startswith("dmesg"):
+                print(f"    - Log contains '{DMESG_TARGET_STR}': {check['has_target_string']}")
+        print()
+
+    # Final conclusion
+    print("=" * 60)
+    if all_passed:
+        print("SUCCESS: This system is an Intel TDX-based TDVM.")
+        # Print TDVM details and verification methods
+        print_tdvm_info()
+    else:
+        print("FAILURE: This system is not an Intel TDX-based TDVM (some checks failed).")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    # Note: dmesg may require root privileges
+    if os.geteuid() != 0:
+        print("WARN: dmesg may require root privileges; consider running with sudo.")
+        print()
+    main()

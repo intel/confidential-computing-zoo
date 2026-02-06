@@ -1,0 +1,20 @@
+[project]
+name = "tdxtools"
+version = "1.0.0"
+description = "Intel Trust eXtension tools"
+
+requires-python = ">=3.8"
+dependencies = [
+    "py-cpuinfo>=9.0.0",
+]
+
+[project.urls]
+"Source Code" = "https://github.com/canonical/tdx/"
+"Issue Tracker" = "https://github.com/canonical/tdx/issues/"
+
+[project.scripts]
+tdreport = "tdxtools.tdreport:main"
+tdeventlog = "tdxtools.tdeventlog:print_eventlog"
+tdrtmrcheck = "tdxtools.tdrtmrcheck:verify_rtmr"
+tdtsmcheck = "tdxtools.tdquote:verify_tsm"
+tdeventlog_check_initrd = "tdxtools.tdeventlog:check_initrd"
