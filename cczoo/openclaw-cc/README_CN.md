@@ -79,42 +79,65 @@ OpenClaw 是一款个人 AI 助手，既可以本地运行，也可以部署在�
 
 基于 Intel TDX 的 TEE 能显著降低运行时数据在特权基础设施下的暴露风险。除了数据在用保护之外，辅助性的工程措施仍然非常重要，例如最小权限控制、工具/策略白名单等，但这些内容超出本文讨论范围。
 
-## 3. OpenClaw-CC Demo Solution
 
-### 3.1 Data at rest protection
+## 3. OpenClaw-CC 方案部署
 
-Create an encrypted directory to store OpenClaw configuration files, ensuring at rest data security.
+本节给出在TDVM中部署Openclaw流程：
 
-Create a LUKS block file and bind it to a free loop device:
+1. 使用 LUKS 对本地状态数据进行静态加密保护（encrypted storage）。
+2. 安装 OpenClaw，并将其状态/配置目录指向加密挂载点。
+3. 为 OpenClaw 接入 TDX skills，用于检查 TDVM 运行环境并采集验证证据（event log、quote）。
+4. （可选）将 quote 发送到远程证明服务进行验证。
+
+### 3.1 OpenClaw-CC 方案组件
+
+OpenClaw-CC 由多个关键组件组合而成，用于为智能体提供端到端的机密计算保护。下表列出了核心组件：
+
+| 组件 | 版本 | 说明 |
+| --- | --- | --- |
+| TDVM | / | 为 OpenClaw 运行时提供机密计算能力与隔离保护 |
+| Openclaw | latest | **开源、自托管的 AI 智能体平台**，作为核心编排器（orchestrator） |
+| LLM Service | / | 为 Openclaw 提供大模型 API 访问、令牌管理与上下文推理能力 |
+| LUKS | / | 为 Openclaw 配置与状态数据提供加密存储保护 |
+| TDX Skills | / | 为 Openclaw 扩展机密计算相关能力（get_quote、get_eventlog、check_td_runtime） |
+| Remote Attestation Service | latest | 提供 TDX 远程证明能力，用于验证运行时完整性并建立信任 |
+
+这些组件协同工作，确保 OpenClaw 在基于 TDX 的可信执行环境（TEE）中安全运行，并在“推理—检索—执行”全链路中保护敏感数据。
+
+### 3.2 静态数据（Data-at-rest）保护
+
+创建一个加密目录用于存放 OpenClaw 的配置与状态数据，从而实现静态数据保护。
+
+创建一个 LUKS 块文件，并将其绑定到一个空闲的 loop 设备：
 
 ```BASH
 # Debian/Ubuntu
-apt install -y cryptsetup
+sudo apt install -y cryptsetup
 
 # CentOS
-yum install -y cryptsetup
+sudo yum install -y cryptsetup
 
 git clone https://github.com/intel/confidential-computing-zoo.git
 cd confidential-computing-zoo/cczoo/openclaw-cc/luks_tools
 export VFS_SIZE=10G  # Adjust size as needed
-export VIRTUAL_FS=/home/vfS
+export VIRTUAL_FS=/root/vfs  # Path to the virtual block file
 ./create_encrypted_vfs.sh ${VFS_SIZE} ${VIRTUAL_FS}
 ```
 
-According to the loop device number output by the above command (such as `/dev/loop0`), create the `LOOP_DEVICE` environment variable to bind the loop device:
+根据上述命令打印出的 loop 设备号（例如 `/dev/loop0`），设置 `LOOP_DEVICE` 环境变量：
 
 ```BASH
-export LOOP_DEVICE=<the binded loop device>
+export LOOP_DEVICE=<the bound loop device>
 ```
 
-On first execution, the block loop device needs to be formatted as ext4:
+首次执行时，需要将该块设备格式化为 ext4：
 
 ```BASH
-mkdir /home/encrypted_storage
+mkdir -p /home/encrypted_storage
 ./mount_encrypted_vfs.sh ${LOOP_DEVICE} format
 ```
 
-**To secure OpenClaw's at rest data by storing configuration and state directories (sessions, logs, caches) in an encrypted location, configure these environment variables:**
+**为了将 OpenClaw 的配置与状态目录（sessions、logs、caches）存放在加密位置，请配置如下环境变量：**
 
 ```BASH
 # State directory for mutable data (sessions, logs, caches).
@@ -123,18 +146,18 @@ export OPENCLAW_STATE_DIR="/home/encrypted_storage"
 export OPENCLAW_CONFIG_PATH="/home/encrypted_storage"
 ```
 
-### 3.2 Install OpenClaw
+### 3.3 安装 OpenClaw
 
-Install dependencies and OpenClaw:
+安装依赖并安装 OpenClaw：
 
 ```shell
 # Debian/Ubuntu
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-apt install -y nodejs
+sudo apt install -y nodejs
 
 # CentOS
 curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
-dnf install -y nodejs cmake
+sudo dnf install -y nodejs cmake
 
 npm install -g pnpm
 
@@ -148,6 +171,93 @@ source /root/.bashrc
 pnpm link --global
 openclaw onboard --install-daemon
 ```
+
+### 3.4 在 OpenClaw 中启用 TDX Skills
+
+为了帮助用户快速确认 OpenClaw 是否运行在机密计算环境（TDVM）中，并采集 TDX 验证所需的证据与日志，我们为 OpenClaw 提供了一组 TDX skills。它们可以输出运行时状态与验证材料，便于用户在 TEE 中更有把握地运行 OpenClaw。
+
+#### 3.4.1 安装依赖
+
+```shell
+cd confidential-computing-zoo/cczoo/openclaw-cc/tdx_utility
+python3 -m pip install ./
+
+cp -rf confidential-computing-zoo/cczoo/openclaw-cc/tdx_skills /home/encrypted_storage/.openclaw/workspace/
+cd /home/encrypted_storage/.openclaw/workspace/get_td_quote/scripts
+python3 setup.py build_ext --inplace
+
+```
+`说明`：建议使用 `python3.11`。
+
+#### 3.4.2 查看 TDX skills
+
+```shell
+# List currently available OpenClaw skills
+ openclaw skills list
+
+# You should see the newly added TDX skills
+| ✓ ready   │ 📦 Check TD Runtime   │ Check TD Runtime environment  │ openclaw-workspace |
+| ✓ ready   │ 📦 Get TD Event Log   │ Get TDVM event log            │ openclaw-workspace |
+| ✓ ready   │ 📦 Get TD Quote       │ Get TDVM Quote Information    │ openclaw-workspace |  
+```
+`说明`：后续将增加 “Verify TDX” skill。
+
+
+#### 3.4.3 使用 TDX skills
+
+1. 检查 TD 运行环境
+执行以下命令检查 OpenClaw 是否运行在 TDX TDVM 中。该步骤会进行基础 TDVM 检测，用于确认当前是机密虚拟机运行环境。
+
+```shell
+openclaw agent --agent main --message 'Check TDVM environment'
+```
+![TDX-Skill Check TD Runtime](./images/openclaw-tdruntime.png)
+
+2. 获取 TD Eventlog
+执行以下命令获取 TDVM 启动阶段的 event log。event log 记录了启动过程中各安全组件与配置的度量值，这些度量值会被扩展（extend）到 TDX RTMR 寄存器中。你可以对 event 中的度量值进行 replay，并与最终 RTMR 值进行比对，以判断 TDVM 启动过程是否存在潜在篡改。
+该 skill 会将详细的 TD event log 保存为 `tdeventlog.txt`，并自动执行 replay 校验，确认计算结果与最终 RTMR 值一致。
+
+```shell
+openclaw agent --agent main --message 'Get TDX Eventlog'
+```
+![TDX-Skill Get TD Eventlog](./images/openclaw-tdeventlog.png)
+
+3. 获取 TD Quote。
+除 event log 外，你还可以获取 TDVM Quote，并将其提交给第三方远程证明服务进行验证，从而判断该 TDVM 是否运行在由 Intel TDX 提供的可信平台之上。该 skill 会获取 quote，并将原始数据保存到 `quote_info.json`。
+`说明`：本演示使用开源项目 Trustee 作为远程证明服务，并将 `quote_info.json` 按照 Trustee 的请求格式进行组织。
+
+```shell
+openclaw agent --agent main --message 'Get TDX Quote'
+```
+![TDX-Skill Get TD Eventlog](./images/openclaw-tdquote.png)
+
+
+### 3.5 通过远程证明服务验证 OpenClaw TDVM
+
+[Attestation Service](https://github.com/confidential-containers/trustee/blob/main/attestation-service/docs/restful-as.md) 提供了简单的 API：接收远程证明证据（attestation evidence），并返回包含验证结果的 attestation token。整体包含两步验证：
+- 验证证据本身的格式与来源（例如校验证据签名）。
+- 评估证据中声明的可信属性（例如度量值是否符合客户端预期）。
+
+#### 3.5.1 远程证明服务部署
+请参考 [restful-as](https://github.com/confidential-containers/trustee/blob/main/attestation-service/docs/restful-as.md#quick-start) 部署 Trustee attestation service。
+
+#### 3.5.2 验证 TDX Quote
+
+Attestation Service 提供 RESTful API，用户可以通过该接口提交验证请求。
+当 attestation service 运行后，可按如下方式发送请求：
+`说明`：
+- 1. 将 `machine_ip` 替换为你的真实 IP 地址。
+- 2. 使用第 3.4.3 步生成的 `quote_info.json`。
+
+```
+curl -k -X POST http://<machine_ip>:8080/attestation \
+     -i \
+     -H 'Content-Type: application/json' \
+     -d @quote_info.json
+```
+验证结果示例如下：
+
+![TDX-Skill Get TD Eventlog](./images/openclaw-verify.png)
 
 ## 4. 结论和未来工作
 
