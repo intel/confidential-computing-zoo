@@ -2,7 +2,7 @@
   <a href="./README_CN.md">Chinese</a>
 </div>
 
-# OpenClaw-CC(Confidential Computing) Demo Solution
+# OpenClaw-CC(Confidential Computing) Demo Solution（rev-0.6）
 
 Cloud-deployed AI agents differ from “single-shot” AI workloads: they run continuously, connect to user-facing channels (e.g., Discord/WhatsApp/WeChat/Web), invoke tools/skills, and maintain user context and long-term memory as well as other sensitive data like user tokens or credentials for accessing diversified services. This broadens the attack surface and concentrates high-value data at the agent runtime where it exists as data-in-use.
 
@@ -32,10 +32,13 @@ Securing Agent-AI requires protecting the entire inference–memory–retrieval�
 
 ### 1.2 Threat areas
 
-- **Runtime context (data in use)**: privileged infrastructure access (memory inspection/debugging), prompt/tool injection, and multi-tenant/session bleed.
-- **Long-term memory (data at rest)**: memory stores become high-value data lakes; production data reused for offline evaluation/prompt tuning/training expands exposure and complicates consent.
-- **Secrets and skill permissions**: credential leakage (API keys/OAuth tokens/cookies), and plugin/supply-chain risks that introduce new exfiltration paths.
-- **Cloud-specific threat surface**: metadata/control-plane exposure, shared infrastructure risks (memory, io, storage and network), and hypervisor-level attacks.
+- **Runtime Context (Data-in-use)**: Exposed to high-privilege infrastructure risks (e.g., memory snooping or debugging), prompt or tool injection, and sensitive data leakage between tenants or sessions. The continuous use of runtime data increases the likelihood of exposure or tampering, imposing higher requirements on data confidentiality and integrity.
+
+- **Long-term Memory (Data-at-rest)**: Memory storage can become a high-value data repository; production data used for evaluation, prompt tuning, or continual training increases exposure risks and complicates compliance and authorization management processes.
+
+- **Secrets & Permissions (Data-in-use)**: AI agents rely on various access credentials (e.g., API keys, OAuth tokens, cookies) when calling internal or external services. If these credentials are leaked or misused, they can create cross-service data access risks.
+
+- **Software and Service Supply Chain (Integrity)**: Complex plugin and service supply chains may introduce additional attack surfaces. Third-party plugins, libraries, or external services, if integrated without thorough review or security verification, can become potential channels for data leakage or privilege misuse.
 
 ## 2. Confidential Computing and Mitigations
 
@@ -61,13 +64,12 @@ Together, TDX based TEE isolation, remote attestation, and encrypted data persis
 
 This subsection focuses on how Intel TDX based TEE reduce exposure to privileged infrastructure threats while data is being processed.
 
-| Risk area              | Examples of issues                                    | Intel TDX benefits                                                                 |
-| ---------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Runtime                | Memory inspection, runtime data leaks                 | Run core processes in TEE; keep in-memory data encrypted; attest runtime integrity |
-| Long-term memory       | Residual data in backups; exposure during rehydration | Encrypt memory; decrypt only inside TEE; attest runtime integrity                  |
-| Secrets & permissions  | API keys/tokens/cookies stolen                        | Use secrets only inside TEE; attestation-gated key release                         |
-| Prompt/tool misuse     | Unintended tool calls or unsafe responses             | Protect sensitive intermediate data from host access via TEE                       |
-| Plugins & supply chain | Malicious or vulnerable extensions                    | Attest runtime and plugin integrity                                                |
+| Risks                               | Example Issues                                                                 | Intel TDX Advantages                                                                                                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Runtime**               | Memory inspection, leakage of runtime context or intermediate states           | Core processes and services run inside a TDX-based Trusted Execution Environment (TEE); memory data is always encrypted; supports runtime integrity verification and dynamic attestation |
+| **Long-term Memory**     | Long-term memory or user context may be exposed during storage or transmission | Data is encrypted in storage and transit, decrypted only within the TEE; sensitive data access is managed via remote attestation                                                         |
+| **Secrets & Permissions**               | API keys, OAuth tokens, or cookies may be compromised                          | Credentials and secrets are used only inside the TEE; remote attestation ensures keys are released only to trusted environments                                                          |
+| **Plugin Tools & Service Supply Chain** | Malicious or vulnerable plugins, extensions, or third-party services           | Runtime and plugin integrity are dynamically verified; remote attestation and dynamic measurement reduce supply chain risks                                                              |
 
 
 Intel TDX based TEE significantly reduce privileged infrastructure exposure for in-use data. Beyond data-in-use protection, complementary engineering measures remain important—for example: least-privilege permissions, tool/policy allowlists etc. That is out of scope for this document.
@@ -256,6 +258,6 @@ The verification result is shown below:
 
 ## 4. Conclusion and Future Work
 
-OpenClaw-CC demonstrates a robust approach to confidential computing, leveraging TDX based TEEs and attestation to mitigate risks of deploying OpenClaw in multi-tenant infrastructure. By incorporating these technologies, OpenClaw-CC enhances data protection throughout its architecture, from runtime context to long-term memory management. The demo solution showcases practical implementations of these principles, providing a valuable reference for organizations or individuals seeking to adopt confidential computing practices.
+OpenClaw-CC demonstrates how leveraging Intel TDX’s Trusted Execution Environment and remote attestation mechanisms can reduce security risks when deploying AI agents on multi-tenant infrastructures. With these technologies, OpenClaw-CC enhances data protection throughout its architecture, from runtime context to long-term memory management. The demo solution showcases practical implementations of these principles, providing a valuable reference for organizations or individuals seeking to adopt confidential computing practices.
 
-This demo is still an early-stage prototype, primarily aimed at exploring how confidential computing techniques can address critical data leakage challenges for OpenClaw likely agent workloads. Future work will focus on expanding support for Docker-based deployments with TEEs, integrating a trusted build-to-deploy process, and further strengthening the services execution environment. Feedback and contributions from the community are welcome to help refine this solution.
+This demo is still an early-stage prototype (rev-0.6), primarily aimed at exploring how confidential computing techniques can address critical data leakage challenges for OpenClaw likely agent workloads. The next iteration will further expand support for containerized deployments, improve trusted build and deployment workflows, and strengthen isolation and protection for dynamic services. Community feedback and contributions will play an important role in its ongoing optimization.
