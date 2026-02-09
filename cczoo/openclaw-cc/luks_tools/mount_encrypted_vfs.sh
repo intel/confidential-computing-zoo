@@ -35,6 +35,11 @@ else
     MOUNT_POINT=/home/encrypted_storage
 fi
 
+if [ ! -d "${MOUNT_POINT}" ]; then
+    echo "Creating mount point: ${MOUNT_POINT}"
+    mkdir -p "${MOUNT_POINT}"
+fi
+
 cryptsetup luksOpen ${LOOP_DEVICE} ${FS_DIR}
 
 ls -al /dev/mapper/${FS_DIR}
