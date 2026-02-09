@@ -133,9 +133,9 @@ mkdir -p /home/encrypted_storage
 
 ```BASH
 # State directory for mutable data (sessions, logs, caches).
-export OPENCLAW_STATE_DIR="/home/encrypted_storage"
+export OPENCLAW_STATE_DIR="/home/encrypted_storage/openclaw.json"
 # Config path for OpenClaw.
-export OPENCLAW_CONFIG_PATH="/home/encrypted_storage"
+export OPENCLAW_CONFIG_PATH="/home/encrypted_storage/openclaw-state"
 ```
 
 ### 3.3 Install OpenClaw
@@ -161,6 +161,7 @@ pnpm install
 pnpm setup
 source /root/.bashrc
 pnpm link --global
+pnpm run build
 openclaw onboard --install-daemon
 ```
 
@@ -174,8 +175,9 @@ To help users quickly confirm whether OpenClaw is running in a confidential-comp
 cd confidential-computing-zoo/cczoo/openclaw-cc/tdx_utility
 python3 -m pip install ./
 
-cp -rf confidential-computing-zoo/cczoo/openclaw-cc/tdx_skills /home/encrypted_storage/.openclaw/workspace/
-cd /home/encrypted_storage/.openclaw/workspace/get_td_quote/scripts
+mkdir -p /home/encrypted_storage/.openclaw/workspace/skills
+cp -rf <work dir>/confidential-computing-zoo/cczoo/openclaw-cc/tdx_skills/* /home/encrypted_storage/.openclaw/workspace/skills
+cd /home/encrypted_storage/.openclaw/workspace/skills/get_td_quote/scripts
 python3 setup.py build_ext --inplace
 
 ```

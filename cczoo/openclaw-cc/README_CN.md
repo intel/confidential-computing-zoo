@@ -74,7 +74,7 @@ OpenClaw 是一款个人 AI 助手，既可以本地运行，也可以部署在�
 | 密钥与权限（Secrets & permissions）   | API 密钥/令牌/Cookie 被窃取 | 密钥仅在 TEE 内使用；通过远程证明控制密钥下发          |
 | Prompt/工具误用                    | 意外调用工具或返回不安全结果       | 通过 TEE 保护敏感中间数据，防止宿主访问             |
 | 插件与供应链（Plugins & supply chain） | 恶意或存在漏洞的扩展           | 验证运行时及插件完整性                        |
-                                   |
+
 
 
 基于 Intel TDX 的 TEE 能显著降低运行时数据在特权基础设施下的暴露风险。除了数据在用保护之外，辅助性的工程措施仍然非常重要，例如最小权限控制、工具/策略白名单等，但这些内容超出本文讨论范围。
@@ -141,9 +141,9 @@ mkdir -p /home/encrypted_storage
 
 ```BASH
 # State directory for mutable data (sessions, logs, caches).
-export OPENCLAW_STATE_DIR="/home/encrypted_storage"
+export OPENCLAW_STATE_DIR="/home/encrypted_storage/openclaw.json"
 # Config path for OpenClaw.
-export OPENCLAW_CONFIG_PATH="/home/encrypted_storage"
+export OPENCLAW_CONFIG_PATH="/home/encrypted_storage/openclaw-state"
 ```
 
 ### 3.3 安装 OpenClaw
@@ -169,6 +169,7 @@ pnpm install
 pnpm setup
 source /root/.bashrc
 pnpm link --global
+pnpm run build
 openclaw onboard --install-daemon
 ```
 
@@ -182,8 +183,9 @@ openclaw onboard --install-daemon
 cd confidential-computing-zoo/cczoo/openclaw-cc/tdx_utility
 python3 -m pip install ./
 
-cp -rf confidential-computing-zoo/cczoo/openclaw-cc/tdx_skills /home/encrypted_storage/.openclaw/workspace/
-cd /home/encrypted_storage/.openclaw/workspace/get_td_quote/scripts
+mkdir -p /home/encrypted_storage/.openclaw/workspace/skills
+cp -rf <work dir>/confidential-computing-zoo/cczoo/openclaw-cc/tdx_skills/* /home/encrypted_storage/.openclaw/workspace/skills
+cd /home/encrypted_storage/.openclaw/workspace/skills/get_td_quote/scripts
 python3 setup.py build_ext --inplace
 
 ```
