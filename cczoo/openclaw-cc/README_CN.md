@@ -70,7 +70,7 @@ OpenClaw 是一款个人 AI 助手，既可以本地运行，也可以部署在�
 
 ### 2.3 数据安全应对措施
 
-这一小节重点说明了基于 Intel TDX 如何在数据处理过程中降低AI智能体运行过程来自数据面的威胁风险。
+这一小节重点说明了基于 Intel TDX 的 TEE 如何在数据处理过程中降低AI智能体运行过程来自数据面的威胁风险。
 
 | 风险领域                                      | 问题示例                        | Intel TDX 优势                                            |
 | ----------------------------------------- | --------------------------- | ------------------------------------------------------- |
@@ -83,12 +83,20 @@ OpenClaw 是一款个人 AI 助手，既可以本地运行，也可以部署在�
 
 ## 3. OpenClaw-CC 方案部署
 
-本节给出在TDVM中部署Openclaw流程：
+OpenClaw-CC 采用分层防护设计，将基于 TDVM 的运行时保护、加密持久化存储以及远程证明能力组合起来，形成端到端的机密计算部署方案：
 
-1. 使用 LUKS 对本地状态数据进行静态加密保护（encrypted storage）。
-2. 安装 OpenClaw，并将其状态/配置目录指向加密挂载点。
-3. 为 OpenClaw 接入 TDX skills，用于检查 TDVM 运行环境并采集验证证据（event log、quote）。
-4. （可选）将 quote 发送到远程证明服务进行验证。
+**运行时保护**：OpenClaw 的核心编排器（Orchestrator）运行在 TDVM（Intel TDX Virtual Machine）中，通过硬件强隔离保护数据在用（data-in-use），抵御来自宿主 OS 与虚拟机管理程序等特权基础设施的访问与窥探风险。
+
+**存储保护**：OpenClaw 的配置文件、会话状态与长期记忆等持久化数据存放在 LUKS 加密卷中；加密密钥隔离在 TEE 内部，从而保证静态数据（data-at-rest）的机密性与完整性。
+
+**远程证明与验证**：CC TDX Skills 支持采集 TDX 验证所需的证据（event log、quote）并触发远程证明流程，使上游服务在下发敏感凭证或记忆密钥之前，能够以密码学方式验证 OpenClaw 是否运行在预期的 TEE 环境中。
+
+本节给出完整的实操步骤：
+
+1. **配置加密存储**：使用 LUKS 保护 OpenClaw 的状态与配置目录。
+2. **部署 OpenClaw**：在 TDVM 内运行 OpenClaw，并将其状态绑定到加密存储。
+3. **集成 CC TDX Skills**：暴露 TDVM 运行状态、event log 与 attestation quote。
+4. **验证远程证明**（可选）：将 quote 提交到远程证明服务，进行独立验证。
 
 ### 3.1 OpenClaw-CC 方案组件
 
@@ -96,12 +104,11 @@ OpenClaw-CC 由多个关键组件组合而成，用于为智能体提供端到�
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
-| TDVM | / | 为 OpenClaw 运行时提供机密计算能力与隔离保护 |
-| Openclaw | latest | **开源、自托管的 AI 智能体平台**，作为核心编排器（orchestrator） |
-| LLM Service | / | 为 Openclaw 提供大模型 API 访问、令牌管理与上下文推理能力 |
-| LUKS | / | 为 Openclaw 配置与状态数据提供加密存储保护 |
-| TDX Skills | / | 为 Openclaw 扩展机密计算相关能力（get_quote、get_eventlog、check_td_runtime） |
-| Remote Attestation Service | latest | 提供 TDX 远程证明能力，用于验证运行时完整性并建立信任 |
+| Openclaw | 2026.2.6-3 | **开源、自托管的 AI 智能体平台**，作为核心编排器（orchestrator） |
+| LLM Service | / | 为 Openclaw 提供大模型 API 访问、令牌管理与上下文推理能力（例如 OpenAI、Qwen、Doubao 等） |
+| LUKS | 2.3.7 | 为 Openclaw 的配置与状态数据提供加密存储保护 |
+| CC TDX Skills | 新增 | 为 Openclaw 扩展机密计算相关能力（get_quote、get_eventlog、check_td_runtime） |
+| Remote Attestation Service | Trustee v0.17 | 开源远程证明服务，用于验证 TDX 运行时完整性并建立信任 |
 
 这些组件协同工作，确保 OpenClaw 在基于 TDX 的可信执行环境（TEE）中安全运行，并在“推理—检索—执行”全链路中保护敏感数据。
 
@@ -142,9 +149,9 @@ mkdir -p /home/encrypted_storage
 
 ```BASH
 # State directory for mutable data (sessions, logs, caches).
-export OPENCLAW_STATE_DIR="/home/encrypted_storage/openclaw.json"
+export OPENCLAW_STATE_DIR="/home/encrypted_storage"
 # Config path for OpenClaw.
-export OPENCLAW_CONFIG_PATH="/home/encrypted_storage/openclaw-state"
+export OPENCLAW_CONFIG_PATH="/home/encrypted_storage"
 ```
 
 ### 3.3 安装 OpenClaw
@@ -170,29 +177,30 @@ pnpm install
 pnpm setup
 source /root/.bashrc
 pnpm link --global
-pnpm run build
 openclaw onboard --install-daemon
 ```
 
-### 3.4 在 OpenClaw 中启用 TDX Skills
+### 3.4 在 OpenClaw 中启用CC TDX Skills
 
-为了帮助用户快速确认 OpenClaw 是否运行在机密计算环境（TDVM）中，并采集 TDX 验证所需的证据与日志，我们为 OpenClaw 提供了一组 TDX skills。它们可以输出运行时状态与验证材料，便于用户在 TEE 中更有把握地运行 OpenClaw。
+为了帮助用户快速确认 OpenClaw 是否运行在机密计算环境（TDVM）中，并采集 TDX 验证所需的证据与日志，我们为 OpenClaw 提供了一组CC TDX skills。它们可以输出运行时状态与验证材料，便于用户在 TEE 中更有把握地运行 OpenClaw。
 
 #### 3.4.1 安装依赖
 
 ```shell
+# Install dependencies
 cd confidential-computing-zoo/cczoo/openclaw-cc/tdx_utility
 python3 -m pip install ./
 
+# Install CC TDX Skills
 mkdir -p /home/encrypted_storage/.openclaw/workspace/skills
-cp -rf <work dir>/confidential-computing-zoo/cczoo/openclaw-cc/tdx_skills/* /home/encrypted_storage/.openclaw/workspace/skills
+cp -rf <work dir>/confidential-computing-zoo/cczoo/openclaw-cc/cc_tdx_skills/* /home/encrypted_storage/.openclaw/workspace/skills
 cd /home/encrypted_storage/.openclaw/workspace/skills/get_td_quote/scripts
 python3 setup.py build_ext --inplace
 
 ```
 `说明`：建议使用 `python3.11`。
 
-#### 3.4.2 查看 TDX skills
+#### 3.4.2 查看 CC TDX Skills
 
 ```shell
 # List currently available OpenClaw skills
@@ -206,7 +214,7 @@ python3 setup.py build_ext --inplace
 `说明`：后续将增加 “Verify TDX” skill。
 
 
-#### 3.4.3 使用 TDX skills
+#### 3.4.3 使用 CC TDX Skills
 
 1. 检查 TD 运行环境
 执行以下命令检查 OpenClaw 是否运行在 TDX TDVM 中。该步骤会进行基础 TDVM 检测，用于确认当前是机密虚拟机运行环境。

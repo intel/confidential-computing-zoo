@@ -22,7 +22,7 @@ OpenClaw is a personal AI assistant that can run locally or in the cloud. In pra
 2. The orchestrator maintains session state, applies policy and security controls, and coordinates calls to the model service for inference. As needed, it retrieves and updates long-term context in the memory service and invokes external tool/skill services using guarded inputs and credentials.
 3. User context and conversation history can also be persisted into storage as long-term memory, enabling continuity and personalization across sessions.
 
-In OpenClaw workflows, agent runtime continuously process and retain sensitive context—including user histories, enterprise documents, retrieved knowledge fragments, and external system responses. These long-lived context assets are reused in downstream decisions, so a runtime compromise can expose far more than a single query. At the same time, pluggable services make both sensitive user interactive data and context knowledge model weights high-value targets, particularly in cloud environments. The multi-tenant clound operation increases exposure to privileged infrastructure threats, misconfigurations, as well as broad access to retained data (e.g., memory logs, configuration files, scripts, and backups).
+In OpenClaw workflows, the agent runtime continuously processes and retains sensitive context—including user histories, enterprise documents, retrieved knowledge fragments, and external system responses. These long-lived context assets are reused in downstream decisions, so a runtime compromise can expose far more than a single query. At the same time, pluggable services make both sensitive interactive data and model weights high-value targets, particularly in cloud environments. Multi-tenant cloud operations increase exposure to privileged infrastructure threats, misconfigurations, and broad access to retained data (e.g., memory logs, configuration files, scripts, and backups).
 
 As OpenClaw and similar agentic AI frameworks move to the cloud, shared-infrastructure deployments increase the risk of runtime data leakage, exposing sensitive data and user context state. Even with TLS for data-in-transit and encryption for data-at-rest, privileged host OS or hypervisor-level attackers may still access runtime memory, revealing prompts, intermediate states, and service API tokens. Dynamic tool or services invocation further amplifies risk, as compromised services or tools in the workflow can be induced to take unauthorized real-world actions.
 
@@ -50,15 +50,15 @@ With remote attestation, upstream services (e.g., channels and key management sy
 
 ### 2.2 OpenClaw Confidential Computing  Solution (OpenClaw-CC)
 
-To mitigate privileged infrastructure threats in multi-tenant cloud environments, the OpenClaw runtime can be deployed inside a hardware-enforced Trusted Execution Environment (TEE), such as a TDVM. This ensures that even the host OS, hypervisor, or cloud operator cannot directly inspect plaintext runtime memory. By isolating orchestration logic, policy enforcement, and memory handling inside the secure exeuction environment, OpenClaw-CC achieves strong confidentiality guarantees across the full inference–retrieval–action pipeline, closing the primary gap left by traditional VM or container isolation.
+To mitigate privileged infrastructure threats in multi-tenant cloud environments, the OpenClaw runtime can be deployed inside a hardware-enforced Trusted Execution Environment (TEE), such as a TDVM. This ensures that even the host OS, hypervisor, or cloud operator cannot directly inspect plaintext runtime memory. By isolating orchestration logic, policy enforcement, and memory handling inside the secure execution environment, OpenClaw-CC achieves strong confidentiality guarantees across the full inference–retrieval–action pipeline, closing the primary gap left by traditional VM or container isolation.
 
 ![OpenClaw-CC Architecture](./images/openclaw-cc.png)
 
-In addition, OpenClaw-CC can leverages remote attestation or attestation-bound secure channels to establish trust before releasing sensitive data. Upstream services components, such as channel services, model providers, and secret/token brokers, can verify that the OpenClaw-CC runtimeis running inside an secure environment with an expected measurement before provisioning credentials or long-term memory keys.
+In addition, OpenClaw-CC can leverage remote attestation (or attestation-bound secure channels) to establish trust before releasing sensitive data. Upstream service components, such as channel services, model providers, and secret/token brokers, can verify that the OpenClaw-CC runtime is running inside a secure environment with an expected measurement before provisioning credentials or long-term memory keys.
 
-Persistent storage is protected with encryption at rest, e.g. LUKS based encryption disk, with encryption keys managed inside the TEE, as well as its integrity attested while mouting with TEE.
+Persistent storage is protected with encryption at rest (e.g., a LUKS-encrypted disk). Encryption keys are managed inside the TEE, and storage integrity can be attested during mounting.
 
-Together, TDX based TEE isolation, remote attestation, and encrypted data persistence provide an end-to-end confidential computing architecture that prevents runtime data leakage and strengthens OpenClaw’s resilience against privileged cloud attacking risks.
+Together, TDX-based TEE isolation, remote attestation, and encrypted data persistence provide an end-to-end confidential computing architecture that prevents runtime data leakage and strengthens OpenClaw’s resilience against privileged cloud attack risks.
 
 ### 2.3 Mitigations
 
@@ -76,12 +76,21 @@ Intel TDX based TEE significantly reduce privileged infrastructure exposure for 
 
 ## 3. OpenClaw-CC Demo Solution
 
-This section is a practical walkthrough for running OpenClaw with confidential-computing protections:
+OpenClaw-CC implements a layered security approach combining TDVM-based runtime protection with encrypted persistent storage and attestation capabilities:
 
-1. Protect local state at rest with LUKS (encrypted storage).
-2. Install OpenClaw and point its state/config to the encrypted mount.
-3. Add TDX skills to collect evidence (event log, quote) and check TDVM runtime.
-4. (Optional) Verify the quote with a remote attestation service.
+**Runtime Protection**: The OpenClaw orchestrator runs within a TDVM (Intel TDX Virtual Machine), providing hardware-enforced isolation that protects in-use data from privileged infrastructure threats, including host OS and hypervisor access.
+
+**Storage Protection**: Configuration files, session state, and long-term memory are stored in LUKS-encrypted volumes. Encryption keys remain isolated within the TEE, ensuring data-at-rest confidentiality and integrity.
+
+**Attestation & Verification**: CC TDX Skills enable runtime integrity verification through remote attestation, allowing upstream services to cryptographically verify that OpenClaw operates in an expected TEE environment before provisioning sensitive credentials or memory keys.
+
+This section walks through the practical deployment steps:
+
+1. **Configure encrypted storage** using LUKS for OpenClaw state and configuration directories.
+2. **Deploy OpenClaw** within the TDVM and bind its state to encrypted storage.
+3. **Integrate TDX skills** to expose TDVM runtime status, event logs, and attestation quotes.
+4. **Verify attestation** (optional) by submitting quotes to a remote attestation service for independent validation.
+
 
 ### 3.1 OpenClaw-CC Solution Components
 
@@ -89,12 +98,11 @@ OpenClaw-CC integrates multiple key components to deliver end-to-end confidentia
 
 | Component                  | Version | Description                                                                           |
 | -------------------------- | ------- | ------------------------------------------------------------------------------------- |
-| TDVM                       | /       | Provide confidential computing capability for Openclaw runtime protection             |
-| Openclaw                   | latest  | An **open-source, self-hosted AI agent platform** that serves as the core orchestrator |
-| LLM Service                | /       | Provides LLM API access, token management, and contextual inference for Openclaw      |
-| LUKS                       | /       | Delivers encrypted storage protection for Openclaw configuration and state data       |
-| TDX Skills                 | /       | Extends Openclaw with confidential computing capabilities (get_quote, get_eventlog, check_td_runtime) |
-| Remote Attestation Service | latest  | Enables TDX remote attestation to verify runtime integrity and establish trust        |
+| OpenClaw                   | 2026.2.6-3  | An **open-source, self-hosted AI agent platform** that serves as the core orchestrator |
+| LLM Service                | /       | Provides LLM API access, token management, and contextual inference for OpenClaw (e.g., OpenAI, Qwen, Doubao) |
+| LUKS                       | 2.3.7      | Delivers encrypted storage protection for Openclaw configuration and state data       |
+| CC TDX Skills              | New       | Extends OpenClaw with confidential computing capabilities (get_quote, get_eventlog, check_td_runtime) |
+| Remote Attestation Service | Trustee v0.17 | Open-source remote attestation service to verify TDX runtime integrity and establish trust |
 
 These components work together to ensure that OpenClaw runtime operates securely within a TDX-based TEE, protecting sensitive data throughout the inference, retrieval, and action pipeline.
 
@@ -174,18 +182,20 @@ To help users quickly confirm whether OpenClaw is running in a confidential-comp
 #### 3.4.1 Install dependencies
 
 ```shell
+# Install dependencies
 cd confidential-computing-zoo/cczoo/openclaw-cc/tdx_utility
 python3 -m pip install ./
 
+# Install CC TDX Skills
 mkdir -p /home/encrypted_storage/.openclaw/workspace/skills
-cp -rf <work dir>/confidential-computing-zoo/cczoo/openclaw-cc/tdx_skills/* /home/encrypted_storage/.openclaw/workspace/skills
+cp -rf <work dir>/confidential-computing-zoo/cczoo/openclaw-cc/cc_tdx_skills/* /home/encrypted_storage/.openclaw/workspace/skills
 cd /home/encrypted_storage/.openclaw/workspace/skills/get_td_quote/scripts
 python3 setup.py build_ext --inplace
 
 ```
 `Note`: Prefer `python3.11`.
 
-#### 3.4.2 List TDX skills
+#### 3.4.2 List CC TDX Skills
 
 ```shell
 # List currently available OpenClaw skills
@@ -199,7 +209,7 @@ python3 setup.py build_ext --inplace
 `Note:` A dedicated “Verify TDX” skill will be added later.
 
 
-#### 3.4.3 Use TDX skills
+#### 3.4.3 Use CC TDX skills
 
 1. Check TD Runtime environment.
 Run the command below to check whether OpenClaw is running inside a TDX TDVM. This performs basic TDVM checks to confirm a confidential VM environment.
@@ -207,7 +217,7 @@ Run the command below to check whether OpenClaw is running inside a TDX TDVM. Th
 ```shell
 openclaw agent --agent main --message 'Check TDVM environment'
 ```
-![TDX-Skill Check TD Runtime](./images/openclaw-tdruntime.png)
+![TDX-Skill Check TD Runtime](./images/openclaw-tdruntime-en.png)
 
 2. Get TD Eventlog.
 Run the command below to fetch the TDVM boot-time event log. The event log records measurements of security components and configuration during boot; these measurements are extended into the TDX RTMR registers. You can replay the event measurements and compare them with the final RTMR values to detect potential tampering during TDVM startup.
@@ -216,7 +226,7 @@ This skill saves the detailed TD event log to `tdeventlog.txt` and also replays 
 ```shell
 openclaw agent --agent main --message 'Get TDX Eventlog'
 ```
-![TDX-Skill Get TD Eventlog](./images/openclaw-tdeventlog.png)
+![TDX-Skill Get TD Eventlog](./images/openclaw-tdeventlog-en.png)
 
 3. Get TD Quote.
 In addition to the event log, you can fetch the TDVM Quote and submit it to a third-party remote attestation service to verify that the TDVM is running on an Intel TDX-backed trusted platform. This skill retrieves the quote and saves the raw data to `quote_info.json`.
@@ -225,7 +235,7 @@ In addition to the event log, you can fetch the TDVM Quote and submit it to a th
 ```shell
 openclaw agent --agent main --message 'Get TDX Quote'
 ```
-![TDX-Skill Get TD Eventlog](./images/openclaw-tdquote.png)
+![TDX-Skill Get TD Eventlog](./images/openclaw-tdquote-en.png)
 
 
 ### 3.5 Verify OpenClaw TDVM with Attestation Service
