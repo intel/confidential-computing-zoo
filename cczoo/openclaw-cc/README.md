@@ -172,6 +172,7 @@ pnpm setup
 source /root/.bashrc
 pnpm link --global
 pnpm run build
+openclaw setup --workspace /home/encrypted_storage/.openclaw/workspace
 openclaw onboard --install-daemon
 ```
 
