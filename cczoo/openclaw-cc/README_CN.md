@@ -149,9 +149,9 @@ mkdir -p /home/encrypted_storage
 
 ```BASH
 # State directory for mutable data (sessions, logs, caches).
-export OPENCLAW_STATE_DIR="/home/encrypted_storage"
+export OPENCLAW_STATE_DIR="/home/encrypted_storage/.openclaw"
 # Config path for OpenClaw.
-export OPENCLAW_CONFIG_PATH="/home/encrypted_storage"
+export OPENCLAW_CONFIG_PATH="/home/encrypted_storage/.openclaw/openclaw.json" 
 ```
 
 ### 3.3 安装 OpenClaw
@@ -177,6 +177,7 @@ pnpm install
 pnpm setup
 source /root/.bashrc
 pnpm link --global
+pnpm run build
 openclaw onboard --install-daemon
 ```
 
