@@ -30,3 +30,6 @@ KBS_CLIENT_CMD = config("KBS_CLIENT_CMD", default="kbs-client")
 # Sigstore author Configuration
 GIT_EMAIL = config("GIT_EMAIL", default="####@i###.com")
 
+# Runtime feature flags
+ENABLE_TDX = config("ENABLE_TDX", default=False, cast=bool)
+

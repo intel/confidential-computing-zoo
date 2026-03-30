@@ -6,6 +6,8 @@ This document explains how to run the test suite for the TC API service.
 
 - `test_api.py` - Manual integration tests with detailed output
 - `test_unit.py` - Automated unit and integration tests using pytest
+- `test_subprocess_unit.py` - Deterministic subprocess-mocked Docker/non-Docker unit coverage
+- `test_runner.py` - Single test entrypoint for all test types
 
 ## Prerequisites
 
@@ -14,7 +16,7 @@ This document explains how to run the test suite for the TC API service.
 pip install -r requirements.txt
 ```
 
-2. Start the TC API service:
+2. Start the TC API service (required for manual/integration tests):
 ```bash
 python main.py
 ```
@@ -23,39 +25,43 @@ The service should be running on `http://localhost:8000`
 
 ## Running Tests
 
-### 1. Manual Integration Tests (`test_api.py`)
+Use a single entrypoint for all test flows:
 
-Run all tests:
 ```bash
-python test_api.py
+python test_runner.py --type all
 ```
 
-Run a specific test:
+### Test types
+
 ```bash
-python test_api.py health    # Health check only
-python test_api.py build     # Build package only
-python test_api.py publish   # Publish package only
-python test_api.py register  # Register key only
+python test_runner.py --type manual
+python test_runner.py --type unit
+python test_runner.py --type integration
+python test_runner.py --type performance
 ```
 
-### 2. Automated Unit Tests (`test_unit.py`)
+`--type unit` runs deterministic subprocess-focused coverage in `test_subprocess_unit.py`.
 
-Run all tests with pytest:
+### Useful options
+
 ```bash
-pytest test_unit.py -v
+python test_runner.py --type manual --name health
+python test_runner.py --type all --verbose
+python test_runner.py --type all --stop-on-fail
+python test_runner.py --type unit --no-service-management
+python test_runner.py --type manual --name health --base-url http://localhost:18000 --manual-ready-timeout 90
 ```
 
-Run specific test classes:
+Manual tests can target a non-default endpoint:
+
 ```bash
-pytest test_unit.py::TestTCAPI -v                # API endpoint tests
-pytest test_unit.py::TestIntegration -v          # Integration tests
-pytest test_unit.py::TestPerformance -v          # Performance tests
+TC_API_BASE_URL=http://localhost:18000 python test_runner.py --type manual --name health
 ```
 
-Run specific test methods:
+Backward-compatible wrappers still work:
+
 ```bash
-pytest test_unit.py::TestTCAPI::test_health_check -v
-pytest test_unit.py::TestTCAPI::test_build_package_success -v
+bash run_tests.sh --type all
 ```
 
 ## Test Coverage
@@ -142,18 +148,8 @@ To run tests in CI/CD pipeline:
 # Install dependencies
 pip install -r requirements.txt
 
-# Start service in background
-python main.py &
-SERVICE_PID=$!
-
-# Wait for service to start
-sleep 5
-
 # Run tests
-pytest test_unit.py -v --tb=short
-
-# Stop service
-kill $SERVICE_PID
+python test_runner.py --type all --verbose
 ```
 
 ## Test Development

@@ -1,5 +1,14 @@
-# Use Python 3.11 slim image as base
-FROM ubuntu:24.04
+# Use a smaller Python base image.
+FROM python:3.11-slim-bookworm
+
+# Optional build-time proxy arguments.
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG ENABLE_TDX=false
 
 # set env to aviod interactive
 ENV DEBIAN_FRONTEND=noninteractive
@@ -7,30 +16,24 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies for Docker tools
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-venv \
+# Install system dependencies for external tools.
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y \
     curl \
     wget \
     gnupg \
-    lsb-release \
-    software-properties-common \
     apt-transport-https \
     ca-certificates \
-    build-essential \
-    libssl-dev \
     libsox-fmt-all \
-    python3-pip \
-    net-tools \ 
+    net-tools \
     supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI
-RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian bookworm stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update \
-    && apt-get install -y docker-ce docker-ce-cli containerd.io \
+    && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Cosign
@@ -51,12 +54,22 @@ RUN apt-get update && apt-get install -y skopeo \
 
 # Copy requirements and install Python dependencies
 #COPY requirements.txt .
-COPY . /app/
-RUN mv libtdx_attest.so* /usr/lib/x86_64-linux-gnu/ \
-    && ln -s /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1.21.100.3 /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1 \
-    && ln -s /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1 /usr/lib/x86_64-linux-gnu/libtdx_attest.so
+COPY . /app/  # ToDo - Be more specific 
+# Todo libtdx_attest.so source
+RUN if [ "$ENABLE_TDX" = "true" ]; then \ 
+        if ls /app/libtdx_attest.so* >/dev/null 2>&1; then \
+            mv /app/libtdx_attest.so* /usr/lib/x86_64-linux-gnu/ && \
+            ln -sf /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1.21.100.3 /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1 && \
+            ln -sf /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1 /usr/lib/x86_64-linux-gnu/libtdx_attest.so; \
+        else \
+            echo "ENABLE_TDX=true but libtdx_attest.so* not found in build context" >&2; \
+            exit 1; \
+        fi; \
+    else \
+        echo "ENABLE_TDX=false, skipping TDX extension setup"; \
+    fi
 
-RUN python3 -m venv /app/venv
+RUN python -m venv /app/venv
 RUN if [ -f "requirements.txt" ]; then \
         /app/venv/bin/pip install --no-cache-dir -r requirements.txt; \
     fi

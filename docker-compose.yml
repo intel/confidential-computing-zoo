@@ -2,7 +2,16 @@ version: '3.8'
 
 services:
   tc-api:
-    build: .
+    build:
+      context: .
+      args:
+        - http_proxy=${http_proxy:-}
+        - https_proxy=${https_proxy:-}
+        - no_proxy=${no_proxy:-}
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - NO_PROXY=${NO_PROXY:-}
+        - ENABLE_TDX=${ENABLE_TDX:-false}
     ports:
       - "8000:8000"
     environment:
@@ -11,6 +20,13 @@ services:
       - DEBUG=false
       - DOCKER_REGISTRY=docker.io
       - DOCKER_REPOSITORY=myrepo
+      - ENABLE_TDX=${ENABLE_TDX:-false}
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=${no_proxy:-}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
     volumes:
       - ./uploads:/app/uploads
       - ./builds:/app/builds

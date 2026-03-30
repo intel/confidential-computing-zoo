@@ -18,12 +18,29 @@ from services import DockerService
 from kbs_service import KBSService
 from config import (
     HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR,
-    DOCKER_REGISTRY, DOCKER_REPOSITORY
+    DOCKER_REGISTRY, DOCKER_REPOSITORY, ENABLE_TDX
 )
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+
+def has_proxy_configuration() -> bool:
+    proxy_keys = (
+        "http_proxy",
+        "https_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+    )
+    return any(os.environ.get(key) for key in proxy_keys)
+
+
+def log_proxy_configuration(operation: str) -> None:
+    if has_proxy_configuration():
+        logger.info("%s using configured proxy environment", operation)
+    else:
+        logger.info("%s running without proxy environment", operation)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -155,24 +172,28 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tl_signer
             return
 
         # Generate keys if not provided
+        decryption_key = None
         public_encryption_key = None
         private_encryption_key = None
         logger.debug(f"Checking for provided sign_key and cert for build ID: {build_id}")
         if not request.sign_key or not request.cert:
             docker_service.update_build_status(request.user_id, build_id, "preparing", step="Get signing and encryption keys")
             logger.info(f"Get keys for build ID: {build_id}")
-            # Get key from kbs
-            logger.info(f"Starting get key from KBS")
-            attestation_result, decryption_key = docker_service.get_pubKey_from_KBS(tl_signer)
-            if attestation_result != "trusted":
-                docker_service.update_build_status(
-                    request.user_id,
-                    build_id,
-                    "failed",
-                    error_message=f"Attestation failed: get key failed."
-                )
-                logger.debug(f"get key failed")
-                return
+            if ENABLE_TDX:
+                # Get key from KBS when TDX mode is enabled.
+                logger.info("Starting get key from KBS")
+                attestation_result, decryption_key = docker_service.get_pubKey_from_KBS(tl_signer)
+                if attestation_result != "trusted":
+                    docker_service.update_build_status(
+                        request.user_id,
+                        build_id,
+                        "failed",
+                        error_message="Attestation failed: get key failed."
+                    )
+                    logger.debug("get key failed")
+                    return
+            else:
+                logger.info("ENABLE_TDX=false, skipping KBS attestation key retrieval")
             
             docker_service.update_build_status(request.user_id, build_id, "preparing", step="Generating signing and encryption keys")
             logger.info(f"Generating keys for build ID: {build_id}")
@@ -193,6 +214,8 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tl_signer
             request.cert = cert
             private_encryption_key = priv_enc_key
             public_encryption_key = pub_enc_key
+            if not decryption_key:
+                decryption_key = {"opensslPub": pub_enc_key}
             logger.debug(f"Successfully generated keys for build ID: {build_id}")
             
             docker_service.update_build_status(
@@ -250,13 +273,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tl_signer
 		# Save transparencyLog
         logger.info("Save transparencyLog")
         #docker_service.update_transparencylog_status(request.user_id, 'LogID', "adding", build_id)
-        os.environ['http_proxy'] = "http://child-prc.intel.com:913"
-        os.environ['https_proxy'] = "http://child-prc.intel.com:913"
-
-        if "http_proxy" in os.environ:
-            print("Proxy is setted.")
-        else:
-            print("Proxy is unsetted.")
+        log_proxy_configuration("Build transparency log")
 
         from sigstore.oidc import Issuer
         issuer = Issuer.production()
@@ -273,9 +290,6 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tl_signer
 		# Verify transparencyLog
         logger.info("Verify transparencyLog")
         verify_tlog_status = docker_service.verify_transpaerncyLog("build", identity_token, build_id)
-
-        del os.environ['http_proxy']
-        del os.environ['https_proxy']
 
         # Update build status with success
         logger.info(f"Build completed successfully for build ID: {build_id}")
@@ -325,13 +339,7 @@ async def publish_package(request: PublishPackageRequest):
             source_ref = f"oci:{request.image_id}"
             dest_ref = f"docker://{registry_repo}"
 
-            os.environ['http_proxy'] = "http://child-prc.intel.com:913"
-            os.environ['https_proxy'] = "http://child-prc.intel.com:913"
-
-            if "http_proxy" in os.environ:
-                print("Proxy is setted.")
-            else:
-                print("Proxy is unsetted.")
+            log_proxy_configuration("Publish image push")
 
             push_success = docker_service.push_image(source_ref, dest_ref, tl_signer)
             if not push_success:
@@ -569,35 +577,33 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
 
         # 3. Perform attestation and handle decryption
         attestation_result = "trusted"
+        decryption_key = None
         if request.attestation_required:
-            # Verify attestation and get decryption key
-            logger.info("Attestation Verity and get keys")
-            attestation_result, decryption_key = await docker_service.verify_attestation(
-                request.image_id,
-                request.user_id,
-                tl_signer
-            )
-            tl_signer.add_entry({"verify_image":attestation_result})
-            tl_signer.add_entry({"verify_keys":decryption_key})
-
-            if attestation_result != "trusted":
-                docker_service.update_launch_status(
+            if ENABLE_TDX:
+                # Verify attestation and get decryption key in TDX mode.
+                logger.info("Attestation Verity and get keys")
+                attestation_result, decryption_key = await docker_service.verify_attestation(
+                    request.image_id,
                     request.user_id,
-                    launch_id,
-                    "failed",
-                    error_message=f"Attestation failed: {attestation_result}"
+                    tl_signer
                 )
-                logger.debug("Attestation Verity and get keys failed")
                 tl_signer.add_entry({"verify_image":attestation_result})
-                return
+                tl_signer.add_entry({"verify_keys":decryption_key})
 
-        os.environ['http_proxy'] = "http://child-prc.intel.com:913"
-        os.environ['https_proxy'] = "http://child-prc.intel.com:913"
+                if attestation_result != "trusted":
+                    docker_service.update_launch_status(
+                        request.user_id,
+                        launch_id,
+                        "failed",
+                        error_message=f"Attestation failed: {attestation_result}"
+                    )
+                    logger.debug("Attestation Verity and get keys failed")
+                    tl_signer.add_entry({"verify_image":attestation_result})
+                    return
+            else:
+                logger.info("ENABLE_TDX=false, skipping attestation flow")
 
-        if "http_proxy" in os.environ:
-            print("Proxy is setted.")
-        else:
-            print("Proxy is unsetted.")
+        log_proxy_configuration("Launch image pull")
 
         # 1. Pull and verify image
         logger.info("Get encrypted iamge and decrypt")
@@ -605,7 +611,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
             tl_signer,
             image_url=request.image_url,
             target_dir=launch_path,
-            openssl_key=decryption_key['opensslKey']
+            openssl_key=decryption_key['opensslKey'] if decryption_key else None
         )
         if not pull_success:
             docker_service.update_launch_status(
@@ -684,9 +690,6 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         logger.info("Verify transparencyLog")
         verify_tlog_status = docker_service.verify_transpaerncyLog("launch", identity_token, launch_id)
 
-        del os.environ['http_proxy']
-        del os.environ['https_proxy']
-
         # Update launch status to success
         docker_service.update_launch_status(
             request.user_id,
@@ -759,8 +762,7 @@ async def get_summary_transparencylog(request: GetTransparencyRequest):
 @app.post("/api/verify-tlog", response_model=VerificationSummaryResponse)
 async def verify_tlog(request: VerifyTlogRequest):
     """Verify transparency log"""
-    os.environ["http_proxy"]="http://child-prc.intel.com:913"
-    os.environ["https_proxy"]="http://child-prc.intel.com:913"
+    log_proxy_configuration("Verify tlog")
     try:
         verify_result = await docker_service.verify_tlog(
             request.raw_file,

@@ -13,6 +13,21 @@ A RESTful API service framework built with Python and FastAPI for handling Docke
 - **Audit Logging**: Record build and deploy evidence in Transparent Log System
 - **Runtime Security**: Enable secure container upgrades during runtime
 
+## Testing
+
+Use the single entrypoint for tests:
+
+```shell
+python test_runner.py --type all
+```
+
+Common options:
+
+```shell
+python test_runner.py --type unit
+python test_runner.py --type manual --name health
+```
+
 ## API Endpoints
 
 ### 1. Build and Package
@@ -321,17 +336,38 @@ python main.py
 
 The service will start at http://localhost:8000.
 
-### Deploy with Docker in TDVM
+### Deploy with Docker
 
 ### Build image & start service in container
 1. Build tc_api image
 
 ```bash
-# Build image(if proxy needed, add --build-arg http_proxy=xxx in follow command line)
-docker build -t {image_name:image_tag} .
+# Non-TDX build (default)
+docker build --build-arg ENABLE_TDX=false -t {image_name:image_tag} .
 
-# Run container(if proxy needed, add -e http_proxy=xxx in follow command line)
+# TDX build (requires TDX libs in build context)
+docker build --build-arg ENABLE_TDX=true -t {image_name:image_tag} .
+
+# Build with external proxy configuration
+docker build \
+  --build-arg ENABLE_TDX=false \
+  --build-arg http_proxy=$http_proxy \
+  --build-arg https_proxy=$https_proxy \
+  --build-arg no_proxy=$no_proxy \
+  --build-arg HTTP_PROXY=$HTTP_PROXY \
+  --build-arg HTTPS_PROXY=$HTTPS_PROXY \
+  --build-arg NO_PROXY=$NO_PROXY \
+  -t {image_name:image_tag} .
+
+# Run container
 docker run -it --network host --privileged \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -p 8001:8001 -p 8006:8006 -p 8000:8000 \
+  {image_name:image_tag}
+
+# If running with TDX mode, add TDX mounts and env
+docker run -it --network host --privileged \
+  -e ENABLE_TDX=true \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /dev/tdx_guest:/dev/tdx_guest \
   -v /etc/tdx-attest.conf:/etc/tdx-attest.conf \
@@ -348,6 +384,7 @@ Configure via environment variables:
 - `HOST`: Service listening address (default: 0.0.0.0)
 - `PORT`: Service port (default: 8000)
 - `DOCKER_REGISTRY`: Docker image registry address
+- `ENABLE_TDX`: enable TDX-specific flow and mounts (`true` or `false`, default `false`)
 - `UPLOAD_DIR`: File upload directory
 - `BUILD_DIR`: Build working directory
 
@@ -388,19 +425,24 @@ The project includes comprehensive test suites for all API endpoints.
 ### Quick Test Commands
 
 ```bash
-# Run all tests
-python test_api.py
+# Run all tests through a single entrypoint
+python test_runner.py --type all
+
+# Run deterministic unit coverage
+python test_runner.py --type unit --no-service-management --verbose
 
 # Run specific manual test
-python test_api.py health
-python test_api.py build
+python test_runner.py --type manual --name health
 
-# Run automated tests
-pytest test_unit.py -v
+# Manual test against a non-default endpoint
+TC_API_BASE_URL=http://localhost:18000 python test_runner.py --type manual --name health
 
-# Use test runner scripts
+# Wait up to 90s for manual endpoint readiness
+python test_runner.py --type manual --name health --base-url http://localhost:18000 --manual-ready-timeout 90
+
+# Backward-compatible wrappers
 ./run_tests.sh --type all --verbose
-.\run_tests.ps1 -TestType unit -Verbose
+./run_tests.ps1 --type unit --verbose
 ```
 
 See `TESTING.md` for complete testing documentation.

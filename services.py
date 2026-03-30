@@ -1205,7 +1205,11 @@ class DockerService:
                 attempt += 1
                 logger.info(f"Pulling image (attempt {attempt}/{max_retries}): {source_ref}")
 
-                cmd = [SKOPEO_CMD, "copy", "--decryption-key", openssl_key, source_ref, dest_ref]
+                if openssl_key:
+                    cmd = [SKOPEO_CMD, "copy", "--decryption-key", openssl_key, source_ref, dest_ref]
+                else:
+                    # Non-TDX mode can operate without decryption key when image is not encrypted.
+                    cmd = [SKOPEO_CMD, "copy", source_ref, dest_ref]
                 logger.debug(f"Pull command: {' '.join(cmd)}")
 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -1457,9 +1461,35 @@ class DockerService:
             logger.info(f"Get image id {imageID}")
 
             # run docker image
-            docker_cmd = [DOCKER_CMD + " run -d -it --privileged -e HF_HUB_OFFLINE=1 -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf -v /dev/tdx_guest:/dev/tdx_guest -v /usr/share/doc/libtdx-attest-dev/examples/:/td-attest/ -v /etc/hosts:/etc/hosts -v /etc/tdx-attest.conf:/etc/tdx-attest.conf --network=host " +imageID]
+            docker_cmd = [
+                DOCKER_CMD,
+                "run",
+                "-d",
+                "-it",
+                "--privileged",
+                "-e",
+                "HF_HUB_OFFLINE=1",
+                "-v",
+                "/etc/hosts:/etc/hosts",
+                "--network=host",
+            ]
+            if ENABLE_TDX:
+                docker_cmd.extend([
+                    "-v",
+                    "/etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf",
+                    "-v",
+                    "/dev/tdx_guest:/dev/tdx_guest",
+                    "-v",
+                    "/usr/share/doc/libtdx-attest-dev/examples/:/td-attest/",
+                    "-v",
+                    "/etc/tdx-attest.conf:/etc/tdx-attest.conf",
+                ])
+            else:
+                logger.info("ENABLE_TDX=false, skipping TDX device and attestation mounts")
+
+            docker_cmd.append(imageID)
             logger.info(f"Runcmd : {' '.join(docker_cmd)}")
-            dockerRUn = subprocess.run(docker_cmd, shell=True, capture_output=True, text=True)
+            dockerRUn = subprocess.run(docker_cmd, capture_output=True, text=True)
             if dockerRUn.returncode == 0:
                 logger.info(f"Success run image {image_id}.")
                 tl_signer.add_entry({"launch_cmd": " ".join(docker_cmd),
@@ -1494,12 +1524,13 @@ class DockerService:
             getStatus = [DOCKER_CMD, "inspect", "--format", "'{{.State.Status}}'", containerID]
             getStatus_res = subprocess.run(getStatus, capture_output=True, text=True)
             if getStatus_res.returncode == 0:
-                logger.info(f"Success get container {containerID} status: {getStatus_res.stdout.replace('\n','')}")
+                status_text = getStatus_res.stdout.replace("\n", "")
+                logger.info(f"Success get container {containerID} status: {status_text}")
                 tl_signer.add_entry({"getStatus_cmd": " ".join(getStatus),
                                      "get_status": getStatus_res.stdout})
             else:
                 logger.info("Failed get container status.")
-                logger.error(f"get container status cmd: {" ".join(getStatus)}")
+                logger.error(f"get container status cmd: {' '.join(getStatus)}")
                 tl_signer.add_entry({"get_status": "failed",
                                      "getStatus_stderr": getStatus_res.stderr
                                      })
