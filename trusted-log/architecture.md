@@ -69,7 +69,13 @@ flowchart LR
     OnChainSystem["On-Chain System<br/>API<br/>External on-chain service"]
     TransparentLogSystem["Transparent Log System<br/>API<br/>External transparent-log service"]
 
+    SubmissionDaemon["Submission Daemon<br/>Worker<br/>Background worker managing queue logic"]
+
     TrustBootstrap -->|Invokes| TrustLogApi
+    TrustLogApi -->|Enqueues| CommitQueue[(Local Commit Queue)]
+    SubmissionDaemon -->|Polls & Traverses| CommitQueue
+    SubmissionDaemon -->|Invokes submit_record| TrustLogApi
+
     TrustLogApi -->|Uses| LocalMRAdapter
     TrustLogApi -->|Uses| ImmutableLogAdapter
     LocalMRAdapter -->|Implemented by| TdxMR
@@ -84,6 +90,9 @@ flowchart LR
 
 - Trusted Log API:
 Receives event-log operations from TrustBootstrap, enforces workflow order, coordinates submit and query flows, and must preserve thread-safe behavior when commit and submit operations execute in different worker contexts.
+
+- Submission Daemon:
+A background worker or separate thread process that monitors the local Commit Queue, safely polls for finalized logs (`get_commit_queue_status()`), calls `submit_record()` autonomously, and applies exponential backoff for retries to avoid blocking API responses.
 
 - Local MR Adapter:
 Defines the local measurement contract (extend/query), independent of platform-specific backend details.
@@ -407,6 +416,11 @@ The implementation should therefore guarantee:
 
 This does not require a specific locking model, but the implementation must provide equivalent safety through process-local locks, transactional persistence, compare-and-swap style state transitions, or another concurrency-safe mechanism.
 
+### Disaster Recovery and Partial Failures
+
+Two heterogenous environments are modified during `commit_record()`: the local MR (e.g., RTMR via Sysfs) and the persistent Commit Queue (e.g., local database/disk). If an instance crashes in between extending the MR and persisting to the Queue, a *partial failure* occurs where the MR is permanently decoupled from the event block.
+To prevent this desynchronization, implementations should write-ahead log (WAL) or buffer the intended `EventLog` locally before firing the RTMR extend operation. Similarly, crashes prior to `submit_record()` completion naturally recover locally on reboot when the Submission Daemon detects `PENING` items inside the `Commit Queue`.
+
 ## End-to-End Flow
 
 ### Trust Log Initialization
@@ -421,6 +435,13 @@ At minimum, initialization should establish:
 - the backend configuration and credentials needed for immutable-log submission and later verification
 
 This initialization step defines the trust context for every later `add_entry`, `commit_record`, `submit_record`, query, and verification operation.
+
+### Identity and Public Key Management
+
+Trusted Log currently supports keyless signing (via Sigstore OIDC) but may also use traditional asymmetric keypairs (e.g., RSA, ECDSA) generated securely within the TEE.
+To optimize verification overhead, the public key does **not** need to be attached to every log entry. Instead:
+- The public key is embedded exclusively within the `pub_key` field of **Event Log 0** (the root of the chain).
+- Because subsequent logs are strictly linked via cryptographic hashes (`prev_log_id` / `previous_hash`), any verifier can securely traverse from the root, extract the verified public key from Event Log 0, and use it to validate the signatures of all subsequent entries in that chain instance.
 
 ### Trust Log Initialization Flow
 
