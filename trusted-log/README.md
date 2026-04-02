@@ -63,10 +63,10 @@ classDiagram
 
 ### Commit Queue and Async Submission
 
-Because remote immutable log submission and local RTMR extension are not always synchronized, the module keeps a local commit queue.
-`commit_record()` finalizes an event, computes its digest, and enqueues it.
+Because remote immutable log submission and local RTMR extension are not always synchronized, the module keeps a local commit queue (durable over process reboots, e.g. disk-backed file, SQLite database, or existing `backup_file_path` mechanism inherited from the legacy `tlog_chain.py` model).
+`commit_record()` finalizes an event, computes its digest, signs it, and durably enqueues it.
 `submit_record(record_id)` later publishes the previously committed queued event to the immutable backend and applies queue-state transitions internally.
-Event digests can be extended to local measurement registers at commit time, while remote log submission can complete later.
+Event digests can be extended to local measurement registers at commit time, while remote log submission can complete later via a Submission Daemon.
 When queued events are confirmed by the remote immutable system, they are removed from the local commit queue.
 
 `get_commit_queue_status()` is the worker-facing API used to decide whether queued work exists and which `record_id` should be attempted next.
@@ -124,11 +124,35 @@ At a high level, verification includes:
 Verification should treat the persisted immutable `EventLog` payload as the source of truth.
 The verifier should resolve the target log, replay ordered entry digests from canonical data, recompute the event digest, validate chain linkage and signatures, and then compare the replayed digest against the stored immutable-log value.
 
-## Integration Points
+## Integration with `tc_api` Workflows
 
-- API orchestration initializes and passes chain instances through request workflows.
-- Service workflows record metadata from build, SBOM, sign, encrypt, push, and verification steps.
-- Build artifacts include trusted-log outputs that can be persisted, replayed, and re-verified.
+The Trusted Log module is designed to integrate seamlessly into the external `tc_api` (Trust Container API) orchestrator, providing audit trails for lifecycle events like building or pushing Docker images.
+
+Because operations like `docker push` can be time-consuming and network-dependent, Trusted Log embraces an asynchronous Submission Daemon pattern.
+
+### Example: Tracking a Docker Push
+
+1. **Initialization**: When the `tc_api` endpoint is hit (e.g., `/push`), within the workflow in `services.py`, `TrustedLogAPI.init_record()` is called to create a record context.
+2. **Recording Fact**: As the `docker push` subprocess executes and returns metadata (like image digest, registry URL), `add_entry` is used to append this data into the log schema.
+3. **Commit (Synchronous)**: Before the API replies to the user, the workflow correctly calls `commit_record()`. This action rapidly calculates the chain hashes, extends the value into the local TDX RTMR, issues a local cryptographic signature, and drops the record into a durable `Commit Queue`. 
+4. **Daemon Processing (Asynchronous)**: A dedicated daemon thread/process (the Submission Daemon) continuously monitors the `Commit Queue`. It independently polls via `get_commit_queue_status()`, then calls `submit_record()`, completing the high-latency I/O task to push the verifiable logs to the external remote backend (transparent log or blockchain) while automatically applying exponential backoff retries if the backend drops.
+
+## Testing and Regression Verification
+
+To guarantee cryptographic and chain-link consistency after refactoring (e.g. from the legacy `tlog_chain.py`) and future modifications, the Trusted Log relies on the following testing layers:
+
+### 1. Unit Tests (Adapter and Hash Logic)
+- **Digest Determinism**: Provide fixed mock inputs to `Entry` and `EventLog` structures and assert that the generated SHA-384 hashes remain exactly identical to prevent format serialization drifts.
+- **Core API State Transitions**: Mock the `LocalMRAdapter` and `ImmutableLogAdapter`. Validate that triggering `init_record` -> `add_entry` -> `commit_record` securely transitions elements from in-memory objects to the localized queue buffer without premature backend calls.
+- **Legacy Adapter Compatibility**: Test the `ChainedTransparencyLog` adapter conversion to ensure it can successfully load old `.sigstore.json` backup files, parse signature keys/indexes, and reconstruct logically valid `EventLog` object graphs equivalent to the new schema.
+
+### 2. Concurrency & Daemon Integration Tests
+- **Multi-threaded Enqueue**: Spawn threads that concurrently fire `init` and `commit_record` against the identical `TrustedLogAPI` instance. Confirm that internal locking coordinates proper strictly-monotonic `sequence_number` assignment and `previous_hash` chains without race conditions.
+- **Daemon Retry Simulator**: Mimic a backend network drop by throwing `BackendSubmitError` from the `ImmutableLogAdapter`. Assert the daemon gracefully retains the item with `queue_status = PENDING` and attempts a safe retry.
+
+### 3. E2E Cryptographic Verification
+- **Full Chain Replay (`verify_record`)**: Generate a mock chain of 10 sequential events (including *Event Log 0* containing the injected Mock Public Key). Persist them, then successfully trigger the `verify_record` replay verification.
+- **Tamper Detection Simulation**: Deliberately modify a single payload byte of `value` inside index sequence 5. Confirm that the Verifier explicitly fails sequence 5's direct signature match, and subsequently flags broken `previous_hash` link ruptures for all trailing elements 6 through 10.
 
 ## Boundaries and Non-Goals
 
