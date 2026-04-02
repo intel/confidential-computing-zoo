@@ -443,6 +443,12 @@ To optimize verification overhead, the public key does **not** need to be attach
 - The public key is embedded exclusively within the `pub_key` field of **Event Log 0** (the root of the chain).
 - Because subsequent logs are strictly linked via cryptographic hashes (`prev_log_id` / `previous_hash`), any verifier can securely traverse from the root, extract the verified public key from Event Log 0, and use it to validate the signatures of all subsequent entries in that chain instance.
 
+### Identity Token Lifecycle and Separation of Duties
+
+When using OIDC tokens (like in Sigstore keyless signing), the tokens are ephemeral and often expire within minutes. This presents a challenge for asynchronous submission. To resolve this:
+- **Synchronous Signing (`commit_record`)**: The API caller securely holds the short-lived Identity Token within their request lifecycle. `commit_record()` immediately consumes this token to interact with the CA (e.g., Fulcio) to sign the payload and generate a complete, self-contained signature bundle.
+- **Stateless/Tokenless Submission (`submit_record`)**: The sealed `EventLog` written to the durable `Commit Queue` contains the finalized signature and certificates, but **no identity tokens**. The background Submission Daemon simply forwards this static payload to the remote backend (Transparent Log/Blockchain). It never requires or possesses the OIDC token, rendering it completely immune to token expiration issues during network retries or delayed submissions.
+
 ### Trust Log Initialization Flow
 
 - On initialization, Trusted Log creates Event Log 0 from the latest local MR snapshot and baseline system-event metadata.

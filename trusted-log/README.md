@@ -82,8 +82,11 @@ This model keeps queue draining and observability separate while preserving a si
 
 ### Identity and Signing
 
-Signing uses an identity token and Sigstore production signing context.
-If identity token or pending data is missing, signing fails fast.
+Signing uses an identity token and Sigstore production signing context (or a locally generated asymmetric keypair).
+If the identity token or pending data is missing, signing fails fast.
+
+**Crucially, the identity token's lifecycle is restricted entirely to the caller's synchronous request.** 
+During `commit_record()`, the short-lived OIDC token is immediately consumed to generate the signature and certificate bundle. The sealed `EventLog` written to the `Commit Queue` contains the finalized signature but **no identity tokens**. The background Submission Daemon executing `submit_record()` later merely forwards this static, fully-signed payload to the remote backend. The daemon requires no identity context, elegantly avoiding OIDC token expiration timeouts during offline queuing or retry loops.
 
 ## High-Level Lifecycle
 
