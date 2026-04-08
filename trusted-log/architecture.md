@@ -449,6 +449,45 @@ When using OIDC tokens (like in Sigstore keyless signing), the tokens are epheme
 - **Synchronous Signing (`commit_record`)**: The API caller securely holds the short-lived Identity Token within their request lifecycle. `commit_record()` immediately consumes this token to interact with the CA (e.g., Fulcio) to sign the payload and generate a complete, self-contained signature bundle.
 - **Stateless/Tokenless Submission (`submit_record`)**: The sealed `EventLog` written to the durable `Commit Queue` contains the finalized signature and certificates, but **no identity tokens**. The background Submission Daemon simply forwards this static payload to the remote backend (Transparent Log/Blockchain). It never requires or possesses the OIDC token, rendering it completely immune to token expiration issues during network retries or delayed submissions.
 
+#### Pseudo-code Implementation Example
+
+```python
+# 1. API Call (Synchronous Context with active OIDC Token)
+def api_handle_push_event(event_data: dict, oidc_token: str):
+    # Consume short-lived token immediately to get an ephemeral certificate via CA
+    certificate, ephemeral_private_key = CA_Client.exchange_token(oidc_token)
+    
+    # Cryptographically sign the payload over the generated memory-resident private key
+    signature = crypto_sign(event_data_digest, ephemeral_private_key)
+    
+    # Assemble the completely sealed Bundle
+    event_log = EventLog(
+        data=event_data, 
+        signature=signature, 
+        cert=certificate  # Public cert is attached, OIDC token + Private key discarded
+    )
+    
+    # Durably save the static payload to the local queue
+    local_commit_queue.enqueue(event_log)
+    return {"status": "accepted_for_processing"}
+
+# 2. Daemon Worker (Asynchronous Context without any OIDC Token)
+def daemon_submission_worker():
+    while True:
+        # Load the sealed EventLog from the queue
+        event_log = local_commit_queue.dequeue()
+        
+        # Heavy remote I/O: Submit the bundle to the Remote Backend (On-Chain/Transparent Log)
+        # The backend verifies if the signature was valid *during* the certificate's window,
+        # completely agnostic to how long it sat in our Commit Queue.
+        try:
+            remote_backend.publish(event_log)
+            local_commit_queue.mark_confirmed(event_log.id)
+        except NetworkError:
+            # Exponential backoff since we don't have to worry about token expiration
+            time.sleep(backoff)
+```
+
 ### Trust Log Initialization Flow
 
 - On initialization, Trusted Log creates Event Log 0 from the latest local MR snapshot and baseline system-event metadata.
