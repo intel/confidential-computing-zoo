@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import os
 import uuid
 import asyncio
@@ -42,11 +43,35 @@ def log_proxy_configuration(operation: str) -> None:
     else:
         logger.info("%s running without proxy environment", operation)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    from trusted_container_log.api import TrustedLogAPI
+    from trusted_container_log.database import init_db
+    
+    # Initialize SQLite database
+    init_db()
+    
+    # Create global instance
+    app.state.trusted_log = TrustedLogAPI()
+    
+    # Start the async submission daemon
+    app.state.trusted_log.start_submission_daemon(interval_seconds=5)
+    logger.info("TrustedLog Submission Daemon started.")
+    
+    yield
+    
+    # Shutdown logic
+    logger.info("Shutting down TrustedLog Submission Daemon...")
+    app.state.trusted_log.stop_submission_daemon()
+    logger.info("TrustedLog Submission Daemon stopped.")
+
 # Initialize FastAPI app
 app = FastAPI(
     title="TC API - Trusted Container Build and Publish Service",
     description="RESTful API for building, signing, encrypting and publishing Docker images",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Initialize services
