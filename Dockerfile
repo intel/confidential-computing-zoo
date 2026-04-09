@@ -24,9 +24,6 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.l
     gnupg \
     apt-transport-https \
     ca-certificates \
-    libsox-fmt-all \
-    net-tools \
-    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI
@@ -53,7 +50,6 @@ RUN apt-get update && apt-get install -y skopeo \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-#COPY requirements.txt .
 COPY . /app/  # ToDo - Be more specific 
 # Todo libtdx_attest.so source
 RUN if [ "$ENABLE_TDX" = "true" ]; then \ 
@@ -73,7 +69,6 @@ RUN python -m venv /app/venv
 RUN if [ -f "requirements.txt" ]; then \
         /app/venv/bin/pip install --no-cache-dir -r requirements.txt; \
     fi
-#RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Create necessary directories
 RUN mkdir -p /app/uploads /app/builds /app/logs /app/certs

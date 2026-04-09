@@ -139,3 +139,63 @@ class GetTransparencyRequest(BaseModel):
     build_id: str
     launch_id: str
 
+class CreateLunksRequest(BaseModel):
+    user_id: str
+    vfs_path: str
+    vfs_size: str
+    passwd: str
+
+
+class CreateLunksRespone(BaseModel):
+    user_id: str
+    passwd: str
+    vfs_path: str
+    vfs_size: str
+    mapper_dir: str
+    loop_device: str
+
+class LunksResult(BaseModel):
+    user_id: str
+    log_id: Optional[str] = None
+    status: str = "creating"
+    step: Optional[str] = None
+    transparencyLog_verify: Optional[str] = None
+    error_message: Optional[str] = None
+    passwd: Optional[str] = None
+    mapper_dir: Optional[str] = None
+    vfs_path: Optional[str] = None
+    vfs_size: Optional[str] = None
+    loop_device: Optional[str] = None
+    mount_path: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+class MountLunksRequest(BaseModel):
+    user_id: str
+    passwd: str
+    vfs_path: str
+    mapper_dir: str
+    loop_device: str
+    mount_path: str
+
+
+class MountLunksRespone(BaseModel):
+    user_id: str
+    passwd: str
+    vfs_path: str
+    loop_device: str
+    mapper_dir: str
+    mount_path: str
+
+class UnmountLunksRequest(BaseModel):
+    user_id: str
+    mapper_dir: str
+    loop_device: str
+    mount_path: str
+
+class UnmountLunksRespone(BaseModel):
+    user_id: str
+    mapper_dir: str
+    loop_device: str
+    mount_path: str
+
