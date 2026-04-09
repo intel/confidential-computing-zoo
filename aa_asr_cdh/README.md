@@ -3,8 +3,16 @@
 This document shows how to deploy AA/ASR/CDH in a container.
 
 ## Quick Start
+### make configuration
+1. Generate key pair
+```bash
+mkdir -p certs
+openssl genrsa -out certs/key.pem
+openssl rsa -in certs/key.pem -pubout -out certs/pub.pem
+```
+
 ### Build image & start service in container
-1. Build tc_api image
+2. Build image
 
 ```bash
 # Build image(if proxy needed, add --build-arg http_proxy=xxx in follow command line)

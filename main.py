@@ -782,6 +782,212 @@ async def verify_tlog(request: VerifyTlogRequest):
             detail=f"Failed to verify transparency log: {str(e)}"
         )
 
+@app.post("/api/create_lunks", response_model=CreateLunksRespone)
+async def create_lunks(request: CreateLunksRequest):
+    """create lunks"""
+    try:
+        tl_signer = ChainedTransparencyLog()
+
+        logger.info(f"Create Lunks block file for user: {request.user_id}")
+
+        # create encrypted vfs
+        tl_signer.add_entry({"lunks": "Start creating lunks blocks"})
+        mapdir,loopdevice = docker_service.create_lunks_block(request.user_id, tl_signer,request.passwd, request.vfs_size, request.vfs_path)
+        # Save transparencyLog
+        logger.info("Save transparencyLog")
+        os.environ['http_proxy'] = "http://child-prc.intel.com:913"
+        os.environ['https_proxy'] = "http://child-prc.intel.com:913"
+
+        if "http_proxy" in os.environ:
+            print("Proxy is setted.")
+        else:
+            print("Proxy is unsetted.")
+
+        from sigstore.oidc import Issuer
+        issuer = Issuer.production()
+        identity_token = issuer.identity_token()
+
+        tl_signer.set_identity_token(identity_token)
+        tlog_status, tlog_id = docker_service.save_transparencyLog("create_lunks",'',tl_signer)
+        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "creating lunks block", '')
+        if tlog_status:
+            logger.info(f"Save create_lunks transparency success.")
+        else:
+            logger.info(f"Save create_lunks transparency failed.")
+
+        # Verify transparencyLog
+        logger.info("Verify transparencyLog")
+        verify_tlog_status = docker_service.verify_transpaerncyLog("create_lunks", identity_token, '')
+
+        del os.environ['http_proxy']
+        del os.environ['https_proxy']
+
+        docker_service.update_lunks_status(
+            request.user_id,
+            "create success",
+            step="create_lunks completed successfully",
+            log_id=tlog_id,
+            transparencyLog_verify=verify_tlog_status
+        )
+
+
+        return CreateLunksRespone(
+            user_id=request.user_id,
+            passwd=request.passwd,
+            mapper_dir=mapdir,
+            vfs_path=request.vfs_path,
+            loop_device=loopdevice,
+            vfs_size=request.vfs_size
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create lunks: {str(e)}"
+        )
+
+@app.post("/api/mount_lunks", response_model=MountLunksRespone)
+async def create_lunks(request: MountLunksRequest):
+    """mount lunks"""
+    try:
+        logger.info(f"Mount Lunks block file for user: {request.user_id}")
+        tl_signer = ChainedTransparencyLog()
+        status = 'failed'
+        # mount encrypted vfs
+        mountPath = docker_service.mount_lunks_block(request.user_id, tl_signer, request.mapper_dir, request.passwd, request.mount_path,request.vfs_path,request.loop_device)
+
+        # Save transparencyLog
+        logger.info("Save transparencyLog")
+        os.environ['http_proxy'] = "http://child-prc.intel.com:913"
+        os.environ['https_proxy'] = "http://child-prc.intel.com:913"
+
+        if "http_proxy" in os.environ:
+            print("Proxy is setted.")
+        else:
+            print("Proxy is unsetted.")
+
+        from sigstore.oidc import Issuer
+        issuer = Issuer.production()
+        identity_token = issuer.identity_token()
+
+        tl_signer.set_identity_token(identity_token)
+        tlog_status, tlog_id = docker_service.save_transparencyLog("mount_lunks",'',tl_signer)
+        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "mount_lunks block", '')
+        if tlog_status:
+            logger.info(f"Save build transparency success.")
+        else:
+            logger.info(f"Save build transparency failed.")
+
+        # Verify transparencyLog
+        logger.info("Verify transparencyLog")
+        verify_tlog_status = docker_service.verify_transpaerncyLog("mount_lunks", identity_token, '')
+
+        del os.environ['http_proxy']
+        del os.environ['https_proxy']
+
+        if  verify_tlog_status == "success":
+            status = "mount_lunks success"
+
+        docker_service.update_lunks_status(
+            request.user_id,
+            status,
+            step="mount_lunks completed successfully",
+            log_id=tlog_id,
+            transparencyLog_verify=verify_tlog_status
+        )
+
+        return MountLunksRespone(
+            user_id=request.user_id,
+            passwd=request.passwd,
+            mapper_dir=request.mapper_dir,
+            vfs_path=request.vfs_path,
+            loop_device=request.loop_device,
+            mount_path=request.mount_path
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to mount lunks: {str(e)}"
+        )
+
+@app.post("/api/unmount_lunks", response_model=UnmountLunksRespone)
+async def create_lunks(request: UnmountLunksRequest):
+    """umount lunks"""
+    try:
+        logger.info(f"Umount Lunks block file for user: {request.user_id}")
+        tl_signer = ChainedTransparencyLog()
+        status = 'failed'
+        # unmount encrypted vfs
+        docker_service.unmount_lunks_block(request.user_id, tl_signer, request.mapper_dir, request.mount_path, request.loop_device)
+
+        # Save transparencyLog
+        logger.info("Save transparencyLog")
+        #docker_service.update_transparencylog_status(request.user_id, 'LogID', "adding", build_id)
+        os.environ['http_proxy'] = "http://child-prc.intel.com:913"
+        os.environ['https_proxy'] = "http://child-prc.intel.com:913"
+
+        if "http_proxy" in os.environ:
+            print("Proxy is setted.")
+        else:
+            print("Proxy is unsetted.")
+
+        from sigstore.oidc import Issuer
+        issuer = Issuer.production()
+        identity_token = issuer.identity_token()
+
+        tl_signer.set_identity_token(identity_token)
+        tlog_status, tlog_id = docker_service.save_transparencyLog("unmount_lunks",'',tl_signer)
+        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "unmount_lunks block", '')
+        if tlog_status:
+            logger.info(f"Save build transparency success.")
+        else:
+            logger.info(f"Save build transparency failed.")
+
+        # Verify transparencyLog
+        logger.info("Verify transparencyLog")
+        verify_tlog_status = docker_service.verify_transpaerncyLog("unmount_lunks", identity_token, '')
+
+        del os.environ['http_proxy']
+        del os.environ['https_proxy']
+        if  verify_tlog_status == "success":
+            status = "unmount_lunks success"
+        docker_service.update_lunks_status(
+            request.user_id,
+            status,
+            step="unmount_lunks completed successfully",
+            log_id=tlog_id,
+            transparencyLog_verify=verify_tlog_status
+        )
+
+        return UnmountLunksRespone(
+            user_id=request.user_id,
+            mapper_dir=request.mapper_dir,
+            loop_device=request.loop_device,
+            mount_path=request.mount_path
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to unmount lunks: {str(e)}"
+        )
+
+@app.get("/api/lunks-result/{user_id}", response_model=LunksResult)
+async def get_lunks_result(user_id: str):
+    """Get lunks result by user ID"""
+    try:
+        lunks = docker_service.get_lunks_status(user_id)
+
+        if not lunks:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return lunks
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get lunks result: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host=HOST, port=PORT, log_level="debug")
