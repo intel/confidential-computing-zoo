@@ -3,10 +3,25 @@ import json
 from contextlib import contextmanager
 from typing import Optional, List, Dict, Any, Tuple
 import threading
+import os
 from datetime import datetime
 
-# Global configuration or default path
-DB_PATH = 'trusted_log_queue.db'
+# Import the DB path config
+# Defaulting back to local if not defined
+try:
+    from config import COMMIT_QUEUE_DB
+    DB_PATH = COMMIT_QUEUE_DB
+except ImportError:
+    DB_PATH = '/dev/shm/commit_queue.db'
+
+# Make sure directory exists, especially for shm
+db_dir = os.path.dirname(DB_PATH)
+if db_dir and not os.path.exists(db_dir):
+    try:
+        os.makedirs(db_dir, exist_ok=True)
+    except Exception as e:
+        print(f"Warning: Could not create {db_dir} for sqlite DB. Using local fallback: {e}")
+        DB_PATH = 'commit_queue.db'
 
 # Use thread-local storage if needed or rely on check_same_thread=False
 # SQLite by default handles connections safely if isolation_level is set properly

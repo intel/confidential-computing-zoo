@@ -418,8 +418,8 @@ This does not require a specific locking model, but the implementation must prov
 
 ### Disaster Recovery and Partial Failures
 
-Two heterogenous environments are modified during `commit_record()`: the local MR (e.g., RTMR via Sysfs) and the persistent Commit Queue (e.g., local database/disk). If an instance crashes in between extending the MR and persisting to the Queue, a *partial failure* occurs where the MR is permanently decoupled from the event block.
-To prevent this desynchronization, implementations should write-ahead log (WAL) or buffer the intended `EventLog` locally before firing the RTMR extend operation. Similarly, crashes prior to `submit_record()` completion naturally recover locally on reboot when the Submission Daemon detects `PENING` items inside the `Commit Queue`.
+Two heterogenous environments are modified during `commit_record()`: the local MR (e.g., RTMR via Sysfs) and the persistent Commit Queue (e.g., an SQLite database). If an instance crashes in between extending the MR and persisting to the Queue, a *partial failure* occurs where the MR is permanently decoupled from the event block.
+To prevent this desynchronization, implementations should place the intended `EventLog` locally before firing the RTMR extend operation. Because general disk storage on cloud hosts is mutually untrusted, placing the SQLite WAL log in ephemeral `tmpfs` (e.g., `/dev/shm/commit_queue.db`) prevents plaintext leakage at rest while fully relying on Confidential VM memory encryption. In this environment, a VM reboot destroys the unsent queue; this ephemeral security trade-off is accepted by design.
 
 ## End-to-End Flow
 
@@ -477,11 +477,11 @@ def daemon_submission_worker():
         # Load the sealed EventLog from the queue
         event_log = local_commit_queue.dequeue()
         
-        # Heavy remote I/O: Submit the bundle to the Remote Backend (On-Chain/Transparent Log)
+        # Heavy remote I/O: Submit the bundle to the Remote Backend (e.g. through the ImmutableLogAdapter).
         # The backend verifies if the signature was valid *during* the certificate's window,
         # completely agnostic to how long it sat in our Commit Queue.
         try:
-            remote_backend.publish(event_log)
+            immutable_log_adapter.submit(event_log)
             local_commit_queue.mark_confirmed(event_log.id)
         except NetworkError:
             # Exponential backoff since we don't have to worry about token expiration

@@ -48,12 +48,29 @@ async def lifespan(app: FastAPI):
     # Startup logic
     from trusted_container_log.api import TrustedLogAPI
     from trusted_container_log.database import init_db
+    from trusted_container_log.tlog_impl import SigstoreLogAdapter
+    from trusted_container_log.local_mr import TdxMRAdapter
     
     # Initialize SQLite database
     init_db()
     
     # Create global instance
-    app.state.trusted_log = TrustedLogAPI()
+    # Attempt to use TDX Adapter, fallback to None if hardware not present
+    local_mr_adapter = None
+    try:
+        # Check if the sysfs node exists before using
+        import os
+        if os.path.exists("/sys/kernel/tsm/rtmr"):
+            local_mr_adapter = TdxMRAdapter()
+        else:
+            logger.info("TDX RTMR sysfs not found, running without local MR extensions")
+    except Exception as e:
+        logger.warning(f"Could not init local MR adapter: {e}")
+
+    app.state.trusted_log = TrustedLogAPI(
+        local_mr=local_mr_adapter,
+        immutable_log=SigstoreLogAdapter()
+    )
     
     # Start the async submission daemon
     app.state.trusted_log.start_submission_daemon(interval_seconds=5)

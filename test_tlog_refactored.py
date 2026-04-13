@@ -5,6 +5,15 @@ import json
 import time
 from trusted_container_log.database import init_db, insert_record, get_pending_records, delete_record
 from trusted_container_log.api import TrustedLogAPI
+from trusted_container_log.local_mr import LocalMRAdapter
+from typing import Tuple
+
+class MockMRAdapter(LocalMRAdapter):
+    def read(self, index: int) -> str:
+        return "mock-value-1234"
+        
+    def extend(self, index: int, digest: str) -> Tuple[str, str]:
+        return "mock-new-mr-value", "mock-prev-mr-value"
 
 # Simple tests to fulfill 4.2 and 4.3
 
@@ -24,7 +33,8 @@ def test_sqlite_wal_persistence(tmp_path):
     assert len(records) == 10
 
 def test_dsse_formatting_mocked():
-    api = TrustedLogAPI()
+    adapter = MockMRAdapter()
+    api = TrustedLogAPI(local_mr=adapter)
     # Mocking out the missing dependencies locally
     assert True # In reality we'd assert the dsse StatementBuilder properties 
 
