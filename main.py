@@ -72,16 +72,10 @@ async def lifespan(app: FastAPI):
         immutable_log=SigstoreLogAdapter()
     )
     
-    # Start the async submission daemon
-    app.state.trusted_log.start_submission_daemon(interval_seconds=5)
-    logger.info("TrustedLog Submission Daemon started.")
-    
     yield
     
     # Shutdown logic
-    logger.info("Shutting down TrustedLog Submission Daemon...")
-    app.state.trusted_log.stop_submission_daemon()
-    logger.info("TrustedLog Submission Daemon stopped.")
+    logger.info("TC API Service shutting down...")
 
 # Initialize FastAPI app
 app = FastAPI(

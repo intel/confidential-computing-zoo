@@ -42,3 +42,31 @@ def test_tokenless_rekor_push_daemon():
     # Setup dummy queue
     # Assert daemon takes from SQLite and calls submit without IdentityToken
     assert True
+from trusted_container_log.local_mr import TdxMRAdapter
+import os
+
+def test_tdx_mr_adapter(tmp_path):
+    # Setup mock sysfs
+    d = tmp_path / "measurements"
+    d.mkdir()
+    path = d / "rtmr0:sha384"
+    # Provide exactly 48 bytes init value
+    init_val = b'\x00' * 48
+    path.write_bytes(init_val)
+
+    adapter = TdxMRAdapter(sysfs_base_path=str(d / "rtmr"))
+    
+    # Test read
+    val = adapter.read(0)
+    assert val == init_val.hex()
+    
+    # Test extend
+    new_hash = "11" * 48
+    new_val, prev_val = adapter.extend(0, new_hash)
+    
+    assert prev_val == init_val.hex()
+    assert new_val == new_hash
+    
+    # Ensure binary content was written
+    written_bytes = path.read_bytes()
+    assert written_bytes == bytes.fromhex(new_hash)

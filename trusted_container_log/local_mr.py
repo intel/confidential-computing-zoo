@@ -32,28 +32,23 @@ class LocalMRAdapter(ABC):
 
 class TdxMRAdapter(LocalMRAdapter):
     """
-    Adapter for Intel TDX RTMRs using the Linux TSM sysfs interface.
-    Assuming typical sysfs paths like /sys/kernel/tsm/rtmr*/
+    Adapter for Intel TDX RTMRs directly utilizing the TDX Guest driver sysfs path.
     """
-    def __init__(self, sysfs_base_path: str = "/sys/kernel/tsm/rtmr"):
+    def __init__(self, sysfs_base_path: str = "/sys/class/misc/tdx_guest/measurements/rtmr"):
         self.sysfs_base_path = sysfs_base_path
 
-    def _get_val_path(self, index: int) -> str:
-        # Example pattern: /sys/kernel/tsm/rtmr0/val or /sys/kernel/tsm/rtmr/0/val
-        # Adjust as per specific kernel interface
-        return os.path.join(self.sysfs_base_path, str(index), "val")
-        
-    def _get_extend_path(self, index: int) -> str:
-        return os.path.join(self.sysfs_base_path, str(index), "extend")
+    def _get_path(self, index: int) -> str:
+        # Expected pattern: /sys/class/misc/tdx_guest/measurements/rtmr0:sha384
+        return f"{self.sysfs_base_path}{index}:sha384"
 
     def read(self, index: int) -> str:
-        path = self._get_val_path(index)
+        path = self._get_path(index)
         if not os.path.exists(path):
-            raise FileNotFoundError(f"TDX TSM sysfs missing at {path}. Hardware unsupported or missing permissions.")
+            raise FileNotFoundError(f"TDX guest measurements sysfs missing at {path}. Hardware unsupported.")
             
         try:
-            with open(path, "r") as f:
-                return f.read().strip()
+            with open(path, "rb") as f:
+                return f.read().hex()
         except PermissionError:
             raise PermissionError(f"Insufficient permissions to read TDX RTMR sysfs at {path}")
         except Exception as e:
@@ -63,19 +58,26 @@ class TdxMRAdapter(LocalMRAdapter):
     def extend(self, index: int, digest: str) -> Tuple[str, str]:
         # Strip potential known prefixes
         if digest.startswith("sha384:"):
-            digest = digest[8:]
+            digest = digest[7:]
             
-        path = self._get_extend_path(index)
+        path = self._get_path(index)
         if not os.path.exists(path):
-            raise FileNotFoundError(f"TDX TSM extend sysfs missing at {path}")
+            raise FileNotFoundError(f"TDX guest extend sysfs missing at {path}")
             
         try:
-            # Read previous matching TPM/TDX extend logic:
-            # extend(digest) typically means writing binary or hex digest to sysfs
             prev_val = self.read(index)
             
-            with open(path, "w") as f:
-                f.write(digest)
+            # Convert string to exactly 48 bytes
+            try:
+                raw_bytes = bytes.fromhex(digest)
+            except ValueError:
+                raise ValueError(f"Provided digest is not a valid hex string: {digest}")
+                
+            if len(raw_bytes) != 48:
+                raise ValueError(f"TDX RTMR requires exactly 48 bytes (sha384), but got {len(raw_bytes)}")
+            
+            with open(path, "rb+") as f:
+                f.write(raw_bytes)
                 
             new_val = self.read(index)
             return (new_val, prev_val)

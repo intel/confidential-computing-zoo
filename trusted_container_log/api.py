@@ -31,8 +31,6 @@ class TrustedLogAPI:
         self._records: Dict[str, RecordContext] = {}
         self._entries: Dict[str, List[Entry]] = {}
         self._latest_confirmed_log_id: Optional[str] = None
-        self._stop_event = threading.Event()
-        self._daemon_thread: Optional[threading.Thread] = None
 
     def init_record(self, prev_log_id: Optional[str] = None, context: Optional[Dict[str, Any]] = None) -> RecordContext:
         record_id = str(uuid.uuid4())
@@ -186,30 +184,6 @@ class TrustedLogAPI:
             next_record_id=pending[0]['record_id'] if pending else None
         )
 
-    def start_submission_daemon(self, interval_seconds: int = 5):
-        if self._daemon_thread and self._daemon_thread.is_alive():
-            return
-            
-        self._stop_event.clear()
-        
-        def daemon_loop():
-            while not self._stop_event.is_set():
-                queue_status = self.get_commit_queue_status()
-                if queue_status.has_queued_records and queue_status.next_record_id:
-                    try:
-                        self.submit_record(queue_status.next_record_id)
-                    except Exception as e:
-                        logger.error(f"Daemon error submitting {queue_status.next_record_id}: {e}")
-                
-                # Sleep in short burst to respond quickly to shutdown events
-                for _ in range(interval_seconds * 10):
-                    if self._stop_event.is_set():
-                        break
-                    time.sleep(0.1)
-
-        self._daemon_thread = threading.Thread(target=daemon_loop, daemon=True, name="TrustedLogSubmissionDaemon")
-        self._daemon_thread.start()
-
     def verify_record(self, target: str, policy: Optional[Dict[str, Any]] = None) -> VerificationResult:
         # Load from immutable backend directly or mock parsing here
         # E.g. get_event_log(target) -> parsing the dsse envelope.
@@ -228,8 +202,3 @@ class TrustedLogAPI:
             return VerificationResult(success=True, details={"event_id": event_log.event_id})
         except Exception as e:
             return VerificationResult(success=False, errors=[str(e)])
-
-    def stop_submission_daemon(self, timeout: float = 10.0):
-        if self._daemon_thread and self._daemon_thread.is_alive():
-            self._stop_event.set()
-            self._daemon_thread.join(timeout=timeout)
