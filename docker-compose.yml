@@ -32,6 +32,9 @@ services:
       - ./builds:/app/builds
       - ./logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for building images
+    tmpfs:
+      - /dev/shm
+    mem_swappiness: 0
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
@@ -39,6 +42,27 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  tlog-daemon:
+    build:
+      context: .
+      args:
+        - http_proxy=${http_proxy:-}
+        - https_proxy=${https_proxy:-}
+        - no_proxy=${no_proxy:-}
+    command: ["python", "tlog_daemon.py"]
+    environment:
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=${no_proxy:-}
+    volumes:
+      - ./logs:/app/logs
+    tmpfs:
+      - /dev/shm
+    mem_swappiness: 0
+    restart: unless-stopped
+    depends_on:
+      - tc-api
 
   # Optional: Add a reverse proxy
   nginx:

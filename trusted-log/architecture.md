@@ -91,6 +91,9 @@ flowchart LR
 - Trusted Log API:
 Receives event-log operations from TrustBootstrap, enforces workflow order, coordinates submit and query flows, and must preserve thread-safe behavior when commit and submit operations execute in different worker contexts.
 
+- Local Commit Queue (Ephemeral Storage):
+A local SQLite database serving as an operations buffer. To enforce strict hardware Lifecycle Alignment, this database MUST reside in a volatile, memory-backed file system (e.g., `/dev/shm`) and MUST be protected by strict DAC isolation (i.e. `0700` permissions on a dedicated directory). This design prevents persisting uncommitted queued events beyond the lifetime of the Trust Domain (TD), inherently matching the lifespan of corresponding hardware Measurement Registers (RTMRs) which reset upon a VM crash. Furthermore, careful deployment configurations should implement anti-swapping contracts (e.g., setting `memory-swappiness=0`).
+
 - Submission Daemon:
 A background worker or separate thread process that monitors the local Commit Queue, safely polls for finalized logs (`get_commit_queue_status()`), calls `submit_record()` autonomously, and applies exponential backoff for retries to avoid blocking API responses.
 
@@ -418,8 +421,8 @@ This does not require a specific locking model, but the implementation must prov
 
 ### Disaster Recovery and Partial Failures
 
-Two heterogenous environments are modified during `commit_record()`: the local MR (e.g., RTMR via Sysfs) and the persistent Commit Queue (e.g., local database/disk). If an instance crashes in between extending the MR and persisting to the Queue, a *partial failure* occurs where the MR is permanently decoupled from the event block.
-To prevent this desynchronization, implementations should write-ahead log (WAL) or buffer the intended `EventLog` locally before firing the RTMR extend operation. Similarly, crashes prior to `submit_record()` completion naturally recover locally on reboot when the Submission Daemon detects `PENING` items inside the `Commit Queue`.
+Two heterogenous environments are modified during `commit_record()`: the local MR (e.g., RTMR via Sysfs) and the persistent Commit Queue (e.g., an SQLite database). If an instance crashes in between extending the MR and persisting to the Queue, a *partial failure* occurs where the MR is permanently decoupled from the event block.
+To prevent this desynchronization, implementations should place the intended `EventLog` locally before firing the RTMR extend operation. Because general disk storage on cloud hosts is mutually untrusted, placing the SQLite WAL log in ephemeral `tmpfs` (e.g., `/dev/shm/commit_queue.db`) prevents plaintext leakage at rest while fully relying on Confidential VM memory encryption. In this environment, a VM reboot destroys the unsent queue; this ephemeral security trade-off is accepted by design.
 
 ## End-to-End Flow
 
@@ -448,6 +451,45 @@ To optimize verification overhead, the public key does **not** need to be attach
 When using OIDC tokens (like in Sigstore keyless signing), the tokens are ephemeral and often expire within minutes. This presents a challenge for asynchronous submission. To resolve this:
 - **Synchronous Signing (`commit_record`)**: The API caller securely holds the short-lived Identity Token within their request lifecycle. `commit_record()` immediately consumes this token to interact with the CA (e.g., Fulcio) to sign the payload and generate a complete, self-contained signature bundle.
 - **Stateless/Tokenless Submission (`submit_record`)**: The sealed `EventLog` written to the durable `Commit Queue` contains the finalized signature and certificates, but **no identity tokens**. The background Submission Daemon simply forwards this static payload to the remote backend (Transparent Log/Blockchain). It never requires or possesses the OIDC token, rendering it completely immune to token expiration issues during network retries or delayed submissions.
+
+#### Pseudo-code Implementation Example
+
+```python
+# 1. API Call (Synchronous Context with active OIDC Token)
+def api_handle_push_event(event_data: dict, oidc_token: str):
+    # Consume short-lived token immediately to get an ephemeral certificate via CA
+    certificate, ephemeral_private_key = CA_Client.exchange_token(oidc_token)
+    
+    # Cryptographically sign the payload over the generated memory-resident private key
+    signature = crypto_sign(event_data_digest, ephemeral_private_key)
+    
+    # Assemble the completely sealed Bundle
+    event_log = EventLog(
+        data=event_data, 
+        signature=signature, 
+        cert=certificate  # Public cert is attached, OIDC token + Private key discarded
+    )
+    
+    # Durably save the static payload to the local queue
+    local_commit_queue.enqueue(event_log)
+    return {"status": "accepted_for_processing"}
+
+# 2. Daemon Worker (Asynchronous Context without any OIDC Token)
+def daemon_submission_worker():
+    while True:
+        # Load the sealed EventLog from the queue
+        event_log = local_commit_queue.dequeue()
+        
+        # Heavy remote I/O: Submit the bundle to the Remote Backend (e.g. through the ImmutableLogAdapter).
+        # The backend verifies if the signature was valid *during* the certificate's window,
+        # completely agnostic to how long it sat in our Commit Queue.
+        try:
+            immutable_log_adapter.submit(event_log)
+            local_commit_queue.mark_confirmed(event_log.id)
+        except NetworkError:
+            # Exponential backoff since we don't have to worry about token expiration
+            time.sleep(backoff)
+```
 
 ### Trust Log Initialization Flow
 

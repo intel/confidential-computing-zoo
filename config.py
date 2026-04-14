@@ -13,6 +13,7 @@ DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="####")
 UPLOAD_DIR = config("UPLOAD_DIR", default="./uploads")
 BUILD_DIR = config("BUILD_DIR", default="./builds")
 LOGS_DIR = config("LOGS_DIR", default="./logs")
+COMMIT_QUEUE_DB = config("COMMIT_QUEUE_DB", default="/dev/shm/commit_queue.db")
 
 # External Tools
 DOCKER_CMD = config("DOCKER_CMD", default="docker")

@@ -26,13 +26,35 @@ check_tool cosign
 check_tool syft  
 check_tool skopeo
 
+# Check for active swap to prevent memory-backed DB leaks
+if swapon --show | grep -q "/"; then
+    echo "⚠ Warning: Memory swapping is active! The ephemeral SQLite queue in /dev/shm may leak to disk."
+    if [ "$STRICT_MODE" = "true" ]; then
+        echo "Error: STRICT_MODE requires swap to be disabled. Aborting."
+        exit 1
+    fi
+fi
+
 # Create necessary directories
-mkdir -p uploads builds logs
+mkdir -p uploads builds logs /dev/shm
 
 # Set default environment variables if not set
 export HOST=${HOST:-0.0.0.0}
 export PORT=${PORT:-8000}
 export DEBUG=${DEBUG:-false}
+
+echo "Starting Standalone Trusted Log Daemon..."
+python tlog_daemon.py &
+DAEMON_PID=$!
+
+# Function to gracefully shutdown the daemon when the script exits
+cleanup() {
+    echo "Stopping Trusted Log Daemon (PID: $DAEMON_PID)..."
+    kill -TERM $DAEMON_PID 2>/dev/null || true
+    wait $DAEMON_PID 2>/dev/null || true
+    echo "Daemon stopped."
+}
+trap cleanup EXIT INT TERM
 
 echo "Starting TC API on $HOST:$PORT"
 echo "Debug mode: $DEBUG"

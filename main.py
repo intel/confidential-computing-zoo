@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import os
 import uuid
 import asyncio
@@ -42,11 +43,46 @@ def log_proxy_configuration(operation: str) -> None:
     else:
         logger.info("%s running without proxy environment", operation)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    from trusted_container_log.api import TrustedLogAPI
+    from trusted_container_log.database import init_db
+    from trusted_container_log.tlog_impl import SigstoreLogAdapter
+    from trusted_container_log.local_mr import TdxMRAdapter
+    
+    # Initialize SQLite database
+    init_db()
+    
+    # Create global instance
+    # Attempt to use TDX Adapter, fallback to None if hardware not present
+    local_mr_adapter = None
+    try:
+        # Check if the sysfs node exists before using
+        import os
+        if os.path.exists("/sys/kernel/tsm/rtmr"):
+            local_mr_adapter = TdxMRAdapter()
+        else:
+            logger.info("TDX RTMR sysfs not found, running without local MR extensions")
+    except Exception as e:
+        logger.warning(f"Could not init local MR adapter: {e}")
+
+    app.state.trusted_log = TrustedLogAPI(
+        local_mr=local_mr_adapter,
+        immutable_log=SigstoreLogAdapter()
+    )
+    
+    yield
+    
+    # Shutdown logic
+    logger.info("TC API Service shutting down...")
+
 # Initialize FastAPI app
 app = FastAPI(
     title="TC API - Trusted Container Build and Publish Service",
     description="RESTful API for building, signing, encrypting and publishing Docker images",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Initialize services

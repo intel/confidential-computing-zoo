@@ -61,12 +61,12 @@ classDiagram
 ```
 
 
-### Commit Queue and Async Submission
+### Commit Queue, Async Submission, and Ephemeral Storage
 
-Because remote immutable log submission and local RTMR extension are not always synchronized, the module keeps a local commit queue (durable over process reboots, e.g. disk-backed file, SQLite database, or existing `backup_file_path` mechanism inherited from the legacy `tlog_chain.py` model).
-`commit_record()` finalizes an event, computes its digest, signs it, and durably enqueues it.
-`submit_record(record_id)` later publishes the previously committed queued event to the immutable backend and applies queue-state transitions internally.
-Event digests can be extended to local measurement registers at commit time, while remote log submission can complete later via a Submission Daemon.
+Because remote immutable log submission and local RTMR extension are not always synchronized, the module keeps a local commit queue. To comply with Confidential Computing threat models and prevent plaintext data-at-rest from leaking to untrusted host disks, this SQLite WAL-based queue is explicitly mounted in ephemeral `tmpfs` memory (e.g., `/dev/shm/commit_queue.db`). 
+
+`commit_record()` finalizes an event, computes its digest, signs it, and securely enqueues it in this memory-backed database.
+`submit_record(record_id)` later processes the queued event, publishing it to the immutable backend (using an `ImmutableLogAdapter` such as `SigstoreLogAdapter`) and applying queue-state transitions internally. Event digests can be extended to local measurement registers (using a `LocalMRAdapter` such as `TdxMRAdapter`) at commit time, while remote log submission can complete asynchronously.
 When queued events are confirmed by the remote immutable system, they are removed from the local commit queue.
 
 `get_commit_queue_status()` is the worker-facing API used to decide whether queued work exists and which `record_id` should be attempted next.
@@ -138,7 +138,7 @@ Because operations like `docker push` can be time-consuming and network-dependen
 1. **Initialization**: When the `tc_api` endpoint is hit (e.g., `/push`), within the workflow in `services.py`, `TrustedLogAPI.init_record()` is called to create a record context.
 2. **Recording Fact**: As the `docker push` subprocess executes and returns metadata (like image digest, registry URL), `add_entry` is used to append this data into the log schema.
 3. **Commit (Synchronous)**: Before the API replies to the user, the workflow correctly calls `commit_record()`. This action rapidly calculates the chain hashes, extends the value into the local TDX RTMR, issues a local cryptographic signature, and drops the record into a durable `Commit Queue`. 
-4. **Daemon Processing (Asynchronous)**: A dedicated daemon thread/process (the Submission Daemon) continuously monitors the `Commit Queue`. It independently polls via `get_commit_queue_status()`, then calls `submit_record()`, completing the high-latency I/O task to push the verifiable logs to the external remote backend (transparent log or blockchain) while automatically applying exponential backoff retries if the backend drops.
+4. **Daemon Processing (Asynchronous)**: A dedicated daemon thread/process (the Submission Daemon) continuously monitors the `Commit Queue` (located in `/dev/shm` memory). It independently polls via `get_commit_queue_status()`, then calls `submit_record()`, completing the high-latency I/O task to push the verifiable logs to the external remote backend (such as Sigstore via `SigstoreLogAdapter`) while automatically applying exponential backoff retries if the backend drops.
 
 ## Testing and Regression Verification
 
@@ -146,7 +146,7 @@ To guarantee cryptographic and chain-link consistency after refactoring (e.g. fr
 
 ### 1. Unit Tests (Adapter and Hash Logic)
 - **Digest Determinism**: Provide fixed mock inputs to `Entry` and `EventLog` structures and assert that the generated SHA-384 hashes remain exactly identical to prevent format serialization drifts.
-- **Core API State Transitions**: Mock the `LocalMRAdapter` and `ImmutableLogAdapter`. Validate that triggering `init_record` -> `add_entry` -> `commit_record` securely transitions elements from in-memory objects to the localized queue buffer without premature backend calls.
+- **Core API State Transitions**: Mock the `LocalMRAdapter` and `ImmutableLogAdapter`. Validate that triggering `init_record` -> `add_entry` -> `commit_record` securely transitions elements from in-memory objects to the localized `tmpfs` queue buffer without premature backend calls.
 - **Legacy Adapter Compatibility**: Test the `ChainedTransparencyLog` adapter conversion to ensure it can successfully load old `.sigstore.json` backup files, parse signature keys/indexes, and reconstruct logically valid `EventLog` object graphs equivalent to the new schema.
 
 ### 2. Concurrency & Daemon Integration Tests
