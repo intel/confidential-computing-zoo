@@ -52,6 +52,8 @@ class EventLog:
 	created: datetime
 	mr: Optional[str] = None
 	global_id: Optional[str] = None
+	signature: Optional[str] = None
+	pub_key: Optional[str] = None
 
 
 @dataclass(slots=True)
