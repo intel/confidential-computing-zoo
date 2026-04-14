@@ -30,17 +30,22 @@ The project contains three primary runtime domains:
 
 ## 3. High-Level Topology
 
+**Current implementation status:** REST API and TruCon are fully implemented and deployed. Docktap integration is planned.
+
 ```mermaid
 flowchart LR
   clients[External API Clients] --> rest[REST API Service<br/>multi-process workers<br/>build/publish/launch control plane]
 
-  docktap[Docktap Service<br/>multi-process capable<br/>runtime interception and lifecycle events] -->|trusted event calls| trucon[TruCon Core Service<br/>event ingest<br/>commit/queue/submit lifecycle<br/>idempotency and ordering<br/>workload/instance mapping]
+  docktap[Docktap Service<br/>Status: Planned<br/>runtime interception and lifecycle events] -.->|trusted event calls<br/>planned| trucon[TruCon Core Service<br/>single-instance sequencer<br/>commit/queue/submit lifecycle]
 
-  rest -->|trusted event calls| trucon
-  trucon --> workers[Submission Workers<br/>retries/backoff/confirmation]
-  trucon --> mapping[Mapping and Query Store<br/>workload-instance-event views]
-  workers --> backends[Immutable Trust Backends<br/>transparency log and/or on-chain backends]
+  rest -->|signed DSSE bundles via REST| trucon
+  trucon --> daemon[Embedded Submit Daemon<br/>threading.Thread<br/>polls queue, submits to backends]
+  daemon --> backends[Immutable Trust Backends<br/>transparency log and/or on-chain backends]
 ```
+
+The REST API signs DSSE envelopes locally using the caller's OIDC identity token, then POSTs the signed bundle to TruCon's `/commit` endpoint. TruCon serializes RTMR extend, SQLite queue insert, and chain state update, then returns sequencing metadata. An embedded submit daemon publishes confirmed records to immutable backends asynchronously.
+
+For TruCon internal architecture details (lock model, SQLite schema, crash recovery, verification), see [trusted-log/architecture.md](trusted-log/architecture.md).
 
 ## 4. Responsibilities by Component
 
@@ -53,53 +58,66 @@ flowchart LR
 
 ### 4.2 Docktap Service
 
-- Runs as a separate process with independent scaling and lifecycle.
-- Produces runtime events tied to container operations.
-- Sends runtime events to TruCon using internal service contracts.
-- Does not directly write trust chain entries.
+> **Status: Planned — not yet implemented.**
+
+- Will run as a separate process with independent scaling and lifecycle.
+- Will produce runtime events tied to container operations.
+- Will send runtime events to TruCon using internal service contracts.
+- Will not directly write trust chain entries.
 
 ### 4.3 TruCon Core Service
 
-- Provides trusted event lifecycle APIs:
-  - init
-  - add_entry
-  - commit
-  - submit
-  - status/query
-- Enforces idempotency so duplicate commits do not create duplicate records.
-- Maintains queue-driven submission state transitions.
-- Records and serves workload-to-instance and instance-to-event mappings.
-- Serves as the single internal truth boundary for trusted event state.
+**Currently implemented:**
+- Exposes REST endpoints: `POST /commit`, `GET /chain-state/{chain_id}`, `GET /status`.
+- Serializes commit operations (RTMR extend + SQLite INSERT + chain state update) behind a single-process lock.
+- Maintains per-chain state tracking (sequence number, head record, measurement value).
+- Runs with `--workers 1` to preserve lock-based serialization.
+- Performs crash recovery on startup based on RTMR extension flags.
+
+**Planned (not yet implemented):**
+- Idempotency key enforcement for duplicate commit detection.
+- Workload-to-instance and instance-to-event mapping.
+- Docktap event ingestion path.
+
+For implementation details, see [trusted-log/architecture.md](trusted-log/architecture.md).
 
 ### 4.4 Submission Worker
 
-- Pulls committed pending records from queue.
-- Submits to immutable backend(s).
-- Applies retry policy with backoff and failure classification.
-- Updates final confirmation metadata.
+- Currently implemented as an embedded `threading.Thread(daemon=True)` inside the TruCon process.
+- Polls the SQLite commit queue every 5 seconds for pending records.
+- Submits records to immutable backends in sequence-number order.
+- Applies retry policy (up to 10 attempts) with failure classification.
+- Updates confirmation metadata and chain state on success.
+- Failed records block subsequent submissions in the same chain until operator intervention.
 
 ## 5. Core Data and State Model
 
 ### 5.1 Trusted Event Lifecycle
 
-Record lifecycle states:
+Record lifecycle states (currently implemented):
+
+- PENDING: commit finalized and queued, awaiting backend submission.
+- CONFIRMED: immutable backend confirmation received.
+- FAILED: submission no longer retried automatically (max retries exceeded).
+
+Planned lifecycle states (not yet implemented):
 
 - OPEN: record initialized, entries can be appended.
-- COMMITTED_PENDING: commit finalized and queued.
 - SUBMITTING: worker currently attempting backend submit.
-- CONFIRMED: immutable backend confirmation received.
-- FAILED_RETRYABLE: retry scheduled.
-- FAILED_TERMINAL: submission no longer retried automatically.
+- FAILED_RETRYABLE: retry scheduled (currently handled implicitly via retry_count).
+- FAILED_TERMINAL: terminal failure requiring operator intervention.
 
 ### 5.2 Mapping Model
 
-TruCon stores correlation views:
+> **Status: Planned — not yet implemented.**
+
+TruCon will store correlation views:
 
 - workload_id -> instance_id list
 - instance_id -> workload and related trusted events
 - event_id -> source, chain metadata, submission state
 
-This enables audit and verification paths across both REST and Docktap event sources.
+This will enable audit and verification paths across both REST and Docktap event sources.
 
 ## 6. Key Runtime Flows
 
@@ -112,6 +130,8 @@ This enables audit and verification paths across both REST and Docktap event sou
 5. Submission worker confirms events asynchronously.
 
 ### 6.2 Runtime Interception via Docktap
+
+> **Status: Planned — not yet implemented.**
 
 1. Docktap captures runtime event.
 2. Docktap submits event to TruCon.
@@ -160,10 +180,11 @@ Minimum required metrics:
 
 ## 10. Deployment Model
 
-- REST API deployed with multiple workers/processes.
-- Docktap deployed as dedicated process/service units.
-- TruCon deployed as core internal service with its own scaling policy.
-- Submission workers may be embedded in TruCon deployment or deployed as separate worker units.
+- REST API deployed with multiple workers/processes (uvicorn `--workers N`).
+- TruCon deployed as single-instance service (`--workers 1`) to preserve lock-based serialization.
+- Submission daemon runs as an embedded thread inside TruCon.
+- Docktap deployment: planned as dedicated process/service units.
+- SQLite commit queue stored in ephemeral tmpfs (`/dev/shm/`) for confidential computing compliance.
 
 ## 11. Migration Plan (Architecture-Level)
 
@@ -187,10 +208,7 @@ Rollback principle:
 
 ## 13. Related Documents
 
-- openspec/changes/introduce-trucon-event-orchestrator/proposal.md
-- openspec/changes/introduce-trucon-event-orchestrator/design.md
-- openspec/changes/introduce-trucon-event-orchestrator/specs/trucon-event-orchestration/spec.md
-- openspec/changes/introduce-trucon-event-orchestrator/specs/trucon-instance-mapping/spec.md
-- openspec/changes/introduce-trucon-event-orchestrator/specs/rest-docktap-trucon-integration/spec.md
-- trusted-log/architecture.md
-- docktap/architecture.md
+- [trusted-log/architecture.md](trusted-log/architecture.md) — TruCon internal architecture, lock model, SQLite schema, crash recovery, verification.
+- [trusted-log/api.md](trusted-log/api.md) — Python API signatures, type contracts, caller lifecycle.
+- [trusted-log/README.md](trusted-log/README.md) — Module overview and core concepts.
+- openspec/changes/introduce-trucon-event-orchestrator/ — Upstream TruCon vision (proposal, design, specs).

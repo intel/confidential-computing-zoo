@@ -19,7 +19,7 @@ from services import DockerService
 from kbs_service import KBSService
 from config import (
     HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR,
-    DOCKER_REGISTRY, DOCKER_REPOSITORY, ENABLE_TDX
+    DOCKER_REGISTRY, DOCKER_REPOSITORY, ENABLE_TDX, TRUCON_URL
 )
 
 # Setup logging
@@ -47,29 +47,14 @@ def log_proxy_configuration(operation: str) -> None:
 async def lifespan(app: FastAPI):
     # Startup logic
     from trusted_container_log.api import TrustedLogAPI
-    from trusted_container_log.database import init_db
     from trusted_container_log.tlog_impl import SigstoreLogAdapter
-    from trusted_container_log.local_mr import TdxMRAdapter
     
-    # Initialize SQLite database
-    init_db()
-    
-    # Create global instance
-    # Attempt to use TDX Adapter, fallback to None if hardware not present
-    local_mr_adapter = None
-    try:
-        # Check if the sysfs node exists before using
-        import os
-        if os.path.exists("/sys/kernel/tsm/rtmr"):
-            local_mr_adapter = TdxMRAdapter()
-        else:
-            logger.info("TDX RTMR sysfs not found, running without local MR extensions")
-    except Exception as e:
-        logger.warning(f"Could not init local MR adapter: {e}")
-
+    # tc_api is stateless for the commit path — RTMR extend is TruCon's job.
+    # local_mr is no longer used here.
     app.state.trusted_log = TrustedLogAPI(
-        local_mr=local_mr_adapter,
-        immutable_log=SigstoreLogAdapter()
+        local_mr=None,
+        immutable_log=SigstoreLogAdapter(),
+        trucon_url=TRUCON_URL,
     )
     
     yield

@@ -4,6 +4,12 @@
 
 The Trusted Log module provides a tamper-evident record of build, publish, and deployment activities for container images.
 It records events in an immutable log system (transparent log and/or on-chain log) using a chained model, and extends event digests into local runtime measurements (for example RTMR) to bind event history to local TCB state.
+
+The system uses a **split architecture**:
+
+- **tc_api** (stateless, multi-worker): signs DSSE envelopes locally and forwards them to the TruCon via REST.
+- **TruCon** (single-instance, `--workers 1`): serializes RTMR extension + SQLite queue INSERT + chain state update under a `threading.Lock()`, and runs an embedded submit daemon to publish confirmed records to Rekor.
+
 This allows users and applications to verify both:
 
 - Remote immutable event history.
@@ -25,6 +31,8 @@ This allows users and applications to verify both:
 The Trusted Log module persists event records into immutable backends (transparent log and/or on-chain log) using a chained record model.
 If a verifier has the latest log ID, it can traverse previous IDs to replay and validate the chain.
 Each persisted immutable-log entry wraps one committed `EventLog` and chain linkage metadata.
+
+**Note:** `prev_log_id` is maintained by the TruCon in the SQLite `chain_state` table but is **not** included in the DSSE-signed predicate. Ordering integrity is instead proven by the RTMR hardware measurement chain, which is tamper-evident and cannot be reordered.
 
 ```mermaid
 classDiagram
@@ -63,20 +71,36 @@ classDiagram
 
 ### Commit Queue, Async Submission, and Ephemeral Storage
 
-Because remote immutable log submission and local RTMR extension are not always synchronized, the module keeps a local commit queue. To comply with Confidential Computing threat models and prevent plaintext data-at-rest from leaking to untrusted host disks, this SQLite WAL-based queue is explicitly mounted in ephemeral `tmpfs` memory (e.g., `/dev/shm/commit_queue.db`). 
+Because remote immutable log submission and local RTMR extension are not always synchronized, the module keeps a local commit queue. To comply with Confidential Computing threat models and prevent plaintext data-at-rest from leaking to untrusted host disks, this SQLite WAL-based queue is explicitly mounted in ephemeral `tmpfs` memory (e.g., `/dev/shm/tc_api_queue/commit_queue.db`). 
 
-`commit_record()` finalizes an event, computes its digest, signs it, and securely enqueues it in this memory-backed database.
-`submit_record(record_id)` later processes the queued event, publishing it to the immutable backend (using an `ImmutableLogAdapter` such as `SigstoreLogAdapter`) and applying queue-state transitions internally. Event digests can be extended to local measurement registers (using a `LocalMRAdapter` such as `TdxMRAdapter`) at commit time, while remote log submission can complete asynchronously.
-When queued events are confirmed by the remote immutable system, they are removed from the local commit queue.
+The commit queue uses an expanded schema:
 
-`get_commit_queue_status()` is the worker-facing API used to decide whether queued work exists and which `record_id` should be attempted next.
-`get_latest_state()` is a compact summary API that should return:
+| Column | Purpose |
+|---|---|
+| `record_id` | Unique record identifier |
+| `chain_id` | Chain the record belongs to |
+| `sequence_num` | Monotonically increasing per-chain sequence number |
+| `rtmr_extended` | Whether RTMR extension completed (crash recovery flag) |
+| `log_id` | Rekor log ID after confirmation |
+| `prev_log_id` | Previous record's log ID in the chain |
+| `mr_value` | RTMR measurement value after extension |
+| `confirmed_at` | Timestamp of Rekor confirmation |
 
-- The latest confirmed immutable log ID.
-- The number of records still pending remote confirmation.
-- Pending event identifiers when available.
+A separate `chain_state` table tracks the head of each chain:
 
-Detailed retry metadata belongs in queue-specific monitoring views rather than in `LatestState`.
+| Column | Purpose |
+|---|---|
+| `chain_id` | Primary key |
+| `head_record_id` | Latest committed record |
+| `head_log_id` | Latest confirmed Rekor log ID |
+| `sequence_num` | Current sequence number |
+| `mr_value` | Current RTMR measurement |
+
+`commit_record()` on the tc_api side signs the DSSE envelope locally and POSTs the bundle to the TruCon. The TruCon sequencer serializes RTMR extension + queue INSERT + chain state update under a `threading.Lock()`.
+
+An **embedded submit daemon** (running as `threading.Thread(daemon=True)` inside the TruCon) polls the queue every 5 seconds, submits pending records to Rekor in `sequence_num` order, and marks them confirmed. Records that fail after 10 retries are marked `FAILED`, blocking further submissions for that chain until operator intervention.
+
+`get_commit_queue_status()` queries the TruCon `GET /status` endpoint to retrieve aggregate queue statistics.
 
 This model keeps queue draining and observability separate while preserving a single mutation path for remote publication.
 
@@ -90,28 +114,26 @@ During `commit_record()`, the short-lived OIDC token is immediately consumed to 
 
 ## High-Level Lifecycle
 
-1. Initialize a trusted event-log instance, with or without a previous event-log ID.
+1. Initialize a trusted event-log instance on the tc_api side.
 2. Add operation metadata into the new event-log entry list (one or more records).
-3. Call `commit_record()` to finalize the event, compute the digest, and enqueue the committed record for publication.
-4. Extend the event digest into local measurement registers as part of the commit path when a local MR backend is enabled.
-5. Use `get_commit_queue_status()` plus `submit_record(record_id)` to publish committed queued records to remote immutable storage.
-6. If remote submission is delayed or blocked (for example network latency or ordering dependencies), the committed record remains in the local commit queue with retry metadata.
-7. A background retry worker resubmits delayed queued records until confirmation.
+3. Call `commit_record()` to sign the DSSE envelope locally and POST it to the TruCon.
+4. The TruCon serializes: RTMR extension → SQLite queue INSERT → chain state update, all under a single `threading.Lock()`.
+5. The embedded submit daemon inside the TruCon polls the queue and publishes confirmed records to Rekor.
+6. If remote submission is delayed or fails (for example network latency), the record remains in the queue with retry count metadata. After 10 retries, the record is marked `FAILED`.
+7. On crash recovery, the TruCon inspects `rtmr_extended` flags: records with `rtmr_extended=TRUE` and `status=PENDING` are retained; records with `rtmr_extended=FALSE/NULL` are deleted; chain state is rebuilt from the highest extended `sequence_num`.
 
 ## Public API Summary
 
-The Python API exposed by `TrustedLogAPI` centers on a small set of operations:
+The Python API exposed by `TrustedLogAPI` (tc_api-side, stateless) centers on a small set of operations:
 
 - `init_record()`: create a new mutable record context.
 - `add_entry()`: append ordered entries into the current record.
-- `commit_record()`: finalize the current record and place it into the commit queue.
-- `get_commit_queue_status()`: report whether queued committed work exists and which record should be submitted next.
-- `submit_record()`: publish one previously committed queued record and apply queue-state updates internally.
-- `get_latest_state()`: return compact confirmed-state and pending-event summary information.
+- `commit_record()`: sign the DSSE envelope locally and POST to the TruCon for sequencing.
+- `get_commit_queue_status()`: query the TruCon `GET /status` endpoint for aggregate queue statistics.
 - `get_event_log()`: load one committed immutable event by backend log identifier.
-- `verify_record()`: replay and verify a committed record or chain.
+- `verify_record()`: verify a chain by querying Rekor with `chain_id` subject name and signer identity filtering.
 
-Implementations of `TrustedLogAPI` must support multi-threaded or multi-worker execution, because commit and submit operations may run in different worker contexts against shared queue state.
+`submit_record()` and `get_latest_state()` are no longer part of the tc_api-side API. Submission is handled by the embedded daemon inside the TruCon.
 
 
 ## Verification Capabilities
@@ -137,8 +159,9 @@ Because operations like `docker push` can be time-consuming and network-dependen
 
 1. **Initialization**: When the `tc_api` endpoint is hit (e.g., `/push`), within the workflow in `services.py`, `TrustedLogAPI.init_record()` is called to create a record context.
 2. **Recording Fact**: As the `docker push` subprocess executes and returns metadata (like image digest, registry URL), `add_entry` is used to append this data into the log schema.
-3. **Commit (Synchronous)**: Before the API replies to the user, the workflow correctly calls `commit_record()`. This action rapidly calculates the chain hashes, extends the value into the local TDX RTMR, issues a local cryptographic signature, and drops the record into a durable `Commit Queue`. 
-4. **Daemon Processing (Asynchronous)**: A dedicated daemon thread/process (the Submission Daemon) continuously monitors the `Commit Queue` (located in `/dev/shm` memory). It independently polls via `get_commit_queue_status()`, then calls `submit_record()`, completing the high-latency I/O task to push the verifiable logs to the external remote backend (such as Sigstore via `SigstoreLogAdapter`) while automatically applying exponential backoff retries if the backend drops.
+3. **Commit (Synchronous)**: Before the API replies to the user, the workflow calls `commit_record()`. This signs the DSSE envelope locally using the caller's OIDC identity token and POSTs the signed bundle to the TruCon.
+4. **TruCon Sequencing (Synchronous)**: The TruCon serializes RTMR extension + SQLite queue INSERT + chain state update under a `threading.Lock()`. The response includes `record_id`, `chain_id`, `sequence_num`, and `mr_value`.
+5. **Daemon Processing (Asynchronous)**: The embedded submit daemon inside the TruCon continuously polls the commit queue. It submits pending records in `sequence_num` order to Rekor via `SigstoreLogAdapter`, with automatic retry (up to 10 attempts) on failure.
 
 ## Testing and Regression Verification
 
@@ -150,8 +173,8 @@ To guarantee cryptographic and chain-link consistency after refactoring (e.g. fr
 - **Legacy Adapter Compatibility**: Test the `ChainedTransparencyLog` adapter conversion to ensure it can successfully load old `.sigstore.json` backup files, parse signature keys/indexes, and reconstruct logically valid `EventLog` object graphs equivalent to the new schema.
 
 ### 2. Concurrency & Daemon Integration Tests
-- **Multi-threaded Enqueue**: Spawn threads that concurrently fire `init` and `commit_record` against the identical `TrustedLogAPI` instance. Confirm that internal locking coordinates proper strictly-monotonic `sequence_number` assignment and `previous_hash` chains without race conditions.
-- **Daemon Retry Simulator**: Mimic a backend network drop by throwing `BackendSubmitError` from the `ImmutableLogAdapter`. Assert the daemon gracefully retains the item with `queue_status = PENDING` and attempts a safe retry.
+- **Multi-threaded Enqueue**: Spawn threads that concurrently fire `init` and `commit_record` against the identical `TrustedLogAPI` instance. Since tc_api is stateless, these requests are forwarded to the TruCon which serializes them under `threading.Lock()`. Confirm proper strictly-monotonic `sequence_num` assignment and `prev_log_id` chain integrity.
+- **Daemon Retry Simulator**: Mimic a backend network drop by throwing `BackendSubmitError` from the `ImmutableLogAdapter`. Assert the embedded daemon gracefully retains the item with `status = PENDING` and attempts a safe retry up to 10 times before marking `FAILED`.
 
 ### 3. E2E Cryptographic Verification
 - **Full Chain Replay (`verify_record`)**: Generate a mock chain of 10 sequential events (including *Event Log 0* containing the injected Mock Public Key). Persist them, then successfully trigger the `verify_record` replay verification.
@@ -172,5 +195,5 @@ Out of scope for this page:
 
 ## Related Documents
 
-- See [architecture.md](/home/ed_song/tc_api_refactor/tc_api/trusted-log/architecture.md) for the component-level view, concurrency model, and replay verification requirements.
-- See [api.md](/home/ed_song/tc_api_refactor/tc_api/trusted-log/api.md) for Python API signatures, type contracts, and caller lifecycle examples.
+- See [architecture.md](architecture.md) for the component-level view, concurrency model, and replay verification requirements.
+- See [api.md](api.md) for Python API signatures, type contracts, and caller lifecycle examples.

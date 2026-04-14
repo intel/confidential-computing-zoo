@@ -41,18 +41,28 @@ mkdir -p uploads builds logs /dev/shm
 # Set default environment variables if not set
 export HOST=${HOST:-0.0.0.0}
 export PORT=${PORT:-8000}
+export TRUCON_PORT=${TRUCON_PORT:-8001}
 export DEBUG=${DEBUG:-false}
 
-echo "Starting Standalone Trusted Log Daemon..."
-python tlog_daemon.py &
-DAEMON_PID=$!
+echo "Starting TruCon (single-instance sequencer) on port $TRUCON_PORT..."
+uvicorn trucon:app --host 0.0.0.0 --port $TRUCON_PORT --workers 1 &
+TRUCON_PID=$!
 
-# Function to gracefully shutdown the daemon when the script exits
+# Wait briefly for TruCon to be ready
+sleep 2
+if ! kill -0 $TRUCON_PID 2>/dev/null; then
+    echo "Error: TruCon failed to start"
+    exit 1
+fi
+
+export TRUCON_URL="http://127.0.0.1:${TRUCON_PORT}"
+
+# Function to gracefully shutdown TruCon when the script exits
 cleanup() {
-    echo "Stopping Trusted Log Daemon (PID: $DAEMON_PID)..."
-    kill -TERM $DAEMON_PID 2>/dev/null || true
-    wait $DAEMON_PID 2>/dev/null || true
-    echo "Daemon stopped."
+    echo "Stopping TruCon (PID: $TRUCON_PID)..."
+    kill -TERM $TRUCON_PID 2>/dev/null || true
+    wait $TRUCON_PID 2>/dev/null || true
+    echo "TruCon stopped."
 }
 trap cleanup EXIT INT TERM
 

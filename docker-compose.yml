@@ -21,6 +21,7 @@ services:
       - DOCKER_REGISTRY=docker.io
       - DOCKER_REPOSITORY=myrepo
       - ENABLE_TDX=${ENABLE_TDX:-false}
+      - TRUCON_URL=http://trucon:8001
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-}
@@ -42,15 +43,19 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    depends_on:
+      - trucon
 
-  tlog-daemon:
+  trucon:
     build:
       context: .
       args:
         - http_proxy=${http_proxy:-}
         - https_proxy=${https_proxy:-}
         - no_proxy=${no_proxy:-}
-    command: ["python", "tlog_daemon.py"]
+    command: ["python", "-m", "uvicorn", "trucon:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]
+    ports:
+      - "8001:8001"
     environment:
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
@@ -61,8 +66,12 @@ services:
       - /dev/shm
     mem_swappiness: 0
     restart: unless-stopped
-    depends_on:
-      - tc-api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   # Optional: Add a reverse proxy
   nginx:

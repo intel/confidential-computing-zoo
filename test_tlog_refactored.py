@@ -28,7 +28,7 @@ def test_sqlite_wal_persistence(tmp_path):
     
     # Insert multiple records concurrently
     def worker(i):
-        insert_record(f"rec-{i}", f"evt-{i}", {"bundle": "data"}, "PENDING", str(db_file))
+        insert_record(f"rec-{i}", f"evt-{i}", {"bundle": "data"}, "PENDING", db_path=str(db_file))
         
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(10)]
     for t in threads: t.start()

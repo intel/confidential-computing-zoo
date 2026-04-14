@@ -15,19 +15,24 @@ The module combines three planes:
 - Local measurement plane for runtime state binding.
 - Verification plane for chain and signature validation.
 
-In system context, Trusted Log provides trust-bootstrap logging functions by combining:
+The system is deployed as two cooperating services:
 
-- Local trust service capabilities to extend event digests into local MR.
-- Remote immutable persistence to store chained event logs.
+- **tc_api** (stateless, multi-worker): Receives caller requests, performs DSSE signing using the caller's OIDC identity, and forwards signed bundles to the TruCon via REST.
+- **TruCon** (single-instance, `--workers 1`): Serializes RTMR extend + SQLite INSERT behind a `threading.Lock()`, maintains chain state, and embeds the submit daemon as a background thread.
+
+This split ensures that RTMR extends and chain state mutations are strictly serialized within a single process, while tc_api can scale horizontally for throughput. The three-layer trust model is:
+
+- **DSSE** proves event authenticity (Sigstore-signed envelope).
+- **RTMR** proves ordering (hardware measurement register chain).
+- **Rekor** proves public auditability (transparent log).
 
 Two immutable backends are currently in scope: transparent log and on-chain log.
-
-The system-context diagram defines Trusted Log as the orchestrator between TrustBootstrap and external trust services.
 
 ```mermaid
 flowchart LR
     TrustBootstrap["TrustBootstrap<br/>Captures trust event logs"]
-    TrustLog["Trusted Log<br/>Trusted logging component"]
+    TcApi["tc_api<br/>Stateless multi-worker API<br/>Signs DSSE envelopes"]
+    TrustApi["TruCon<br/>Single-instance sequencer<br/>RTMR extend + SQLite + chain state"]
 
     subgraph ExternalSystems[External Systems]
         OSTSM["OS Trust Service Module<br/>OS service for MR extend and query"]
@@ -35,10 +40,11 @@ flowchart LR
         OnChainLog["On-Chain Log<br/>On-chain log backend"]
     end
 
-    TrustBootstrap -->|Uses| TrustLog
-    TrustLog -->|Extends and queries MR| OSTSM
-    TrustLog -->|Submits event logs| TransparentLog
-    TrustLog -->|Submits event logs| OnChainLog
+    TrustBootstrap -->|Uses| TcApi
+    TcApi -->|POST /commit<br/>signed bundle| TrustApi
+    TrustApi -->|Extends and queries MR| OSTSM
+    TrustApi -->|Submits event logs| TransparentLog
+    TrustApi -->|Submits event logs| OnChainLog
 ```
 
 
@@ -53,8 +59,16 @@ Component Diagram:
 flowchart LR
     TrustBootstrap["TrustBootstrap<br/>Captures trust event logs"]
 
-    subgraph TrustedLogBoundary[Trusted Log]
-        TrustLogApi["Trusted Log API<br/>API<br/>Entry point for trusted log operations"]
+    subgraph TcApiBoundary[tc_api — Stateless Multi-Worker]
+        TrustLogApi["Trusted Log API<br/>API<br/>DSSE signing + REST forwarding"]
+    end
+
+    subgraph TrustApiBoundary[TruCon — Single-Instance Sequencer]
+        Sequencer["Sequencer<br/>threading.Lock()<br/>RTMR extend + SQLite INSERT + chain_state"]
+        SubmissionDaemon["Embedded Submit Daemon<br/>Thread<br/>Drains queue to Rekor in sequence order"]
+        CommitQueue[(Local Commit Queue<br/>Ephemeral SQLite)]
+        ChainState[(Chain State Table)]
+
         LocalMRAdapter["Local MR Adapter<br/>Interface<br/>Wrapper for local MR operations"]
         ImmutableLogAdapter["Immutable Log Adapter<br/>Interface<br/>Wrapper for immutable log backends"]
 
@@ -69,15 +83,15 @@ flowchart LR
     OnChainSystem["On-Chain System<br/>API<br/>External on-chain service"]
     TransparentLogSystem["Transparent Log System<br/>API<br/>External transparent-log service"]
 
-    SubmissionDaemon["Submission Daemon<br/>Worker<br/>Background worker managing queue logic"]
-
     TrustBootstrap -->|Invokes| TrustLogApi
-    TrustLogApi -->|Enqueues| CommitQueue[(Local Commit Queue)]
-    SubmissionDaemon -->|Polls & Traverses| CommitQueue
-    SubmissionDaemon -->|Invokes submit_record| TrustLogApi
+    TrustLogApi -->|POST /commit<br/>signed bundle| Sequencer
+    Sequencer -->|Writes| CommitQueue
+    Sequencer -->|Updates| ChainState
+    SubmissionDaemon -->|Polls| CommitQueue
+    SubmissionDaemon -->|Updates| ChainState
 
-    TrustLogApi -->|Uses| LocalMRAdapter
-    TrustLogApi -->|Uses| ImmutableLogAdapter
+    Sequencer -->|Uses| LocalMRAdapter
+    SubmissionDaemon -->|Uses| ImmutableLogAdapter
     LocalMRAdapter -->|Implemented by| TdxMR
     ImmutableLogAdapter -->|Implemented by| OnChainImpl
     ImmutableLogAdapter -->|Implemented by| TransparentLogImpl
@@ -88,37 +102,40 @@ flowchart LR
 
 ##### Responsibility Mapping
 
-- Trusted Log API:
-Receives event-log operations from TrustBootstrap, enforces workflow order, coordinates submit and query flows, and must preserve thread-safe behavior when commit and submit operations execute in different worker contexts.
+- Trusted Log API (tc_api side):
+Receives event-log operations from TrustBootstrap, constructs In-Toto DSSE envelopes, signs them using the caller's OIDC identity token via Sigstore in offline mode, and forwards the signed bundle to the TruCon via REST `POST /commit`. The tc_api side is stateless and safe for multi-worker deployment (`--workers N`). It does not hold chain state, perform RTMR extends, or access the SQLite queue.
+
+- TruCon Sequencer:
+A single-instance FastAPI service (`--workers 1`) that serializes all chain-mutating operations behind a `threading.Lock()`. Within the lock, it reads `chain_state` to determine `prev_log_id` and `sequence_num`, extends the RTMR with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, and updates `chain_state`. Single-instance enforcement is achieved via an exclusive file lock (`fcntl.flock`) at startup.
 
 - Local Commit Queue (Ephemeral Storage):
-A local SQLite database serving as an operations buffer. To enforce strict hardware Lifecycle Alignment, this database MUST reside in a volatile, memory-backed file system (e.g., `/dev/shm`) and MUST be protected by strict DAC isolation (i.e. `0700` permissions on a dedicated directory). This design prevents persisting uncommitted queued events beyond the lifetime of the Trust Domain (TD), inherently matching the lifespan of corresponding hardware Measurement Registers (RTMRs) which reset upon a VM crash. Furthermore, careful deployment configurations should implement anti-swapping contracts (e.g., setting `memory-swappiness=0`).
+A local SQLite database with WAL mode serving as an operations buffer. To enforce strict hardware Lifecycle Alignment, this database MUST reside in a volatile, memory-backed file system (e.g., `/dev/shm`) and MUST be protected by strict DAC isolation (i.e. `0700` permissions on a dedicated directory). The expanded schema includes `chain_id`, `rtmr_extended`, `log_id`, `prev_log_id`, `mr_value`, `sequence_num`, `confirmed_at`, and `retry_count` columns. A companion `chain_state` table maintains per-chain head tracking.
 
-- Submission Daemon:
-A background worker or separate thread process that monitors the local Commit Queue, safely polls for finalized logs (`get_commit_queue_status()`), calls `submit_record()` autonomously, and applies exponential backoff for retries to avoid blocking API responses.
+- Embedded Submit Daemon:
+A `threading.Thread(daemon=True)` running inside the TruCon process. It polls the commit queue every 5 seconds for records with `status=PENDING` and `rtmr_extended=TRUE`, submits them to the immutable backend in ascending `sequence_num` order, and applies retry counting (max 10 retries before marking `FAILED`). FAILED records block subsequent submissions in the same chain to preserve ordering guarantees. The daemon's lifecycle is tied to the TruCon process.
 
 - Local MR Adapter:
-Defines the local measurement contract (extend/query), independent of platform-specific backend details.
+Defines the local measurement contract (extend/query), independent of platform-specific backend details. Used exclusively by the TruCon sequencer within the lock scope.
 
 - Immutable Log Adapter:
-Defines immutable-persistence operations (submit, resolve log id, chain traversal) independent of backend type.
+Defines immutable-persistence operations (submit, resolve log id, chain traversal) independent of backend type. Used by the embedded submit daemon for asynchronous Rekor/on-chain submission.
 
 - TdxMR implementation:
-Implements Local MR Adapter using OS trust-service interfaces (for example Sysfs-backed TSM access).
+Implements Local MR Adapter using OS trust-service interfaces (for example Sysfs-backed TSM access with binary 48-byte read/write against `/sys/class/misc/tdx_guest/measurements/rtmr{index}:sha384`).
 
 - OnChain and TransparentLog implementations:
 Implement Immutable Log Adapter for different immutable backends while preserving the same event and chain semantics.
 
 ##### Interaction Model
 
-1. TrustBootstrap invokes Trusted Log API to create a record context and append one or more event entries.
-2. TrustBootstrap signal Trusted Log to persistent the event log into immutable log system and meanwhile, the event digest shall be extended to the local MR as well. 
-3. Trusted Log API computes or verifies event digests and sends extend/query actions through Local MR Adapter.
-4. Trusted Log API sends immutable persistence actions through Immutable Log Adapter.
+1. TrustBootstrap invokes Trusted Log API (in tc_api) to create a record context and append one or more event entries.
+2. TrustBootstrap calls `commit_record()`. The tc_api Trusted Log API constructs the DSSE predicate (without `prev_log_id`), signs it with Sigstore in offline mode, and POSTs the signed bundle to the TruCon.
+3. TruCon acquires its `threading.Lock()`, reads the current `chain_state`, extends the RTMR with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, updates `chain_state`, and releases the lock.
+4. The embedded submit daemon asynchronously polls the queue and submits confirmed records to the immutable backend in `sequence_num` order.
 5. Backend implementations translate adapter operations into concrete syscalls or external API calls.
-6. Trusted Log API returns combined result state, including immutable log identifiers and local MR-related outputs.
+6. Trusted Log API returns combined result state to the caller, including `sequence_num`, `mr_value`, and `prev_mr_value`.
 
-This layering allows backend evolution (for example adding new on-chain or transparent-log providers) without changing caller behavior.
+This layering allows backend evolution (for example adding new on-chain or transparent-log providers) without changing caller behavior. The split architecture allows tc_api to scale horizontally while the TruCon serializes all chain-mutating operations.
 
 ### External Systems
 
@@ -159,6 +176,12 @@ Core contract definitions:
 - Transparent log: stores `log_id` and `prev_log_id` to preserve chain traversal.
 - On-chain log: natively supports chained structure.
 - In both cases, each backend entry wraps one `EventLog` plus backend linkage metadata.
+
+**Important**: `prev_log_id` is maintained by the TruCon in the `chain_state` SQLite table and is **not** included in the DSSE predicate that the caller signs. This avoids a three-way contradiction where the API caller signs before the system can assign the correct `prev_log_id`. Ordering integrity is instead proven by the RTMR hardware chain — each extend incorporates the previous register value, making reordering detectable through TDX attestation quotes.
+
+**Future: prev_log_id as a Secondary Ordering Method**
+
+In environments without TEE hardware (no RTMR), `prev_log_id` chaining may be used as an alternative ordering proof. In this model, `prev_log_id` would be included in the DSSE-signed predicate, creating a hash-linked chain where each signed entry commits to its predecessor. This approach trades hardware-backed tamper evidence for software-only cryptographic linkage. It is suitable for development, testing, and non-confidential deployments where attestation quotes are unavailable. Support for this mode is planned but not yet implemented.
 
 ```mermaid
 classDiagram
@@ -387,12 +410,14 @@ Every subsequent event log created by Trust Bootstrap should reference Event Log
 
 ### Mutable Runtime State
 
+**tc_api side** (per-request, discarded after commit):
 - pending_entries: in-memory metadata not yet committed.
-- current_sequence: next sequence number.
-- last_signature_hash: pointer used as previous_hash for next commit.
-- chain_history: ordered list of committed entries.
-- chain_id: stable identifier for the chain instance.
-- latest_confirmed_log_id: most recent immutable-log-confirmed record identifier.
+- record_id and chain_ref: per-request context for the current record.
+
+**TruCon side** (persisted in SQLite, single-instance):
+- chain_state table: per-chain_id row with head_record_id, head_log_id, sequence_num, mr_value.
+- commit_queue table: all pending/confirmed/failed records with rtmr_extended flag, retry_count, etc.
+- latest_confirmed_log_id: derived from chain_state.head_log_id.
 
 ### Persisted State
 
@@ -404,25 +429,39 @@ Exported chain data includes:
 
 This enables checkpoint and restore behavior using backup files.
 
-### Concurrency Requirement
+### Concurrency Model
 
-`TrustedLogAPI` implementations must support multi-threaded and multi-worker use.
-In particular, `commit_record` and `submit_record` may run in different worker contexts against the same chain and queue state.
+The split-architecture design eliminates multi-worker concurrency issues by separating concerns:
 
-The implementation should therefore guarantee:
+- **tc_api** (multi-worker safe): Each worker independently signs DSSE envelopes and POSTs to the TruCon. No shared in-process state exists between workers — `_records` and `_entries` are per-request scratch space, discarded after each commit.
 
-- thread-safe access to in-memory record assembly state, commit-queue state, and latest confirmed chain pointers
-- atomic transition of one record from in-progress state to committed queued state during `commit_record`
-- atomic transition of one queued record through submission result handling during `submit_record`
-- visibility guarantees such that a worker calling `submit_record(record_id)` never observes a partially finalized record
-- duplicate-submission protection so concurrent workers do not confirm or mutate the same queued record inconsistently
+- **TruCon** (single-instance, single-worker): All chain-mutating operations (RTMR extend, SQLite INSERT, chain_state UPDATE) are serialized behind a `threading.Lock()`. This lock is process-local, which is why the TruCon MUST run with `--workers 1`. Single-instance enforcement is achieved via `fcntl.flock(LOCK_EX | LOCK_NB)` on a well-known lock file at startup; a second instance exits immediately with a clear error.
 
-This does not require a specific locking model, but the implementation must provide equivalent safety through process-local locks, transactional persistence, compare-and-swap style state transitions, or another concurrency-safe mechanism.
+- **Embedded submit daemon**: Runs as a `threading.Thread(daemon=True)` within the TruCon process. It shares the same process space as the sequencer lock and chain_state, eliminating cross-process coordination issues. The daemon only reads the queue and mutates record status (PENDING → CONFIRMED/FAILED) and chain_state.head_log_id.
+
+The implementation guarantees:
+
+- Atomic transition from RTMR-extended to queue-committed state within a single lock acquisition
+- Monotonically increasing `sequence_num` per chain_id, assigned under the lock
+- No cross-worker state sharing — tc_api workers are fully stateless for the commit path
+- Ordered Rekor submission — the submit daemon processes records in ascending `sequence_num` order and blocks on FAILED predecessors
+- Duplicate-submission protection — the daemon is the sole submitter, embedded in the single TruCon instance
 
 ### Disaster Recovery and Partial Failures
 
-Two heterogenous environments are modified during `commit_record()`: the local MR (e.g., RTMR via Sysfs) and the persistent Commit Queue (e.g., an SQLite database). If an instance crashes in between extending the MR and persisting to the Queue, a *partial failure* occurs where the MR is permanently decoupled from the event block.
-To prevent this desynchronization, implementations should place the intended `EventLog` locally before firing the RTMR extend operation. Because general disk storage on cloud hosts is mutually untrusted, placing the SQLite WAL log in ephemeral `tmpfs` (e.g., `/dev/shm/commit_queue.db`) prevents plaintext leakage at rest while fully relying on Confidential VM memory encryption. In this environment, a VM reboot destroys the unsent queue; this ephemeral security trade-off is accepted by design.
+Two heterogenous environments are modified during the TruCon's commit path: the local MR (e.g., RTMR via Sysfs) and the persistent Commit Queue (e.g., an SQLite database). If the TruCon crashes between extending the MR and persisting to the Queue, a *partial failure* occurs where the MR is permanently decoupled from the event block.
+
+The `rtmr_extended` flag in the `commit_queue` table tracks whether the RTMR extend succeeded for each record. On TruCon startup, crash recovery logic inspects this flag:
+
+- Records with `rtmr_extended=TRUE` and `status=PENDING`: RTMR was extended but Rekor submission is incomplete. These records are retained for the submit daemon to process.
+- Records with `rtmr_extended=FALSE` or `rtmr_extended=NULL`: The RTMR was not extended (or the flag is unknown from a legacy migration). These records are deleted — they are cryptographically orphaned because the RTMR value does not include their digest.
+- The `chain_state` table is rebuilt from the highest `sequence_num` record with `rtmr_extended=TRUE` in each chain.
+
+If the process crashes *between* the RTMR extend and the SQLite INSERT (both happen inside the lock), the record is lost. This is acceptable because the RTMR value has diverged and the next commit will incorporate the correct cumulative register state.
+
+Because general disk storage on cloud hosts is mutually untrusted, placing the SQLite WAL log in ephemeral `tmpfs` (e.g., `/dev/shm/tc_api_queue/queue.db`) prevents plaintext leakage at rest while fully relying on Confidential VM memory encryption. In this environment, a VM reboot destroys the unsent queue; this ephemeral security trade-off is accepted by design — RTMR registers also reset on reboot, making queued records cryptographically invalid regardless.
+
+Records that fail Rekor submission after 10 retries are marked `FAILED`. FAILED records block subsequent Rekor submissions in the same chain (to preserve ordering) but do not block new RTMR extends for incoming commits.
 
 ## End-to-End Flow
 
@@ -496,7 +535,7 @@ def daemon_submission_worker():
 - On initialization, Trusted Log creates Event Log 0 from the latest local MR snapshot and baseline system-event metadata.
 - Event Log 0 is first committed locally, so the baseline event is finalized, signed, and stored in the commit queue before any remote publication attempt.
 - Unlike normal runtime events, Event Log 0 captures the current measured state but does not perform an additional MR extend; initialization queries the current MR and records that value as baseline evidence.
-- After the baseline record is committed, a submission step publishes that already-finalized Event Log 0 to the immutable backend.
+- After the baseline record is committed, the embedded submit daemon publishes that already-finalized Event Log 0 to the immutable backend.
 - Initialization is not considered complete until the baseline record is confirmed remotely, because that confirmed event becomes the immutable anchor for all later records.
 - The confirmed baseline event identifier becomes the chain entry point for subsequent records.
 - Open design question: how to handle runtimes that allow quote/report reads but not MR extend operations.
@@ -506,34 +545,38 @@ sequenceDiagram
     autonumber
 
     participant TB as Trust Bootstrap
-    participant TL_SW as Trust Log Submission Worker
-    participant TL as Trusted Log
-    participant LB as Local MR Backend (optional)
-    participant PQ as Commit Queue
-    participant RB as Remote Backend (transparent log or on-chain)
+    participant TL as Trusted Log API<br/>(tc_api)
+    participant TA as TruCon<br/>(Sequencer)
+    participant SD as Embedded Submit Daemon
+    participant LB as Local MR Backend
+    participant PQ as Commit Queue + Chain State
+    participant RB as Remote Backend
 
     Note over TB,RB: Establish baseline trust log
     TB->>TL: init_record(...)
     opt local backend enabled
-        TL->>LB: query current MR
-        LB-->>TL: current_mr_value
+        TL->>TA: query current MR
+        TA->>LB: query current MR
+        LB-->>TA: current_mr_value
+        TA-->>TL: current_mr_value
     end
     TB->>TL: add_entry("baseline-log", current_mr_value, system_event_log, ...)
     TB->>TL: commit_record(...)
     activate TL
-    Note right of TL: commit_record internally finalizes and queues Event Log 0
-    TL->>TL: finalize EventLog 0 and compute digest
+    Note right of TL: Sign baseline event (no RTMR extend for Event Log 0)
     TL->>TL: sign baseline event
-    TL->>PQ: enqueue baseline record
+    TL->>TA: POST /commit (baseline)
+    TA->>PQ: INSERT baseline record
+    TA->>PQ: UPDATE chain_state
+    TA-->>TL: CommitResult
     TL-->>TB: CommitResult(record_id, event_id, queue_status=PENDING, mr_value=current_mr_value)
     deactivate TL
 
-    TL_SW->>TL: submit_record(record_id)
-    TL->>PQ: load finalized Event Log 0
-    TL->>RB: submit baseline event
-    RB-->>TL: baseline log_id, confirmed
-    TL->>PQ: remove baseline record from commit queue
-    TL-->>TL_SW: SubmitResult(status=CONFIRMED, event_id, mr_value=current_mr_value, prev_mr_value=None)
+    SD->>PQ: Poll PENDING records
+    SD->>RB: submit baseline event
+    RB-->>SD: baseline log_id, confirmed
+    SD->>PQ: UPDATE status=CONFIRMED, log_id
+    SD->>PQ: UPDATE chain_state.head_log_id
     TB->>TB: cache baseline metadata
 ```
 
@@ -546,39 +589,44 @@ sequenceDiagram
     autonumber
 
     participant TB as Trust Bootstrap
-    participant TL as Trusted Log
-    participant RB as Remote Backend (transparent log or on-chain)
-    participant LB as Local MR Backend (optional)
-    participant RT as User Container Runtime
-    participant RG as Registry
-    participant RA as Remote Attestation Service
+    participant TL as Trusted Log API<br/>(tc_api)
+    participant TA as TruCon<br/>(Sequencer)
+    participant SD as Embedded Submit Daemon
+    participant LB as Local MR Backend
+    participant PQ as Commit Queue + Chain State
+    participant RB as Remote Backend
 
-    Note over TB,RT: Launch flow and related trust-log events
+    Note over TB,RB: Launch flow and related trust-log events
     TB->>TL: init_record(...)
-    TB->>RG: docker pull image
     TB->>TL: add_entry("docker-pull", ...)
-
-    TB->>TB: verify SBOM
     TB->>TL: add_entry("verify-sbom", ...)
-
-    TB->>TB: verify signature
     TB->>TL: add_entry("verify-signature", ...)
-
-    TB->>RA: remote attestation and fetch secrets
-    TB->>TB: decrypt image
     TB->>TL: add_entry("decrypt", ...)
-
-    TB->>RT: docker compose up -d
     TB->>TL: add_entry("docker-up", ...)
     TB->>TL: commit_record(...)
-    TL->>TL: finalize EventLog and compute digest
-    opt local backend enabled
-        TL->>LB: extend(event_digest)
-        LB-->>TL: mr_value, prev_mr_value
-    end
-    TL->>TL: sign finalized event
-    TL->>TL: enqueue committed record
-    TL-->>TB: CommitResult(record_id, event_id, queue_status=PENDING, mr_value, prev_mr_value)
+    activate TL
+    Note right of TL: Sign DSSE envelope (offline mode, no prev_log_id)
+    TL->>TL: Build predicate, sign with Sigstore
+    TL->>TA: POST /commit {bundle, chain_id, event_digest}
+    activate TA
+    Note right of TA: Acquire threading.Lock()
+    TA->>PQ: Read chain_state → prev_log_id, sequence_num
+    TA->>LB: extend(event_digest)
+    LB-->>TA: mr_value, prev_mr_value
+    TA->>PQ: INSERT commit_queue (rtmr_extended=TRUE)
+    TA->>PQ: UPDATE chain_state (new head)
+    Note right of TA: Release lock
+    TA-->>TL: {record_id, sequence_num, mr_value, prev_mr_value}
+    deactivate TA
+    TL-->>TB: CommitResult
+    deactivate TL
+
+    Note over SD,RB: Async publication by embedded daemon
+    SD->>PQ: Poll PENDING records (rtmr_extended=TRUE)
+    SD->>RB: Submit bundle (lowest sequence_num first)
+    RB-->>SD: log_id, confirmed
+    SD->>PQ: UPDATE status=CONFIRMED, log_id, confirmed_at
+    SD->>PQ: UPDATE chain_state.head_log_id
 ```
 
 ### Trust Event Log Publication and Commit Queue Check
@@ -587,35 +635,38 @@ This step is responsible for sealing the event before any remote publication att
 
 The `commit_record` path should behave as follows:
 
-- Trusted Log seals the in-memory `Record` into an immutable `EventLog` and computes the canonical event digest.
-- Trusted Log signs the finalized event and binds it to the chain by preserving the original `prev_log_id` linkage.
-- If a local MR backend is available, Trusted Log extends the same event digest into the local MR and records the returned `mr_value` and `prev_mr_value`.
-- Trusted Log writes the finalized event and its metadata into the local commit queue.
-- Trusted Log returns a commit result that confirms the event is finalized and queued for later publication.
+- tc_api's Trusted Log API constructs the DSSE predicate from the sealed `Record` (without `prev_log_id` — ordering is proven by the RTMR hardware chain).
+- tc_api signs the DSSE envelope using the caller's OIDC identity token via Sigstore in offline mode (Fulcio certificate exchange, no Rekor push).
+- tc_api POSTs the signed bundle to the TruCon's `POST /commit` endpoint with `chain_id` and `event_digest`.
+- The TruCon acquires `threading.Lock()`, reads `chain_state` for the current `prev_log_id` and `sequence_num`, extends the RTMR with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, updates `chain_state`, and releases the lock.
+- The TruCon returns `record_id`, `sequence_num`, `mr_value`, and `prev_mr_value` to tc_api.
+- tc_api returns a `CommitResult` to the caller confirming the event is finalized and queued for later publication.
 
-`submit_record` is a separate publication API.
-It takes a previously committed queued record and attempts submission to the configured immutable backend without rebuilding or mutating the event payload.
-By default, this API is also responsible for applying the resulting commit-queue state transition internally, such as clearing a confirmed queued record or updating retry metadata for a still-pending record.
+`submit_record` is handled by the embedded submit daemon inside the TruCon.
+It takes previously committed queued records and submits them to the configured immutable backend in ascending `sequence_num` order, without rebuilding or mutating the event payload.
+The daemon applies result state transitions internally: updating `status` to `CONFIRMED` with `log_id` and `confirmed_at`, or incrementing `retry_count` up to a threshold of 10 before marking `FAILED`.
 
-`get_commit_queue_status` is a small worker-facing query API.
-It should answer only the question of whether the commit queue contains committed work and, if so, which `record_id` is next in submission order.
+`get_commit_queue_status` and `GET /status` expose queue statistics.
+They answer the question of how many queued records exist, how many have failed, and which `sequence_num` is next for submission.
 
 The publication path should behave as follows:
 
-- A submission worker checks queue state through `get_commit_queue_status()`.
-- If `has_queued_records=true`, the worker reads `next_record_id` and calls `submit_record(next_record_id)`.
-- Trusted Log loads the finalized `EventLog` from the commit queue and attempts remote immutable-log submission.
-- Trusted Log returns a `SubmitResult` whose `status` is `CONFIRMED`, `PENDING`, or `FAILED`.
+- The embedded submit daemon polls the `commit_queue` every 5 seconds for records with `status=PENDING` and `rtmr_extended=TRUE`.
+- It processes records in ascending `sequence_num` order within each `chain_id`.
+- If a `FAILED` record exists, all subsequent records in the same chain are blocked from submission to preserve ordering guarantees.
+- On successful submission, the daemon updates `status=CONFIRMED`, sets `confirmed_at` and `log_id`, and updates `chain_state.head_log_id`.
+- On failure, the daemon increments `retry_count`. After 10 retries, status transitions to `FAILED`.
 
 To keep the API surface smaller, the preferred model is not to make callers manually walk a rich state object.
-Instead, the commit queue itself should drive publication:
+Instead, the commit queue itself drives publication through the embedded daemon:
 
-- when `commit_record` enqueues a finalized event, it should wake or notify the submission worker
-- if the worker sees one or more queued records through `get_commit_queue_status()`, it should immediately call `submit_record(record_id)` for the next eligible item
-- `get_latest_state()` remains optional observability API for health checks, attester reads, and dashboards
+- when `commit_record` inserts a record into the queue via the TruCon, the embedded daemon picks it up on the next poll cycle
+- the daemon submits records in `sequence_num` order, respecting chain-level ordering and failure blocking
+- `GET /status` on the TruCon provides queue statistics for health checks and dashboards
+- `GET /chain-state/{chain_id}` on the TruCon provides per-chain state for observability
 
-In other words, the default control flow is: queue has content -> worker submits queued records.
-This makes `submit_record(record_id)` the only mutation API for queue-driven publication, keeps `get_commit_queue_status()` as the worker-facing lightweight queue check, and keeps `get_latest_state()` read-only and compact.
+In other words, the default control flow is: TruCon commit → queue insert → daemon submits queued records.
+This makes the embedded daemon the sole mutation agent for queue-driven publication, keeps queue inspection read-only and compact, and eliminates cross-process coordination.
 
 The meaning of each result state is:
 
@@ -626,27 +677,24 @@ The meaning of each result state is:
 These queue mutations should happen inside `submit_record()` itself rather than in the submission worker.
 The worker should treat `SubmitResult` as the authoritative outcome and decide only whether to continue, back off, or escalate.
 
-Commit queue entries should retain enough metadata for safe resubmission and operator visibility, including:
+Commit queue entries retain the following metadata for safe resubmission and operator visibility:
 
-- `record_id` and `event_id`
-- computed digest and `prev_log_id`
-- backend target and last submission attempt time
-- retry count and last error or pending reason
-- local MR status, including whether extend succeeded, failed, or was deferred
+- `record_id` and `event_id` — event identification
+- `chain_id` — chain membership for per-chain ordering
+- `payload` — the signed DSSE bundle (static, tokenless)
+- `status` — `PENDING`, `CONFIRMED`, or `FAILED`
+- `rtmr_extended` — flag indicating whether the RTMR extend succeeded (used for crash recovery)
+- `sequence_num` — monotonically increasing within each chain, assigned by the TruCon under the lock
+- `prev_log_id` — system-maintained chain link (not in the DSSE signature)
+- `mr_value` — the RTMR register value after extend
+- `log_id` — Rekor log entry ID once confirmed
+- `retry_count` — number of submission attempts
+- `confirmed_at` — timestamp of successful Rekor confirmation
+- `updated_at` — last modification timestamp
 
-Commit queue status should be exposed through a compact `get_latest_state()` summary and, when needed, an implementation-specific monitoring or queue-inspection view.
-At minimum, `get_latest_state()` should allow a caller to determine:
+A companion `chain_state` table maintains one row per `chain_id` with `head_record_id`, `head_log_id`, `sequence_num`, `mr_value`, and `updated_at`.
 
-- the latest confirmed immutable-log identifier
-- whether queued work still awaiting confirmation exists, for example through `pending_record_count`
-- which event IDs are currently pending publication
-- the latest observed MR value
-
-For worker control flow, `get_commit_queue_status()` should allow a caller to determine:
-
-- whether any committed queued record exists
-- how many committed records are currently queued
-- which `next_record_id` should be attempted first
+Commit queue status is exposed through the TruCon's `GET /status` endpoint and, for per-chain detail, `GET /chain-state/{chain_id}`.
 
 If a worker or operator needs more detail, the queue-specific monitoring view should expose:
 
