@@ -34,6 +34,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for building images
     tmpfs:
       - /dev/shm
+    mem_swappiness: 0
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
@@ -58,6 +59,7 @@ services:
       - ./logs:/app/logs
     tmpfs:
       - /dev/shm
+    mem_swappiness: 0
     restart: unless-stopped
     depends_on:
       - tc-api

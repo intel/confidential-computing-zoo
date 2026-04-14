@@ -18,8 +18,13 @@ class MockMRAdapter(LocalMRAdapter):
 # Simple tests to fulfill 4.2 and 4.3
 
 def test_sqlite_wal_persistence(tmp_path):
-    db_file = tmp_path / "test_queue.db"
+    db_dir = tmp_path / "tc_api_queue"
+    db_file = db_dir / "test_queue.db"
     init_db(str(db_file))
+    
+    # Assert DAC permissions
+    st = db_dir.stat()
+    assert (st.st_mode & 0o777) == 0o700
     
     # Insert multiple records concurrently
     def worker(i):

@@ -91,6 +91,9 @@ flowchart LR
 - Trusted Log API:
 Receives event-log operations from TrustBootstrap, enforces workflow order, coordinates submit and query flows, and must preserve thread-safe behavior when commit and submit operations execute in different worker contexts.
 
+- Local Commit Queue (Ephemeral Storage):
+A local SQLite database serving as an operations buffer. To enforce strict hardware Lifecycle Alignment, this database MUST reside in a volatile, memory-backed file system (e.g., `/dev/shm`) and MUST be protected by strict DAC isolation (i.e. `0700` permissions on a dedicated directory). This design prevents persisting uncommitted queued events beyond the lifetime of the Trust Domain (TD), inherently matching the lifespan of corresponding hardware Measurement Registers (RTMRs) which reset upon a VM crash. Furthermore, careful deployment configurations should implement anti-swapping contracts (e.g., setting `memory-swappiness=0`).
+
 - Submission Daemon:
 A background worker or separate thread process that monitors the local Commit Queue, safely polls for finalized logs (`get_commit_queue_status()`), calls `submit_record()` autonomously, and applies exponential backoff for retries to avoid blocking API responses.
 

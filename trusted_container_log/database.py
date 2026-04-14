@@ -12,16 +12,17 @@ try:
     from config import COMMIT_QUEUE_DB
     DB_PATH = COMMIT_QUEUE_DB
 except ImportError:
-    DB_PATH = '/dev/shm/commit_queue.db'
+    DB_PATH = '/dev/shm/tc_api_queue/queue.db'
 
-# Make sure directory exists, especially for shm
-db_dir = os.path.dirname(DB_PATH)
-if db_dir and not os.path.exists(db_dir):
-    try:
-        os.makedirs(db_dir, exist_ok=True)
-    except Exception as e:
-        print(f"Warning: Could not create {db_dir} for sqlite DB. Using local fallback: {e}")
-        DB_PATH = 'commit_queue.db'
+def ensure_db_dir(db_path: str):
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        try:
+            os.makedirs(db_dir, exist_ok=True)
+            # Apply strict 0700 DAC permissions to prevent intra-TD data leakage
+            os.chmod(db_dir, 0o700)
+        except Exception as e:
+            print(f"Warning: Could not create or secure {db_dir} for sqlite DB. Using local fallback: {e}")
 
 # Use thread-local storage if needed or rely on check_same_thread=False
 # SQLite by default handles connections safely if isolation_level is set properly
@@ -29,6 +30,7 @@ if db_dir and not os.path.exists(db_dir):
 
 def init_db(db_path: str = DB_PATH):
     """Initialize the SQLite database with WAL and the CommitQueue table."""
+    ensure_db_dir(db_path)
     with sqlite3.connect(db_path) as conn:
         # Enable Write-Ahead Logging for better concurrency and crash resilience
         conn.execute('PRAGMA journal_mode=WAL;')
