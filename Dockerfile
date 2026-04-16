@@ -49,8 +49,8 @@ RUN wget https://github.com/anchore/syft/releases/download/v0.96.0/syft_0.96.0_l
 RUN apt-get update && apt-get install -y skopeo \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
-COPY . /app/  # ToDo - Be more specific 
+# Copy repository contents into the image build context.
+COPY . /app/
 # Todo libtdx_attest.so source
 RUN if [ "$ENABLE_TDX" = "true" ]; then \ 
         if ls /app/libtdx_attest.so* >/dev/null 2>&1; then \
@@ -66,7 +66,9 @@ RUN if [ "$ENABLE_TDX" = "true" ]; then \
     fi
 
 RUN python -m venv /app/venv
-RUN if [ -f "requirements.txt" ]; then \
+RUN if [ -f "pyproject.toml" ]; then \
+        /app/venv/bin/pip install --no-cache-dir .; \
+    elif [ -f "requirements.txt" ]; then \
         /app/venv/bin/pip install --no-cache-dir -r requirements.txt; \
     fi
 
@@ -91,5 +93,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
 #Run the application
-RUN chmod +x *service.sh
-ENTRYPOINT ["./trust_service.sh"]
+RUN chmod +x scripts/trust_service.sh
+ENTRYPOINT ["./scripts/trust_service.sh"]

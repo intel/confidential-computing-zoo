@@ -8,4 +8,6 @@ if [ -d "venv" ]; then
     source venv/bin/activate
 fi
 
-python test_runner.py "$@"
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+
+python -m tests.test_runner "$@"

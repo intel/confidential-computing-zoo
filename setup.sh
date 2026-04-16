@@ -8,8 +8,8 @@ echo "Setting up TC API development environment..."
 python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install package and dependencies
+pip install -e .
 
 # Create necessary directories
 mkdir -p uploads builds logs
@@ -21,7 +21,7 @@ echo "Setup complete!"
 echo ""
 echo "To run the service:"
 echo "1. Activate virtual environment: source venv/bin/activate"
-echo "2. Start the service: python main.py"
+echo "2. Start the service: python -m tc_api.main"
 echo ""
 echo "API will be available at: http://localhost:8000"
 echo "API documentation: http://localhost:8000/docs"

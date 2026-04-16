@@ -43,9 +43,10 @@ export HOST=${HOST:-0.0.0.0}
 export PORT=${PORT:-8000}
 export TRUCON_PORT=${TRUCON_PORT:-8001}
 export DEBUG=${DEBUG:-false}
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "Starting TruCon (single-instance sequencer) on port $TRUCON_PORT..."
-uvicorn trucon:app --host 0.0.0.0 --port $TRUCON_PORT --workers 1 &
+uvicorn tc_api.trucon.app:app --host 0.0.0.0 --port $TRUCON_PORT --workers 1 &
 TRUCON_PID=$!
 
 # Wait briefly for TruCon to be ready
@@ -72,8 +73,8 @@ echo "Debug mode: $DEBUG"
 # Start the FastAPI application
 if [ "$1" = "dev" ]; then
     echo "Starting in development mode with auto-reload..."
-    uvicorn main:app --host $HOST --port $PORT --reload
+    uvicorn tc_api.main:app --host $HOST --port $PORT --reload
 else
     echo "Starting in production mode..."
-    uvicorn main:app --host $HOST --port $PORT --workers 4
+    uvicorn tc_api.main:app --host $HOST --port $PORT --workers 4
 fi

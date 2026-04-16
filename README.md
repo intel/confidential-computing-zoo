@@ -18,14 +18,14 @@ A RESTful API service framework built with Python and FastAPI for handling Docke
 Use the single entrypoint for tests:
 
 ```shell
-python test_runner.py --type all
+python -m tests.test_runner --type all
 ```
 
 Common options:
 
 ```shell
-python test_runner.py --type unit
-python test_runner.py --type manual --name health
+python -m tests.test_runner --type unit
+python -m tests.test_runner --type manual --name health
 ```
 
 ## API Endpoints
@@ -321,7 +321,7 @@ source {env-name}/bin/activate
 
 ```bash
 cd tc_api
-pip install -r requirements.txt
+pip install -e .
 ```
 
 3. Start ASR && AA && CDH && KBS
@@ -331,7 +331,7 @@ Please refer to: [https://github.com/RodgerZhu/deploy-encrypted-image-in-tdvm?ta
 ### Run Service
 
 ```bash
-python main.py
+python -m tc_api.main
 ```
 
 The service will start at http://localhost:8000.
@@ -402,11 +402,20 @@ The service depends on the following external tools, please ensure they are prop
 
 ```
 tc_api/
-├── main.py           # FastAPI application main file
-├── models.py         # Pydantic data models
-├── services.py       # Docker related services
-├── kbs_service.py    # KBS client service
-├── config.py         # Configuration file
+├── src/
+│   └── tc_api/       # Application package
+│       ├── main.py       # FastAPI application main file
+│       ├── trucon.py     # TruCon sequencer service
+│       ├── models.py     # Pydantic data models
+│       ├── services.py   # Docker related services
+│       ├── kbs_service.py# KBS client service
+│       ├── config.py     # Configuration file
+│       └── trusted_container_log/
+├── tests/            # Test suites and test runner
+├── scripts/          # VFS, platform, and container helper scripts
+├── deploy/           # Deployment-specific assets such as nginx config
+├── docs/             # System and component architecture docs
+├── pyproject.toml    # Packaging and src-layout configuration
 ├── requirements.txt  # Python dependencies
 ├── Dockerfile        # Docker build file
 └── README.md         # Project documentation
@@ -418,31 +427,33 @@ The project includes comprehensive test suites for all API endpoints.
 
 ### Test Files
 
-- `test_api.py` - Manual integration tests with detailed output
-- `test_unit.py` - Automated unit and integration tests using pytest
-- `TESTING.md` - Detailed testing documentation
+- `tests/test_api.py` - Manual integration tests with detailed output
+- `tests/test_unit.py` - Automated unit and integration tests using pytest
+- `docs/TESTING.md` - Detailed testing documentation
 
 ### Quick Test Commands
 
 ```bash
 # Run all tests through a single entrypoint
-python test_runner.py --type all
+python -m tests.test_runner --type all
 
 # Run deterministic unit coverage
-python test_runner.py --type unit --no-service-management --verbose
+python -m tests.test_runner --type unit --no-service-management --verbose
 
 # Run specific manual test
-python test_runner.py --type manual --name health
+python -m tests.test_runner --type manual --name health
 
 # Manual test against a non-default endpoint
-TC_API_BASE_URL=http://localhost:18000 python test_runner.py --type manual --name health
+TC_API_BASE_URL=http://localhost:18000 python -m tests.test_runner --type manual --name health
 
 # Wait up to 90s for manual endpoint readiness
-python test_runner.py --type manual --name health --base-url http://localhost:18000 --manual-ready-timeout 90
+python -m tests.test_runner --type manual --name health --base-url http://localhost:18000 --manual-ready-timeout 90
 
 # Backward-compatible wrappers
 ./run_tests.sh --type all --verbose
-./run_tests.ps1 --type unit --verbose
+./scripts/run_tests.ps1 --type unit --verbose
 ```
 
-See `TESTING.md` for complete testing documentation.
+See `docs/TESTING.md` for complete testing documentation and `docs/architecture.md` for system design.
+
+Docktap-specific design details are in `docs/docktap/architecture.md`.

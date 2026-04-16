@@ -56,7 +56,7 @@ EXPOSE 8006 4050
 
 RUN mkdir -p /app/kbs /app/certs
 COPY ./certs /app/certs
-COPY ./trust_service.sh /app/
+COPY ./scripts/trust_service.sh /app/
 #Run the application
 RUN chmod +x *service.sh
 CMD ["bash", "/app/trust_service.sh"]
