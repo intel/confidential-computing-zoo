@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from proxy.docker_proxy import DockerProxyServer
 from proxy.operation_log import log_event
 from trucon_client import TruConCommitter
+from workload_store import WorkloadStore
 
 
 logging.basicConfig(
@@ -35,7 +36,9 @@ class SockBridge:
     def __init__(self, socket_path: str, docker_socket_path: str):
         self.socket_path = socket_path
         self.docker_socket_path = docker_socket_path
-        self.trucon_committer = TruConCommitter()
+        self.workload_store = WorkloadStore()
+        self.workload_store.init_db()
+        self.trucon_committer = TruConCommitter(workload_store=self.workload_store)
         self.proxy: DockerProxyServer = None
         self.running = False
     

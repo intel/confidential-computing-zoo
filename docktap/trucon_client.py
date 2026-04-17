@@ -66,18 +66,22 @@ def _build_entries(op_record, operation_type: str) -> List[Tuple[str, str]]:
 class TruConCommitter:
     """Lightweight client that signs and submits Docker operation events to TruCon."""
 
-    def __init__(self, trucon_url: Optional[str] = None) -> None:
+    def __init__(self, trucon_url: Optional[str] = None, workload_store=None) -> None:
         self._trucon_url = trucon_url or os.environ.get(
             "TRUCON_URL", "http://127.0.0.1:8001"
         )
+        self._workload_store = workload_store
 
-    def submit_operation(self, op_record, operation_type: str) -> bool:
+    def submit_operation(self, op_record, operation_type: str, *, workload_id: Optional[str] = None) -> bool:
         """Submit a single Docker operation to TruCon as a signed DSSE bundle.
+
+        *workload_id* is the value extracted from the ``io.trucon.workload-id``
+        container label (only available for ``create`` operations).
 
         Returns True on success, False on failure.  Never raises.
         """
         try:
-            return self._do_submit(op_record, operation_type)
+            return self._do_submit(op_record, operation_type, workload_id=workload_id)
         except Exception as exc:
             logger.warning(
                 "TruCon commit failed for %s operation: %s", operation_type, exc
@@ -88,7 +92,29 @@ class TruConCommitter:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _do_submit(self, op_record, operation_type: str) -> bool:
+    def _resolve_chain_id(self, op_record, operation_type: str, workload_id: Optional[str]) -> str:
+        """Determine chain_id for this operation."""
+        if operation_type == "pull":
+            return "default"
+
+        container_id = op_record.container.get("id") if op_record.container else None
+
+        if operation_type == "create":
+            if workload_id:
+                # Persist for future lookups
+                if self._workload_store and container_id:
+                    self._workload_store.put(container_id, workload_id)
+                return workload_id
+            return "default"
+
+        # start / stop / rm — lookup persisted mapping
+        if self._workload_store and container_id:
+            stored = self._workload_store.get(container_id)
+            if stored:
+                return stored
+        return "default"
+
+    def _do_submit(self, op_record, operation_type: str, *, workload_id: Optional[str] = None) -> bool:
         # 1. Build entries
         entry_pairs = _build_entries(op_record, operation_type)
 
@@ -100,7 +126,7 @@ class TruConCommitter:
         event_digest = compute_event_digest(event_id, event_type, created_iso, entry_digests)
 
         # 3. Build DSSE predicate
-        chain_id = "default"
+        chain_id = self._resolve_chain_id(op_record, operation_type, workload_id)
         predicate_payload = {
             "event_id": event_id,
             "event_type": event_type,

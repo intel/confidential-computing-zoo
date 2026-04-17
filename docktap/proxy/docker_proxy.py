@@ -18,6 +18,8 @@ from .operation_log import (
     is_streaming_endpoint,
 )
 
+WORKLOAD_LABEL = "io.trucon.workload-id"
+
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -167,6 +169,24 @@ class DockerProxyServer:
         for i, part in enumerate(parts):
             if part == 'containers' and i + 1 < len(parts):
                 return parts[i + 1]
+        return None
+
+    @staticmethod
+    def _extract_workload_id(request_data: bytes) -> Optional[str]:
+        """Extract io.trucon.workload-id from a create request body's Labels dict."""
+        try:
+            text = request_data.decode('utf-8', errors='replace')
+            for part in text.split('\r\n\r\n'):
+                try:
+                    body = json.loads(part)
+                    labels = body.get('Labels') or {}
+                    value = labels.get(WORKLOAD_LABEL)
+                    if value:  # non-empty string
+                        return value
+                except Exception:
+                    continue
+        except Exception:
+            pass
         return None
 
     def _normalize_image(self, img: Optional[str]) -> str:
@@ -460,7 +480,11 @@ class DockerProxyServer:
                     op_type = op_record.operation.get("type")
                     from trucon_client import SUBMITTABLE_OPERATIONS
                     if op_type in SUBMITTABLE_OPERATIONS:
-                        self._trucon_committer.submit_operation(op_record, op_type)
+                        # Resolve workload_id for create ops from labels
+                        workload_id = None
+                        if op_type == "create":
+                            workload_id = self._extract_workload_id(request_data)
+                        self._trucon_committer.submit_operation(op_record, op_type, workload_id=workload_id)
             else:
                 logger.error("No response from Docker")
 
