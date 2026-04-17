@@ -43,7 +43,9 @@ flowchart LR
   daemon --> backends[Immutable Trust Backends<br/>transparency log and/or on-chain backends]
 ```
 
-The REST API signs DSSE envelopes locally using the caller's OIDC identity token, then POSTs the signed bundle to TruCon's `/commit` endpoint. TruCon serializes RTMR extend, SQLite queue insert, and chain state update, then returns sequencing metadata. An embedded submit daemon publishes confirmed records to immutable backends asynchronously.
+The REST API signs DSSE envelopes locally using the caller's OIDC identity token, then POSTs the signed bundle to TruCon's `/commit` endpoint. TruCon serializes RTMR[2] extend, SQLite queue insert, and chain state update, then returns sequencing metadata. An embedded submit daemon publishes confirmed records to immutable backends asynchronously.
+
+At startup, tc_api initializes the trust chain by calling TruCon's `/init-chain` endpoint to create Event Log 0 (baseline record). This captures the current RTMR[2] snapshot and CCEL digest without performing an RTMR extend, anchoring the chain to the platform's boot-time measurement state.
 
 For TruCon internal architecture details (lock model, SQLite schema, crash recovery, verification), see [trusted-log/architecture.md](trusted-log/architecture.md).
 
@@ -55,6 +57,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Executes build, publish, launch orchestration logic.
 - Emits trusted events to TruCon instead of mutating trust-log chain state directly.
 - Continues exposing status endpoints for build/publish/launch results.
+- On startup (`lifespan()`), generates an ECDSA P-384 keypair in TEE memory and calls TruCon `/init-chain` to create Event Log 0 (baseline record). The TEE private key signs Event Log 0's DSSE envelope; subsequent events use Sigstore OIDC signing. The private key is discarded after Event Log 0 is committed.
 
 ### 4.2 Docktap Service
 
@@ -72,16 +75,24 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 ### 4.3 TruCon Core Service
 
 **Currently implemented:**
-- Exposes REST endpoints: `POST /commit`, `GET /chain-state/{chain_id}`, `GET /status`.
-- Serializes commit operations (RTMR extend + SQLite INSERT + chain state update) behind a single-process lock.
+- Exposes REST endpoints: `POST /commit`, `POST /init-chain`, `GET /init-chain/{chain_id}/baseline`, `GET /chain-state/{chain_id}`, `GET /status`.
+- Serializes commit operations (RTMR[2] extend + SQLite INSERT + chain state update) behind a single-process lock.
 - Maintains per-chain state tracking (sequence number, head record, measurement value).
 - Runs with `--workers 1` to preserve lock-based serialization.
 - Performs crash recovery on startup based on RTMR extension flags.
+- Only TDX RTMR[2] is supported for measurement extensions (RTMR[0]/[1] are firmware/boot-locked; AMD SEV-SNP is out of scope).
+
+**Chain initialization (`/init-chain`):**
+- Two-phase protocol: `GET /init-chain/{chain_id}/baseline` returns current RTMR[2] value and CCEL digest (no extend); `POST /init-chain` accepts a signed baseline bundle and initializes `chain_state`.
+- Event Log 0 (baseline record) does not perform RTMR extend — it captures the current register value as baseline evidence.
+- Initialization is a logical state: subsequent `/commit` calls can proceed while Event Log 0 is still pending Rekor confirmation. Ordered submission guarantees baseline is published first.
+- If baseline submission fails terminally, the chain is considered dead (no trust anchor).
 
 **Planned (not yet implemented):**
 - ~~Idempotency key enforcement for duplicate commit detection.~~ ✅ Completed (GAP-02).
-- Workload-to-instance and instance-to-event mapping (GAP-03, blocked by GAP-11).
-- Docktap event ingestion path (GAP-01, design confirmed 2026-04-17).
+- ~~Workload-to-instance and instance-to-event mapping (GAP-03, blocked by GAP-11).~~ ✅ Completed (GAP-03).
+- ~~Docktap event ingestion path (GAP-01, design confirmed 2026-04-17).~~ ✅ Completed (GAP-01).
+- ~~Event Log 0 / baseline record (GAP-05, design confirmed 2026-04-17).~~ ✅ Completed (GAP-05).
 
 For implementation details, see [trusted-log/architecture.md](trusted-log/architecture.md).
 
@@ -238,6 +249,7 @@ Rollback principle:
 - Confirmation SLA target from commit accepted to backend confirmed.
 - ~~Canonical mandatory fields for stable instance mapping across restarts/replacements.~~ **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`; one `create→rm` lifecycle = one instance. Cross-restart identity is `workload_id`'s role, not `instance_id`'s.
 - Worker ownership model: local ownership or shared lease coordination.
+- ~~How to handle runtimes that allow quote/report reads but not MR extend.~~ **Resolved** (2026-04-17): Out of scope. Only TDX RTMR[2] is supported. AMD SEV-SNP and quote-only runtimes are not targeted.
 
 ## 13. Related Documents
 

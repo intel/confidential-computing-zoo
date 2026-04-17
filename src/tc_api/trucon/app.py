@@ -13,6 +13,7 @@ import hmac
 import json
 import logging
 import os
+import secrets
 import sys
 import threading
 import time
@@ -51,6 +52,7 @@ from .database import (
     update_status,
 )
 from .adapters.sigstore import SigstoreLogAdapter
+from .adapters.ccel import compute_ccel_digest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger("trucon")
@@ -95,6 +97,21 @@ class LatestStateResponse(BaseModel):
     pending_record_count: int = 0
     pending_event_ids: List[str] = []
     latest_mr_value: Optional[str] = None
+
+class InitChainBaselineResponse(BaseModel):
+    rtmr_value: Optional[str] = None
+    ccel_digest: Optional[str] = None
+    init_token: str
+
+class InitChainRequest(BaseModel):
+    chain_id: str
+    init_token: str
+    signed_bundle: str   # DSSE bundle JSON signed with TEE keypair
+    pub_key: str         # ECDSA P-384 public key in PEM format
+
+class InitChainResponse(BaseModel):
+    record_id: str
+    sequence_num: int
 
 class ChainEntryResult(BaseModel):
     seq: int
@@ -172,6 +189,14 @@ def release_instance_lock():
 _sequencer_lock = threading.Lock()
 _local_mr = None       # Set during lifespan
 _immutable_log = None   # Set during lifespan
+
+# RTMR[2] is the OS/application-layer measurement register in TDX.
+# RTMR[0]/[1] are firmware/boot-locked; RTMR[3] is reserved.
+RTMR_INDEX = 2
+
+# Pending init tokens: {init_token -> chain_id}
+# Populated by GET /init-chain/.../baseline, consumed by POST /init-chain
+_pending_init_tokens: Dict[str, Dict[str, Any]] = {}
 
 # ---------------------------------------------------------------------------
 # Crash recovery
@@ -415,6 +440,102 @@ async def service_auth_middleware(request: Request, call_next):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+@app.get("/init-chain/{chain_id}/baseline", response_model=InitChainBaselineResponse)
+def get_init_chain_baseline(chain_id: str):
+    """
+    Phase 1 of chain initialization: read platform baseline (RTMR[2], CCEL digest)
+    and return an init_token for TOCTOU protection.
+    """
+    with _sequencer_lock:
+        state = get_chain_state(chain_id)
+        if state:
+            raise HTTPException(status_code=409, detail=f"Chain '{chain_id}' already initialized")
+
+        # Read RTMR[2] snapshot
+        rtmr_value = None
+        if _local_mr:
+            try:
+                rtmr_value = _local_mr.read(RTMR_INDEX)
+            except Exception as e:
+                logger.error("Failed to read RTMR[%d]: %s", RTMR_INDEX, e)
+
+        # Compute CCEL digest
+        ccel_digest = compute_ccel_digest()
+
+        # Generate init_token
+        init_token = secrets.token_urlsafe(32)
+        _pending_init_tokens[init_token] = {
+            "chain_id": chain_id,
+            "rtmr_value": rtmr_value,
+            "ccel_digest": ccel_digest,
+        }
+
+        return InitChainBaselineResponse(
+            rtmr_value=rtmr_value,
+            ccel_digest=ccel_digest,
+            init_token=init_token,
+        )
+
+
+@app.post("/init-chain", response_model=InitChainResponse)
+def init_chain(req: InitChainRequest):
+    """
+    Phase 2 of chain initialization: validate init_token and insert Event Log 0
+    (baseline record) into the commit queue.
+    """
+    with _sequencer_lock:
+        # Validate init_token
+        token_data = _pending_init_tokens.pop(req.init_token, None)
+        if token_data is None:
+            raise HTTPException(status_code=400, detail="Invalid or expired init_token")
+
+        if token_data["chain_id"] != req.chain_id:
+            raise HTTPException(status_code=400, detail="init_token chain_id mismatch")
+
+        # Ensure chain is still uninitialized (TOCTOU guard)
+        state = get_chain_state(req.chain_id)
+        if state:
+            raise HTTPException(status_code=409, detail=f"Chain '{req.chain_id}' already initialized")
+
+        record_id = str(uuid.uuid4())
+        sequence_num = 1
+
+        # INSERT baseline record (Event Log 0)
+        # rtmr_extended=True: RTMR value was captured (read, not extended).
+        # This flag must be True for the submit daemon and crash recovery to
+        # handle the record correctly through existing infrastructure.
+        insert_record(
+            record_id=record_id,
+            event_id=f"evt-log0-{req.chain_id}",
+            payload={
+                "bundle": req.signed_bundle,
+                "chain_id": req.chain_id,
+                "pub_key": req.pub_key,
+                "is_baseline": True,
+            },
+            status="PENDING",
+            chain_id=req.chain_id,
+            rtmr_extended=True,
+            prev_log_id=None,
+            mr_value=token_data["rtmr_value"],
+            sequence_num=sequence_num,
+            event_digest=None,
+            idempotency_key=f"init-chain-{req.chain_id}",
+            instance_id=None,
+        )
+
+        # Initialize chain_state
+        update_chain_state(
+            chain_id=req.chain_id,
+            head_record_id=record_id,
+            sequence_num=sequence_num,
+            mr_value=token_data["rtmr_value"],
+        )
+
+        logger.info("Chain '%s' initialized with baseline record %s", req.chain_id, record_id)
+        return InitChainResponse(record_id=record_id, sequence_num=sequence_num)
+
+
 @app.post("/commit", response_model=CommitResponse)
 def commit(req: CommitRequest):
     """
@@ -459,7 +580,7 @@ def commit(req: CommitRequest):
         mr_value, prev_mr_value = None, None
         if _local_mr:
             try:
-                mr_value, prev_mr_value = _local_mr.extend(0, req.event_digest)
+                mr_value, prev_mr_value = _local_mr.extend(RTMR_INDEX, req.event_digest)
             except Exception as e:
                 logger.error("RTMR extend failed: %s", e)
                 raise HTTPException(status_code=500, detail=f"RTMR extend failed: {e}")

@@ -193,6 +193,111 @@ class TrustedLogAPI:
             prev_mr_value=trucon_response.get("prev_mr_value"),
         )
 
+    def init_chain(self, chain_id: str = "default") -> Optional[Dict[str, Any]]:
+        """
+        Initialize a chain with Event Log 0 (baseline record).
+
+        Two-phase protocol:
+          1. GET /init-chain/{chain_id}/baseline → rtmr_value, ccel_digest, init_token
+          2. Generate ECDSA P-384 keypair, sign DSSE envelope, POST /init-chain
+
+        Returns the init-chain response dict on success, or None if the chain
+        already exists (409) or TruCon is unreachable.
+        """
+        # Phase 1: Get baseline from TruCon
+        baseline_url = f"{self._trucon_url}/init-chain/{chain_id}/baseline"
+        headers = {}
+        if _TRUCON_SERVICE_TOKEN:
+            headers["Authorization"] = f"Bearer {_TRUCON_SERVICE_TOKEN}"
+
+        try:
+            req = urllib.request.Request(baseline_url, method="GET", headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                baseline = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code == 409:
+                logger.info("Chain '%s' already initialized, skipping init-chain", chain_id)
+                return None
+            logger.warning("init-chain baseline failed for chain '%s': HTTP %d", chain_id, e.code)
+            return None
+        except urllib.error.URLError as e:
+            logger.warning("TruCon unreachable for init-chain baseline: %s", e)
+            return None
+
+        init_token = baseline["init_token"]
+        rtmr_value = baseline.get("rtmr_value")
+        ccel_digest = baseline.get("ccel_digest")
+
+        # Generate ECDSA P-384 keypair
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives import hashes, serialization
+
+        private_key = ec.generate_private_key(ec.SECP384R1())
+        pub_key_pem = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("utf-8")
+
+        # Build Event Log 0 DSSE payload
+        entries = [
+            {"key": "baseline_rtmr", "value": rtmr_value or "null"},
+            {"key": "ccel_digest", "value": ccel_digest or "null"},
+            {"key": "pub_key", "value": pub_key_pem},
+        ]
+        predicate_payload = {
+            "event_id": f"evt-log0-{chain_id}",
+            "event_type": "chain.init",
+            "entries": entries,
+            "chain_id": chain_id,
+        }
+        # DSSE envelope: payloadType + base64(payload)
+        import base64
+        payload_bytes = json.dumps(predicate_payload, separators=(',', ':'), sort_keys=True).encode("utf-8")
+        payload_b64 = base64.b64encode(payload_bytes).decode("utf-8")
+
+        # Sign with ECDSA P-384
+        signature = private_key.sign(payload_bytes, ec.ECDSA(hashes.SHA384()))
+        sig_b64 = base64.b64encode(signature).decode("utf-8")
+
+        dsse_envelope = json.dumps({
+            "payloadType": "application/vnd.dsse+json",
+            "payload": payload_b64,
+            "signatures": [{"keyid": "", "sig": sig_b64}],
+        })
+
+        # Zero the private key material
+        del private_key
+
+        # Phase 2: POST init-chain
+        post_url = f"{self._trucon_url}/init-chain"
+        post_payload = json.dumps({
+            "chain_id": chain_id,
+            "init_token": init_token,
+            "signed_bundle": dsse_envelope,
+            "pub_key": pub_key_pem,
+        }).encode("utf-8")
+
+        post_headers = {"Content-Type": "application/json"}
+        if _TRUCON_SERVICE_TOKEN:
+            post_headers["Authorization"] = f"Bearer {_TRUCON_SERVICE_TOKEN}"
+
+        try:
+            req = urllib.request.Request(post_url, data=post_payload, headers=post_headers, method="POST")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                logger.info("Chain '%s' initialized: record_id=%s sequence_num=%d",
+                            chain_id, result["record_id"], result["sequence_num"])
+                return result
+        except urllib.error.HTTPError as e:
+            if e.code == 409:
+                logger.info("Chain '%s' already initialized (race), skipping", chain_id)
+                return None
+            logger.warning("init-chain POST failed for chain '%s': HTTP %d", chain_id, e.code)
+            return None
+        except urllib.error.URLError as e:
+            logger.warning("TruCon unreachable for init-chain POST: %s", e)
+            return None
+
     def _post_to_trucon(self, bundle_json: str, chain_id: str,
                             event_digest: str, event_id: str,
                             idempotency_key: Optional[str] = None,

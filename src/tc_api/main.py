@@ -57,6 +57,12 @@ async def lifespan(app: FastAPI):
         immutable_log=SigstoreLogAdapter(),
         trucon_url=TRUCON_URL,
     )
+
+    # Initialize the default chain (Event Log 0 baseline)
+    try:
+        app.state.trusted_log.init_chain("default")
+    except Exception as e:
+        logger.warning("init-chain for 'default' failed (non-fatal): %s", e)
     
     yield
     

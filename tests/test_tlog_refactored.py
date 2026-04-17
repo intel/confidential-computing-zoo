@@ -54,7 +54,7 @@ def test_tdx_mr_adapter(tmp_path):
     # Setup mock sysfs
     d = tmp_path / "measurements"
     d.mkdir()
-    path = d / "rtmr0:sha384"
+    path = d / "rtmr2:sha384"
     # Provide exactly 48 bytes init value
     init_val = b'\x00' * 48
     path.write_bytes(init_val)
@@ -62,12 +62,12 @@ def test_tdx_mr_adapter(tmp_path):
     adapter = TdxMRAdapter(sysfs_base_path=str(d / "rtmr"))
     
     # Test read
-    val = adapter.read(0)
+    val = adapter.read(2)
     assert val == init_val.hex()
     
     # Test extend
     new_hash = "11" * 48
-    new_val, prev_val = adapter.extend(0, new_hash)
+    new_val, prev_val = adapter.extend(2, new_hash)
     
     assert prev_val == init_val.hex()
     assert new_val == new_hash

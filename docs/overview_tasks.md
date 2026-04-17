@@ -105,19 +105,32 @@ Each task has:
 
 ---
 
-### GAP-05: Event Log 0 (Baseline Record)
+### ~~GAP-05: Event Log 0 (Baseline Record)~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/tlog_client.py`, `src/tc_api/trucon/app.py`
+- **Scope**: `src/tc_api/tlog_client.py`, `src/tc_api/trucon/app.py`, `src/tc_api/trucon/adapters/tdx_mr.py`, `src/tc_api/trucon/adapters/ccel.py`
 - **References**: trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow
-- **Dependencies**: None
-- **Current State**: No initialization-time baseline record. No RTMR snapshot capture. No CCEL system event log query. The `pub_key` field on `EventLog` type exists but is always `None`.
+- **Dependencies**: None (Q-05 resolved)
+- **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-event-log-0-baseline/`
+- **Design Decisions** (confirmed 2026-04-17):
+  - **Platform scope**: TDX only. AMD SEV-SNP / quote-only runtimes are out of scope. Q-05 is resolved: not applicable.
+  - **RTMR register**: Only RTMR[2] is used (OS/application layer). RTMR[0]/[1] are firmware/boot-locked. Hardcoded `index=0` corrected to `index=2` via `RTMR_INDEX = 2` constant.
+  - **New endpoint**: Two-phase `/init-chain` protocol on TruCon:
+    - Phase 1: `GET /init-chain/{chain_id}/baseline` → reads RTMR[2] (no extend), computes CCEL SHA-384 digest, returns `{rtmr_value, ccel_digest, init_token}`.
+    - Phase 2: `POST /init-chain` with `{chain_id, init_token, signed_bundle, pub_key}` → validates token, verifies no existing chain, INSERTs baseline record, initializes `chain_state`.
+  - **Signing**: tc_api generates ECDSA P-384 keypair in TEE memory, signs DSSE envelope (not Sigstore). Private key discarded after signing (α model).
+  - **Caller**: tc_api `lifespan()` calls `init_chain("default")`. Multi-worker safe: 409 silently skipped.
+  - **CCEL storage**: Only `SHA384(raw_CCEL)` digest stored. Non-TEE: null.
+  - **Initialization semantics**: Logical state. Subsequent `/commit` calls proceed while Event Log 0 is PENDING. Baseline record uses `rtmr_extended=True` for submit daemon/crash recovery compat.
 - **Acceptance Criteria**:
-  1. On Trust Bootstrap initialization, Trusted Log creates Event Log 0 from the current RTMR snapshot and baseline system-event metadata.
-  2. Event Log 0 does NOT perform an RTMR extend — it captures the current MR value as baseline.
-  3. Event Log 0 is committed locally and published to the immutable backend.
-  4. The caller's public key is embedded in Event Log 0's `pub_key` field.
-  5. Initialization is not complete until Event Log 0 is confirmed remotely.
+  1. ✅ tc_api generates ECDSA P-384 keypair at startup, creates Event Log 0, signs with TEE private key.
+  2. ✅ Event Log 0 captures RTMR[2] snapshot (no extend) and CCEL digest as baseline entries.
+  3. ✅ `pub_key` field populated with TEE-generated public key in PEM format.
+  4. ✅ Event Log 0 committed via `POST /init-chain` and queued for Rekor submission.
+  5. ✅ Subsequent `/commit` calls not blocked while Event Log 0 is pending.
+  6. ✅ RTMR index corrected from `0` to `2` across all extend/read operations.
+- **Tests**: `tests/test_init_chain.py` (12 tests), `tests/test_ccel.py` (6 tests); all passing
+- **OpenSpec**: `openspec/changes/archive/2026-04-17-event-log-0-baseline/`
 
 ---
 
@@ -309,7 +322,7 @@ These are not implementation tasks but **design decisions** that should be resol
 | Q-02 | Confirmation SLA target from commit to backend confirmed? | GAP-04 | architecture.md §12 | Open |
 | Q-03 | Canonical mandatory fields for stable instance mapping across restarts? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`. One `create→rm` lifecycle = one instance. No cross-restart identity — that's `workload_id`'s role. |
 | Q-04 | Worker ownership model: local ownership or shared lease? | — | architecture.md §12 | Open |
-| Q-05 | How to handle runtimes that allow quote/report reads but not MR extend? | GAP-05 | trusted-log/architecture.md §Trust Log Initialization | Open |
+| Q-05 | How to handle runtimes that allow quote/report reads but not MR extend? | GAP-05 | trusted-log/architecture.md §Trust Log Initialization | **Resolved** (2026-04-17): Out of scope. Only TDX RTMR[2] is supported. AMD SEV-SNP and quote-only runtimes are not targeted. |
 
 ---
 
@@ -326,7 +339,7 @@ GAP-01 (Docktap → TruCon, v1 default chain) ✅
   │               │
   └───────────────┘
 
-GAP-05 (Event Log 0) ◀── Q-05
+GAP-05 (Event Log 0) ✅ ── standalone (Q-05 resolved: TDX RTMR[2] only)
 GAP-07 (On-Chain Adapter) ── standalone
 GAP-08 (Feature-Flag Fallback) ── standalone
 GAP-09 (Non-TEE Ordering) ✅ ── standalone
@@ -337,7 +350,7 @@ GAP-12 (Service Auth Phase B) ◀── GAP-10 ✅ ── LOW priority
 FIX-03 (SubmitResult) ── standalone
 FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05
 ```
 
 ---
@@ -352,7 +365,7 @@ FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 
 **Phase 2 — Core infrastructure** (in progress):
 5. ~~`GAP-04`~~ ✅ completed 2026-04-17
-6. `GAP-05` — Event Log 0 (after Q-05 resolved)
+6. `GAP-05` — Event Log 0 (Q-05 resolved — ready for implementation)
 7. ~~`GAP-09`~~ ✅ completed 2026-04-17
 
 **Phase 3 — Docktap Integration** (in progress):
@@ -361,8 +374,8 @@ FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 10. ~~`GAP-03`~~ ✅ completed 2026-04-17
 11. ~~`GAP-10`~~ ✅ completed 2026-04-17 (Phase A — Bearer token)
 
-**Phase 4 — Trust chain completion**:
-12. `GAP-05` — Event Log 0 / baseline record (after Q-05 resolved)
+**Phase 4 — Trust chain completion** ✅ COMPLETE:
+12. ~~`GAP-05`~~ ✅ completed 2026-04-17 — Event Log 0 / baseline record
 
 **Phase 5 — Extensions**:
 13. `GAP-07` — On-chain backend adapter

@@ -17,8 +17,8 @@ The module combines three planes:
 
 The system is deployed as two cooperating services:
 
-- **tc_api** (stateless, multi-worker): Receives caller requests, performs DSSE signing using the caller's OIDC identity, and forwards signed bundles to the TruCon via REST.
-- **TruCon** (single-instance, `--workers 1`): Serializes RTMR extend + SQLite INSERT behind a `threading.Lock()`, maintains chain state, and embeds the submit daemon as a background thread.
+- **tc_api** (stateless, multi-worker): Receives caller requests, performs DSSE signing using the caller's OIDC identity, and forwards signed bundles to the TruCon via REST. For Event Log 0 (chain initialization), tc_api generates an ECDSA P-384 keypair in TEE memory and signs the baseline record with the TEE private key instead of Sigstore.
+- **TruCon** (single-instance, `--workers 1`): Serializes RTMR[2] extend + SQLite INSERT behind a `threading.Lock()`, maintains chain state, and embeds the submit daemon as a background thread.
 
 This split ensures that RTMR extends and chain state mutations are strictly serialized within a single process, while tc_api can scale horizontally for throughput. The three-layer trust model is:
 
@@ -106,7 +106,7 @@ flowchart LR
 Receives event-log operations from TrustBootstrap, constructs In-Toto DSSE envelopes, signs them using the caller's OIDC identity token via Sigstore in offline mode, and forwards the signed bundle to the TruCon via REST `POST /commit`. The tc_api side is stateless and safe for multi-worker deployment (`--workers N`). It does not hold chain state, perform RTMR extends, or access the SQLite queue.
 
 - TruCon Sequencer:
-A single-instance FastAPI service (`--workers 1`) that serializes all chain-mutating operations behind a `threading.Lock()`. Within the lock, it reads `chain_state` to determine `prev_log_id` and `sequence_num`, extends the RTMR with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, and updates `chain_state`. Single-instance enforcement is achieved via an exclusive file lock (`fcntl.flock`) at startup.
+A single-instance FastAPI service (`--workers 1`) that serializes all chain-mutating operations behind a `threading.Lock()`. Within the lock, it reads `chain_state` to determine `prev_log_id` and `sequence_num`, extends RTMR[2] with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, and updates `chain_state`. Single-instance enforcement is achieved via an exclusive file lock (`fcntl.flock`) at startup.
 
 - Local Commit Queue (Ephemeral Storage):
 A local SQLite database with WAL mode serving as an operations buffer. To enforce strict hardware Lifecycle Alignment, this database MUST reside in a volatile, memory-backed file system (e.g., `/dev/shm`) and MUST be protected by strict DAC isolation (i.e. `0700` permissions on a dedicated directory). The expanded schema includes `chain_id`, `rtmr_extended`, `log_id`, `prev_log_id`, `mr_value`, `sequence_num`, `confirmed_at`, and `retry_count` columns. A companion `chain_state` table maintains per-chain head tracking.
@@ -121,7 +121,7 @@ Defines the local measurement contract (extend/query), independent of platform-s
 Defines immutable-persistence operations (submit, resolve log id, chain traversal) independent of backend type. Used by the embedded submit daemon for asynchronous Rekor/on-chain submission.
 
 - TdxMR implementation:
-Implements Local MR Adapter using OS trust-service interfaces (for example Sysfs-backed TSM access with binary 48-byte read/write against `/sys/class/misc/tdx_guest/measurements/rtmr{index}:sha384`).
+Implements Local MR Adapter using OS trust-service interfaces (for example Sysfs-backed TSM access with binary 48-byte read/write against `/sys/class/misc/tdx_guest/measurements/rtmr{index}:sha384`). Only RTMR[2] is used for application-layer measurement extensions; RTMR[0] and RTMR[1] are firmware/boot-locked and must not be written to. AMD SEV-SNP and other non-TDX TEE platforms are out of scope.
 
 - OnChain and TransparentLog implementations:
 Implement Immutable Log Adapter for different immutable backends while preserving the same event and chain semantics.
@@ -130,7 +130,7 @@ Implement Immutable Log Adapter for different immutable backends while preservin
 
 1. TrustBootstrap invokes Trusted Log API (in tc_api) to create a record context and append one or more event entries.
 2. TrustBootstrap calls `commit_record()`. The tc_api Trusted Log API constructs the DSSE predicate (without `prev_log_id`), signs it with Sigstore in offline mode, and POSTs the signed bundle to the TruCon.
-3. TruCon acquires its `threading.Lock()`, reads the current `chain_state`, extends the RTMR with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, updates `chain_state`, and releases the lock.
+3. TruCon acquires its `threading.Lock()`, reads the current `chain_state`, extends RTMR[2] with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, updates `chain_state`, and releases the lock.
 4. The embedded submit daemon asynchronously polls the queue and submits confirmed records to the immutable backend in `sequence_num` order.
 5. Backend implementations translate adapter operations into concrete syscalls or external API calls.
 6. Trusted Log API returns combined result state to the caller, including `sequence_num`, `mr_value`, and `prev_mr_value`.
@@ -328,27 +328,40 @@ $$Entry\_Digest_i = SHA384(Canonical(\{key_i, value_i\}))$$
 
 $$Event\_Digest = SHA384(Canonical(\{event\_id, event\_type, created, [Entry\_Digest_1, \ldots, Entry\_Digest_n]\}))$$
 
-$$MR_{t+1} = Extend(MR_t, Event\_Digest)$$
+$$MR_{t+1} = Extend(RTMR[2]_t, Event\_Digest)$$
 
 Design notes:
 
 - Entry order is significant; reordering entries produces a different event digest.
 - The `event_id` and `created` fields bind the digest to one concrete event instance rather than only to its payload.
 - The `digest` field stored in `EventLog` should be the canonical SHA-384 result, typically rendered as `sha384:<hex>`.
-- The same `Event_Digest` is used for both immutable-log submission and local MR extension so remote verification and attestation evidence refer to the same event state.
+- The same `Event_Digest` is used for both immutable-log submission and local RTMR[2] extension so remote verification and attestation evidence refer to the same event state.
 
 
 #### Event Log 0
-Event Log 0 is the baseline record created when Trusted Log is initialized by Trust Bootstrap.
-It captures the environment in which Trust Bootstrap starts, using the latest RTMR value together with system event evidence already available from the platform.
+
+> **Implemented 2026-04-17 (GAP-05). See `docs/overview_tasks.md` for full decision record.**
+
+Event Log 0 is the baseline record created when the trust chain is initialized during tc_api startup.
+It captures the environment's pre-existing platform state using the current RTMR[2] value and a digest of the CCEL system event log.
 
 Event Log 0 is persisted to the immutable log backend, but its creation does not perform a new RTMR extend.
 The purpose of this record is to anchor the trusted-log chain to the pre-existing platform state rather than to mutate that state again during initialization.
 
-Its contents should include the current RTMR snapshot and the CCEL-formatted system event log queried through the platform API, covering the measured boot path from TDVF through guest OS loading.
-Trust Bootstrap itself is assumed to be part of the measured base image, so Event Log 0 serves as the immutable-chain starting point for all later Trust Bootstrap event logs.
+**Signing model**: Event Log 0 is signed with a TEE-generated ECDSA P-384 keypair, not with Sigstore OIDC. tc_api generates the keypair in TEE memory at startup, signs the baseline DSSE envelope, embeds the public key in Event Log 0's `pub_key` field, and discards the private key after signing. Subsequent events continue to use Sigstore OIDC keyless signing (existing flow unchanged).
 
-Every subsequent event log created by Trust Bootstrap should reference Event Log 0, directly or indirectly, as the base entry of the chain.
+**Contents**:
+- Current RTMR[2] snapshot (read, not extended).
+- SHA-384 digest of the raw CCEL binary read from ACPI tables (`/sys/firmware/acpi/tables/CCEL`). Only the digest is stored, not the full CCEL binary. In non-TEE environments, the CCEL field is null.
+- The TEE-generated ECDSA P-384 public key in PEM format (`pub_key` field).
+
+**Initialization semantics**: Event Log 0 creation is a logical prerequisite, not a blocking gate. Subsequent `/commit` calls can proceed and queue while Event Log 0 is still PENDING. The submit daemon's ordered-submission behavior (ascending `sequence_num`) guarantees that Event Log 0 (sequence_num=1) is published to Rekor before any subsequent records. If Event Log 0 submission fails terminally, the entire chain is dead — no trust anchor exists.
+
+**Protocol**: tc_api calls TruCon via a two-phase `/init-chain` protocol:
+1. `GET /init-chain/{chain_id}/baseline` — TruCon reads RTMR[2] (no extend) and computes the CCEL digest. Returns `{rtmr_value, ccel_digest, init_token}`.
+2. `POST /init-chain` — tc_api sends `{chain_id, init_token, signed_bundle, pub_key}`. TruCon verifies no existing chain, INSERTs the baseline record (sequence_num=1), and initializes `chain_state`.
+
+Every subsequent event log created by tc_api or Docktap references Event Log 0, directly or indirectly, as the base entry of the chain.
 
 
 #### JSON Mock-Up
@@ -482,10 +495,12 @@ This initialization step defines the trust context for every later `add_entry`, 
 
 ### Identity and Public Key Management
 
-Trusted Log currently supports keyless signing (via Sigstore OIDC) but may also use traditional asymmetric keypairs (e.g., RSA, ECDSA) generated securely within the TEE.
-To optimize verification overhead, the public key does **not** need to be attached to every log entry. Instead:
-- The public key is embedded exclusively within the `pub_key` field of **Event Log 0** (the root of the chain).
-- Because subsequent logs are strictly linked via cryptographic hashes (`prev_log_id` / `previous_hash`), any verifier can securely traverse from the root, extract the verified public key from Event Log 0, and use it to validate the signatures of all subsequent entries in that chain instance.
+Trusted Log uses two signing mechanisms:
+
+- **Event Log 0 (baseline)**: Signed with a TEE-generated ECDSA P-384 keypair. The public key is embedded in Event Log 0's `pub_key` field. The private key is discarded after signing (single-use). This anchors the chain to a cryptographic identity that was provably generated inside the TEE at initialization time.
+- **Subsequent events**: Signed with Sigstore OIDC keyless signing (existing flow). Each event's DSSE envelope contains a short-lived Fulcio certificate proving the signer's OIDC identity.
+
+Because subsequent logs are strictly linked via cryptographic hashes (`prev_log_id` / `previous_hash`), any verifier can securely traverse from Event Log 0, extract the verified public key, and confirm the chain's origin. The public key does not need to be attached to every log entry.
 
 ### Identity Token Lifecycle and Separation of Duties
 
@@ -538,9 +553,11 @@ def daemon_submission_worker():
 - Event Log 0 is first committed locally, so the baseline event is finalized, signed, and stored in the commit queue before any remote publication attempt.
 - Unlike normal runtime events, Event Log 0 captures the current measured state but does not perform an additional MR extend; initialization queries the current MR and records that value as baseline evidence.
 - After the baseline record is committed, the embedded submit daemon publishes that already-finalized Event Log 0 to the immutable backend.
-- Initialization is not considered complete until the baseline record is confirmed remotely, because that confirmed event becomes the immutable anchor for all later records.
+- Initialization is a logical state: subsequent `/commit` calls can proceed and queue while Event Log 0 is still pending Rekor confirmation. Ordered submission guarantees baseline is published first.
+- If Event Log 0 submission fails terminally, the chain is dead (no trust anchor).
 - The confirmed baseline event identifier becomes the chain entry point for subsequent records.
-- Open design question: how to handle runtimes that allow quote/report reads but not MR extend operations.
+
+> **Design note (2026-04-17)**: Q-05 ("how to handle quote-only runtimes") is resolved as out of scope. Only TDX RTMR[2] is supported. AMD SEV-SNP and quote-only runtimes are not targeted.
 
 ```mermaid
 sequenceDiagram
@@ -555,23 +572,21 @@ sequenceDiagram
     participant RB as Remote Backend
 
     Note over TB,RB: Establish baseline trust log
-    TB->>TL: init_record(...)
-    opt local backend enabled
-        TL->>TA: query current MR
-        TA->>LB: query current MR
-        LB-->>TA: current_mr_value
-        TA-->>TL: current_mr_value
-    end
-    TB->>TL: add_entry("baseline-log", current_mr_value, system_event_log, ...)
-    TB->>TL: commit_record(...)
+    TB->>TL: init_chain(chain_id)
     activate TL
-    Note right of TL: Sign baseline event (no RTMR extend for Event Log 0)
-    TL->>TL: sign baseline event
-    TL->>TA: POST /commit (baseline)
-    TA->>PQ: INSERT baseline record
-    TA->>PQ: UPDATE chain_state
-    TA-->>TL: CommitResult
-    TL-->>TB: CommitResult(record_id, event_id, queue_status=PENDING, mr_value=current_mr_value)
+    TL->>TA: GET /init-chain/{chain_id}/baseline
+    TA->>LB: read RTMR[2] (no extend)
+    LB-->>TA: current_mr_value
+    TA->>TA: compute CCEL digest
+    TA-->>TL: {rtmr_value, ccel_digest, init_token}
+    TL->>TL: generate ECDSA P-384 keypair
+    TL->>TL: build entries (baseline_rtmr, ccel_digest, pub_key)
+    TL->>TL: sign DSSE with TEE private key
+    TL->>TA: POST /init-chain {chain_id, init_token, signed_bundle, pub_key}
+    TA->>PQ: INSERT baseline record (sequence_num=1)
+    TA->>PQ: INSERT chain_state
+    TA-->>TL: {record_id, sequence_num=1}
+    TL-->>TB: InitChainResult(record_id, pub_key, mr_value=current_mr_value)
     deactivate TL
 
     SD->>PQ: Poll PENDING records
@@ -579,7 +594,7 @@ sequenceDiagram
     RB-->>SD: baseline log_id, confirmed
     SD->>PQ: UPDATE status=CONFIRMED, log_id
     SD->>PQ: UPDATE chain_state.head_log_id
-    TB->>TB: cache baseline metadata
+    TB->>TB: discard TEE private key, cache pub_key
 ```
 
 ### Trust Event Log Submission Flow
@@ -613,7 +628,7 @@ sequenceDiagram
     activate TA
     Note right of TA: Acquire threading.Lock()
     TA->>PQ: Read chain_state → prev_log_id, sequence_num
-    TA->>LB: extend(event_digest)
+    TA->>LB: extend RTMR[2] (event_digest)
     LB-->>TA: mr_value, prev_mr_value
     TA->>PQ: INSERT commit_queue (rtmr_extended=TRUE)
     TA->>PQ: UPDATE chain_state (new head)
