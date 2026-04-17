@@ -179,9 +179,11 @@ Core contract definitions:
 
 **Important**: `prev_log_id` is maintained by the TruCon in the `chain_state` SQLite table and is **not** included in the DSSE predicate that the caller signs. This avoids a three-way contradiction where the API caller signs before the system can assign the correct `prev_log_id`. Ordering integrity is instead proven by the RTMR hardware chain — each extend incorporates the previous register value, making reordering detectable through TDX attestation quotes.
 
-**Future: prev_log_id as a Secondary Ordering Method**
+**Non-TEE Mode: prev_log_id as DB-Level Ordering Verification**
 
-In environments without TEE hardware (no RTMR), `prev_log_id` chaining may be used as an alternative ordering proof. In this model, `prev_log_id` would be included in the DSSE-signed predicate, creating a hash-linked chain where each signed entry commits to its predecessor. This approach trades hardware-backed tamper evidence for software-only cryptographic linkage. It is suitable for development, testing, and non-confidential deployments where attestation quotes are unavailable. Support for this mode is planned but not yet implemented.
+In environments without TEE hardware (no RTMR), `prev_log_id` chaining is used as a DB-level ordering verification fallback. This is **not** a cryptographic ordering proof — `prev_log_id` remains excluded from the DSSE-signed predicate. Instead, when `verify-chain` detects that no RTMR values are available (`rtmr_available == False`), it verifies that each confirmed record's `prev_log_id` matches the previous confirmed record's `log_id`. Unconfirmed records at the chain tail cannot be verified via `prev_log_id` (because `log_id` is only assigned on backend confirmation) and are reported as unverifiable.
+
+This mode is suitable for development and testing only. TruCon logs a prominent warning at startup when TDX hardware is absent. The production trust model is bound to TDX RTMR hardware chains; non-TEE mode exists solely to allow functional testing of the commit/verify flow without hardware.
 
 ```mermaid
 classDiagram

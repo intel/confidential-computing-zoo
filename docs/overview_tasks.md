@@ -148,17 +148,24 @@ Each task has:
 
 ---
 
-### GAP-09: `prev_log_id` as Secondary Ordering (Non-TEE Mode)
+### ~~GAP-09: `prev_log_id` as DB-Level Ordering Verification (Non-TEE Mode)~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/tlog_client.py`, `src/tc_api/trucon/app.py`
-- **References**: trusted-log/architecture.md §"Future: prev_log_id as a Secondary Ordering Method"
+- **Scope**: `src/tc_api/trucon/app.py`
+- **References**: trusted-log/architecture.md §"Non-TEE Mode: prev_log_id as DB-Level Ordering Verification"
 - **Dependencies**: None
-- **Current State**: `prev_log_id` is excluded from the DSSE predicate. In non-TEE environments (no RTMR), there is no alternative ordering proof.
+- **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-non-tee-verification/`
+- **Design Decisions** (confirmed 2026-04-17):
+  - `prev_log_id` stays OUT of the DSSE predicate (no signing change). This is DB-level verification, not cryptographic proof.
+  - Unconfirmed chain tail: accepted as unverifiable (prev_log_id depends on log_id assignment at confirmation time).
+  - Response model: keep existing `rtmr_available: bool` field, no new verification-mode field.
+  - Startup warning: upgrade to `logger.warning()` with clear non-TEE banner.
+  - Auto-detect only (via TDX sysfs presence). No explicit env var override.
 - **Acceptance Criteria**:
-  1. When TDX hardware is unavailable, `prev_log_id` is included in the DSSE-signed predicate.
-  2. Verification logic validates `prev_log_id` chain for software-only deployments.
-  3. Mode selection (hardware vs software ordering) is explicit and configurable.
+  1. ✅ `verify-chain` checks `prev_log_id` linkage for confirmed records when `rtmr_available == False`.
+  2. ✅ TruCon logs a prominent warning at startup when running without TDX hardware.
+  3. ✅ No changes to signing flow, DSSE predicate format, or commit flow.
+- **Tests**: `tests/test_non_tee_verification.py` (5 tests, all passing)
 
 ---
 
@@ -262,13 +269,13 @@ GAP-01 ────┘         │
 GAP-05 (Event Log 0) ◀── Q-05
 GAP-07 (On-Chain Adapter) ── standalone
 GAP-08 (Feature-Flag Fallback) ── standalone
-GAP-09 (Non-TEE Ordering) ── standalone
+GAP-09 (Non-TEE Ordering) ✅ ── standalone
 GAP-10 (Service Auth) ── standalone
 
 FIX-03 (SubmitResult) ── standalone
 FIX-04 (Entry Type) ── standalone
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09
 ```
 
 ---
@@ -284,7 +291,7 @@ FIX-04 (Entry Type) ── standalone
 **Phase 2 — Core infrastructure** (in progress):
 5. ~~`GAP-04`~~ ✅ completed 2026-04-17
 6. `GAP-05` — Event Log 0 (after Q-05 resolved) ← **next** (blocked by Q-05)
-7. `GAP-09` — Non-TEE ordering mode ← **next** (standalone)
+7. ~~`GAP-09`~~ ✅ completed 2026-04-17
 
 **Phase 3 — Integration** (requires design decisions Q-01, Q-03):
 8. `GAP-01` — Docktap → TruCon event emission

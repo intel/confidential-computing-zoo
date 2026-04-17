@@ -98,6 +98,7 @@ class ChainEntryResult(BaseModel):
     rekor_ok: bool
     rtmr_extended: bool
     mr_value: Optional[str] = None
+    prev_log_id_ok: Optional[bool] = None
     error: Optional[str] = None
 
 class ChainVerificationResponse(BaseModel):
@@ -333,7 +334,7 @@ async def lifespan(app: FastAPI):
             _local_mr = TdxMRAdapter()
             logger.info("TDX RTMR adapter initialized")
         else:
-            logger.info("TDX RTMR sysfs not found, running without local MR extensions")
+            logger.warning("NON-TEE MODE: TDX RTMR sysfs not found — running without hardware measurement extensions (development/testing only)")
     except Exception as e:
         logger.warning("Could not init local MR adapter: %s", e)
 
@@ -506,6 +507,7 @@ def verify_chain(chain_id: str):
     rekor_pending = 0
     expected_seq = 1
     prev_mr: Optional[str] = None
+    prev_confirmed_log_id: Optional[str] = None  # tracks preceding confirmed record's log_id
     # Determine if RTMR is available: at least one non-NULL mr_value
     rtmr_available = any(r['mr_value'] is not None for r in records)
 
@@ -519,6 +521,7 @@ def verify_chain(chain_id: str):
         is_confirmed = r['status'] == 'CONFIRMED' and r['log_id'] is not None
         error: Optional[str] = None
         mr_ok: Optional[bool] = None
+        prev_log_id_ok: Optional[bool] = None
 
         # 1. Sequence continuity check
         if seq != expected_seq:
@@ -556,6 +559,33 @@ def verify_chain(chain_id: str):
         else:
             rekor_pending += 1
 
+        # 4. prev_log_id linkage check (non-TEE fallback)
+        if not rtmr_available:
+            cur_prev_log_id = r['prev_log_id'] if 'prev_log_id' in r.keys() else None
+            if not is_confirmed:
+                # Unconfirmed record — cannot verify
+                prev_log_id_ok = None
+            elif prev_confirmed_log_id is None and cur_prev_log_id is None:
+                # First record with no predecessor
+                prev_log_id_ok = True
+            elif prev_confirmed_log_id is not None and cur_prev_log_id == prev_confirmed_log_id:
+                prev_log_id_ok = True
+            elif prev_confirmed_log_id is None and cur_prev_log_id is not None:
+                # First confirmed record but has a prev_log_id — mismatch
+                prev_log_id_ok = False
+                link_error = f"prev_log_id mismatch: expected None, got {cur_prev_log_id}"
+                error = f"{error}; {link_error}" if error else link_error
+                if valid:
+                    valid = False
+                    first_error_at = seq
+            else:
+                prev_log_id_ok = False
+                link_error = f"prev_log_id mismatch: expected {prev_confirmed_log_id}, got {cur_prev_log_id}"
+                error = f"{error}; {link_error}" if error else link_error
+                if valid:
+                    valid = False
+                    first_error_at = seq
+
         entries.append(ChainEntryResult(
             seq=seq,
             record_id=record_id,
@@ -564,12 +594,15 @@ def verify_chain(chain_id: str):
             rekor_ok=rekor_ok,
             rtmr_extended=rtmr_ext,
             mr_value=mr_value,
+            prev_log_id_ok=prev_log_id_ok,
             error=error,
         ))
 
         # Advance state for next iteration
         if mr_value is not None:
             prev_mr = mr_value
+        if is_confirmed:
+            prev_confirmed_log_id = r['log_id']
         expected_seq = seq + 1
 
     head_mr = records[-1]['mr_value'] if records else None
