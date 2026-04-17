@@ -20,18 +20,27 @@ Each task has:
 
 ## Part A: Unimplemented Features
 
-### GAP-01: Docktap → TruCon Event Emission
+### ~~GAP-01: Docktap → TruCon Event Emission~~ ✅ COMPLETED
 
 - **Priority**: HIGH
 - **Scope**: `docktap/`, `src/tc_api/trucon/`
 - **References**: architecture.md §4.2, §6.2; trusted-log/architecture.md component diagram
 - **Dependencies**: None
-- **Current State**: Docktap captures Docker runtime events (pull, create, start, stop, rm) and logs them as JSON to stdout via `docktap/proxy/operation_log.py`. There is zero communication with TruCon — no HTTP calls, no event submission, no retry logic.
+- **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-docktap-trucon-emission/`
+- **Design Decisions** (confirmed 2026-04-17):
+  - **Signing identity**: Docktap shares tc_api's signing infrastructure — uses the same `sigstore.oidc.detect_credential()` ambient OIDC mechanism. Token re-acquired on each commit (no caching).
+  - **Event granularity**: Each Docker operation = one independent TruCon commit. Uses existing flat `Entry(key, value)` format (rich Entry type deferred to FIX-04).
+  - **Chain assignment**: v1 uses `"default"` chain_id. Per-workload chain_id assignment deferred to GAP-11.
+  - **Failure handling**: Synchronous + best-effort — TruCon failure logs a warning but does NOT block the Docker response back to CLI.
+  - **Cross-source ordering**: REST and Docktap events on the same chain get serialized `sequence_num` ordering via TruCon's lock. No additional causal ordering enforcement.
+  - **Submitted operation types**: `pull`, `create`, `start`, `stop`, `rm` only. Other operations (`wait`, `rmi`, `image_inspect`, `inspect`, `preflight_ping`, `preflight_info`, `unknown`) are not submitted.
+  - **OIDC token**: Re-acquire each time via same ambient credential source as tc_api. No token caching in Docktap.
 - **Acceptance Criteria**:
-  1. Docktap submits runtime events to TruCon `POST /commit` as signed DSSE bundles.
-  2. Retry and acknowledgement handling for transient TruCon failures.
-  3. Integration tests for concurrent event submissions from Docktap and REST workers.
-- **Related OpenSpec**: `openspec/changes/introduce-trucon-event-orchestrator/` (tasks 3.1, 3.2, 3.3)
+  1. ✅ Docktap submits `pull`/`create`/`start`/`stop`/`rm` events to TruCon `POST /commit` as signed DSSE bundles using shared OIDC signing.
+  2. ✅ Best-effort submission: TruCon failures log a warning and do not block the Docker API response.
+  3. ✅ Integration tests for concurrent event submissions from Docktap and REST workers verifying `sequence_num` ordering.
+- **Tests**: `docktap/tests/test_trucon_client.py` (25 tests), `docktap/tests/test_docktap_integration.py` (3 tests); 129 total regression pass
+- **Related OpenSpec**: `openspec/changes/archive/2026-04-17-docktap-trucon-emission/`
 
 ---
 
@@ -183,6 +192,22 @@ Each task has:
 
 ---
 
+### GAP-11: Per-Workload Chain Assignment for Docktap
+
+- **Priority**: MEDIUM
+- **Scope**: `docktap/`, `src/tc_api/trucon/`
+- **References**: architecture.md §4.2, §7; Q-01
+- **Dependencies**: GAP-01 (basic Docktap → TruCon emission must work first)
+- **Current State**: GAP-01 v1 uses `"default"` chain_id for all Docktap events. This task upgrades to per-workload chain assignment.
+- **Design Notes**: Preferred mechanism is a container label convention (e.g., `--label tc.workload_id=xxx`) extracted from `docker create` request body. Subsequent operations (`start`/`stop`/`rm`) resolve workload_id by looking up the container_id in Docktap's `OperationTracker`. Containers without the label fall back to `"default"` chain.
+- **Acceptance Criteria**:
+  1. Docktap extracts `tc.workload_id` from container labels during `create` operations.
+  2. Subsequent lifecycle events for the same container use the resolved `workload_id` as `chain_id`.
+  3. Containers without `tc.workload_id` label default to `"default"` chain.
+  4. Tests cover label extraction, cross-operation chain resolution, and fallback behavior.
+
+---
+
 ## Part B: Implementation Inconsistencies (Code Diverges from Architecture)
 
 ### ~~FIX-01: Digest Algorithm — Two-Level Hashing Not Implemented~~ ✅ COMPLETED
@@ -244,38 +269,40 @@ Each task has:
 
 These are not implementation tasks but **design decisions** that should be resolved before certain GAP tasks can proceed.
 
-| ID | Question | Blocks | Architecture Ref |
-|----|----------|--------|------------------|
-| Q-01 | Chain scope default: per workload, per tenant, or global? | GAP-03 | architecture.md §12 |
-| Q-02 | Confirmation SLA target from commit to backend confirmed? | GAP-04 | architecture.md §12 |
-| Q-03 | Canonical mandatory fields for stable instance mapping across restarts? | GAP-03 | architecture.md §12 |
-| Q-04 | Worker ownership model: local ownership or shared lease? | — | architecture.md §12 |
-| Q-05 | How to handle runtimes that allow quote/report reads but not MR extend? | GAP-05 | trusted-log/architecture.md §Trust Log Initialization |
+| ID | Question | Blocks | Architecture Ref | Status |
+|----|----------|--------|------------------|--------|
+| Q-01 | Chain scope default: per workload, per tenant, or global? | GAP-03, GAP-11 | architecture.md §12 | **Partially resolved** (2026-04-17): Target is per-workload. GAP-01 v1 uses `"default"` chain. Per-workload assignment deferred to GAP-11. |
+| Q-02 | Confirmation SLA target from commit to backend confirmed? | GAP-04 | architecture.md §12 | Open |
+| Q-03 | Canonical mandatory fields for stable instance mapping across restarts? | GAP-03 | architecture.md §12 | Open |
+| Q-04 | Worker ownership model: local ownership or shared lease? | — | architecture.md §12 | Open |
+| Q-05 | How to handle runtimes that allow quote/report reads but not MR extend? | GAP-05 | trusted-log/architecture.md §Trust Log Initialization | Open |
 
 ---
 
 ## Dependency Graph
 
 ```
-Q-01 ──────┐
-Q-03 ──────┼──▶ GAP-03 (Mapping Model)
-GAP-01 ────┘         │
-                      ▼
-               GAP-04 (Observability) ✅ ◀── GAP-02 ✅, GAP-06 ✅
-                      │
-                      ▼
-               [operational baseline]
+GAP-01 (Docktap → TruCon, v1 default chain) ✅
+  │
+  ├──▶ GAP-11 (Per-Workload Chain Assignment) ← **next**
+  │         │
+  │         ▼
+  │    Q-01 ──────┐
+  │    Q-03 ──────┼──▶ GAP-03 (Mapping Model)
+  │               │
+  └───────────────┘
 
 GAP-05 (Event Log 0) ◀── Q-05
 GAP-07 (On-Chain Adapter) ── standalone
 GAP-08 (Feature-Flag Fallback) ── standalone
 GAP-09 (Non-TEE Ordering) ✅ ── standalone
 GAP-10 (Service Auth) ── standalone
+GAP-11 (Per-Workload Chain) ◀── GAP-01 ✅
 
 FIX-03 (SubmitResult) ── standalone
-FIX-04 (Entry Type) ── standalone
+FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01
 ```
 
 ---
@@ -290,16 +317,17 @@ FIX-04 (Entry Type) ── standalone
 
 **Phase 2 — Core infrastructure** (in progress):
 5. ~~`GAP-04`~~ ✅ completed 2026-04-17
-6. `GAP-05` — Event Log 0 (after Q-05 resolved) ← **next** (blocked by Q-05)
+6. `GAP-05` — Event Log 0 (after Q-05 resolved)
 7. ~~`GAP-09`~~ ✅ completed 2026-04-17
 
-**Phase 3 — Integration** (requires design decisions Q-01, Q-03):
-8. `GAP-01` — Docktap → TruCon event emission
-9. `GAP-03` — Workload/instance mapping (after GAP-01)
-10. `GAP-10` — Internal service authentication
+**Phase 3 — Docktap Integration** (in progress):
+8. ~~`GAP-01`~~ ✅ completed 2026-04-17
+9. `GAP-11` — Per-workload chain assignment for Docktap (after GAP-01) ← **next**
+10. `GAP-03` — Workload/instance mapping (after GAP-11, requires Q-01 fully resolved, Q-03)
+11. `GAP-10` — Internal service authentication
 
 **Phase 4 — Extensions**:
-11. `GAP-07` — On-chain backend adapter
-12. `GAP-08` — Feature-flag fallback
-13. `FIX-03` — SubmitResult exposure
-14. `FIX-04` — Entry type enrichment
+12. `GAP-07` — On-chain backend adapter
+13. `GAP-08` — Feature-flag fallback
+14. `FIX-03` — SubmitResult exposure
+15. `FIX-04` — Entry type enrichment (Docktap and REST both benefit)

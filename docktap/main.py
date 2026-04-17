@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from proxy.docker_proxy import DockerProxyServer
 from proxy.operation_log import log_event
+from trucon_client import TruConCommitter
 
 
 logging.basicConfig(
@@ -34,6 +35,7 @@ class SockBridge:
     def __init__(self, socket_path: str, docker_socket_path: str):
         self.socket_path = socket_path
         self.docker_socket_path = docker_socket_path
+        self.trucon_committer = TruConCommitter()
         self.proxy: DockerProxyServer = None
         self.running = False
     
@@ -47,7 +49,8 @@ class SockBridge:
         
         self.proxy = DockerProxyServer(
             listen_socket_path=self.socket_path,
-            docker_socket_path=self.docker_socket_path
+            docker_socket_path=self.docker_socket_path,
+            trucon_committer=self.trucon_committer,
         )
         self.proxy.set_log_callback(self.log_callback)
         

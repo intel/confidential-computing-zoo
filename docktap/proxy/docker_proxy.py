@@ -28,7 +28,8 @@ class DockerProxyServer:
     def __init__(
         self,
         listen_socket_path: str = "/tmp/docker-proxy.sock",
-        docker_socket_path: str = "/var/run/docker.sock"
+        docker_socket_path: str = "/var/run/docker.sock",
+        trucon_committer=None,
     ):
         self.listen_socket_path = listen_socket_path
         self.docker_socket_path = docker_socket_path
@@ -37,6 +38,7 @@ class DockerProxyServer:
         self.client_handler_thread: Optional[threading.Thread] = None
         self._log_callback = None
         self.tracker = OperationTracker()
+        self._trucon_committer = trucon_committer
 
     def set_log_callback(self, callback):
         """Set callback function for logging operations"""
@@ -452,6 +454,13 @@ class DockerProxyServer:
                 enrich_from_response(op_record, response)
                 self.tracker.add(op_record)
                 log_operation_json(op_record)
+
+                # Best-effort TruCon commit (after response already returned to CLI)
+                if self._trucon_committer is not None:
+                    op_type = op_record.operation.get("type")
+                    from trucon_client import SUBMITTABLE_OPERATIONS
+                    if op_type in SUBMITTABLE_OPERATIONS:
+                        self._trucon_committer.submit_operation(op_record, op_type)
             else:
                 logger.error("No response from Docker")
 

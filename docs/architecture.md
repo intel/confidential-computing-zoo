@@ -58,12 +58,16 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 
 ### 4.2 Docktap Service
 
-> **Status: Planned — not yet implemented.**
+> **Status: Design confirmed — implementation pending.**
 
-- Will run as a separate process with independent scaling and lifecycle.
-- Will produce runtime events tied to container operations.
-- Will send runtime events to TruCon using internal service contracts.
-- Will not directly write trust chain entries.
+- Runs as a separate process (Unix socket proxy) with independent lifecycle.
+- Captures Docker runtime events: `pull`, `create`, `start`, `stop`, `rm`.
+- Submits each operation as an independent signed DSSE commit to TruCon `POST /commit`.
+- Shares tc_api's OIDC signing infrastructure (`sigstore.oidc.detect_credential()`); token re-acquired per commit.
+- Uses flat `Entry(key, value)` format for event data (same as tc_api).
+- v1: all events submitted to `"default"` chain_id. Per-workload chain assignment planned for follow-up (GAP-11).
+- Best-effort submission: TruCon failures log a warning but do not block Docker API responses.
+- Does not directly write trust chain entries — all chain mutations go through TruCon.
 
 ### 4.3 TruCon Core Service
 
@@ -75,9 +79,9 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Performs crash recovery on startup based on RTMR extension flags.
 
 **Planned (not yet implemented):**
-- Idempotency key enforcement for duplicate commit detection.
-- Workload-to-instance and instance-to-event mapping.
-- Docktap event ingestion path.
+- ~~Idempotency key enforcement for duplicate commit detection.~~ ✅ Completed (GAP-02).
+- Workload-to-instance and instance-to-event mapping (GAP-03, blocked by GAP-11).
+- Docktap event ingestion path (GAP-01, design confirmed 2026-04-17).
 
 For implementation details, see [trusted-log/architecture.md](trusted-log/architecture.md).
 
@@ -97,15 +101,15 @@ For implementation details, see [trusted-log/architecture.md](trusted-log/archit
 Record lifecycle states (currently implemented):
 
 - PENDING: commit finalized and queued, awaiting backend submission.
-- CONFIRMED: immutable backend confirmation received.
-- FAILED: submission no longer retried automatically (max retries exceeded).
-
-Planned lifecycle states (not yet implemented):
-
-- OPEN: record initialized, entries can be appended.
 - SUBMITTING: worker currently attempting backend submit.
-- FAILED_RETRYABLE: retry scheduled (currently handled implicitly via retry_count).
+- CONFIRMED: immutable backend confirmation received.
+- FAILED_RETRYABLE: retry scheduled (worker will re-attempt).
 - FAILED_TERMINAL: terminal failure requiring operator intervention.
+- FAILED: legacy state — submission no longer retried automatically (max retries exceeded).
+
+Reserved (not yet used):
+
+- OPEN: record initialized, entries can be appended (deferred until pre-commit assembly flow).
 
 ### 5.2 Mapping Model
 
@@ -131,13 +135,15 @@ This will enable audit and verification paths across both REST and Docktap event
 
 ### 6.2 Runtime Interception via Docktap
 
-> **Status: Planned — not yet implemented.**
+> **Status: Design confirmed — implementation pending (GAP-01).**
 
-1. Docktap captures runtime event.
-2. Docktap submits event to TruCon.
-3. TruCon performs idempotency and ordering checks.
-4. TruCon commits and queues event for submission.
-5. Mapping is updated as instance lifecycle evolves.
+1. Docktap intercepts Docker API call (`pull`/`create`/`start`/`stop`/`rm`) on the proxy socket.
+2. Docktap forwards request to Docker daemon, receives response, and returns it to CLI.
+3. Docktap constructs `Entry(key, value)` pairs from operation metadata and signs a DSSE bundle using ambient OIDC credentials.
+4. Docktap POSTs the signed bundle to TruCon `POST /commit` with `chain_id="default"` (v1).
+5. TruCon performs idempotency and ordering checks, commits and queues event.
+6. If TruCon is unreachable or returns an error, Docktap logs a warning and continues (best-effort).
+7. Submission worker confirms events to immutable backends asynchronously.
 
 ### 6.3 Query and Correlation
 
