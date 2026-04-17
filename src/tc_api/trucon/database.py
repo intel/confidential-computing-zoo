@@ -43,6 +43,7 @@ def _migrate_legacy_schema(conn: sqlite3.Connection):
         'confirmed_at': 'TEXT',
         'event_digest': 'TEXT',
         'idempotency_key': 'TEXT',
+        'created_at': 'TEXT',
     }
     
     for col_name, col_def in new_columns.items():
@@ -54,6 +55,9 @@ def _migrate_legacy_schema(conn: sqlite3.Connection):
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_idempotency_key ON commit_queue(idempotency_key)')
     except sqlite3.OperationalError:
         pass  # Index already exists
+
+    # Backfill created_at from updated_at for pre-migration rows
+    conn.execute('UPDATE commit_queue SET created_at = updated_at WHERE created_at IS NULL')
 
     conn.commit()
 
@@ -84,6 +88,7 @@ def init_db(db_path: str = DB_PATH):
                 confirmed_at TEXT,
                 event_digest TEXT,
                 idempotency_key TEXT UNIQUE,
+                created_at TEXT,
                 updated_at TEXT NOT NULL
             )
         ''')
@@ -118,12 +123,13 @@ def insert_record(record_id: str, event_id: Optional[str], payload: Dict[str, An
                    idempotency_key: Optional[str] = None,
                    db_path: str = DB_PATH):
     """Insert a new record into the commit queue."""
+    now = datetime.utcnow().isoformat()
     with get_db_connection(db_path) as conn:
         conn.execute('''
             INSERT INTO commit_queue (record_id, event_id, chain_id, payload, status,
                                       rtmr_extended, prev_log_id, mr_value, sequence_num,
-                                      event_digest, idempotency_key, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      event_digest, idempotency_key, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             record_id, 
             event_id,
@@ -136,7 +142,8 @@ def insert_record(record_id: str, event_id: Optional[str], payload: Dict[str, An
             sequence_num,
             event_digest,
             idempotency_key,
-            datetime.utcnow().isoformat()
+            now,
+            now,
         ))
         conn.commit()
 
@@ -290,6 +297,9 @@ def get_queue_stats(db_path: str = DB_PATH) -> Dict[str, Any]:
         ).fetchone()
         next_seq = next_row[0] if next_row else None
         next_record_id = next_row[1] if next_row else None
+        total_retry_count = conn.execute(
+            "SELECT COALESCE(SUM(retry_count), 0) FROM commit_queue"
+        ).fetchone()[0]
         return {
             'queued_count': pending,
             'submitting_count': submitting,
@@ -297,6 +307,7 @@ def get_queue_stats(db_path: str = DB_PATH) -> Dict[str, Any]:
             'failed_terminal_count': failed_terminal,
             'next_sequence_num': next_seq,
             'next_record_id': next_record_id,
+            'total_retry_count': total_retry_count,
         }
 
 def get_latest_state(chain_id: str = 'default', db_path: str = DB_PATH) -> Dict[str, Any]:

@@ -46,7 +46,7 @@ Each task has:
   1. ✅ `CommitRequest` accepts an optional `idempotency_key` field.
   2. ✅ `commit_queue` table has a UNIQUE `idempotency_key` column (via unique index for migration compat).
   3. ✅ Duplicate commits with the same key return the original `CommitResponse` without re-extending RTMR.
-  4. ⏳ `idempotency_hit_count` metric — deferred to GAP-04 (observability metrics). The dedup code path exists; metric instrumentation is not yet wired.
+  4. ✅ `idempotency_hit_count` metric — implemented in GAP-04 (`metric=idempotency_hit` log emission).
 - **Tests**: `tests/test_idempotency.py` (13 tests, all passing)
 
 ---
@@ -65,22 +65,26 @@ Each task has:
 
 ---
 
-### GAP-04: Observability Metrics
+### ~~GAP-04: Observability Metrics~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/main.py`
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/tlog/types.py`, `src/tc_api/tlog_client.py`
 - **References**: architecture.md §8.2
-- **Dependencies**: ~~GAP-02~~ ✅, ~~GAP-06~~ ✅ (granular states now available for `terminal_failure_count` metric)
-- **Current State**: Zero metrics instrumentation. The architecture requires 7 minimum metrics.
+- **Dependencies**: ~~GAP-02~~ ✅, ~~GAP-06~~ ✅
+- **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-observability-metrics/`
 - **Acceptance Criteria**:
-  All of the following metrics are emittable (e.g., via Prometheus client or structured log):
-  1. `queue_depth` — number of PENDING records
-  2. `commit_latency` — time from `/commit` request to response
-  3. `submit_latency` — time from daemon pickup to backend confirmation
-  4. `confirmation_lag` — time from commit to confirmed
-  5. `retry_count` — cumulative retries across records
-  6. `terminal_failure_count` — records in FAILED state
-  7. `idempotency_hit_count` — duplicate commit detections
+  All 7 architecture-required metrics are emitted via structured logging:
+  1. ✅ `queue_depth` — emitted in `metric=queue_snapshot` each daemon tick
+  2. ✅ `commit_latency` — `metric=commit_latency` with `latency_ms`, `record_id`, `idempotent`
+  3. ✅ `submit_latency` — `metric=submit_latency` with `latency_ms`, `record_id`, `outcome`
+  4. ✅ `confirmation_lag` — `metric=confirmation_lag` with `lag_ms` (requires `created_at` column)
+  5. ✅ `retry_count` — `total_retry_count` in `get_queue_stats()` and `GET /status` response
+  6. ✅ `terminal_failure_count` — in `metric=queue_snapshot`
+  7. ✅ `idempotency_hit_count` — `metric=idempotency_hit` with `key`, `chain_id`, `record_id`
+  Additionally:
+  - ✅ `created_at TEXT` column added to `commit_queue` (DDL migration + backfill)
+  - ✅ `total_retry_count: int` added to `CommitQueueStatusResponse` and `CommitQueueStatus`
+- **Tests**: `tests/test_observability_metrics.py` (8 tests); 81 total regression pass
 
 ---
 
@@ -250,7 +254,7 @@ Q-01 ──────┐
 Q-03 ──────┼──▶ GAP-03 (Mapping Model)
 GAP-01 ────┘         │
                       ▼
-               GAP-04 (Observability) ◀── GAP-02 ✅, GAP-06 ✅
+               GAP-04 (Observability) ✅ ◀── GAP-02 ✅, GAP-06 ✅
                       │
                       ▼
                [operational baseline]
@@ -264,7 +268,7 @@ GAP-10 (Service Auth) ── standalone
 FIX-03 (SubmitResult) ── standalone
 FIX-04 (Entry Type) ── standalone
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04
 ```
 
 ---
@@ -277,10 +281,10 @@ FIX-04 (Entry Type) ── standalone
 3. ~~`GAP-06`~~ ✅ completed 2026-04-16
 4. ~~`FIX-02`~~ ✅ completed 2026-04-17
 
-**Phase 2 — Core infrastructure** (Phase 1 done, ready to start):
-5. `GAP-04` — Observability metrics (all dependencies met) ← **next**
-6. `GAP-05` — Event Log 0 (after Q-05 resolved)
-7. `GAP-09` — Non-TEE ordering mode
+**Phase 2 — Core infrastructure** (in progress):
+5. ~~`GAP-04`~~ ✅ completed 2026-04-17
+6. `GAP-05` — Event Log 0 (after Q-05 resolved) ← **next** (blocked by Q-05)
+7. `GAP-09` — Non-TEE ordering mode ← **next** (standalone)
 
 **Phase 3 — Integration** (requires design decisions Q-01, Q-03):
 8. `GAP-01` — Docktap → TruCon event emission

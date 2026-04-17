@@ -59,6 +59,7 @@ class TestStatusMixedQueue:
         assert stats["failed_terminal_count"] == 1
         assert stats["next_record_id"] == "rec-1"
         assert stats["next_sequence_num"] == 1
+        assert stats["total_retry_count"] == 0
 
 
 # ===========================================================================
@@ -75,6 +76,7 @@ class TestStatusEmptyQueue:
         assert stats["failed_terminal_count"] == 0
         assert stats["next_record_id"] is None
         assert stats["next_sequence_num"] is None
+        assert stats["total_retry_count"] == 0
 
 
 # ===========================================================================
@@ -225,6 +227,7 @@ class TestClientMapping:
             "submitting_count": 1,
             "failed_retryable_count": 0,
             "failed_terminal_count": 0,
+            "total_retry_count": 0,
         }).encode("utf-8")
 
         mock_resp = MagicMock()
@@ -254,6 +257,7 @@ class TestClientMapping:
             "submitting_count": 0,
             "failed_retryable_count": 0,
             "failed_terminal_count": 0,
+            "total_retry_count": 0,
         }).encode("utf-8")
 
         mock_resp = MagicMock()

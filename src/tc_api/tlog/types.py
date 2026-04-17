@@ -64,6 +64,7 @@ class CommitQueueStatus:
     has_queued_records: bool
     queued_record_count: int
     next_record_id: Optional[str] = None
+    total_retry_count: int = 0
 
 @dataclass(slots=True)
 class LatestState:

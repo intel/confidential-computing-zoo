@@ -187,6 +187,7 @@ class TestDatabaseSchema:
         assert stats["failed_terminal_count"] == 1
         assert stats["next_sequence_num"] == 1
         assert stats["next_record_id"] == "rec-1"
+        assert stats["total_retry_count"] == 0
 
 
 # ===========================================================================

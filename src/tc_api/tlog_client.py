@@ -228,6 +228,7 @@ class TrustedLogAPI:
                     has_queued_records=data.get("has_queued_records", False),
                     queued_record_count=data.get("queued_record_count", 0),
                     next_record_id=data.get("next_record_id"),
+                    total_retry_count=data.get("total_retry_count", 0),
                 )
         except Exception as e:
             logger.warning("Could not reach TruCon for queue status: %s", e)

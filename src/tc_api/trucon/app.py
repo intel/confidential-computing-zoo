@@ -82,6 +82,7 @@ class CommitQueueStatusResponse(BaseModel):
     submitting_count: int = 0
     failed_retryable_count: int = 0
     failed_terminal_count: int = 0
+    total_retry_count: int = 0
 
 class LatestStateResponse(BaseModel):
     latest_confirmed_log_id: Optional[str] = None
@@ -236,6 +237,7 @@ def _submit_daemon_tick():
 
             # Mark SUBMITTING before backend call
             set_status_submitting(record_id)
+            t_submit = time.perf_counter()
 
             try:
                 from sigstore.models import Bundle
@@ -245,6 +247,15 @@ def _submit_daemon_tick():
                     log_id, status, _receipt = _immutable_log.submit_bundle(bundle)
                     if status == "confirmed":
                         update_record_confirmed(record_id, log_id)
+                        submit_ms = (time.perf_counter() - t_submit) * 1000
+                        logger.info("metric=submit_latency latency_ms=%.1f record_id=%s outcome=%s", submit_ms, record_id, "confirmed")
+                        # Emit confirmation_lag if created_at is available
+                        created_at = record['created_at'] if 'created_at' in record.keys() else None
+                        if created_at:
+                            confirmed_at = datetime.utcnow()
+                            created_dt = datetime.fromisoformat(created_at)
+                            lag_ms = (confirmed_at - created_dt).total_seconds() * 1000
+                            logger.info("metric=confirmation_lag lag_ms=%.1f record_id=%s", lag_ms, record_id)
                         # Update chain_state head_log_id
                         update_chain_state(
                             chain_id=chain_id,
@@ -254,15 +265,37 @@ def _submit_daemon_tick():
                         )
                         logger.info("Record %s confirmed with log_id=%s", record_id, log_id)
                     else:
+                        submit_ms = (time.perf_counter() - t_submit) * 1000
+                        logger.info("metric=submit_latency latency_ms=%.1f record_id=%s outcome=%s", submit_ms, record_id, "failed_retryable")
                         _handle_retry(record_id)
                 else:
                     # No immutable log backend — mark confirmed (testing/dev)
                     update_record_confirmed(record_id, f"mock-{uuid.uuid4().hex[:8]}")
+                    submit_ms = (time.perf_counter() - t_submit) * 1000
+                    logger.info("metric=submit_latency latency_ms=%.1f record_id=%s outcome=%s", submit_ms, record_id, "confirmed")
+                    # Emit confirmation_lag if created_at is available
+                    created_at = record['created_at'] if 'created_at' in record.keys() else None
+                    if created_at:
+                        confirmed_at = datetime.utcnow()
+                        created_dt = datetime.fromisoformat(created_at)
+                        lag_ms = (confirmed_at - created_dt).total_seconds() * 1000
+                        logger.info("metric=confirmation_lag lag_ms=%.1f record_id=%s", lag_ms, record_id)
                     logger.info("Record %s mock-confirmed (no immutable log)", record_id)
 
             except Exception as e:
+                submit_ms = (time.perf_counter() - t_submit) * 1000
+                logger.info("metric=submit_latency latency_ms=%.1f record_id=%s outcome=%s", submit_ms, record_id, "failed_retryable")
                 logger.error("Failed to submit record %s to Rekor: %s", record_id, e)
                 _handle_retry(record_id)
+
+    # Emit queue snapshot at end of each tick
+    stats = get_queue_stats()
+    logger.info(
+        "metric=queue_snapshot queue_depth=%d submitting=%d failed_retryable=%d failed_terminal=%d total_retries=%d",
+        stats['queued_count'], stats['submitting_count'],
+        stats['failed_retryable_count'], stats['failed_terminal_count'],
+        stats['total_retry_count'],
+    )
 
 def _handle_retry(record_id: str):
     """Increment retry; transition to FAILED_RETRYABLE or FAILED_TERMINAL."""
@@ -335,6 +368,7 @@ def commit(req: CommitRequest):
     Sequence a signed bundle: RTMR extend + SQLite INSERT + chain_state update.
     All three operations are serialized behind a threading.Lock().
     """
+    t0 = time.perf_counter()
     record_id = str(uuid.uuid4())
     event_id = req.event_id or f"evt-{uuid.uuid4().hex[:8]}"
 
@@ -343,6 +377,15 @@ def commit(req: CommitRequest):
         if req.idempotency_key:
             existing = get_record_by_idempotency_key(req.idempotency_key, req.chain_id)
             if existing:
+                latency_ms = (time.perf_counter() - t0) * 1000
+                logger.info(
+                    "metric=commit_latency latency_ms=%.1f record_id=%s idempotent=%s",
+                    latency_ms, existing['record_id'], True,
+                )
+                logger.info(
+                    "metric=idempotency_hit key=%s chain_id=%s record_id=%s",
+                    req.idempotency_key, req.chain_id, existing['record_id'],
+                )
                 return CommitResponse(
                     record_id=existing['record_id'],
                     sequence_num=existing['sequence_num'],
@@ -391,6 +434,12 @@ def commit(req: CommitRequest):
             mr_value=mr_value,
         )
 
+    latency_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "metric=commit_latency latency_ms=%.1f record_id=%s idempotent=%s",
+        latency_ms, record_id, False,
+    )
+
     return CommitResponse(
         record_id=record_id,
         sequence_num=sequence_num,
@@ -426,6 +475,7 @@ def get_status():
         submitting_count=stats['submitting_count'],
         failed_retryable_count=stats['failed_retryable_count'],
         failed_terminal_count=stats['failed_terminal_count'],
+        total_retry_count=stats['total_retry_count'],
     )
 
 
