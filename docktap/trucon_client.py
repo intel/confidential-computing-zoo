@@ -11,10 +11,11 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import urllib.request
 import urllib.error
 
+from tc_api.tlog.types import Entry
 from tc_api.tlog_client import (
     canonical_json,
     compute_entry_digest,
@@ -31,34 +32,34 @@ logger = logging.getLogger(__name__)
 SUBMITTABLE_OPERATIONS = {"pull", "create", "start", "stop", "rm"}
 
 
-def _build_entries(op_record, operation_type: str) -> List[Tuple[str, str]]:
-    """Convert OperationRecord fields to (key, value) pairs per operation type.
+def _build_entries(op_record, operation_type: str) -> List[Entry]:
+    """Convert OperationRecord fields to Entry objects per operation type.
 
-    Values are JSON-encoded strings consistent with tc_api convention.
+    Values are native Python objects (not JSON-encoded strings).
     Missing fields are omitted.
     """
-    entries: List[Tuple[str, str]] = []
-    entries.append(("operation_type", json.dumps(operation_type)))
+    entries: List[Entry] = []
+    entries.append(Entry(key="operation_type", value=operation_type))
 
     if operation_type == "pull":
         if op_record.image.get("name"):
-            entries.append(("image_name", json.dumps(op_record.image["name"])))
+            entries.append(Entry(key="image_name", value=op_record.image["name"]))
         if op_record.image.get("tag"):
-            entries.append(("image_tag", json.dumps(op_record.image["tag"])))
+            entries.append(Entry(key="image_tag", value=op_record.image["tag"]))
         if op_record.image.get("digest"):
-            entries.append(("image_digest", json.dumps(op_record.image["digest"])))
+            entries.append(Entry(key="image_digest", value=op_record.image["digest"]))
 
     elif operation_type == "create":
         if op_record.image.get("name"):
-            entries.append(("image_name", json.dumps(op_record.image["name"])))
+            entries.append(Entry(key="image_name", value=op_record.image["name"]))
         if op_record.container.get("name"):
-            entries.append(("container_name", json.dumps(op_record.container["name"])))
+            entries.append(Entry(key="container_name", value=op_record.container["name"]))
         if op_record.container.get("id"):
-            entries.append(("container_id", json.dumps(op_record.container["id"])))
+            entries.append(Entry(key="container_id", value=op_record.container["id"]))
 
     elif operation_type in ("start", "stop", "rm"):
         if op_record.container.get("id"):
-            entries.append(("container_id", json.dumps(op_record.container["id"])))
+            entries.append(Entry(key="container_id", value=op_record.container["id"]))
 
     return entries
 
@@ -116,10 +117,10 @@ class TruConCommitter:
 
     def _do_submit(self, op_record, operation_type: str, *, workload_id: Optional[str] = None) -> bool:
         # 1. Build entries
-        entry_pairs = _build_entries(op_record, operation_type)
+        entry_list = _build_entries(op_record, operation_type)
 
         # 2. Compute digests (two-level algorithm)
-        entry_digests = [compute_entry_digest(k, v) for k, v in entry_pairs]
+        entry_digests = [compute_entry_digest(e.key, e.value) for e in entry_list]
         event_id = f"evt-{uuid.uuid4().hex[:8]}"
         event_type = f"docker_{operation_type}"
         created_iso = datetime.utcnow().isoformat()
@@ -138,7 +139,7 @@ class TruConCommitter:
             "event_id": event_id,
             "event_type": event_type,
             "created": created_iso,
-            "entries": [{"key": k, "value": v} for k, v in entry_pairs],
+            "entries": [{"key": e.key, "value": e.value} for e in entry_list],
             "entry_digests": entry_digests,
             "digest": event_digest,
         }

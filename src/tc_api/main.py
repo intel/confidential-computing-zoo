@@ -105,14 +105,14 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
         tlog = app.state.trusted_log
         ctx = tlog.init_record()
         record_id = ctx.record_id
-        tlog.add_entry(record_id, Entry(key="build_id", value=json.dumps(build_id)))
+        tlog.add_entry(record_id, Entry(key="build_id", value=build_id))
 
         # Create build directory
         build_path = os.path.join(BUILD_DIR, build_id)
         os.makedirs(build_path, exist_ok=True)
         logger.debug(f"Created build directory: {build_path}")
 
-        tlog.add_entry(record_id, Entry(key="build_path", value=json.dumps(build_path)))
+        tlog.add_entry(record_id, Entry(key="build_path", value=build_path))
 
         # Save dockerfile content
         dockerfile_path = os.path.join(build_path, "Dockerfile")
@@ -128,7 +128,7 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
             logger.debug(f"Saved app binary to: {binary_path}")
 
         binary_hash = hashlib.sha256(base64.b64decode(request.app_binary)).hexdigest()
-        tlog.add_entry(record_id, Entry(key="app_binary", value=json.dumps({"app_binary_path": binary_path, "app_binary_hash": binary_hash})))
+        tlog.add_entry(record_id, Entry(key="app_binary", value={"app_binary_path": binary_path, "app_binary_hash": binary_hash}))
         
         # Save config files if provided
         if request.configs:
@@ -140,9 +140,9 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
                     f.write(base64.b64decode(config))
             logger.debug(f"Saved {len(request.configs)} config files")
             config_hashes = [hashlib.sha256(base64.b64decode(c)).hexdigest() for c in request.configs]
-            tlog.add_entry(record_id, Entry(key="config", value=json.dumps({"config_dir": config_dir,
+            tlog.add_entry(record_id, Entry(key="config", value={"config_dir": config_dir,
                                  "config_count": len(request.configs),
-                                 "config_hashes": config_hashes})))
+                                 "config_hashes": config_hashes}))
 
         # Save data files if provided
         if request.data:
@@ -154,9 +154,9 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
                     f.write(base64.b64decode(data))
             logger.debug(f"Saved {len(request.data)} data files")
             data_hashes = [hashlib.sha256(base64.b64decode(d)).hexdigest() for d in request.data]
-            tlog.add_entry(record_id, Entry(key="data", value=json.dumps({"data_dir": data_dir,
+            tlog.add_entry(record_id, Entry(key="data", value={"data_dir": data_dir,
                                  "data_count": len(request.data),
-                                 "data_hashes": data_hashes})))
+                                 "data_hashes": data_hashes}))
         
         # Initialize build status
         docker_service.update_build_status(request.user_id, build_id, "submitted")
@@ -194,7 +194,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
         # Build the image
         image_name = f"{request.user_id}-{build_id}:latest"
         logger.debug(f"Building image: {image_name}")
-        tlog.add_entry(record_id, Entry(key="image_name", value=json.dumps(image_name)))
+        tlog.add_entry(record_id, Entry(key="image_name", value=image_name))
         docker_service.update_build_status(request.user_id, build_id, "building", step="Building container image")
         build_success = docker_service.build_image(request.dockerfile, build_id, request.user_id, tlog, record_id)
         
@@ -365,7 +365,7 @@ async def publish_package(request: PublishPackageRequest):
             # Generate build ID
             publish_id = "pub-" + request.build_id.split("-")[-1]
             logger.debug(f"Generated build ID: {publish_id}")
-            tlog.add_entry(record_id, Entry(key="publishID", value=json.dumps({"publishID": publish_id})))
+            tlog.add_entry(record_id, Entry(key="publishID", value={"publishID": publish_id}))
 
             docker_service.update_publish_status(request.user_id, request.build_id, "pushing", publish_id, step="Pushing image to registry")
             logger.info(f"Pushing image {request.image_id} to registry")
@@ -379,17 +379,17 @@ async def publish_package(request: PublishPackageRequest):
             if not push_success:
                 raise Exception("Image push failed")
             logger.debug(f"Successfully pushed image to {dest_ref}")
-            tlog.add_entry(record_id, Entry(key="log", value=json.dumps({
+            tlog.add_entry(record_id, Entry(key="log", value={
                 "publish_source": source_ref,
                 "publish_dest": dest_ref,
                 "publishImage_status": push_success
-                })))
+                }))
             
 
         except Exception as e:
             logger.error(f"Image push failed for build ID {request.build_id}: {str(e)}")
-            tlog.add_entry(record_id, Entry(key="publish_status", value=json.dumps({"publish_status": "failed",
-                                "error": str(e)})))
+            tlog.add_entry(record_id, Entry(key="publish_status", value={"publish_status": "failed",
+                                "error": str(e)}))
             docker_service.update_build_status(
                 request.user_id,
                 request.build_id,
@@ -418,7 +418,7 @@ async def publish_package(request: PublishPackageRequest):
                 if not sign_success:
                     raise Exception("Image signing failed")
                 logger.debug(f"Successfully signed image {request.image_id}")
-                tlog.add_entry(record_id, Entry(key="publish_sbom", value=json.dumps({"publish_sbom": sign_success})))
+                tlog.add_entry(record_id, Entry(key="publish_sbom", value={"publish_sbom": sign_success}))
 
                 # Create SBOM attestation
                 logger.info(f"Creating SBOM attestation for build ID {request.build_id}")
@@ -429,9 +429,9 @@ async def publish_package(request: PublishPackageRequest):
                     tlog,
             record_id
                 )
-                tlog.add_entry(record_id, Entry(key="verfiy_sbom_status", value=json.dumps({"verfiy_sbom_status": sbom_attestation_success})))
+                tlog.add_entry(record_id, Entry(key="verify_sbom_status", value={"verify_sbom_status": sbom_attestation_success}))
                 if not sbom_attestation_success:
-                    tlog.add_entry(record_id, Entry(key="verfiy_sbom_status", value=json.dumps({"verfiy_sbom_status": sbom_attestation_success})))
+                    tlog.add_entry(record_id, Entry(key="verify_sbom_status", value={"verify_sbom_status": sbom_attestation_success}))
                     raise Exception("SBOM attestation failed")
                 logger.debug(f"Successfully created SBOM attestation for build ID {request.build_id}")
                 
@@ -557,11 +557,11 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
         # Generate launch ID
         launch_id = docker_service.generate_uuid(prefix="launch")
         logger.info(f"CHECK launchID: {launch_id}")
-        tlog.add_entry(record_id, Entry(key="launch_id", value=json.dumps({"launch_id": launch_id})))
+        tlog.add_entry(record_id, Entry(key="launch_id", value={"launch_id": launch_id}))
 
         # Create launch directory
         launch_path = os.path.join(BUILD_DIR, launch_id)
-        tlog.add_entry(record_id, Entry(key="launch_path", value=json.dumps({"launch_path": launch_path})))
+        tlog.add_entry(record_id, Entry(key="launch_path", value={"launch_path": launch_path}))
         os.makedirs(launch_path, exist_ok=True)
 
         # Save launch configuration
@@ -611,7 +611,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         log_file = os.path.join(launch_path, "launch.log")
         with open(log_file, "w") as f:
             f.write(f"Launch started at {datetime.now().isoformat()}\n")
-        tlog.add_entry(record_id, Entry(key="launch-log", value=json.dumps({"launch-log":log_file})))
+        tlog.add_entry(record_id, Entry(key="launch-log", value={"launch-log":log_file}))
 
         # 3. Perform attestation and handle decryption
         attestation_result = "trusted"
@@ -626,8 +626,8 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                     tlog,
             record_id
                 )
-                tlog.add_entry(record_id, Entry(key="verify_image", value=json.dumps({"verify_image":attestation_result})))
-                tlog.add_entry(record_id, Entry(key="verify_keys", value=json.dumps({"verify_keys":decryption_key})))
+                tlog.add_entry(record_id, Entry(key="verify_image", value={"verify_image":attestation_result}))
+                tlog.add_entry(record_id, Entry(key="verify_keys", value={"verify_keys":decryption_key}))
 
                 if attestation_result != "trusted":
                     docker_service.update_launch_status(
@@ -637,7 +637,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                         error_message=f"Attestation failed: {attestation_result}"
                     )
                     logger.debug("Attestation Verity and get keys failed")
-                    tlog.add_entry(record_id, Entry(key="verify_image", value=json.dumps({"verify_image":attestation_result})))
+                    tlog.add_entry(record_id, Entry(key="verify_image", value={"verify_image":attestation_result}))
                     return
             else:
                 logger.info("ENABLE_TDX=false, skipping attestation flow")
@@ -671,7 +671,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                 tlog, record_id,
                 decryption_key['cosignPub']
             )
-            tlog.add_entry(record_id, Entry(key="sbom_verify", value=json.dumps({"sbom_verify": sbom_valid})))
+            tlog.add_entry(record_id, Entry(key="sbom_verify", value={"sbom_verify": sbom_valid}))
             if not sbom_valid:
                 docker_service.update_launch_status(
                     request.user_id,
@@ -680,7 +680,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                     error_message="SBOM verification failed"
                 )
                 logger.debug("Verify SBOM failed")
-                tlog.add_entry(record_id, Entry(key="sbom_verify", value=json.dumps({"sbom_verify": sbom_valid})))
+                tlog.add_entry(record_id, Entry(key="sbom_verify", value={"sbom_verify": sbom_valid}))
                 return
         
         # 4. Launch containers on worker nodes
@@ -691,7 +691,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
             image_id=request.image_id,
             launch_pth=launch_path
         )
-        tlog.add_entry(record_id, Entry(key="launch_instance_ids", value=json.dumps({"launch_instance_ids": instance_ids})))
+        tlog.add_entry(record_id, Entry(key="launch_instance_ids", value={"launch_instance_ids": instance_ids}))
         if not instance_ids:
             docker_service.update_launch_status(
                 request.user_id,
@@ -700,7 +700,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                 error_message="Container launch failed"
             )
             logger.debug("Launch container failed")
-            tlog.add_entry(record_id, Entry(key="launch_result", value=json.dumps({"launch_result": "failed"})))
+            tlog.add_entry(record_id, Entry(key="launch_result", value={"launch_result": "failed"}))
             return
             
         # 5. Create launch evidence
@@ -807,7 +807,7 @@ async def create_lunks(request: CreateLunksRequest):
         logger.info(f"Create Lunks block file for user: {request.user_id}")
 
         # create encrypted vfs
-        tlog.add_entry(record_id, Entry(key="lunks", value=json.dumps({"lunks": "Start creating lunks blocks"})))
+        tlog.add_entry(record_id, Entry(key="lunks", value={"lunks": "Start creating lunks blocks"}))
         mapdir,loopdevice = docker_service.create_lunks_block(request.user_id, tlog,request.passwd, request.vfs_size, request.vfs_path)
         # Save transparencyLog
         logger.info("Save transparencyLog")

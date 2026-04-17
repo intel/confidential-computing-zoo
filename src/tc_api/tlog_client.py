@@ -28,7 +28,7 @@ def canonical_json(data: Any) -> str:
     return json.dumps(data, separators=(',', ':'), sort_keys=True, ensure_ascii=False)
 
 
-def compute_entry_digest(key: str, value: str) -> str:
+def compute_entry_digest(key: str, value: Any) -> str:
     """Compute SHA-384 digest of a single entry: SHA384(canonical({"key": k, "value": v}))."""
     payload = canonical_json({"key": key, "value": value})
     return "sha384:" + hashlib.sha384(payload.encode("utf-8")).hexdigest()

@@ -11,6 +11,7 @@ from trucon_client import (
     SUBMITTABLE_OPERATIONS,
     _build_entries,
 )
+from tc_api.tlog.types import Entry
 from proxy.operation_log import OperationRecord
 
 
@@ -39,12 +40,12 @@ class TestEntryMapping:
             image={"name": "nginx", "tag": "latest", "digest": "sha256:abc123"},
         )
         entries = _build_entries(rec, "pull")
-        keys = [k for k, _ in entries]
+        keys = [e.key for e in entries]
         assert keys == ["operation_type", "image_name", "image_tag", "image_digest"]
-        assert entries[0] == ("operation_type", json.dumps("pull"))
-        assert entries[1] == ("image_name", json.dumps("nginx"))
-        assert entries[2] == ("image_tag", json.dumps("latest"))
-        assert entries[3] == ("image_digest", json.dumps("sha256:abc123"))
+        assert entries[0] == Entry(key="operation_type", value="pull")
+        assert entries[1] == Entry(key="image_name", value="nginx")
+        assert entries[2] == Entry(key="image_tag", value="latest")
+        assert entries[3] == Entry(key="image_digest", value="sha256:abc123")
 
     def test_pull_missing_digest(self):
         rec = _make_record(
@@ -52,7 +53,7 @@ class TestEntryMapping:
             image={"name": "nginx", "tag": "latest"},
         )
         entries = _build_entries(rec, "pull")
-        keys = [k for k, _ in entries]
+        keys = [e.key for e in entries]
         assert "image_digest" not in keys
         assert len(entries) == 3  # operation_type, image_name, image_tag
 
@@ -63,7 +64,7 @@ class TestEntryMapping:
             container={"name": "mycontainer", "id": "abc123def"},
         )
         entries = _build_entries(rec, "create")
-        keys = [k for k, _ in entries]
+        keys = [e.key for e in entries]
         assert keys == ["operation_type", "image_name", "container_name", "container_id"]
 
     def test_start_entries(self):
@@ -73,8 +74,8 @@ class TestEntryMapping:
         )
         entries = _build_entries(rec, "start")
         assert len(entries) == 2
-        assert entries[0] == ("operation_type", json.dumps("start"))
-        assert entries[1] == ("container_id", json.dumps("abc123def"))
+        assert entries[0] == Entry(key="operation_type", value="start")
+        assert entries[1] == Entry(key="container_id", value="abc123def")
 
     def test_stop_entries(self):
         rec = _make_record(
@@ -82,8 +83,8 @@ class TestEntryMapping:
             container={"id": "xyz789"},
         )
         entries = _build_entries(rec, "stop")
-        assert entries[0] == ("operation_type", json.dumps("stop"))
-        assert entries[1] == ("container_id", json.dumps("xyz789"))
+        assert entries[0] == Entry(key="operation_type", value="stop")
+        assert entries[1] == Entry(key="container_id", value="xyz789")
 
     def test_rm_entries(self):
         rec = _make_record(
@@ -91,8 +92,8 @@ class TestEntryMapping:
             container={"id": "del456"},
         )
         entries = _build_entries(rec, "rm")
-        assert entries[0] == ("operation_type", json.dumps("rm"))
-        assert entries[1] == ("container_id", json.dumps("del456"))
+        assert entries[0] == Entry(key="operation_type", value="rm")
+        assert entries[1] == Entry(key="container_id", value="del456")
 
     def test_missing_container_id_omitted(self):
         rec = _make_record(operation={"type": "start"}, container={})
@@ -199,13 +200,13 @@ class TestDSSEConstruction:
         entries = _build_entries(rec, "pull")
 
         # Verify entry digests use sha384 prefix
-        for k, v in entries:
-            d = compute_entry_digest(k, v)
+        for e in entries:
+            d = compute_entry_digest(e.key, e.value)
             assert d.startswith("sha384:")
             assert len(d.split(":")[1]) == 96  # hex length of SHA-384
 
         # Verify event digest
-        entry_digests = [compute_entry_digest(k, v) for k, v in entries]
+        entry_digests = [compute_entry_digest(e.key, e.value) for e in entries]
         event_digest = compute_event_digest(
             "evt-test1234", "docker_pull", "2026-04-17T12:00:00", entry_digests
         )

@@ -14,7 +14,7 @@ class SubmitStatus(str, Enum):
 @dataclass(slots=True)
 class Entry:
     key: str
-    value: str
+    value: Any
 
 @dataclass(slots=True)
 class Record:

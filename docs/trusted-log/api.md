@@ -35,7 +35,7 @@ class SubmitStatus(str, Enum):
 @dataclass(slots=True)
 class Entry:
 	key: str
-	value: str
+	value: Any  # JSON-compatible: str, int, float, bool, None, list, dict
 
 
 @dataclass(slots=True)
@@ -222,7 +222,7 @@ See `src/tc_api/trucon.py` for Pydantic request/response models (`CommitRequest`
 # tc_api side — stateless, multi-worker safe
 ctx = trusted_log.init_record()
 trusted_log.add_entry(ctx.record_id, Entry(key="docker-pull", value=image_ref))
-trusted_log.add_entry(ctx.record_id, Entry(key="verify-sbom", value=sbom_digest))
+trusted_log.add_entry(ctx.record_id, Entry(key="verify-sbom", value={"digest": sbom_digest, "format": "spdx"}))
 
 # Signs DSSE locally, POSTs to TruCon which sequences (RTMR extend + queue INSERT)
 commit = trusted_log.commit_record(ctx.record_id, event_type="launch-container")

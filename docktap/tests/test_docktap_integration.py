@@ -133,7 +133,7 @@ class TestConcurrentSubmissions:
         # Simulate a Docktap "pull" event
         docktap_payload = _build_commit_payload(
             "docker_pull",
-            [("operation_type", json.dumps("pull")), ("image_name", json.dumps("nginx"))],
+            [("operation_type", "pull"), ("image_name", "nginx")],
         )
         r1 = client.post("/commit", json=docktap_payload)
         assert r1.status_code == 200
@@ -142,7 +142,7 @@ class TestConcurrentSubmissions:
         # Simulate a REST "build" event
         rest_payload = _build_commit_payload(
             "build",
-            [("build_id", json.dumps("bld-test1"))],
+            [("build_id", "bld-test1")],
         )
         r2 = client.post("/commit", json=rest_payload)
         assert r2.status_code == 200
@@ -151,7 +151,7 @@ class TestConcurrentSubmissions:
         # Simulate another Docktap "start" event
         docktap_payload2 = _build_commit_payload(
             "docker_start",
-            [("operation_type", json.dumps("start")), ("container_id", json.dumps("abc123"))],
+            [("operation_type", "start"), ("container_id", "abc123")],
         )
         r3 = client.post("/commit", json=docktap_payload2)
         assert r3.status_code == 200
@@ -173,7 +173,7 @@ class TestConcurrentSubmissions:
             try:
                 payload = _build_commit_payload(
                     f"docker_{label}",
-                    [("operation_type", json.dumps(label))],
+                    [("operation_type", label)],
                 )
                 r = client.post("/commit", json=payload)
                 results.append((label, r.json()["sequence_num"]))

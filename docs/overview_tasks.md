@@ -29,7 +29,7 @@ Each task has:
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-docktap-trucon-emission/`
 - **Design Decisions** (confirmed 2026-04-17):
   - **Signing identity**: Docktap shares tc_api's signing infrastructure — uses the same `sigstore.oidc.detect_credential()` ambient OIDC mechanism. Token re-acquired on each commit (no caching).
-  - **Event granularity**: Each Docker operation = one independent TruCon commit. Uses existing flat `Entry(key, value)` format (rich Entry type deferred to FIX-04).
+  - **Event granularity**: Each Docker operation = one independent TruCon commit. Uses `Entry(key, value)` objects with native JSON values (FIX-04 completed: `value: Any`).
   - **Chain assignment**: v1 uses `"default"` chain_id. Per-workload chain_id assignment deferred to GAP-11.
   - **Failure handling**: Synchronous + best-effort — TruCon failure logs a warning but does NOT block the Docker response back to CLI.
   - **Cross-source ordering**: REST and Docktap events on the same chain get serialized `sequence_num` ordering via TruCon's lock. No additional causal ordering enforcement.
@@ -152,11 +152,11 @@ Each task has:
 
 ### GAP-07: On-Chain Backend Adapter
 
-- **Priority**: MEDIUM
+- **Priority**: ~~MEDIUM~~ → LOW (long-term)
 - **Scope**: `src/tc_api/trucon/adapters/`
 - **References**: trusted-log/architecture.md component diagram (OnChain implementation)
-- **Dependencies**: None
-- **Current State**: Only `SigstoreLogAdapter` (Rekor/transparent-log) exists. The `ImmutableLogAdapter` abstract interface is defined in `src/tc_api/tlog/immutable.py`, but no on-chain implementation exists.
+- **Dependencies**: External — requires a concrete on-chain target (EVM, Solana, custom, etc.) to be selected before implementation can begin.
+- **Current State**: Only `SigstoreLogAdapter` (Rekor/transparent-log) exists. The `ImmutableLogAdapter` abstract interface is defined in `src/tc_api/tlog/immutable.py`, but no on-chain implementation exists. Blocked by target chain selection.
 - **Acceptance Criteria**:
   1. `OnChainAdapter` class implementing `ImmutableLogAdapter`.
   2. `submit_bundle()`, `get_entry()`, `traverse()` implemented for on-chain target.
@@ -164,17 +164,14 @@ Each task has:
 
 ---
 
-### GAP-08: Feature-Flag Fallback to Legacy Write Path
+### ~~GAP-08: Feature-Flag Fallback to Legacy Write Path~~ CLOSED (Won't Do)
 
-- **Priority**: MEDIUM
+- **Priority**: ~~MEDIUM~~ — CLOSED
 - **Scope**: `src/tc_api/main.py`, `src/tc_api/config.py`
 - **References**: architecture.md §8.1, §11
 - **Dependencies**: None
-- **Current State**: No routing/feature controls. No legacy fallback. If TruCon is unavailable, commit simply fails.
-- **Acceptance Criteria**:
-  1. A feature flag (e.g., `ENABLE_LEGACY_FALLBACK`) in config.
-  2. When TruCon is unreachable and flag is enabled, REST API falls back to a legacy direct-write path.
-  3. Fallback is logged and observable.
+- **Closed**: 2026-04-17
+- **Rationale**: The legacy direct-write path (`trusted_container_log` module) has been fully removed. RTMR extends are irreversible single-directional hardware accumulations — any fallback path that bypasses TruCon's serialized `threading.Lock` scope (RTMR extend + SQLite INSERT + chain state update) would break the RTMR hash chain, making the trust chain unverifiable. No fallback design can simultaneously preserve trust chain integrity, RTMR ordering, and replay capability. The current best-effort commit pattern in `commit_and_save_receipt()` already allows business operations (build/publish/launch) to succeed when TruCon is unavailable. TruCon availability should be ensured via process supervision (systemd/supervisord) rather than application-level fallback.
 
 ---
 
@@ -299,16 +296,18 @@ Each task has:
 
 ---
 
-### FIX-04: Entry Type Too Narrow for Architecture's Rich Entry Schema
+### FIX-04: Entry Type Too Narrow for Architecture's Rich Entry Schema — ✅ COMPLETED
 
 - **Priority**: LOW
 - **Scope**: `src/tc_api/tlog/types.py`, `src/tc_api/tlog_client.py`
 - **References**: trusted-log/architecture.md §JSON Mock-Up
-- **Current Behavior**: `Entry` is `@dataclass(key: str, value: str)`. All structured data (image_hash, sbom_format, cmd, etc.) is flattened into these two strings.
-- **Architecture Shows**: Rich entry objects with `name`, `image_hash`, `image_size`, `cmd`, `created`, `digest` fields.
-- **Acceptance Criteria**:
-  1. Decide: either extend `Entry` to support structured metadata, or document that `key`/`value` is the canonical wire format and rich fields are caller conventions.
-  2. If extended, update `add_entry()` API and digest computation.
+- **Completed**: 2026-04-18 | Archive: `openspec/changes/entry-value-native-json/`
+- **Design Decisions** (confirmed 2026-04-18):
+  - **Approach**: `Entry.value` widened from `str` to `Any` (JSON-compatible: str, int, float, bool, None, list, dict). The `key`/`value` wire format is retained; rich structured metadata is passed natively as dicts/lists.
+  - **Digest stability**: `canonical_json()` (sort_keys=True, compact separators) already handles nested objects deterministically. No digest algorithm change needed.
+  - **Docktap unification**: Docktap now imports `Entry` from `tc_api.tlog.types` instead of using raw tuples.
+  - **JSON-in-JSON elimination**: All `json.dumps()` wrappers removed from `add_entry()` call sites in `main.py` and `services.py`. DSSE predicates now contain native JSON values.
+  - **Typo fix**: `"verfiy_sbom_status"` → `"verify_sbom_status"` bundled with this change.
 
 ---
 
@@ -341,7 +340,7 @@ GAP-01 (Docktap → TruCon, v1 default chain) ✅
 
 GAP-05 (Event Log 0) ✅ ── standalone (Q-05 resolved: TDX RTMR[2] only)
 GAP-07 (On-Chain Adapter) ── standalone
-GAP-08 (Feature-Flag Fallback) ── standalone
+GAP-08 (Feature-Flag Fallback) ── CLOSED (Won't Do)
 GAP-09 (Non-TEE Ordering) ✅ ── standalone
 GAP-10 (Service Auth Phase A) ✅ ── standalone
 GAP-11 (Per-Workload Chain) ✅
@@ -351,6 +350,7 @@ FIX-03 (SubmitResult) ── standalone
 FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 
 ✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05
+✗ CLOSED: GAP-08
 ```
 
 ---
@@ -379,7 +379,7 @@ FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 
 **Phase 5 — Extensions**:
 13. `GAP-07` — On-chain backend adapter
-14. `GAP-08` — Feature-flag fallback
+14. ~~`GAP-08`~~ — CLOSED (Won't Do): legacy path removed, RTMR chain integrity prevents viable fallback
 15. `FIX-03` — SubmitResult exposure
 16. `FIX-04` — Entry type enrichment (Docktap and REST both benefit)
 17. `GAP-12` — Service auth Phase B (mTLS / Unix socket credentials)

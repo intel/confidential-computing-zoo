@@ -67,7 +67,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Captures Docker runtime events: `pull`, `create`, `start`, `stop`, `rm`.
 - Submits each operation as an independent signed DSSE commit to TruCon `POST /commit`.
 - Shares tc_api's OIDC signing infrastructure (`sigstore.oidc.detect_credential()`); token re-acquired per commit.
-- Uses flat `Entry(key, value)` format for event data (same as tc_api).
+- Uses `Entry(key, value)` objects imported from `tc_api.tlog.types` for event data (same types as tc_api). Values are native JSON-compatible types (not stringified).
 - v1: all events submitted to `"default"` chain_id. Per-workload chain assignment planned for follow-up (GAP-11).
 - Best-effort submission: TruCon failures log a warning but do not block Docker API responses.
 - Does not directly write trust chain entries — all chain mutations go through TruCon.
@@ -157,7 +157,7 @@ Correlation queries exposed by TruCon:
 
 1. Docktap intercepts Docker API call (`pull`/`create`/`start`/`stop`/`rm`) on the proxy socket.
 2. Docktap forwards request to Docker daemon, receives response, and returns it to CLI.
-3. Docktap constructs `Entry(key, value)` pairs from operation metadata and signs a DSSE bundle using ambient OIDC credentials.
+3. Docktap constructs `Entry(key, value)` objects from operation metadata (values are native JSON types) and signs a DSSE bundle using ambient OIDC credentials.
 4. Docktap POSTs the signed bundle to TruCon `POST /commit` with `chain_id="default"` (v1).
 5. TruCon performs idempotency and ordering checks, commits and queues event.
 6. If TruCon is unreachable or returns an error, Docktap logs a warning and continues (best-effort).
@@ -181,7 +181,7 @@ Correlation queries exposed by TruCon:
 
 - Commit acknowledges durable queue insertion rather than immediate backend confirmation.
 - Backend failures are handled by retry policy, not caller retry loops alone.
-- Feature-flag fallback can route writes to legacy path during migration incidents.
+- TruCon availability is ensured via process supervision (systemd/supervisord) with automatic restart. RTMR extends are irreversible hardware accumulations that require TruCon's serialized lock scope; application-level fallback paths are not viable without breaking trust chain integrity (see GAP-08 closure rationale in `docs/overview_tasks.md`).
 
 ### 8.2 Observability
 
@@ -232,16 +232,16 @@ Phase B would also enable per-caller identity differentiation (tc_api vs Docktap
 
 ## 11. Migration Plan (Architecture-Level)
 
-1. Freeze TruCon contracts for event lifecycle and mapping.
-2. Integrate REST trusted event path through TruCon while preserving external responses.
-3. Integrate Docktap runtime emissions through TruCon.
-4. Activate queue-driven submission and observability baselines.
-5. Gradually retire direct local trust-log mutations after parity checks.
+1. ~~Freeze TruCon contracts for event lifecycle and mapping.~~ ✅
+2. ~~Integrate REST trusted event path through TruCon while preserving external responses.~~ ✅
+3. ~~Integrate Docktap runtime emissions through TruCon.~~ ✅
+4. ~~Activate queue-driven submission and observability baselines.~~ ✅
+5. ~~Gradually retire direct local trust-log mutations after parity checks.~~ ✅ — Legacy `trusted_container_log` module fully removed.
 
 Rollback principle:
 
 - Keep external REST behavior stable.
-- Use routing/feature controls to fail back to legacy write path when required.
+- ~~Use routing/feature controls to fail back to legacy write path when required.~~ Legacy path has been retired. TruCon is the sole trust event path; availability ensured via process supervision.
 
 ## 12. Open Architecture Questions
 

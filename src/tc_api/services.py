@@ -87,7 +87,7 @@ class DockerService:
                 "stderr": result.stderr,
                 "status": "success" if result.returncode == 0 else "failed"
             }
-            tlog.add_entry(record_id, Entry(key="build_image", value=json.dumps(build_log)))
+            tlog.add_entry(record_id, Entry(key="build_image", value=build_log))
 
             if result.returncode == 0:
                 logger.info(f"Successfully built image {image_name}")
@@ -164,7 +164,7 @@ class DockerService:
                         "output_path": sbom_path,
                         "status": "success"
                 }
-                tlog.add_entry(record_id, Entry(key="sbom_generation", value=json.dumps(sbom_log)))
+                tlog.add_entry(record_id, Entry(key="sbom_generation", value=sbom_log))
 
                 return sbom_path
             else:
@@ -182,7 +182,7 @@ class DockerService:
                         "message": json.loads(result.stderr)
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="sbom_generation", value=json.dumps(sbom_log)))
+                tlog.add_entry(record_id, Entry(key="sbom_generation", value=sbom_log))
                 return None
                 
         except subprocess.TimeoutExpired:
@@ -196,7 +196,7 @@ class DockerService:
                     "message": f"SBOM generation timed out for: {image_name}"
                 }
             }
-            tlog.add_entry(record_id, Entry(key="sbom_generation", value=json.dumps(sbom_log)))
+            tlog.add_entry(record_id, Entry(key="sbom_generation", value=sbom_log))
 
             return None
         except FileNotFoundError:
@@ -209,7 +209,7 @@ class DockerService:
                     "message": f"Syft command not found: {SYFT_CMD}"
                 }
             }
-            tlog.add_entry(record_id, Entry(key="sbom_generation", value=json.dumps(sbom_log)))
+            tlog.add_entry(record_id, Entry(key="sbom_generation", value=sbom_log))
 
             return None
         except Exception as e:
@@ -222,7 +222,7 @@ class DockerService:
                     "message": str(e)
                 }
             }
-            tlog.add_entry(record_id, Entry(key="sbom_generation", value=json.dumps(sbom_log)))
+            tlog.add_entry(record_id, Entry(key="sbom_generation", value=sbom_log))
 
             return None
     
@@ -248,7 +248,7 @@ class DockerService:
                         "message": f"Public key file not found: {public_key_path}"
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="image_encryption", value=json.dumps(encryption_log)))
+                tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
                 return None
             
             logger.info(f"Starting encryption process for image: {image_name}")
@@ -275,7 +275,7 @@ class DockerService:
                     "output_path": encrypted_path,
                     "status": "success"
                 }
-                tlog.add_entry(record_id, Entry(key="image_encryption", value=json.dumps(encryption_log)))
+                tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
 
                 # Return OCI reference in the correct format
                 return f"oci:{encrypted_path}"  # Return absolute path for skopeo
@@ -294,7 +294,7 @@ class DockerService:
                         "message": result.stderr
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="image_encryption", value=json.dumps(encryption_log)))
+                tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
 
                 return None
                 
@@ -309,7 +309,7 @@ class DockerService:
                     "message": f"Image encryption timed out for: {image_name}"
                 }
             }
-            tlog.add_entry(record_id, Entry(key="image_encryption", value=json.dumps(encryption_log)))
+            tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
 
             return None
         except FileNotFoundError:
@@ -324,7 +324,7 @@ class DockerService:
                     }
                 }
             }
-            tlog.add_entry(record_id, Entry(key="image_encryption", value=json.dumps(encryption_log)))
+            tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
 
             return None
         except Exception as e:
@@ -356,7 +356,7 @@ class DockerService:
                             "message": f"Private key file not found: {private_key_path}"
                         }
                 }
-                tlog.add_entry(record_id, Entry(key="image_signing", value=json.dumps(signing_log)))
+                tlog.add_entry(record_id, Entry(key="image_signing", value=signing_log))
 
                 return False, None
             
@@ -392,7 +392,7 @@ class DockerService:
                     "signature_ref": signature_ref,
                     "status": "success"
                 }
-                tlog.add_entry(record_id, Entry(key="image_signing", value=json.dumps(signing_log)))
+                tlog.add_entry(record_id, Entry(key="image_signing", value=signing_log))
 
                 return True, signature_ref
             else:
@@ -411,7 +411,7 @@ class DockerService:
                         "message": result.stderr
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="image_signing", value=json.dumps(signing_log)))
+                tlog.add_entry(record_id, Entry(key="image_signing", value=signing_log))
 
                 return False, None
                 
@@ -426,7 +426,7 @@ class DockerService:
                     "message": f"Image signing timed out for: {image_name}"
                 }
             }
-            tlog.add_entry(record_id, Entry(key="image_signing", value=json.dumps(signing_log)))
+            tlog.add_entry(record_id, Entry(key="image_signing", value=signing_log))
 
             return False, None
         except FileNotFoundError:
@@ -439,7 +439,7 @@ class DockerService:
                     "message": f"Cosign command not found: {COSIGN_CMD}"
                 }
             }
-            tlog.add_entry(record_id, Entry(key="image_signing", value=json.dumps(signing_log)))
+            tlog.add_entry(record_id, Entry(key="image_signing", value=signing_log))
 
             return False, None
         except Exception as e:
@@ -472,7 +472,7 @@ class DockerService:
                         "message": f"SBOM file not found: {sbom_path}"
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="sbom_attestation", value=json.dumps(attestation_log)))
+                tlog.add_entry(record_id, Entry(key="sbom_attestation", value=attestation_log))
 
                 return False, None
             
@@ -486,7 +486,7 @@ class DockerService:
                         "message": f"Private key file not found: {private_key_path}"
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="sbom_attestation", value=json.dumps(attestation_log)))
+                tlog.add_entry(record_id, Entry(key="sbom_attestation", value=attestation_log))
 
                 return False, None
             
@@ -506,7 +506,7 @@ class DockerService:
                         "message": f"Invalid SBOM file: {e}"
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="sbom_attestation", value=json.dumps(attestation_log)))
+                tlog.add_entry(record_id, Entry(key="sbom_attestation", value=attestation_log))
 
                 return False, None
             
@@ -556,7 +556,7 @@ class DockerService:
                     "output_ref": attestation_ref,
                     "status": "success"
                 }
-                tlog.add_entry(record_id, Entry(key="sbom_attestation", value=json.dumps(attestation_log)))
+                tlog.add_entry(record_id, Entry(key="sbom_attestation", value=attestation_log))
 
                 return True, attestation_ref
             else:
@@ -582,7 +582,7 @@ class DockerService:
                         "message": result.stderr
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="sbom_attestation", value=json.dumps(attestation_log)))
+                tlog.add_entry(record_id, Entry(key="sbom_attestation", value=attestation_log))
 
                 return False, None
                 
@@ -597,7 +597,7 @@ class DockerService:
                     "message": f"SBOM attestation timed out for: {image_name}"
                 }
             }
-            tlog.add_entry(record_id, Entry(key="sbom_attestation", value=json.dumps(attestation_log)))
+            tlog.add_entry(record_id, Entry(key="sbom_attestation", value=attestation_log))
 
             return False, None
         except FileNotFoundError:
@@ -610,7 +610,7 @@ class DockerService:
                     "message": f"Cosign command not found: {COSIGN_CMD}"
                 }
             }
-            tlog.add_entry(record_id, Entry(key="sbom_attestation", value=json.dumps(attestation_log)))
+            tlog.add_entry(record_id, Entry(key="sbom_attestation", value=attestation_log))
 
             return False, None
         except Exception as e:
@@ -678,7 +678,7 @@ class DockerService:
                         "dest_ref": dest_ref,
                         "status": "success"
                     }
-                    tlog.add_entry(record_id, Entry(key="image_push", value=json.dumps(push_log)))
+                    tlog.add_entry(record_id, Entry(key="image_push", value=push_log))
 
                     return True
                 else:
@@ -707,7 +707,7 @@ class DockerService:
                                 "message": result.stderr
                             }
                         }
-                        tlog.add_entry(record_id, Entry(key="image_push", value=json.dumps(push_log)))
+                        tlog.add_entry(record_id, Entry(key="image_push", value=push_log))
 
                         return False
                 
@@ -732,7 +732,7 @@ class DockerService:
                             "message": f"Push attempt {attempt} timed out"
                         }
                     }
-                    tlog.add_entry(record_id, Entry(key="image_push", value=json.dumps(push_log)))
+                    tlog.add_entry(record_id, Entry(key="image_push", value=push_log))
 
                     return False
             except FileNotFoundError:
@@ -745,7 +745,7 @@ class DockerService:
                         "message": f"Skopeo command not found: {SKOPEO_CMD}"
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="image_push", value=json.dumps(push_log)))
+                tlog.add_entry(record_id, Entry(key="image_push", value=push_log))
 
                 return False  # Don't retry if command not found
             except Exception as e:
@@ -1064,7 +1064,7 @@ class DockerService:
                         "message": f"Failed to generate cosign keys: {cosign_result.stderr}"
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="key_generation", value=json.dumps(key_log)))
+                tlog.add_entry(record_id, Entry(key="key_generation", value=key_log))
 
                 return None, None, None, None
 
@@ -1096,7 +1096,7 @@ class DockerService:
                         "message": f"Failed to generate openssl private key: {openssl_priv_result.stderr}"
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="key_generation", value=json.dumps(key_log)))
+                tlog.add_entry(record_id, Entry(key="key_generation", value=key_log))
 
                 return None, None, None, None
 
@@ -1122,7 +1122,7 @@ class DockerService:
                         "message": f"Failed to generate openssl public key: {openssl_pub_result.stderr}"
                     }
                 }
-                tlog.add_entry(record_id, Entry(key="key_generation", value=json.dumps(key_log)))
+                tlog.add_entry(record_id, Entry(key="key_generation", value=key_log))
 
                 return None, None, None, None
 
@@ -1143,7 +1143,7 @@ class DockerService:
                 },
                 "status": "success"
             }
-            tlog.add_entry(record_id, Entry(key="key_generation", value=json.dumps(key_log)))
+            tlog.add_entry(record_id, Entry(key="key_generation", value=key_log))
 
 
             return private_signing_key_path, public_signing_key_path, openssl_priv_key_path, public_encryption_key_path
@@ -1219,11 +1219,11 @@ class DockerService:
                 if result.returncode == 0:
                     logger.info(f"Successfully pulled image to local")
                     
-                    tlog.add_entry(record_id, Entry(key="pull_image", value=json.dumps({"pull_image": "success",
+                    tlog.add_entry(record_id, Entry(key="pull_image", value={"pull_image": "success",
                                          "result_stdout": result.stdout,
                                          "result_stderr": result.stderr,
                                          "pull_cmd": " ".join(cmd)
-                                        })))
+                                        }))
                     return True
                 else:
                     logger.warning(f"Pull attempt {attempt} failed: {result.stderr}")
@@ -1235,12 +1235,12 @@ class DockerService:
                     else:
                         logger.error(f"All pull attempts failed after {max_retries} tries")
                         
-                        tlog.add_entry(record_id, Entry(key="pull_image", value=json.dumps({"pull_image": "failed",
+                        tlog.add_entry(record_id, Entry(key="pull_image", value={"pull_image": "failed",
                                             "result_stdout": result.stdout,
                                             "result_stderr": result.stderr,
                                             "pull_cmd": " ".join(cmd),
                                             "error": f"All pull attempts failed after {max_retries} tries"
-                                            })))
+                                            }))
                         return False
 
             except subprocess.TimeoutExpired:
@@ -1253,12 +1253,12 @@ class DockerService:
                     return False
             except FileNotFoundError:
                 logger.error(f"Skopeo command not found: {SKOPEO_CMD}")
-                tlog.add_entry(record_id, Entry(key="pull_image", value=json.dumps({"pull_image": "failed",
-                                     "error": f"Skopeo command not found: {SKOPEO_CMD}"})))
+                tlog.add_entry(record_id, Entry(key="pull_image", value={"pull_image": "failed",
+                                     "error": f"Skopeo command not found: {SKOPEO_CMD}"}))
                 return False  # Don't retry if command not found
             except Exception as e:
-                tlog.add_entry(record_id, Entry(key="pull_image", value=json.dumps({"pull_image": "failed",
-                                     "error": f"{e}"})))
+                tlog.add_entry(record_id, Entry(key="pull_image", value={"pull_image": "failed",
+                                     "error": f"{e}"}))
                 logger.warning(f"Pull attempt {attempt} failed with error: {str(e)}")
                 if attempt < max_retries:
                     logger.info(f"Retrying in {retry_delay} seconds...")
@@ -1363,17 +1363,17 @@ class DockerService:
                 ]
             cosign_verify = subprocess.run(cosign_cmd, capture_output=True, text=True)
             logger.info(f"Vertify CMD: {' '.join(cosign_cmd)}")
-            tlog.add_entry(record_id, Entry(key="verify_sbom_cmd", value=json.dumps(" ".join(cosign_cmd))))
+            tlog.add_entry(record_id, Entry(key="verify_sbom_cmd", value=" ".join(cosign_cmd)))
 
             if cosign_verify.returncode != 0:
                 logger.debug(f"Failed to verify: {cosign_verify.stderr}")
-                tlog.add_entry(record_id, Entry(key="verify_sbom_status", value=json.dumps("failed")))
+                tlog.add_entry(record_id, Entry(key="verify_sbom_status", value="failed"))
                 return False
-            tlog.add_entry(record_id, Entry(key="verify_sbom_status", value=json.dumps("success")))
+            tlog.add_entry(record_id, Entry(key="verify_sbom_status", value="success"))
 
         except Exception as e:
             logger.error(f"Verify signed image {images_fullName} failed: {str(e)}")
-            tlog.add_entry(record_id, Entry(key="error", value=json.dumps(f"{e}")))
+            tlog.add_entry(record_id, Entry(key="error", value=f"{e}"))
 
         #2. verify attestation
         try:
@@ -1382,11 +1382,11 @@ class DockerService:
             
             cosign_attverify = subprocess.run(cosign_attcmd, capture_output=True, text=True)
             logger.info(f"Attestation_Vertify CMD: {' '.join(cosign_attcmd)}")
-            tlog.add_entry(record_id, Entry(key="verify_attestation_cmd", value=json.dumps(" ".join(cosign_attcmd))))
+            tlog.add_entry(record_id, Entry(key="verify_attestation_cmd", value=" ".join(cosign_attcmd)))
 
             if cosign_attverify.returncode != 0:
                 logger.debug(f"Failed to verify: {cosign_attverify.stderr}")
-                tlog.add_entry(record_id, Entry(key="verify_attestation_status", value=json.dumps("failed")))
+                tlog.add_entry(record_id, Entry(key="verify_attestation_status", value="failed"))
                 return False
 
             ''' base64_str = json.loads(cosign_verify.stdout)
@@ -1413,7 +1413,7 @@ class DockerService:
             
         except Exception as e:
             logger.error(f"Verify signed attestation image {imagesurl} failed: {str(e)}")
-            tlog.add_entry(record_id, Entry(key="error", value=json.dumps(f"{str(e)}")))
+            tlog.add_entry(record_id, Entry(key="error", value=f"{str(e)}"))
 
 
     def get_launch_status(self, launch_id: str) -> Optional[LaunchResult]:
@@ -1433,11 +1433,11 @@ class DockerService:
             if res.returncode == 0:
                 logger.info(f"Success add {Newimage_name} image.")
                 logger.debug(f"CMD: {' '.join(cmd)}")
-                tlog.add_entry(record_id, Entry(key="pullImage", value=json.dumps({"pullImage_cmd": " ".join(cmd), "pullImage_status": "success"})))
+                tlog.add_entry(record_id, Entry(key="pullImage", value={"pullImage_cmd": " ".join(cmd), "pullImage_status": "success"}))
             else:
                 logger.info("Failed add image.")
                 logger.debug(f"CMD: {' '.join(cmd)}")
-                tlog.add_entry(record_id, Entry(key="pullImage_status", value=json.dumps("failed")))
+                tlog.add_entry(record_id, Entry(key="pullImage_status", value="failed"))
                 return False
 
             #get_imageID = [DOCKER_CMD, "images", "--format", "'{{.ID}}'"]
@@ -1494,15 +1494,15 @@ class DockerService:
             dockerRUn = subprocess.run(docker_cmd, capture_output=True, text=True)
             if dockerRUn.returncode == 0:
                 logger.info(f"Success run image {image_id}.")
-                tlog.add_entry(record_id, Entry(key="launch_cmd", value=json.dumps({"launch_cmd": " ".join(docker_cmd),
+                tlog.add_entry(record_id, Entry(key="launch_cmd", value={"launch_cmd": " ".join(docker_cmd),
                                      "launch_status": "success",
                                      "launch_stdout": dockerRUn.stdout,
-                                     })))
+                                     }))
             else:
                 logger.info("Failed run image.")
                 logger.debug(f"CMD: {' '.join(docker_cmd)}")
-                tlog.add_entry(record_id, Entry(key="launch_status", value=json.dumps({"launch_status": "failed",
-                                     "launch_stderr": dockerRUn.stderr})))
+                tlog.add_entry(record_id, Entry(key="launch_status", value={"launch_status": "failed",
+                                     "launch_stderr": dockerRUn.stderr}))
                 return False
 
             # docker ps -q --latest
@@ -1511,15 +1511,15 @@ class DockerService:
             if getID_res.returncode == 0:
                 containerID = getID_res.stdout.replace("\n","")
                 logger.info(f"Success get image ID {containerID}")
-                tlog.add_entry(record_id, Entry(key="getContainerID_cmd", value=json.dumps({"getContainerID_cmd": " ".join(getID),
+                tlog.add_entry(record_id, Entry(key="getContainerID_cmd", value={"getContainerID_cmd": " ".join(getID),
                                      "getContainerID_status": "success",
                                      "getID_stdout": getID_res.stdout
-                                     })))
+                                     }))
             else:
                 logger.info("Failed get container ID.")
-                tlog.add_entry(record_id, Entry(key="getContainerID_status", value=json.dumps({"getContainerID_status": "failed",
+                tlog.add_entry(record_id, Entry(key="getContainerID_status", value={"getContainerID_status": "failed",
                                      "getID_stderr": getID_res.stderr
-                                     })))
+                                     }))
                 return False
             
             #docker inspect ID --format '{{.State.Status}}'
@@ -1528,22 +1528,22 @@ class DockerService:
             if getStatus_res.returncode == 0:
                 status_text = getStatus_res.stdout.replace("\n", "")
                 logger.info(f"Success get container {containerID} status: {status_text}")
-                tlog.add_entry(record_id, Entry(key="getStatus_cmd", value=json.dumps({"getStatus_cmd": " ".join(getStatus),
-                                     "get_status": getStatus_res.stdout})))
+                tlog.add_entry(record_id, Entry(key="getStatus_cmd", value={"getStatus_cmd": " ".join(getStatus),
+                                     "get_status": getStatus_res.stdout}))
             else:
                 logger.info("Failed get container status.")
                 logger.error(f"get container status cmd: {' '.join(getStatus)}")
-                tlog.add_entry(record_id, Entry(key="get_status", value=json.dumps({"get_status": "failed",
+                tlog.add_entry(record_id, Entry(key="get_status", value={"get_status": "failed",
                                      "getStatus_stderr": getStatus_res.stderr
-                                     })))
+                                     }))
                 return False
             
-            tlog.add_entry(record_id, Entry(key="container_info", value=json.dumps({"container_ID": getID_res.stdout, "container_Status": getStatus_res.stdout})))
+            tlog.add_entry(record_id, Entry(key="container_info", value={"container_ID": getID_res.stdout, "container_Status": getStatus_res.stdout}))
             return [{"container_ID": getID_res.stdout, "container_Status": getStatus_res.stdout}]
 
         except Exception as e:
             logger.error(f"Launch contaioner failed: {str(e)}")
-            tlog.add_entry(record_id, Entry(key="Deploy_launch status", value=json.dumps("success")))
+            tlog.add_entry(record_id, Entry(key="Deploy_launch status", value="success"))
             return False
 
 
@@ -1554,11 +1554,11 @@ class DockerService:
                 for key,value in key_dict.items():
                     if not os.path.exists(value):
                         logger.info(f"Failed get {key}!")
-                        tlog.add_entry(record_id, Entry(key="get_key", value=json.dumps("failed")))
+                        tlog.add_entry(record_id, Entry(key="get_key", value="failed"))
                         return False, None
                     else:
                         key_dict[key] = os.path.realpath(value)
-                        tlog.add_entry(record_id, Entry(key="get_key", value=json.dumps("true")))
+                        tlog.add_entry(record_id, Entry(key="get_key", value="true"))
                 return 'trusted', key_dict
 
             opensslKey_cmd = ["curl", KBS_URL+"openssl.key", "-o","openssl.key"]
@@ -1574,16 +1574,16 @@ class DockerService:
             for key,value in key_dict.items():
                 if not os.path.exists(value):
                     logger.info(f"Failed get {key}!")
-                    tlog.add_entry(record_id, Entry(key="get_key", value=json.dumps("failed")))
+                    tlog.add_entry(record_id, Entry(key="get_key", value="failed"))
                     return False, None
                 else:
                     key_dict[key] = os.path.realpath(value)
-            tlog.add_entry(record_id, Entry(key="key", value=json.dumps(key_dict)))
+            tlog.add_entry(record_id, Entry(key="key", value=key_dict))
             return 'trusted', key_dict
 
         except Exception as e:
             logger.error(f"Launch contaioner failed: {str(e)}")
-            tlog.add_entry(record_id, Entry(key="key", value=json.dumps(f"Get key failed: {e}")))
+            tlog.add_entry(record_id, Entry(key="key", value=f"Get key failed: {e}"))
             return False, None
 
     def commit_and_save_receipt(self, api_type, build_id, tlog: TrustedLogAPI, record_id: str, identity_token_str: str):
@@ -1706,16 +1706,16 @@ class DockerService:
             if result.wait() == 0:
                 logger.info(result.stdout.read())
                 self.update_lunks_status(user_id, "creating", step="create_encrypted_vfs: success",passwd=passwd,vfs_size=VFS_SIZE,vfs_path=VFS_PATH,mapper_dir=MAPPER_DIR,loop_device=LOOP_DEVICE)
-                tlog.add_entry(record_id, Entry(key="create_encrypted_vfs", value=json.dumps("completed")))
+                tlog.add_entry(record_id, Entry(key="create_encrypted_vfs", value="completed"))
                 return MAPPER_DIR,LOOP_DEVICE
             else:
                 logger.debug(f"create_encrypted_vfs failed: {cmd}")
                 self.update_lunks_status(user_id, "creating", step="create_encrypted_vfs: failed")
-                tlog.add_entry(record_id, Entry(key="createLunks", value=json.dumps("create_encrypted_vfs failed")))
+                tlog.add_entry(record_id, Entry(key="createLunks", value="create_encrypted_vfs failed"))
                 return
         except Exception as e:
             logger.debug(f"crate lunks failed.{e}")
-            tlog.add_entry(record_id, Entry(key="create_lunks_failed", value=json.dumps(f"e")))
+            tlog.add_entry(record_id, Entry(key="create_lunks_failed", value=f"e"))
             return
 
     def mount_lunks_block(self, user_id, tlog: TrustedLogAPI, record_id: str, MAPPER_DIR, passwd, MOUNT_PATH, VFS_PATH,LOOP_DEVICE):
@@ -1726,16 +1726,16 @@ class DockerService:
             if result.wait() == 0:
                 logger.info(result.stdout.read())
                 self.update_lunks_status(user_id, "mounting", step="mount_encrypted_vfs: success",mount_path=MOUNT_PATH,vfs_path=VFS_PATH)
-                tlog.add_entry(record_id, Entry(key="mount_encrypted_vfs", value=json.dumps("completed")))
+                tlog.add_entry(record_id, Entry(key="mount_encrypted_vfs", value="completed"))
                 return MOUNT_PATH
             else:
                 logger.debug(f"mount_encrypted_vfs failed: {cmd}")
                 self.update_lunks_status(user_id, "mounting", step="mount_encrypted_vfs: failed")
-                tlog.add_entry(record_id, Entry(key="mountLunks", value=json.dumps("mount_encrypted_vfs failed")))
+                tlog.add_entry(record_id, Entry(key="mountLunks", value="mount_encrypted_vfs failed"))
                 return
         except Exception as e:
             logger.debug(f"mount lunks failed.{e}")
-            tlog.add_entry(record_id, Entry(key="mount_lunks_failed", value=json.dumps(f"e")))
+            tlog.add_entry(record_id, Entry(key="mount_lunks_failed", value=f"e"))
             return
 
 
@@ -1747,14 +1747,14 @@ class DockerService:
             if result.wait() == 0:
                 logger.info(result.stdout.read())
                 self.update_lunks_status(user_id, "umounting", step="unmount_encrypted_vfs: success")
-                tlog.add_entry(record_id, Entry(key="unmount_encrypted_vfs", value=json.dumps("completed")))
+                tlog.add_entry(record_id, Entry(key="unmount_encrypted_vfs", value="completed"))
             else:
                 logger.debug(f"unmount_encrypted_vfs failed: {cmd}")
                 self.update_lunks_status(user_id, "umounting", step="unmount_encrypted_vfs: failed")
-                tlog.add_entry(record_id, Entry(key="unmountLunks", value=json.dumps("unmount_encrypted_vfs failed")))
+                tlog.add_entry(record_id, Entry(key="unmountLunks", value="unmount_encrypted_vfs failed"))
         except Exception as e:
             logger.debug(f"unmount lunks failed.{e}")
-            tlog.add_entry(record_id, Entry(key="unmount_lunks_failed", value=json.dumps(f"e")))
+            tlog.add_entry(record_id, Entry(key="unmount_lunks_failed", value=f"e"))
             return
 
 

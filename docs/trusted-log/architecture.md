@@ -162,7 +162,7 @@ The common operational path is queue-driven: once a committed record enters the 
 
 Core contract definitions:
 
-- `Entry`: the smallest unit of recorded evidence, represented as a `key` and `value` pair for one trust-relevant fact.
+- `Entry`: the smallest unit of recorded evidence, represented as a `key` and a `value` (any JSON-compatible type) for one trust-relevant fact. The value may be a string, number, boolean, null, list, or dict; it is serialized via `canonical_json` for digest computation.
 - `Record`: an ordered collection of entries accumulated before submission; ordering is significant because it affects the event digest.
 - `RecordContext`: the mutable handle returned by initialization, containing the in-progress `record_id`, creation timestamp, and chain reference information such as `prev_log_id`.
 - `EventLog`: the immutable committed event containing event identity, canonical digest, ordered record payload, creation time, and optionally the MR value and globally resolvable backend identifier.
@@ -263,7 +263,7 @@ classDiagram
 
     class Entry {
         +string key
-        +string value
+        +Any value
     }
 
     class SubmitResult {
