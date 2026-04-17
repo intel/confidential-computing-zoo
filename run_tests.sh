@@ -9,5 +9,6 @@ if [ -d "venv" ]; then
 fi
 
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+export TRUCON_AUTH_DISABLED=true
 
 python -m tests.test_runner "$@"

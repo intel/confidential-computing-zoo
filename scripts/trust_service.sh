@@ -12,5 +12,10 @@ sleep 5
 echo "Start api-server-rest"
 ./api-server-rest &
 sleep 5
+# Generate TruCon service token if not set
+if [ -z "$TRUCON_SERVICE_TOKEN" ]; then
+    export TRUCON_SERVICE_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+    echo "✓ Generated TRUCON_SERVICE_TOKEN for this session"
+fi
 echo "Start tc_api"
 /app/venv/bin/python -m tc_api.main

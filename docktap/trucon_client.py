@@ -195,10 +195,15 @@ class TruConCommitter:
             "idempotency_key": idempotency_key,
         }).encode("utf-8")
 
+        headers = {"Content-Type": "application/json"}
+        service_token = os.environ.get("TRUCON_SERVICE_TOKEN", "")
+        if service_token:
+            headers["Authorization"] = f"Bearer {service_token}"
+
         req = urllib.request.Request(
             url,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=5) as resp:

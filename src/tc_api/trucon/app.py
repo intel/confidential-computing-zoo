@@ -9,6 +9,7 @@ MUST be run with --workers 1 to preserve lock semantics.
 
 import fcntl
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -20,7 +21,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from .database import (
@@ -318,6 +320,13 @@ def _handle_retry(record_id: str):
 async def lifespan(app: FastAPI):
     global _local_mr, _immutable_log
 
+    # Service authentication startup checks
+    if _AUTH_DISABLED:
+        logger.warning("⚠ TruCon service authentication DISABLED — development mode only")
+    elif not _SERVICE_TOKEN:
+        logger.error("TRUCON_SERVICE_TOKEN is not set and TRUCON_AUTH_DISABLED is not true. Refusing to start.")
+        raise RuntimeError("TRUCON_SERVICE_TOKEN is not set and TRUCON_AUTH_DISABLED is not true")
+
     # Single-instance enforcement
     acquire_instance_lock()
 
@@ -358,6 +367,31 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# ---------------------------------------------------------------------------
+# Service authentication middleware
+# ---------------------------------------------------------------------------
+
+_AUTH_DISABLED = os.environ.get("TRUCON_AUTH_DISABLED", "").lower() == "true"
+_SERVICE_TOKEN = os.environ.get("TRUCON_SERVICE_TOKEN", "")
+
+@app.middleware("http")
+async def service_auth_middleware(request: Request, call_next):
+    if _AUTH_DISABLED:
+        return await call_next(request)
+
+    auth_header = request.headers.get("authorization")
+    if not auth_header:
+        return JSONResponse(status_code=401, content={"detail": "Missing Authorization header"})
+
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"detail": "Invalid Authorization scheme, expected Bearer"})
+
+    token = auth_header[7:]  # len("Bearer ") == 7
+    if not hmac.compare_digest(token, _SERVICE_TOKEN):
+        return JSONResponse(status_code=401, content={"detail": "Invalid service token"})
+
+    return await call_next(request)
 
 # ---------------------------------------------------------------------------
 # Endpoints

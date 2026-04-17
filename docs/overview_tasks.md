@@ -178,33 +178,59 @@ Each task has:
 
 ---
 
-### GAP-10: Internal Service Authentication
+### ~~GAP-10: Internal Service Authentication (Phase A — Bearer Token)~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/tlog_client.py`
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/tlog_client.py`, `docktap/trucon_client.py`, `src/tc_api/config.py`
 - **References**: architecture.md §9
 - **Dependencies**: None
-- **Current State**: tc_api → TruCon calls are unauthenticated HTTP on localhost. Architecture requires "Internal service calls must be authenticated and authorized."
+- **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-internal-service-auth/`
+- **Design Decisions** (confirmed 2026-04-17):
+  - Phase A: Shared Bearer token (`TRUCON_SERVICE_TOKEN` env var) for both tc_api and Docktap.
+  - All TruCon endpoints authenticated via a single FastAPI middleware.
+  - Token generated at CVM startup (`start.sh`), session-scoped (lifetime = VM lifetime).
+  - `TRUCON_AUTH_DISABLED=true` dev-mode bypass with prominent startup warning.
+  - 401 responses with descriptive JSON body for debugging.
+  - Constant-time comparison via `hmac.compare_digest`.
+  - Phase B (mTLS / Unix socket peer credentials) deferred to GAP-12.
 - **Acceptance Criteria**:
-  1. TruCon endpoints require a valid service token or mutual TLS for internal calls.
-  2. tc_api attaches credentials when calling TruCon.
-  3. Unauthorized requests are rejected with appropriate HTTP status.
+  1. ✅ TruCon endpoints require `Authorization: Bearer <token>` header.
+  2. ✅ tc_api and Docktap attach credentials when calling TruCon.
+  3. ✅ Unauthorized requests rejected with 401 + descriptive JSON.
+  4. ✅ Dev-mode bypass for testing environments.
+- **Tests**: `tests/test_service_auth.py` (9 tests); 102 total regression pass
 
 ---
 
-### GAP-11: Per-Workload Chain Assignment for Docktap
+### GAP-12: Internal Service Authentication — Phase B (mTLS / Unix Socket Credentials)
+
+- **Priority**: LOW
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/tlog_client.py`, `docktap/trucon_client.py`
+- **References**: architecture.md §9; GAP-10 design notes
+- **Dependencies**: GAP-10 ✅
+- **Current State**: Phase A (Bearer token) is implemented. Phase B upgrades to stronger authentication for cross-node or multi-tenant deployments.
+- **Design Notes**: Two candidate mechanisms: (a) mTLS with per-service certificates, (b) Unix socket peer credentials (`SO_PEERCRED`) for same-machine deployments. Choice depends on deployment topology at the time of implementation.
+- **Acceptance Criteria**:
+  1. TruCon supports mTLS or Unix socket peer credential authentication.
+  2. Per-caller identity differentiation (tc_api vs Docktap) if granular authorization is needed.
+  3. Token rotation support for long-lived deployments.
+
+---
+
+### ~~GAP-11: Per-Workload Chain Assignment for Docktap~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
 - **Scope**: `docktap/`, `src/tc_api/trucon/`
 - **References**: architecture.md §4.2, §7; Q-01
-- **Dependencies**: GAP-01 (basic Docktap → TruCon emission must work first)
-- **Current State**: GAP-01 v1 uses `"default"` chain_id for all Docktap events. This task upgrades to per-workload chain assignment.
-- **Design Notes**: Preferred mechanism is a container label convention (e.g., `--label tc.workload_id=xxx`) extracted from `docker create` request body. Subsequent operations (`start`/`stop`/`rm`) resolve workload_id by looking up the container_id in Docktap's `OperationTracker`. Containers without the label fall back to `"default"` chain.
+- **Dependencies**: GAP-01 ✅
+- **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-per-workload-chain-assignment/`
+- **Design Notes**: Container label convention (`--label tc.workload_id=xxx`) extracted from `docker create` request body. Subsequent operations resolve workload_id via Docktap's `OperationTracker`. Containers without the label fall back to `"default"` chain.
 - **Acceptance Criteria**:
-  1. Docktap extracts `tc.workload_id` from container labels during `create` operations.
-  2. Subsequent lifecycle events for the same container use the resolved `workload_id` as `chain_id`.
-  3. Containers without `tc.workload_id` label default to `"default"` chain.
-  4. Tests cover label extraction, cross-operation chain resolution, and fallback behavior.
+  1. ✅ Docktap extracts `tc.workload_id` from container labels during `create` operations.
+  2. ✅ Subsequent lifecycle events for the same container use the resolved `workload_id` as `chain_id`.
+  3. ✅ Containers without `tc.workload_id` label default to `"default"` chain.
+  4. ✅ Tests cover label extraction, cross-operation chain resolution, and fallback behavior.
+- **Tests**: `docktap/tests/test_workload_chain_routing.py`
 
 ---
 
@@ -271,7 +297,7 @@ These are not implementation tasks but **design decisions** that should be resol
 
 | ID | Question | Blocks | Architecture Ref | Status |
 |----|----------|--------|------------------|--------|
-| Q-01 | Chain scope default: per workload, per tenant, or global? | GAP-03, GAP-11 | architecture.md §12 | **Partially resolved** (2026-04-17): Target is per-workload. GAP-01 v1 uses `"default"` chain. Per-workload assignment deferred to GAP-11. |
+| Q-01 | Chain scope default: per workload, per tenant, or global? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): Per-workload via `tc.workload_id` container label. Implemented in GAP-01 (default chain) + GAP-11 (per-workload assignment). |
 | Q-02 | Confirmation SLA target from commit to backend confirmed? | GAP-04 | architecture.md §12 | Open |
 | Q-03 | Canonical mandatory fields for stable instance mapping across restarts? | GAP-03 | architecture.md §12 | Open |
 | Q-04 | Worker ownership model: local ownership or shared lease? | — | architecture.md §12 | Open |
@@ -296,13 +322,14 @@ GAP-05 (Event Log 0) ◀── Q-05
 GAP-07 (On-Chain Adapter) ── standalone
 GAP-08 (Feature-Flag Fallback) ── standalone
 GAP-09 (Non-TEE Ordering) ✅ ── standalone
-GAP-10 (Service Auth) ── standalone
+GAP-10 (Service Auth Phase A) ✅ ── standalone
 GAP-11 (Per-Workload Chain) ◀── GAP-01 ✅
+GAP-12 (Service Auth Phase B) ◀── GAP-10 ✅ ── LOW priority
 
 FIX-03 (SubmitResult) ── standalone
 FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11
 ```
 
 ---
@@ -322,12 +349,13 @@ FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 
 **Phase 3 — Docktap Integration** (in progress):
 8. ~~`GAP-01`~~ ✅ completed 2026-04-17
-9. `GAP-11` — Per-workload chain assignment for Docktap (after GAP-01) ← **next**
-10. `GAP-03` — Workload/instance mapping (after GAP-11, requires Q-01 fully resolved, Q-03)
-11. `GAP-10` — Internal service authentication
+9. ~~`GAP-11`~~ ✅ completed 2026-04-17
+10. `GAP-03` — Workload/instance mapping (requires Q-01 fully resolved, Q-03)
+11. ~~`GAP-10`~~ ✅ completed 2026-04-17 (Phase A — Bearer token)
 
 **Phase 4 — Extensions**:
 12. `GAP-07` — On-chain backend adapter
 13. `GAP-08` — Feature-flag fallback
 14. `FIX-03` — SubmitResult exposure
 15. `FIX-04` — Entry type enrichment (Docktap and REST both benefit)
+16. `GAP-12` — Service auth Phase B (mTLS / Unix socket credentials)

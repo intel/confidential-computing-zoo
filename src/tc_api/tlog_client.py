@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import os
 import threading
 import uuid
 import time
@@ -49,6 +50,9 @@ try:
     from .config import TRUCON_URL
 except ImportError:
     TRUCON_URL = "http://127.0.0.1:8001"
+
+# Service token for TruCon authentication
+_TRUCON_SERVICE_TOKEN = os.environ.get("TRUCON_SERVICE_TOKEN", "")
 
 class TrustedLogAPI:
     """
@@ -200,9 +204,13 @@ class TrustedLogAPI:
             "idempotency_key": idempotency_key,
         }).encode("utf-8")
 
+        headers = {"Content-Type": "application/json"}
+        if _TRUCON_SERVICE_TOKEN:
+            headers["Authorization"] = f"Bearer {_TRUCON_SERVICE_TOKEN}"
+
         req = urllib.request.Request(
             url, data=payload,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         try:
@@ -222,6 +230,8 @@ class TrustedLogAPI:
         url = f"{self._trucon_url}/status"
         try:
             req = urllib.request.Request(url, method="GET")
+            if _TRUCON_SERVICE_TOKEN:
+                req.add_header("Authorization", f"Bearer {_TRUCON_SERVICE_TOKEN}")
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return CommitQueueStatus(

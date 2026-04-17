@@ -45,6 +45,12 @@ export TRUCON_PORT=${TRUCON_PORT:-8001}
 export DEBUG=${DEBUG:-false}
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
+# Generate a session-scoped service token for TruCon authentication
+if [ -z "$TRUCON_SERVICE_TOKEN" ]; then
+    export TRUCON_SERVICE_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+    echo "✓ Generated TRUCON_SERVICE_TOKEN for this session"
+fi
+
 echo "Starting TruCon (single-instance sequencer) on port $TRUCON_PORT..."
 uvicorn tc_api.trucon.app:app --host 0.0.0.0 --port $TRUCON_PORT --workers 1 &
 TRUCON_PID=$!

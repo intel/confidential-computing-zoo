@@ -184,6 +184,26 @@ Minimum required metrics:
 - Identity and signature handling should avoid leaking ephemeral credentials into long-lived queue payloads.
 - Verification endpoints should enforce caller policy and provide auditable outcomes.
 
+### 9.1 Internal Service Authentication (Phase A — Implemented)
+
+TruCon authenticates all incoming HTTP requests via Bearer token:
+
+- A single shared `TRUCON_SERVICE_TOKEN` environment variable is used by both tc_api and Docktap.
+- Token is generated at CVM startup by `start.sh` using `secrets.token_urlsafe(32)` and inherited by all child processes.
+- A FastAPI middleware validates the `Authorization: Bearer <token>` header on every request using `hmac.compare_digest` (constant-time).
+- Unauthenticated requests receive `401 Unauthorized` with a descriptive JSON body.
+- A development-mode bypass (`TRUCON_AUTH_DISABLED=true`) skips authentication with a prominent startup warning.
+- Token lifetime equals VM lifetime; token is never persisted to disk (CVM disk is untrusted).
+
+### 9.2 Internal Service Authentication (Phase B — Planned)
+
+For cross-node or multi-tenant deployments, Phase A Bearer tokens may be upgraded to:
+
+- Mutual TLS (mTLS) with per-service certificates, or
+- Unix socket peer credentials (`SO_PEERCRED`) for same-machine deployments.
+
+Phase B would also enable per-caller identity differentiation (tc_api vs Docktap) and token rotation for long-lived deployments. See GAP-12 in `docs/overview_tasks.md`.
+
 ## 10. Deployment Model
 
 - REST API deployed with multiple workers/processes (uvicorn `--workers N`).
