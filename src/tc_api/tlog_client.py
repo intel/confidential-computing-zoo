@@ -95,6 +95,7 @@ class TrustedLogAPI:
         event_type: str,
         event_id: Optional[str] = None,
         commit_options: Optional[Dict[str, Any]] = None,
+        instance_id: Optional[str] = None,
     ) -> CommitResult:
         if record_id not in self._records:
             raise RecordNotFoundError(f"Record {record_id} not found", code="NOT_FOUND", stage="commit", retryable=False)
@@ -177,6 +178,7 @@ class TrustedLogAPI:
             event_digest=event_digest,
             event_id=event_id,
             idempotency_key=idempotency_key,
+            instance_id=instance_id,
         )
 
         # Clean up per-request scratch
@@ -193,7 +195,8 @@ class TrustedLogAPI:
 
     def _post_to_trucon(self, bundle_json: str, chain_id: str,
                             event_digest: str, event_id: str,
-                            idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+                            idempotency_key: Optional[str] = None,
+                            instance_id: Optional[str] = None) -> Dict[str, Any]:
         """POST the signed bundle to TruCon /commit endpoint."""
         url = f"{self._trucon_url}/commit"
         payload = json.dumps({
@@ -202,6 +205,7 @@ class TrustedLogAPI:
             "event_digest": event_digest,
             "event_id": event_id,
             "idempotency_key": idempotency_key,
+            "instance_id": instance_id,
         }).encode("utf-8")
 
         headers = {"Content-Type": "application/json"}

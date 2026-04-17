@@ -32,8 +32,11 @@ from .database import (
     get_chain_records,
     get_chain_state,
     get_db_connection,
+    get_events_for_instance,
+    get_events_for_workload,
     get_failed_by_chain,
     get_highest_extended_record,
+    get_instances_for_workload,
     get_latest_state,
     get_pending_by_chain,
     get_queue_stats,
@@ -62,6 +65,7 @@ class CommitRequest(BaseModel):
     event_digest: str    # SHA-384 digest of the event
     event_id: Optional[str] = None
     idempotency_key: Optional[str] = None
+    instance_id: Optional[str] = None
 
 class CommitResponse(BaseModel):
     record_id: str
@@ -114,6 +118,20 @@ class ChainVerificationResponse(BaseModel):
     head_mr_value: Optional[str] = None
     first_error_at: Optional[int] = None
     entries: list[ChainEntryResult]
+
+class InstanceSummary(BaseModel):
+    instance_id: str
+    first_event_at: Optional[str] = None
+    last_event_at: Optional[str] = None
+    event_count: int
+
+class EventSummary(BaseModel):
+    record_id: str
+    event_id: Optional[str] = None
+    sequence_num: int
+    status: str
+    created_at: Optional[str] = None
+    instance_id: Optional[str] = None
 
 # ---------------------------------------------------------------------------
 # Single-instance file lock
@@ -459,6 +477,7 @@ def commit(req: CommitRequest):
             sequence_num=sequence_num,
             event_digest=req.event_digest,
             idempotency_key=req.idempotency_key,
+            instance_id=req.instance_id,
         )
 
         # 4. UPDATE chain_state
@@ -653,6 +672,27 @@ def verify_chain(chain_id: str):
         first_error_at=first_error_at,
         entries=entries,
     )
+
+
+@app.get("/workloads/{workload_id}/instances", response_model=List[InstanceSummary])
+def list_workload_instances(workload_id: str):
+    """List all container instances for a workload."""
+    rows = get_instances_for_workload(workload_id)
+    return [InstanceSummary(**row) for row in rows]
+
+
+@app.get("/instances/{instance_id}/events", response_model=List[EventSummary])
+def list_instance_events(instance_id: str):
+    """List all events for a specific container instance."""
+    rows = get_events_for_instance(instance_id)
+    return [EventSummary(**row) for row in rows]
+
+
+@app.get("/workloads/{workload_id}/events", response_model=List[EventSummary])
+def list_workload_events(workload_id: str):
+    """List all events across all instances of a workload."""
+    rows = get_events_for_workload(workload_id)
+    return [EventSummary(**row) for row in rows]
 
 
 def main() -> None:

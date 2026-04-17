@@ -44,6 +44,7 @@ def _migrate_legacy_schema(conn: sqlite3.Connection):
         'event_digest': 'TEXT',
         'idempotency_key': 'TEXT',
         'created_at': 'TEXT',
+        'instance_id': 'TEXT',
     }
     
     for col_name, col_def in new_columns.items():
@@ -58,6 +59,12 @@ def _migrate_legacy_schema(conn: sqlite3.Connection):
 
     # Backfill created_at from updated_at for pre-migration rows
     conn.execute('UPDATE commit_queue SET created_at = updated_at WHERE created_at IS NULL')
+
+    # Composite index for instance mapping queries
+    try:
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_queue_instance ON commit_queue(chain_id, instance_id)')
+    except sqlite3.OperationalError:
+        pass  # Index already exists
 
     conn.commit()
 
@@ -89,9 +96,13 @@ def init_db(db_path: str = DB_PATH):
                 event_digest TEXT,
                 idempotency_key TEXT UNIQUE,
                 created_at TEXT,
+                instance_id TEXT,
                 updated_at TEXT NOT NULL
             )
         ''')
+
+        # Composite index for instance mapping queries
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_queue_instance ON commit_queue(chain_id, instance_id)')
         
         # Create chain_state table (one row per chain_id)
         conn.execute('''
@@ -121,6 +132,7 @@ def insert_record(record_id: str, event_id: Optional[str], payload: Dict[str, An
                    prev_log_id: Optional[str] = None, mr_value: Optional[str] = None,
                    sequence_num: int = 0, event_digest: Optional[str] = None,
                    idempotency_key: Optional[str] = None,
+                   instance_id: Optional[str] = None,
                    db_path: str = DB_PATH):
     """Insert a new record into the commit queue."""
     now = datetime.utcnow().isoformat()
@@ -128,8 +140,8 @@ def insert_record(record_id: str, event_id: Optional[str], payload: Dict[str, An
         conn.execute('''
             INSERT INTO commit_queue (record_id, event_id, chain_id, payload, status,
                                       rtmr_extended, prev_log_id, mr_value, sequence_num,
-                                      event_digest, idempotency_key, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      event_digest, idempotency_key, instance_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             record_id, 
             event_id,
@@ -142,6 +154,7 @@ def insert_record(record_id: str, event_id: Optional[str], payload: Dict[str, An
             sequence_num,
             event_digest,
             idempotency_key,
+            instance_id,
             now,
             now,
         ))
@@ -363,3 +376,43 @@ def get_chain_records(chain_id: str, db_path: str = DB_PATH) -> List[sqlite3.Row
             ORDER BY sequence_num ASC
         ''', (chain_id,))
         return cursor.fetchall()
+
+
+def get_instances_for_workload(chain_id: str, db_path: str = DB_PATH) -> List[Dict[str, Any]]:
+    """Get distinct instances for a workload with summary metadata."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute('''
+            SELECT instance_id,
+                   MIN(created_at) AS first_event_at,
+                   MAX(created_at) AS last_event_at,
+                   COUNT(*) AS event_count
+            FROM commit_queue
+            WHERE chain_id = ? AND instance_id IS NOT NULL
+            GROUP BY instance_id
+            ORDER BY first_event_at ASC
+        ''', (chain_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_events_for_instance(instance_id: str, db_path: str = DB_PATH) -> List[Dict[str, Any]]:
+    """Get all events for a specific instance, ordered by sequence_num."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute('''
+            SELECT record_id, event_id, sequence_num, status, created_at, instance_id
+            FROM commit_queue
+            WHERE instance_id = ?
+            ORDER BY sequence_num ASC
+        ''', (instance_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_events_for_workload(chain_id: str, db_path: str = DB_PATH) -> List[Dict[str, Any]]:
+    """Get all events for a workload across all instances, ordered by sequence_num."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute('''
+            SELECT record_id, event_id, sequence_num, status, created_at, instance_id
+            FROM commit_queue
+            WHERE chain_id = ?
+            ORDER BY sequence_num ASC
+        ''', (chain_id,))
+        return [dict(row) for row in cursor.fetchall()]

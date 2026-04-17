@@ -127,6 +127,13 @@ class TruConCommitter:
 
         # 3. Build DSSE predicate
         chain_id = self._resolve_chain_id(op_record, operation_type, workload_id)
+
+        # Resolve instance_id: container_id for lifecycle events, None for pull
+        if operation_type == "pull":
+            instance_id = None
+        else:
+            instance_id = op_record.container.get("id") if op_record.container else None
+
         predicate_payload = {
             "event_id": event_id,
             "event_type": event_type,
@@ -174,6 +181,7 @@ class TruConCommitter:
             event_digest=event_digest,
             event_id=event_id,
             idempotency_key=idempotency_key,
+            instance_id=instance_id,
         )
         logger.info("TruCon commit succeeded for %s (event_id=%s)", operation_type, event_id)
         return True
@@ -185,6 +193,7 @@ class TruConCommitter:
         event_digest: str,
         event_id: str,
         idempotency_key: Optional[str] = None,
+        instance_id: Optional[str] = None,
     ) -> Dict:
         url = f"{self._trucon_url}/commit"
         payload = json.dumps({
@@ -193,6 +202,7 @@ class TruConCommitter:
             "event_digest": event_digest,
             "event_id": event_id,
             "idempotency_key": idempotency_key,
+            "instance_id": instance_id,
         }).encode("utf-8")
 
         headers = {"Content-Type": "application/json"}

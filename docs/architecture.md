@@ -113,15 +113,22 @@ Reserved (not yet used):
 
 ### 5.2 Mapping Model
 
-> **Status: Planned — not yet implemented.**
+> **Status: Design confirmed — implementation in progress (GAP-03).**
 
-TruCon will store correlation views:
+TruCon stores instance correlation data directly in the `commit_queue` table via an `instance_id TEXT` column:
 
-- workload_id -> instance_id list
-- instance_id -> workload and related trusted events
-- event_id -> source, chain metadata, submission state
+- `instance_id` = full 64-character Docker `container_id`, representing one `create→rm` lifecycle.
+- `chain_id` (= `workload_id` for Docktap events) is the workload dimension.
+- Workload→instance→event relationships are derived via SQL aggregation over `commit_queue`.
+- No separate mapping tables — the commit_queue is the single source of truth.
 
-This will enable audit and verification paths across both REST and Docktap event sources.
+Correlation queries exposed by TruCon:
+
+- `GET /workloads/{workload_id}/instances` — distinct instances with event counts.
+- `GET /instances/{instance_id}/events` — events for a container lifecycle, ordered by sequence_num.
+- `GET /workloads/{workload_id}/events` — all events across all instances of a workload.
+
+`instance_id` is caller-provided metadata on `CommitRequest` (same pattern as `chain_id`), outside the DSSE signed predicate. Records without `instance_id` (e.g., REST API events without container context) are included in workload-level queries but excluded from instance-specific queries.
 
 ## 6. Key Runtime Flows
 
@@ -227,9 +234,9 @@ Rollback principle:
 
 ## 12. Open Architecture Questions
 
-- Chain scope default: per workload, per tenant, or global.
+- ~~Chain scope default: per workload, per tenant, or global.~~ **Resolved** (2026-04-17): Per-workload via `tc.workload_id` container label (GAP-11).
 - Confirmation SLA target from commit accepted to backend confirmed.
-- Canonical mandatory fields for stable instance mapping across restarts/replacements.
+- ~~Canonical mandatory fields for stable instance mapping across restarts/replacements.~~ **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`; one `create→rm` lifecycle = one instance. Cross-restart identity is `workload_id`'s role, not `instance_id`'s.
 - Worker ownership model: local ownership or shared lease coordination.
 
 ## 13. Related Documents

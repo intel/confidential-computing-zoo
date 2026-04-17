@@ -60,17 +60,25 @@ Each task has:
 
 ---
 
-### GAP-03: Workload / Instance Mapping Model
+### ~~GAP-03: Workload / Instance Mapping Model~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/`
+- **Scope**: `src/tc_api/trucon/`, `docktap/trucon_client.py`, `src/tc_api/tlog_client.py`
 - **References**: architecture.md §5.2
-- **Dependencies**: GAP-01 (Docktap integration provides instance lifecycle events)
-- **Current State**: No `workload_id`, `instance_id` tables or query paths. No correlation views.
+- **Dependencies**: GAP-01 ✅, GAP-11 ✅
+- **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-workload-instance-mapping/`
+- **Design Decisions** (confirmed 2026-04-17):
+  - **Instance identity (Q-03 resolved)**: `instance_id` = full 64-character Docker `container_id`. One `create→rm` lifecycle = one instance.
+  - **Data model**: No separate mapping tables. `instance_id TEXT` column added to `commit_queue`; workload→instance→event queries derived via SQL aggregation.
+  - **Metadata flow**: `instance_id` is caller-provided metadata on `CommitRequest` (same pattern as `chain_id`), outside the DSSE signed predicate.
+  - **Query endpoints**: `GET /workloads/{id}/instances`, `GET /instances/{id}/events`, `GET /workloads/{id}/events` on TruCon.
+  - **Docktap**: Passes `container_id` as `instance_id` for container lifecycle events; `null` for `pull` operations.
 - **Acceptance Criteria**:
-  1. SQLite tables for `workload_id → instance_id[]` and `instance_id → event_id[]` mappings.
-  2. TruCon endpoints to query mappings (e.g., `GET /workloads/{id}/instances`, `GET /instances/{id}/events`).
-  3. Audit tooling can resolve workload → instance → event chain relationships.
+  1. `commit_queue` includes `instance_id TEXT` column with composite index on `(chain_id, instance_id)`.
+  2. TruCon query endpoints for workload→instance and instance→event lookups.
+  3. Docktap and tc_api attach `instance_id` to commit requests when applicable.
+  4. Audit tooling can resolve workload → instance → event chain relationships.
+- **OpenSpec**: `openspec/changes/archive/2026-04-17-workload-instance-mapping/`
 
 ---
 
@@ -299,7 +307,7 @@ These are not implementation tasks but **design decisions** that should be resol
 |----|----------|--------|------------------|--------|
 | Q-01 | Chain scope default: per workload, per tenant, or global? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): Per-workload via `tc.workload_id` container label. Implemented in GAP-01 (default chain) + GAP-11 (per-workload assignment). |
 | Q-02 | Confirmation SLA target from commit to backend confirmed? | GAP-04 | architecture.md §12 | Open |
-| Q-03 | Canonical mandatory fields for stable instance mapping across restarts? | GAP-03 | architecture.md §12 | Open |
+| Q-03 | Canonical mandatory fields for stable instance mapping across restarts? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`. One `create→rm` lifecycle = one instance. No cross-restart identity — that's `workload_id`'s role. |
 | Q-04 | Worker ownership model: local ownership or shared lease? | — | architecture.md §12 | Open |
 | Q-05 | How to handle runtimes that allow quote/report reads but not MR extend? | GAP-05 | trusted-log/architecture.md §Trust Log Initialization | Open |
 
@@ -310,11 +318,11 @@ These are not implementation tasks but **design decisions** that should be resol
 ```
 GAP-01 (Docktap → TruCon, v1 default chain) ✅
   │
-  ├──▶ GAP-11 (Per-Workload Chain Assignment) ← **next**
+  ├──▶ GAP-11 (Per-Workload Chain Assignment) ✅
   │         │
   │         ▼
-  │    Q-01 ──────┐
-  │    Q-03 ──────┼──▶ GAP-03 (Mapping Model)
+  │    Q-01 ✅ ────┐
+  │    Q-03 ✅ ────┼──▶ GAP-03 (Mapping Model) ✅
   │               │
   └───────────────┘
 
@@ -323,13 +331,13 @@ GAP-07 (On-Chain Adapter) ── standalone
 GAP-08 (Feature-Flag Fallback) ── standalone
 GAP-09 (Non-TEE Ordering) ✅ ── standalone
 GAP-10 (Service Auth Phase A) ✅ ── standalone
-GAP-11 (Per-Workload Chain) ◀── GAP-01 ✅
+GAP-11 (Per-Workload Chain) ✅
 GAP-12 (Service Auth Phase B) ◀── GAP-10 ✅ ── LOW priority
 
 FIX-03 (SubmitResult) ── standalone
 FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03
 ```
 
 ---
@@ -350,12 +358,15 @@ FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 **Phase 3 — Docktap Integration** (in progress):
 8. ~~`GAP-01`~~ ✅ completed 2026-04-17
 9. ~~`GAP-11`~~ ✅ completed 2026-04-17
-10. `GAP-03` — Workload/instance mapping (requires Q-01 fully resolved, Q-03)
+10. ~~`GAP-03`~~ ✅ completed 2026-04-17
 11. ~~`GAP-10`~~ ✅ completed 2026-04-17 (Phase A — Bearer token)
 
-**Phase 4 — Extensions**:
-12. `GAP-07` — On-chain backend adapter
-13. `GAP-08` — Feature-flag fallback
-14. `FIX-03` — SubmitResult exposure
-15. `FIX-04` — Entry type enrichment (Docktap and REST both benefit)
-16. `GAP-12` — Service auth Phase B (mTLS / Unix socket credentials)
+**Phase 4 — Trust chain completion**:
+12. `GAP-05` — Event Log 0 / baseline record (after Q-05 resolved)
+
+**Phase 5 — Extensions**:
+13. `GAP-07` — On-chain backend adapter
+14. `GAP-08` — Feature-flag fallback
+15. `FIX-03` — SubmitResult exposure
+16. `FIX-04` — Entry type enrichment (Docktap and REST both benefit)
+17. `GAP-12` — Service auth Phase B (mTLS / Unix socket credentials)
