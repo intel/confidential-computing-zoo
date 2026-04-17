@@ -225,9 +225,9 @@ class TrustedLogAPI:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return CommitQueueStatus(
-                    has_queued_records=data.get("queued_count", 0) > 0,
-                    queued_record_count=data.get("queued_count", 0),
-                    next_record_id=None,
+                    has_queued_records=data.get("has_queued_records", False),
+                    queued_record_count=data.get("queued_record_count", 0),
+                    next_record_id=data.get("next_record_id"),
                 )
         except Exception as e:
             logger.warning("Could not reach TruCon for queue status: %s", e)

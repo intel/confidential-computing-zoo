@@ -189,19 +189,18 @@ Each task has:
 
 ---
 
-### FIX-02: `GET /status` Response Shape Mismatches `LatestState` / `CommitQueueStatus`
+### ~~FIX-02: `GET /status` Response Shape Mismatches `LatestState` / `CommitQueueStatus`~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/tlog/types.py`
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/tlog_client.py`
 - **References**: trusted-log/architecture.md §Data Structures
-- **Current Behavior**: `GET /status` returns `QueueStatusResponse(queued_count, failed_count, next_sequence_num)`.
-- **Architecture Requires**:
-  - `CommitQueueStatus`: `has_queued_records: bool`, `queued_record_count: int`, `next_record_id: Optional[str]`
-  - `LatestState`: `latest_confirmed_log_id`, `pending_record_count`, `pending_event_ids[]`, `latest_mr_value`
+- **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-status-response-fix/`
 - **Acceptance Criteria**:
-  1. `GET /status` response matches the `CommitQueueStatus` contract (use `next_record_id`, not `next_sequence_num`).
-  2. A separate endpoint or extended response provides `LatestState` fields: `latest_confirmed_log_id`, `pending_event_ids[]`, `latest_mr_value`.
-  3. Type definitions in `tlog/types.py` match the actual API response.
+  1. ✅ `GET /status` returns `CommitQueueStatusResponse` matching `CommitQueueStatus` contract (`has_queued_records`, `queued_record_count`, `next_record_id`) plus granular GAP-06 counts.
+  2. ✅ New `GET /state` endpoint returns `LatestStateResponse` with `latest_confirmed_log_id`, `pending_event_ids[]`, `latest_mr_value` for default chain.
+  3. ✅ `tlog_client.py` properly maps new field names and populates `next_record_id`.
+  4. ✅ Old `QueueStatusResponse` model removed.
+- **Tests**: `tests/test_status_response.py` (15 tests, all passing); 73 total regression pass
 
 ---
 
@@ -262,25 +261,24 @@ GAP-08 (Feature-Flag Fallback) ── standalone
 GAP-09 (Non-TEE Ordering) ── standalone
 GAP-10 (Service Auth) ── standalone
 
-FIX-02 (Status Response) ── standalone
 FIX-03 (SubmitResult) ── standalone
 FIX-04 (Entry Type) ── standalone
 
-✅ DONE: GAP-02, FIX-01, GAP-06
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02
 ```
 
 ---
 
 ## Suggested Execution Order
 
-**Phase 1 — Fix inconsistencies & foundational gaps** (no design questions needed):
+**Phase 1 — Fix inconsistencies & foundational gaps** ✅ COMPLETE:
 1. ~~`FIX-01`~~ ✅ completed 2026-04-16
 2. ~~`GAP-02`~~ ✅ completed 2026-04-16
 3. ~~`GAP-06`~~ ✅ completed 2026-04-16
-4. `FIX-02` — Status response shape (MEDIUM, standalone) ← **next**
+4. ~~`FIX-02`~~ ✅ completed 2026-04-17
 
-**Phase 2 — Core infrastructure** (all Phase 1 dependencies met):
-5. `GAP-04` — Observability metrics (dependencies GAP-02 ✅, GAP-06 ✅ — ready)
+**Phase 2 — Core infrastructure** (Phase 1 done, ready to start):
+5. `GAP-04` — Observability metrics (all dependencies met) ← **next**
 6. `GAP-05` — Event Log 0 (after Q-05 resolved)
 7. `GAP-09` — Non-TEE ordering mode
 

@@ -18,7 +18,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -32,6 +32,7 @@ from .database import (
     get_db_connection,
     get_failed_by_chain,
     get_highest_extended_record,
+    get_latest_state,
     get_pending_by_chain,
     get_queue_stats,
     get_record_by_idempotency_key,
@@ -74,10 +75,19 @@ class ChainStateResponse(BaseModel):
     mr_value: Optional[str] = None
     updated_at: Optional[str] = None
 
-class QueueStatusResponse(BaseModel):
-    queued_count: int
-    failed_count: int
-    next_sequence_num: Optional[int] = None
+class CommitQueueStatusResponse(BaseModel):
+    has_queued_records: bool
+    queued_record_count: int
+    next_record_id: Optional[str] = None
+    submitting_count: int = 0
+    failed_retryable_count: int = 0
+    failed_terminal_count: int = 0
+
+class LatestStateResponse(BaseModel):
+    latest_confirmed_log_id: Optional[str] = None
+    pending_record_count: int = 0
+    pending_event_ids: List[str] = []
+    latest_mr_value: Optional[str] = None
 
 class ChainEntryResult(BaseModel):
     seq: int
@@ -405,11 +415,25 @@ def get_chain_state_endpoint(chain_id: str):
     )
 
 
-@app.get("/status", response_model=QueueStatusResponse)
+@app.get("/status", response_model=CommitQueueStatusResponse)
 def get_status():
-    """Return queue statistics."""
+    """Return queue statistics matching CommitQueueStatus contract."""
     stats = get_queue_stats()
-    return QueueStatusResponse(**stats)
+    return CommitQueueStatusResponse(
+        has_queued_records=stats['queued_count'] > 0,
+        queued_record_count=stats['queued_count'],
+        next_record_id=stats.get('next_record_id'),
+        submitting_count=stats['submitting_count'],
+        failed_retryable_count=stats['failed_retryable_count'],
+        failed_terminal_count=stats['failed_terminal_count'],
+    )
+
+
+@app.get("/state", response_model=LatestStateResponse)
+def get_state():
+    """Return LatestState for the default chain."""
+    state = get_latest_state('default')
+    return LatestStateResponse(**state)
 
 
 @app.get("/verify-chain/{chain_id}", response_model=ChainVerificationResponse)

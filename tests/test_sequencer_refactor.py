@@ -186,6 +186,7 @@ class TestDatabaseSchema:
         assert stats["queued_count"] == 2
         assert stats["failed_terminal_count"] == 1
         assert stats["next_sequence_num"] == 1
+        assert stats["next_record_id"] == "rec-1"
 
 
 # ===========================================================================

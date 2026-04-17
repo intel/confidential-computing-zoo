@@ -285,15 +285,41 @@ def get_queue_stats(db_path: str = DB_PATH) -> Dict[str, Any]:
         failed_terminal = conn.execute(
             "SELECT COUNT(*) FROM commit_queue WHERE status = 'FAILED_TERMINAL'"
         ).fetchone()[0]
-        next_seq = conn.execute(
-            "SELECT MIN(sequence_num) FROM commit_queue WHERE status = 'PENDING' AND rtmr_extended = 1"
-        ).fetchone()[0]
+        next_row = conn.execute(
+            "SELECT sequence_num, record_id FROM commit_queue WHERE status = 'PENDING' AND rtmr_extended = 1 ORDER BY sequence_num ASC LIMIT 1"
+        ).fetchone()
+        next_seq = next_row[0] if next_row else None
+        next_record_id = next_row[1] if next_row else None
         return {
             'queued_count': pending,
             'submitting_count': submitting,
             'failed_retryable_count': failed_retryable,
             'failed_terminal_count': failed_terminal,
             'next_sequence_num': next_seq,
+            'next_record_id': next_record_id,
+        }
+
+def get_latest_state(chain_id: str = 'default', db_path: str = DB_PATH) -> Dict[str, Any]:
+    """Get LatestState for a chain: confirmed head + pending summary."""
+    with get_db_connection(db_path) as conn:
+        state = conn.execute(
+            'SELECT head_log_id, mr_value FROM chain_state WHERE chain_id = ?',
+            (chain_id,)
+        ).fetchone()
+        latest_confirmed_log_id = state[0] if state else None
+        latest_mr_value = state[1] if state else None
+
+        pending_rows = conn.execute(
+            "SELECT event_id FROM commit_queue WHERE chain_id = ? AND status = 'PENDING' ORDER BY sequence_num ASC",
+            (chain_id,)
+        ).fetchall()
+        pending_event_ids = [row[0] for row in pending_rows if row[0] is not None]
+
+        return {
+            'latest_confirmed_log_id': latest_confirmed_log_id,
+            'pending_record_count': len(pending_rows),
+            'pending_event_ids': pending_event_ids,
+            'latest_mr_value': latest_mr_value,
         }
 
 def reset_submitting_to_pending(db_path: str = DB_PATH) -> int:
