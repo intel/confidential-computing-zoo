@@ -11,6 +11,7 @@ Docktap is a Unix socket proxy for Docker API traffic that:
 - captures operation metadata and response status
 - tracks operation relationships for pull/create/start/stop/rm flows
 - submits signed DSSE bundles to TruCon for trusted event recording
+- maintains bounded local routing, mapping, and retry state via periodic garbage collection
 - emits structured JSON logs for audit and troubleshooting
 - exposes an HTTP health endpoint (`/healthz`) for container orchestration
 
@@ -64,6 +65,12 @@ Docker CLI (DOCKER_HOST=unix:///tmp/test-stream.sock)
   - HTTP request/response parsing helpers
   - operation classification (`get_operation_type`)
   - response enrichment and JSON logging
+- `workload_store.py`
+  - persisted container-to-workload mappings on tmpfs
+  - lifecycle metadata for `created_at`, `last_seen_at`, `removed_at`, and `last_operation`
+- `trucon_client.py`
+  - TruCon commit client and bounded retry bookkeeping
+  - local retry retention for pending, acknowledged, and terminal outcomes
 - `stream_test.py`
   - lightweight runtime launcher for the `/tmp/test-stream.sock` path
 - `test_suite.py`
@@ -121,6 +128,15 @@ Core structure in `proxy/operation_log.py`:
     - `find_create_for_container`
   - retention helper:
     - `cleanup_old_operations(max_age_hours=24)`
+
+- `WorkloadStore`
+  - persisted mapping state for `container_id -> workload_id`
+  - lifecycle metadata:
+    - `created_at`
+    - `last_seen_at`
+    - `removed_at`
+    - `last_operation`
+  - removed-container cleanup after an rm grace window
 
 ## Docker Operation Mapping & Lifecycle
 
@@ -209,6 +225,11 @@ Common socket defaults:
 
 - `--socket-path` / `SOCK_BRIDGE_SOCKET`
 - `--docker-socket-path` / `DOCKER_SOCKET`
+- `DOCKTAP_GC_INTERVAL_SECONDS`
+- `DOCKTAP_OPERATION_RETENTION_HOURS`
+- `DOCKTAP_REMOVED_CONTAINER_RETENTION_HOURS`
+- `DOCKTAP_ACKED_RETRY_RETENTION_HOURS`
+- `DOCKTAP_TERMINAL_RETRY_RETENTION_HOURS`
 
 ## Test Strategy
 
@@ -232,3 +253,5 @@ Representative modes:
 - For test automation and current proxy behavior validation, use `stream_test.py` indirectly via `test_suite.py`.
 - Keep tracker and parsing logic in `proxy/operation_log.py` to avoid duplicate behavior across runtimes.
 - `stream_test.py` and `main.py` now share behavior through `DockerProxyServer.handle_client`.
+- Docktap local state is operational cache and short-lived diagnostics only. Replay correctness comes from TruCon and immutable backends, not from Docktap-local retention.
+- A background sweeper periodically removes expired operation records, removed-container mappings, and resolved retry records while preserving retryable items until they are acknowledged or terminally exhausted.

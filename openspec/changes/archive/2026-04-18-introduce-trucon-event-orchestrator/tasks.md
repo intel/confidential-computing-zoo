@@ -8,12 +8,12 @@
 
 - [x] 2.1 Identify current trusted-event write points in existing build/publish/launch control-plane flows
 - [x] 2.2 Replace direct trusted-log mutation path with TruCon-boundary integration points while preserving current external API response behavior
-- [ ] 2.3 Add integration tests validating that build/publish/launch flows still return expected status fields while trusted events route through TruCon contracts
+- [x] 2.3 Add integration tests validating that build/publish/launch flows still return expected status fields while trusted events route through TruCon contracts
 
 ## 3. Docktap Process Integration
 
 - [x] 3.1 Define Docktap event emission contract to TruCon for runtime interception and lifecycle events
-- [ ] 3.2 Add Docktap-side retry and acknowledgement handling for transient TruCon submission failures
+- [x] 3.2 Add Docktap-side retry and acknowledgement handling for transient TruCon submission failures
 - [x] 3.3 Add integration tests for concurrent event submissions from Docktap and REST workers against shared workload contexts
 
 ## 4. Instance Mapping Capability
@@ -26,4 +26,4 @@
 
 - [x] 5.1 Implement queue worker retry/backoff behavior with bounded retry policy and failure classification
 - [x] 5.2 Add operational metrics for queue depth, submission latency, retry counts, and confirmation lag
-- [ ] 5.3 Add rollout and rollback runbook steps with feature-flag controls for migration from legacy write path
+- [x] 5.3 Add TruCon-only rollout and degraded-mode runbook guidance covering process supervision, parity checks, and operator actions without legacy write-path fallback

@@ -1,8 +1,5 @@
 """Unit tests for docktap/workload_store.py"""
 
-import os
-import tempfile
-
 import pytest
 
 from workload_store import WorkloadStore
@@ -65,3 +62,35 @@ class TestWorkloadStore:
         store.put("c1", "w1")
         store.init_db()  # second call should not lose data
         assert store.get("c1") == "w1"
+
+    def test_metadata_fields_are_recorded(self, store):
+        store.put("abc123", "my-app")
+        metadata = store.get_metadata("abc123")
+
+        assert metadata is not None
+        assert metadata["workload_id"] == "my-app"
+        assert metadata["last_operation"] == "create"
+        assert metadata["last_seen_at"] is not None
+        assert metadata["removed_at"] is None
+
+    def test_touch_updates_lifecycle_state(self, store):
+        store.put("abc123", "my-app")
+        store.touch("abc123", "stop")
+
+        metadata = store.get_metadata("abc123")
+        assert metadata is not None
+        assert metadata["last_operation"] == "stop"
+        assert metadata["removed_at"] is None
+
+    def test_removed_mapping_cleanup_requires_terminal_state(self, store):
+        store.put("abc123", "my-app")
+
+        assert store.cleanup_removed(max_age_hours=0) == 0
+        assert store.get("abc123") == "my-app"
+
+    def test_removed_mapping_cleanup_deletes_expired_rows(self, store):
+        store.put("abc123", "my-app")
+        store.touch("abc123", "rm")
+
+        assert store.cleanup_removed(max_age_hours=0) == 1
+        assert store.get("abc123") is None

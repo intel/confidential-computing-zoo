@@ -28,6 +28,12 @@ python -m tests.test_runner --type unit
 python -m tests.test_runner --type manual --name health
 ```
 
+## Operational Notes
+
+- TruCon is the sole supported trust-event path. The legacy direct trusted-log write path has been retired and is not a valid rollback target.
+- Recommended rollout posture is TruCon-only operation with process supervision, parity checks on critical flows, and degraded-mode handling that preserves external business results when trust-event submission is unavailable.
+- Docktap keeps only bounded local routing, mapping, and retry state. Replay and verification rely on TruCon and immutable backend state rather than Docktap-local persistence.
+
 ## API Endpoints
 
 ### 1. Build and Package

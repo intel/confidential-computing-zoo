@@ -8,8 +8,8 @@ restarts but are cleared on host reboot (which also destroys all containers).
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
 _DEFAULT_DB_PATH = os.environ.get(
     "DOCKTAP_WORKLOAD_DB", "/dev/shm/docktap/container_map.db"
@@ -50,25 +50,81 @@ class WorkloadStore:
             )
             """
         )
+        self._ensure_columns()
         self._conn.commit()
+
+    def _ensure_columns(self) -> None:
+        assert self._conn is not None, "call init_db() before schema migration"
+        existing_columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(container_workload)")
+        }
+        if "last_seen_at" not in existing_columns:
+            self._conn.execute(
+                "ALTER TABLE container_workload ADD COLUMN last_seen_at TEXT"
+            )
+            self._conn.execute(
+                "UPDATE container_workload SET last_seen_at = created_at WHERE last_seen_at IS NULL"
+            )
+        if "removed_at" not in existing_columns:
+            self._conn.execute(
+                "ALTER TABLE container_workload ADD COLUMN removed_at TEXT"
+            )
+        if "last_operation" not in existing_columns:
+            self._conn.execute(
+                "ALTER TABLE container_workload ADD COLUMN last_operation TEXT"
+            )
+            self._conn.execute(
+                "UPDATE container_workload SET last_operation = 'create' WHERE last_operation IS NULL"
+            )
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def put(self, container_id: str, workload_id: str) -> None:
+    def put(self, container_id: str, workload_id: str, operation: str = "create") -> None:
         """Persist a container → workload mapping (upsert)."""
         now = datetime.now(timezone.utc).isoformat()
+        removed_at = now if operation == "rm" else None
         with self._lock:
             assert self._conn is not None, "call init_db() before put()"
             self._conn.execute(
                 """
-                INSERT INTO container_workload (container_id, workload_id, created_at)
-                VALUES (?, ?, ?)
+                INSERT INTO container_workload (
+                    container_id,
+                    workload_id,
+                    created_at,
+                    last_seen_at,
+                    removed_at,
+                    last_operation
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(container_id) DO UPDATE SET workload_id = excluded.workload_id,
-                                                        created_at  = excluded.created_at
+                                                        last_seen_at = excluded.last_seen_at,
+                                                        removed_at = CASE
+                                                            WHEN excluded.last_operation = 'rm' THEN excluded.removed_at
+                                                            ELSE NULL
+                                                        END,
+                                                        last_operation = excluded.last_operation
                 """,
-                (container_id, workload_id, now),
+                (container_id, workload_id, now, now, removed_at, operation),
+            )
+            self._conn.commit()
+
+    def touch(self, container_id: str, operation: str) -> None:
+        """Refresh lifecycle metadata for an existing mapping row."""
+        now = datetime.now(timezone.utc).isoformat()
+        removed_at = now if operation == "rm" else None
+        with self._lock:
+            assert self._conn is not None, "call init_db() before touch()"
+            self._conn.execute(
+                """
+                UPDATE container_workload
+                SET last_seen_at = ?,
+                    removed_at = CASE WHEN ? = 'rm' THEN ? ELSE NULL END,
+                    last_operation = ?
+                WHERE container_id = ?
+                """,
+                (now, operation, removed_at, operation, container_id),
             )
             self._conn.commit()
 
@@ -81,3 +137,40 @@ class WorkloadStore:
                 (container_id,),
             ).fetchone()
             return row[0] if row else None
+
+    def get_metadata(self, container_id: str) -> Optional[Dict[str, Any]]:
+        """Return full lifecycle metadata for a persisted mapping row."""
+        with self._lock:
+            assert self._conn is not None, "call init_db() before get_metadata()"
+            row = self._conn.execute(
+                """
+                SELECT workload_id, created_at, last_seen_at, removed_at, last_operation
+                FROM container_workload WHERE container_id = ?
+                """,
+                (container_id,),
+            ).fetchone()
+            if not row:
+                return None
+            return {
+                "workload_id": row[0],
+                "created_at": row[1],
+                "last_seen_at": row[2],
+                "removed_at": row[3],
+                "last_operation": row[4],
+            }
+
+    def cleanup_removed(self, max_age_hours: float = 24) -> int:
+        """Delete mappings whose terminal rm grace window has expired."""
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        cutoff_str = cutoff.isoformat()
+        with self._lock:
+            assert self._conn is not None, "call init_db() before cleanup_removed()"
+            cursor = self._conn.execute(
+                """
+                DELETE FROM container_workload
+                WHERE removed_at IS NOT NULL AND removed_at < ?
+                """,
+                (cutoff_str,),
+            )
+            self._conn.commit()
+            return cursor.rowcount

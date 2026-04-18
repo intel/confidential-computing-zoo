@@ -1,6 +1,7 @@
 # Architecture Gap & Inconsistency Task Overview
 
 > Generated: 2026-04-16
+> Last Updated: 2026-04-18
 > Source: `docs/architecture.md`, `docs/trusted-log/architecture.md`
 > Purpose: Structured task list for closing gaps between architecture docs and implementation.
 
@@ -242,11 +243,11 @@ Each task has:
 - **References**: architecture.md §4.2, §7; Q-01
 - **Dependencies**: GAP-01 ✅
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-per-workload-chain-assignment/`
-- **Design Notes**: Container label convention (`--label tc.workload_id=xxx`) extracted from `docker create` request body. Subsequent operations resolve workload_id via Docktap's `OperationTracker`. Containers without the label fall back to `"default"` chain.
+- **Design Notes**: Container label convention (`--label io.trucon.workload-id=xxx`) extracted from `docker create` request body. Subsequent operations resolve workload_id via Docktap's persisted mapping state. Containers without the label fall back to `"default"` chain.
 - **Acceptance Criteria**:
-  1. ✅ Docktap extracts `tc.workload_id` from container labels during `create` operations.
+  1. ✅ Docktap extracts `io.trucon.workload-id` from container labels during `create` operations.
   2. ✅ Subsequent lifecycle events for the same container use the resolved `workload_id` as `chain_id`.
-  3. ✅ Containers without `tc.workload_id` label default to `"default"` chain.
+  3. ✅ Containers without `io.trucon.workload-id` label default to `"default"` chain.
   4. ✅ Tests cover label extraction, cross-operation chain resolution, and fallback behavior.
 - **Tests**: `docktap/tests/test_workload_chain_routing.py`
 
@@ -352,36 +353,41 @@ Each task has:
 
 ---
 
-### GAP-15: Docktap In-Memory Retention / Garbage Collection
+### ~~GAP-15: Docktap In-Memory Retention / Garbage Collection~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `docktap/proxy/operation_log.py`, `docktap/workload_store.py`
+- **Scope**: `docktap/main.py`, `docktap/proxy/operation_log.py`, `docktap/workload_store.py`, `docktap/trucon_client.py`
 - **References**: docktap/architecture.md §Data Model (`cleanup_old_operations(max_age_hours=24)`)
-- **Dependencies**: GAP-13 (meaningful only after Docktap is deployed)
-- **Current State**: `OperationTracker.cleanup_old_operations()` method exists in `operation_log.py` but is **never called** by any runtime code path — no background thread or periodic trigger invokes it. The `WorkloadStore` SQLite table in `workload_store.py` also has no retention policy; rows accumulate indefinitely. In long-running deployments, both data structures will grow without bound.
+- **Dependencies**: GAP-13 ✅
+- **Completed**: 2026-04-18 | Archive: `openspec/changes/archive/2026-04-18-docktap-local-state-retention-and-runbook-closure/`
+- **Design Notes**:
+  - **Sweeper model**: `docktap/main.py` starts a periodic local-state sweeper thread.
+  - **Two-layer retention**: operation tracker entries, removed-container workload mappings, and resolved retry bookkeeping are cleaned independently.
+  - **Replay boundary**: Docktap-local state is treated as bounded operational cache only; replay and verification remain dependent on TruCon and immutable backends.
+  - **Configuration**: Retention windows and sweep interval are controlled via environment variables.
 - **Acceptance Criteria**:
-  1. Periodic cleanup of `OperationTracker` entries (e.g., background thread or call after every N operations).
-  2. Retention policy for `WorkloadStore` rows (e.g., remove records for containers that have been `rm`'d for > N hours).
-  3. Configurable retention parameters via environment variables.
+  1. ✅ Periodic cleanup of `OperationTracker` entries via Docktap background sweeper.
+  2. ✅ Retention policy for removed-container `WorkloadStore` rows via `cleanup_removed()`.
+  3. ✅ Resolved retry bookkeeping cleanup via `cleanup_resolved_submissions()`.
+  4. ✅ Configurable retention parameters via environment variables (`DOCKTAP_GC_INTERVAL_SECONDS`, `DOCKTAP_OPERATION_RETENTION_HOURS`, `DOCKTAP_REMOVED_CONTAINER_RETENTION_HOURS`, `DOCKTAP_ACKED_RETRY_RETENTION_HOURS`, `DOCKTAP_TERMINAL_RETRY_RETENTION_HOURS`).
+- **Tests**: `docktap/tests/test_workload_store.py`, `docktap/tests/test_trucon_client.py`
 
 ---
 
 ### GAP-16: Architecture Documentation Sync
 
 - **Priority**: LOW
-- **Scope**: `docs/architecture.md`, `docs/trusted-log/architecture.md`, `docs/docktap/architecture.md`
+- **Scope**: `docs/architecture.md`, `docs/trusted-log/architecture.md`, `docs/trusted-log/api.md`, `docs/docktap/architecture.md`
 - **References**: All completed GAP/FIX tasks
 - **Dependencies**: None
-- **Current State**: Multiple architecture docs still contain stale "planned" / "implementation pending" / "Status: Design confirmed" annotations for features that have been fully implemented. Examples:
-  - `architecture.md` §4.2 Docktap: "Status: Design confirmed — implementation pending" → GAP-01 completed.
-  - `architecture.md` §5.2 Mapping Model: "Status: Design confirmed — implementation in progress (GAP-03)" → GAP-03 completed.
-  - `architecture.md` §6.2: "Status: Design confirmed — implementation pending (GAP-01)" → completed.
-  - `architecture.md` §4.3 "Planned" items list still shows Docktap event ingestion and Mapping model as planned with strikethrough — should be cleaned to final state.
-  - `trusted-log/architecture.md` and `trusted-log/api.md` reference `src/tc_api/trucon.py` (old single-file layout) instead of `src/tc_api/trucon/app.py`.
+- **Current State**: The main architecture docs have been substantially synced, including Docktap deployment, per-workload routing, bounded local retention, and TruCon-only rollout posture. The remaining gap is now narrower: a few trusted-log documents still describe outdated module paths or caller-facing contracts that no longer match the live implementation. Examples:
+  - `trusted-log/api.md` still references `src/tc_api/trucon.py` instead of `src/tc_api/trucon/app.py`.
+  - `trusted-log/architecture.md` still documents `SubmitResult` as a caller-facing submission contract even though runtime flows no longer expose it directly.
+  - `docs/overview_tasks.md` itself required status reconciliation after multiple archived changes.
 - **Acceptance Criteria**:
-  1. All "planned" / "pending" / "in progress" annotations updated to reflect completed status.
+  1. Remaining stale "planned" / "pending" / outdated contract annotations updated to reflect completed status and current runtime behavior.
   2. All file path references updated to current module layout (`trucon/app.py`, not `trucon.py`).
-  3. Mermaid diagrams updated to show Docktap as implemented (not dashed/planned).
+  3. Mermaid diagrams and API/lifecycle narratives updated to show Docktap and TruCon flows as implemented, not planned.
   4. No functional changes to code.
 
 ---
@@ -408,7 +414,7 @@ These are not implementation tasks but **design decisions** that should be resol
 
 | ID | Question | Blocks | Architecture Ref | Status |
 |----|----------|--------|------------------|--------|
-| Q-01 | Chain scope default: per workload, per tenant, or global? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): Per-workload via `tc.workload_id` container label. Implemented in GAP-01 (default chain) + GAP-11 (per-workload assignment). |
+| Q-01 | Chain scope default: per workload, per tenant, or global? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): Per-workload via `io.trucon.workload-id` container label. Implemented in GAP-01 (default chain) + GAP-11 (per-workload assignment). |
 | Q-02 | Confirmation SLA target from commit to backend confirmed? | GAP-04 | architecture.md §12 | Open |
 | Q-03 | Canonical mandatory fields for stable instance mapping across restarts? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`. One `create→rm` lifecycle = one instance. No cross-restart identity — that's `workload_id`'s role. |
 | Q-04 | Worker ownership model: local ownership or shared lease? | — | architecture.md §12 | Open |
@@ -429,7 +435,7 @@ GAP-01 (Docktap → TruCon, v1 default chain) ✅
   │               │
   └───────────────┘
 
-GAP-01 ✅ + GAP-10 ✅ + GAP-11 ✅ ──▶ GAP-13 (Docktap Deployment) ✅ ──▶ GAP-15 (Retention/GC)
+GAP-01 ✅ + GAP-10 ✅ + GAP-11 ✅ ──▶ GAP-13 (Docktap Deployment) ✅ ──▶ GAP-15 (Retention/GC) ✅
 
 GAP-05 (Event Log 0) ✅ ── standalone (Q-05 resolved: TDX RTMR[2] only)
 GAP-07 (On-Chain Adapter) ── standalone (blocked: target chain selection)
@@ -445,7 +451,7 @@ FIX-03 (SubmitResult) ── standalone
 FIX-04 (Entry Type) ✅ ── completed
 FIX-05 (OPEN Dead Code) ── standalone (LOW)
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05, FIX-04, GAP-13
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05, FIX-04, GAP-13, GAP-15
 ✗ CLOSED: GAP-08
 ```
 
@@ -459,12 +465,12 @@ FIX-05 (OPEN Dead Code) ── standalone (LOW)
 3. ~~`GAP-06`~~ ✅ completed 2026-04-16
 4. ~~`FIX-02`~~ ✅ completed 2026-04-17
 
-**Phase 2 — Core infrastructure** (in progress):
+**Phase 2 — Core infrastructure** ✅ COMPLETE:
 5. ~~`GAP-04`~~ ✅ completed 2026-04-17
-6. `GAP-05` — Event Log 0 (Q-05 resolved — ready for implementation)
+6. ~~`GAP-05`~~ ✅ completed 2026-04-17 — Event Log 0 / baseline record
 7. ~~`GAP-09`~~ ✅ completed 2026-04-17
 
-**Phase 3 — Docktap Integration** (in progress):
+**Phase 3 — Docktap Integration** ✅ COMPLETE:
 8. ~~`GAP-01`~~ ✅ completed 2026-04-17
 9. ~~`GAP-11`~~ ✅ completed 2026-04-17
 10. ~~`GAP-03`~~ ✅ completed 2026-04-17
@@ -476,7 +482,7 @@ FIX-05 (OPEN Dead Code) ── standalone (LOW)
 **Phase 5 — Deployment & Operational Tooling**:
 13. ~~`GAP-13`~~ ✅ completed 2026-04-17 — Docktap deployment integration
 14. `GAP-14` — Chain verification CLI tool
-15. `GAP-15` — Docktap in-memory retention / garbage collection
+15. ~~`GAP-15`~~ ✅ completed 2026-04-18 — Docktap local-state retention / garbage collection
 
 **Phase 6 — Cleanup & Extensions**:
 16. `FIX-03` — SubmitResult exposure or removal
@@ -488,10 +494,13 @@ FIX-05 (OPEN Dead Code) ── standalone (LOW)
 
 ---
 
-## Part E: Active Change Reconciliation
+## Part E: Current Remaining Work Snapshot
 
-### introduce-trucon-event-orchestrator remaining items
+The items below are the primary tasks that remain genuinely open after reconciling this table with the live code and archived changes:
 
-- `2.3` REST control-plane integration coverage is still missing. Current code routes build, publish, and launch writes through `TrustedLogAPI.commit_record()` and `DockerService.commit_and_save_receipt()`, but there is no focused integration test that proves those endpoints keep their expected status/result fields while the trust-event path is routed through TruCon.
-- `3.2` Docktap retry and acknowledgement handling is not implemented. `docktap/trucon_client.py` performs a single best-effort `POST /commit`; failures are logged and returned as `False`, with no retry queue, no bounded retry state, and no acknowledgement protocol.
-- `5.3` is no longer a valid implementation target as written. The requested legacy write-path feature-flag rollback was later closed as Won't Do in `GAP-08`, because the legacy direct path has been removed and RTMR chain integrity forbids fallback outside TruCon's serialized path. If this change stays active, replace this task with operational rollout/runbook guidance based on process supervision and parity checks rather than feature-flag fallback.
+- `GAP-14` — verification CLI for operators and auditors
+- `GAP-12` — stronger internal service authentication for multi-node or multi-tenant deployments
+- `FIX-03` — decide whether to expose or remove `SubmitResult`
+- `FIX-05` — remove or justify the unused `SubmitStatus.OPEN` state
+- `GAP-16` — finish the last trusted-log documentation sync items
+- `GAP-07` — on-chain backend adapter, still blocked by target chain selection

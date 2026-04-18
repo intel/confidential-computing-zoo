@@ -69,8 +69,9 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Submits each operation as an independent signed DSSE commit to TruCon `POST /commit`.
 - Shares tc_api's OIDC signing infrastructure (`sigstore.oidc.detect_credential()`); token re-acquired per commit.
 - Uses `Entry(key, value)` objects imported from `tc_api.tlog.types` for event data (same types as tc_api). Values are native JSON-compatible types (not stringified).
-- Routes events to per-workload chains via `tc.workload_id` container label; containers without the label default to `"default"` chain.
+- Routes events to per-workload chains via `io.trucon.workload-id` container label; containers without the label default to `"default"` chain.
 - Best-effort submission: TruCon failures log a warning but do not block Docker API responses.
+- Retains local routing, mapping, and retry state only for bounded operational windows; replay and verification rely on TruCon and immutable backends, not on Docktap-local persistence.
 - Exposes HTTP health endpoint (`/healthz` on configurable port, default 8002) for container health checks.
 - Docktap down = Docker CLI unavailable (by design — all operations must be recorded).
 - Does not directly write trust chain entries — all chain mutations go through TruCon.
@@ -154,9 +155,9 @@ Correlation queries exposed by TruCon:
 1. Docktap intercepts Docker API call (`pull`/`create`/`start`/`stop`/`rm`) on the proxy socket.
 2. Docktap forwards request to Docker daemon, receives response, and returns it to CLI.
 3. Docktap constructs `Entry(key, value)` objects from operation metadata (values are native JSON types) and signs a DSSE bundle using ambient OIDC credentials.
-4. Docktap POSTs the signed bundle to TruCon `POST /commit` with `chain_id` resolved from `tc.workload_id` container label (defaults to `"default"`).
+4. Docktap POSTs the signed bundle to TruCon `POST /commit` with `chain_id` resolved from `io.trucon.workload-id` container label (defaults to `"default"`).
 5. TruCon performs idempotency and ordering checks, commits and queues event.
-6. If TruCon is unreachable or returns an error, Docktap logs a warning and continues (best-effort).
+6. If TruCon is unreachable or returns a transient error, Docktap records bounded local retry state after the Docker response is already returned, then retries asynchronously until TruCon acknowledges the commit or retry exhaustion is reached.
 7. Submission worker confirms events to immutable backends asynchronously.
 
 ### 6.3 Query and Correlation
@@ -224,6 +225,7 @@ Phase B would also enable per-caller identity differentiation (tc_api vs Docktap
 - TruCon deployed as single-instance service (`--workers 1`) to preserve lock-based serialization.
 - Submission daemon runs as an embedded thread inside TruCon.
 - Docktap deployed as an independent container (Docker Compose) or background process (`start.sh`). Shares the same Docker image as tc_api and TruCon with a different command override. Exposes proxy socket via bind-mount (`/var/run/docktap/`) and health endpoint on port 8002.
+- Docktap also owns a periodic local-state sweeper that bounds in-memory operation state, removed-container mappings, and resolved retry bookkeeping via environment-configured retention windows.
 - SQLite commit queue stored in ephemeral tmpfs (`/dev/shm/`) for confidential computing compliance.
 - `TRUCON_SERVICE_TOKEN` shared across all three services: via environment variable inheritance (bare-metal) or `.env` file interpolation (Docker Compose).
 - Docktap failure model: Docktap down = Docker CLI unavailable. Automatic restart via `restart: unless-stopped` (compose) or process supervision (bare-metal).
@@ -239,11 +241,11 @@ Phase B would also enable per-caller identity differentiation (tc_api vs Docktap
 Rollback principle:
 
 - Keep external REST behavior stable.
-- ~~Use routing/feature controls to fail back to legacy write path when required.~~ Legacy path has been retired. TruCon is the sole trust event path; availability ensured via process supervision.
+- TruCon-only operation is the supported migration target. Availability and degraded-mode handling rely on process supervision, parity checks, and best-effort business-flow continuity rather than legacy write-path fallback.
 
 ## 12. Open Architecture Questions
 
-- ~~Chain scope default: per workload, per tenant, or global.~~ **Resolved** (2026-04-17): Per-workload via `tc.workload_id` container label (GAP-11).
+- ~~Chain scope default: per workload, per tenant, or global.~~ **Resolved** (2026-04-17): Per-workload via `io.trucon.workload-id` container label (GAP-11).
 - Confirmation SLA target from commit accepted to backend confirmed.
 - ~~Canonical mandatory fields for stable instance mapping across restarts/replacements.~~ **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`; one `create→rm` lifecycle = one instance. Cross-restart identity is `workload_id`'s role, not `instance_id`'s.
 - Worker ownership model: local ownership or shared lease coordination.

@@ -137,6 +137,8 @@ Implement Immutable Log Adapter for different immutable backends while preservin
 
 This layering allows backend evolution (for example adding new on-chain or transparent-log providers) without changing caller behavior. The split architecture allows tc_api to scale horizontally while the TruCon serializes all chain-mutating operations.
 
+Docktap-local routing state, workload mappings, and retry bookkeeping are operational cache and short-lived diagnostics only. Garbage-collecting that local state does not change replay correctness, because replay and verification depend on TruCon state and immutable backend records rather than Docktap-local persistence.
+
 ### External Systems
 
 Trusted Log coordinates with:

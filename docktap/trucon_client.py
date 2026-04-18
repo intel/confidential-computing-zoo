@@ -50,6 +50,7 @@ class PendingSubmission:
     last_error: Optional[str] = None
     record_id: Optional[str] = None
     sequence_num: Optional[int] = None
+    resolved_at: Optional[float] = None
 
 
 class RetryQueuedError(RuntimeError):
@@ -100,6 +101,8 @@ class TruConCommitter:
         retry_base_delay: Optional[float] = None,
         retry_max_delay: Optional[float] = None,
         retry_poll_interval: float = 0.25,
+        acknowledged_retention_hours: Optional[float] = None,
+        terminal_retention_hours: Optional[float] = None,
         start_retry_worker: bool = True,
     ) -> None:
         self._trucon_url = trucon_url or os.environ.get(
@@ -114,6 +117,16 @@ class TruConCommitter:
         )
         self._retry_max_delay = retry_max_delay if retry_max_delay is not None else float(
             os.environ.get("DOCKTAP_TRUCON_RETRY_MAX_DELAY", "30.0")
+        )
+        self._acknowledged_retention_hours = (
+            acknowledged_retention_hours
+            if acknowledged_retention_hours is not None
+            else float(os.environ.get("DOCKTAP_ACKED_RETRY_RETENTION_HOURS", "24"))
+        )
+        self._terminal_retention_hours = (
+            terminal_retention_hours
+            if terminal_retention_hours is not None
+            else float(os.environ.get("DOCKTAP_TERMINAL_RETRY_RETENTION_HOURS", "168"))
         )
         self._retry_poll_interval = retry_poll_interval
         self._retry_lock = threading.Lock()
@@ -179,9 +192,32 @@ class TruConCommitter:
                 "last_error": submission.last_error,
                 "record_id": submission.record_id,
                 "sequence_num": submission.sequence_num,
+                "resolved_at": submission.resolved_at,
             }
             for submission in items
         ]
+
+    def cleanup_resolved_submissions(self, now: Optional[float] = None) -> int:
+        """Remove acknowledged or terminal retry records whose retention windows expired."""
+        current_time = time.monotonic() if now is None else now
+        ack_retention = self._acknowledged_retention_hours * 3600
+        terminal_retention = self._terminal_retention_hours * 3600
+
+        with self._retry_lock:
+            expired_event_ids = []
+            for event_id, submission in self._pending_submissions.items():
+                if submission.status == "retryable":
+                    continue
+                if submission.resolved_at is None:
+                    continue
+                age_seconds = current_time - submission.resolved_at
+                if submission.status == "acknowledged" and age_seconds >= ack_retention:
+                    expired_event_ids.append(event_id)
+                if submission.status == "failed_terminal" and age_seconds >= terminal_retention:
+                    expired_event_ids.append(event_id)
+            for event_id in expired_event_ids:
+                self._pending_submissions.pop(event_id, None)
+            return len(expired_event_ids)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -198,7 +234,7 @@ class TruConCommitter:
             if workload_id:
                 # Persist for future lookups
                 if self._workload_store and container_id:
-                    self._workload_store.put(container_id, workload_id)
+                    self._workload_store.put(container_id, workload_id, operation="create")
                 return workload_id
             return "default"
 
@@ -206,6 +242,7 @@ class TruConCommitter:
         if self._workload_store and container_id:
             stored = self._workload_store.get(container_id)
             if stored:
+                self._workload_store.touch(container_id, operation_type)
                 return stored
         return "default"
 
@@ -229,18 +266,21 @@ class TruConCommitter:
             submission.last_error = None
             submission.record_id = response.get("record_id")
             submission.sequence_num = response.get("sequence_num")
+            submission.resolved_at = time.monotonic()
             self._pending_submissions[submission.event_id] = submission
 
     def _mark_terminal(self, submission: PendingSubmission, error: Exception) -> None:
         with self._retry_lock:
             submission.status = "failed_terminal"
             submission.last_error = str(error)
+            submission.resolved_at = time.monotonic()
             self._pending_submissions[submission.event_id] = submission
 
     def _queue_retry(self, submission: PendingSubmission, error: Exception) -> None:
         with self._retry_lock:
             submission.status = "retryable"
             submission.last_error = str(error)
+            submission.resolved_at = None
             submission.next_attempt_at = time.monotonic() + self._compute_backoff_delay(submission.retry_attempts + 1)
             self._pending_submissions[submission.event_id] = submission
 

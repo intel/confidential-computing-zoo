@@ -235,6 +235,8 @@ class TestRetryAndAcknowledgement:
             max_retry_attempts=2,
             retry_base_delay=0.0,
             retry_max_delay=0.0,
+            acknowledged_retention_hours=0.0,
+            terminal_retention_hours=0.0,
         )
 
     def _signing_patches(self):
@@ -345,3 +347,68 @@ class TestRetryAndAcknowledgement:
         snapshot = committer.get_retry_snapshot()
         assert snapshot[0]["status"] == "failed_terminal"
         assert snapshot[0]["retry_attempts"] == 2
+
+    def test_retryable_items_are_not_gc_eligible(self):
+        committer = self._make_committer()
+        rec = _make_record(operation={"type": "start"}, container={"id": "abc123"})
+
+        with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("down")), \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
+             patch("trucon_client.IdentityToken", return_value="tok"), \
+             patch("trucon_client.SigningContext") as mock_ctx:
+            mock_ctx.production.return_value._rekor = None
+            mock_signer = MagicMock()
+            mock_bundle = MagicMock()
+            mock_bundle.to_json.return_value = '{"fake": "bundle"}'
+            mock_signer.sign_dsse.return_value = mock_bundle
+            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+
+            committer.submit_operation(rec, "start")
+
+        assert committer.cleanup_resolved_submissions(now=time.monotonic()) == 0
+        assert len(committer.get_retry_snapshot()) == 1
+
+    def test_acknowledged_items_are_gc_eligible_after_retention(self):
+        committer = self._make_committer()
+        rec = _make_record(operation={"type": "stop"}, container={"id": "xyz789"})
+
+        with patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 1}), \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
+             patch("trucon_client.IdentityToken", return_value="tok"), \
+             patch("trucon_client.SigningContext") as mock_ctx:
+            mock_ctx.production.return_value._rekor = None
+            mock_signer = MagicMock()
+            mock_bundle = MagicMock()
+            mock_bundle.to_json.return_value = '{"fake": "bundle"}'
+            mock_signer.sign_dsse.return_value = mock_bundle
+            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+
+            committer.submit_operation(rec, "stop")
+
+        assert committer.cleanup_resolved_submissions(now=time.monotonic()) == 1
+        assert committer.get_retry_snapshot() == []
+
+    def test_terminal_items_are_gc_eligible_after_retention(self):
+        committer = self._make_committer()
+        rec = _make_record(operation={"type": "rm"}, container={"id": "del456"})
+
+        with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("still-down")), \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
+             patch("trucon_client.IdentityToken", return_value="tok"), \
+             patch("trucon_client.SigningContext") as mock_ctx:
+            mock_ctx.production.return_value._rekor = None
+            mock_signer = MagicMock()
+            mock_bundle = MagicMock()
+            mock_bundle.to_json.return_value = '{"fake": "bundle"}'
+            mock_signer.sign_dsse.return_value = mock_bundle
+            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+
+            committer.submit_operation(rec, "rm")
+            committer.process_retry_queue(now=time.monotonic())
+            committer.process_retry_queue(now=time.monotonic())
+
+        assert committer.cleanup_resolved_submissions(now=time.monotonic()) == 1
+        assert committer.get_retry_snapshot() == []
