@@ -64,6 +64,27 @@ Backward-compatible wrappers still work:
 bash run_tests.sh --type all
 ```
 
+## Verification CLI Checks
+
+The operator-facing chain verification CLI can be exercised directly:
+
+```bash
+tc-verify default
+tc-verify default --json
+tc-verify default --signer-identity alice@example.com
+tc-verify default --expected-entry-count 12
+tc-verify default --fail-on-pending
+tc-verify default --require-tee
+```
+
+Recommended targeted regression for the verification plane:
+
+```bash
+/home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_tlog_impl.py tests/test_non_tee_verification.py tests/test_verify_cli.py -q
+```
+
+`--require-tee` should fail when TruCon reports non-TEE fallback mode. Non-TEE verification remains suitable for development and test environments only.
+
 ## Test Coverage
 
 ### API Endpoints Tested

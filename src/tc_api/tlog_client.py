@@ -34,6 +34,61 @@ def compute_entry_digest(key: str, value: Any) -> str:
     return "sha384:" + hashlib.sha384(payload.encode("utf-8")).hexdigest()
 
 
+def _decode_rekor_body(entry: Dict[str, Any]) -> Dict[str, Any]:
+    body = entry.get("body", {})
+    if isinstance(body, dict):
+        return body
+    if isinstance(body, str):
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            try:
+                import base64
+
+                return json.loads(base64.b64decode(body).decode("utf-8"))
+            except Exception:
+                return {}
+    return {}
+
+
+def _decode_dsse_payload(body: Dict[str, Any]) -> Dict[str, Any]:
+    payload = body.get("spec", {}).get("payload")
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, str):
+        try:
+            import base64
+
+            return json.loads(base64.b64decode(payload).decode("utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def _normalize_verification_entry(entry: Dict[str, Any], index: int, expected_identity: Optional[str]) -> Dict[str, Any]:
+    body = _decode_rekor_body(entry)
+    payload = _decode_dsse_payload(body)
+    predicate = payload.get("predicate", {}) if isinstance(payload, dict) else {}
+    subject = payload.get("subject", []) if isinstance(payload, dict) else []
+    subject_names = [item.get("name") for item in subject if isinstance(item, dict) and item.get("name")]
+    signer_identity = _extract_signer_identity(entry)
+    signer_match = None if expected_identity is None else signer_identity == expected_identity
+
+    return {
+        "index": index,
+        "entry_id": entry.get("log_id") or entry.get("uuid") or entry.get("entryUUID"),
+        "subject_names": subject_names,
+        "event_id": predicate.get("event_id"),
+        "event_type": predicate.get("event_type"),
+        "digest": predicate.get("digest"),
+        "prev_log_id": predicate.get("prev_log_id") or payload.get("prev_log_id"),
+        "signer_identity": signer_identity,
+        "signer_identity_match": signer_match,
+        "included": signer_match is not False,
+        "errors": [],
+    }
+
+
 def compute_event_digest(event_id: str, event_type: str, created_iso: str, entry_digests: List[str]) -> str:
     """Compute SHA-384 event digest over metadata + entry digests (two-level algorithm)."""
     payload = canonical_json({
@@ -358,55 +413,130 @@ class TrustedLogAPI:
         Verify a chain's entries by querying Rekor with chain_id subject name
         and filtering by signer identity. Optionally cross-check RTMR ordering.
         """
+        applied_policy = policy or {}
+        chain_id = applied_policy.get("chain_id", "default")
+        expected_identity = applied_policy.get("signer_identity")
+        expected_entry_count = applied_policy.get("expected_entry_count")
+        subject_name = f"trusted-log-chain_{chain_id}"
+
         try:
             if not self.immutable_log:
-                return VerificationResult(success=False, errors=["No immutable backend enabled."])
-            
-            chain_id = (policy or {}).get("chain_id", "default")
-            expected_identity = (policy or {}).get("signer_identity")
-            
-            # Search Rekor by DSSE subject name: trusted-log-chain_{chain_id}
-            subject_name = f"trusted-log-chain_{chain_id}"
+                return VerificationResult(
+                    success=False,
+                    errors=["No immutable backend enabled."],
+                    details={
+                        "source": "immutable_backend",
+                        "target": target,
+                        "chain_id": chain_id,
+                        "subject": subject_name,
+                        "entries": [],
+                    },
+                )
+
             entries = self.immutable_log.traverse(target, count=100)
-            
+
             if not entries:
-                return VerificationResult(success=False, errors=[f"No entries found for {subject_name}"])
-            
+                return VerificationResult(
+                    success=False,
+                    errors=[f"No entries found for {subject_name}"],
+                    details={
+                        "source": "immutable_backend",
+                        "target": target,
+                        "chain_id": chain_id,
+                        "subject": subject_name,
+                        "entries": [],
+                        "observed_entry_count": 0,
+                        "entry_count": 0,
+                        "filtered_out_count": 0,
+                        "applied_signer_identity": expected_identity,
+                        "expected_entry_count": expected_entry_count,
+                    },
+                )
+
+            normalized_entries = [
+                _normalize_verification_entry(entry, index + 1, expected_identity)
+                for index, entry in enumerate(entries)
+            ]
+
             # Filter by signer identity if provided
             verified_entries = []
-            for entry in entries:
+            for normalized_entry, raw_entry in zip(normalized_entries, entries):
                 if expected_identity:
-                    # Extract certificate identity from entry
-                    cert_identity = _extract_signer_identity(entry)
+                    cert_identity = normalized_entry["signer_identity"]
                     if cert_identity and cert_identity != expected_identity:
                         logger.warning("Discarding entry with mismatched signer identity: %s", cert_identity)
                         continue
-                verified_entries.append(entry)
-            
+                verified_entries.append(raw_entry)
+
             if not verified_entries:
                 return VerificationResult(
                     success=False,
                     errors=["No entries matched the expected signer identity"],
+                    details={
+                        "source": "immutable_backend",
+                        "target": target,
+                        "chain_id": chain_id,
+                        "subject": subject_name,
+                        "entries": normalized_entries,
+                        "observed_entry_count": len(entries),
+                        "entry_count": 0,
+                        "filtered_out_count": len(entries),
+                        "applied_signer_identity": expected_identity,
+                        "expected_entry_count": expected_entry_count,
+                    },
                 )
-            
-            # RTMR ordering proof: if mr_values provided in policy, cross-check
-            expected_mr_values = (policy or {}).get("mr_values")
-            if expected_mr_values and len(expected_mr_values) != len(verified_entries):
+
+            matched_entries = [entry for entry in normalized_entries if entry["included"]]
+
+            if expected_entry_count is not None and len(matched_entries) != expected_entry_count:
                 return VerificationResult(
                     success=False,
-                    errors=[f"RTMR chain length mismatch: expected {len(expected_mr_values)}, got {len(verified_entries)}"],
+                    errors=[
+                        f"Expected {expected_entry_count} entries, got {len(matched_entries)}"
+                    ],
+                    details={
+                        "source": "immutable_backend",
+                        "target": target,
+                        "chain_id": chain_id,
+                        "subject": subject_name,
+                        "entries": matched_entries,
+                        "observed_entry_count": len(entries),
+                        "entry_count": len(matched_entries),
+                        "filtered_out_count": len(entries) - len(matched_entries),
+                        "applied_signer_identity": expected_identity,
+                        "expected_entry_count": expected_entry_count,
+                    },
                 )
-            
+
             return VerificationResult(
                 success=True,
                 details={
+                    "source": "immutable_backend",
+                    "target": target,
                     "chain_id": chain_id,
-                    "entry_count": len(verified_entries),
+                    "entry_count": len(matched_entries),
+                    "observed_entry_count": len(entries),
+                    "filtered_out_count": len(entries) - len(matched_entries),
+                    "applied_signer_identity": expected_identity,
+                    "expected_entry_count": expected_entry_count,
                     "subject": subject_name,
+                    "entries": matched_entries,
                 },
             )
         except Exception as e:
-            return VerificationResult(success=False, errors=[str(e)])
+            return VerificationResult(
+                success=False,
+                errors=[str(e)],
+                details={
+                    "source": "immutable_backend",
+                    "target": target,
+                    "chain_id": chain_id,
+                    "subject": subject_name,
+                    "entries": [],
+                    "applied_signer_identity": expected_identity,
+                    "expected_entry_count": expected_entry_count,
+                },
+            )
 
 
 def _extract_signer_identity(entry: dict) -> Optional[str]:

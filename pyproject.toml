@@ -13,6 +13,7 @@ dynamic = ["dependencies"]
 [project.scripts]
 tc-api = "tc_api.main:main"
 tc-trucon = "tc_api.trucon.app:main"
+tc-verify = "tc_api.cli.verify:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

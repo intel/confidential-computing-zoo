@@ -133,6 +133,15 @@ The Python API exposed by `TrustedLogAPI` (tc_api-side, stateless) centers on a 
 - `get_event_log()`: load one committed immutable event by backend log identifier.
 - `verify_record()`: verify a chain by querying Rekor with `chain_id` subject name and signer identity filtering.
 
+For operators and auditors, the preferred entry point is now the package CLI:
+
+```bash
+tc-verify <chain_id>
+tc-verify <chain_id> --json
+```
+
+The CLI resolves `head_log_id` from TruCon `GET /chain-state/{chain_id}`, performs immutable-backend replay verification from that confirmed tail, and combines it with TruCon `GET /verify-chain/{chain_id}` diagnostics.
+
 `submit_record()` and `get_latest_state()` are no longer part of the tc_api-side API. Submission is handled by the embedded daemon inside the TruCon.
 
 
@@ -145,6 +154,8 @@ At a high level, verification includes:
 - Replay-based recomputation of stored event digests from canonical persisted event-log content.
 - Optional correlation of replayed event digests with local-measurement claims such as RTMR values.
 - Aggregated success/error reporting across the chain.
+
+In operator workflows, `tc-verify` is the primary verification surface. It emits a stable JSON result model with top-level `target`, `mode`, `summary`, `sources`, `entries`, and `errors` sections, plus a default human-readable summary. Non-TEE fallback verification is reported as test-only rather than TEE-equivalent success.
 
 Verification should treat the persisted immutable `EventLog` payload as the source of truth.
 The verifier should resolve the target log, replay ordered entry digests from canonical data, recompute the event digest, validate chain linkage and signatures, and then compare the replayed digest against the stored immutable-log value.

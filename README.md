@@ -34,6 +34,31 @@ python -m tests.test_runner --type manual --name health
 - Recommended rollout posture is TruCon-only operation with process supervision, parity checks on critical flows, and degraded-mode handling that preserves external business results when trust-event submission is unavailable.
 - Docktap keeps only bounded local routing, mapping, and retry state. Replay and verification rely on TruCon and immutable backend state rather than Docktap-local persistence.
 
+## Chain Verification CLI
+
+Operators can verify a trust chain with the package CLI:
+
+```shell
+tc-verify default
+```
+
+Machine-readable output is available with:
+
+```shell
+tc-verify default --json
+```
+
+Useful policy flags:
+
+```shell
+tc-verify default --signer-identity alice@example.com
+tc-verify default --expected-entry-count 12
+tc-verify default --fail-on-pending
+tc-verify default --require-tee
+```
+
+The CLI uses `chain_id` as its only target in v1. It combines immutable-backend replay verification with TruCon local chain diagnostics, and it marks non-TEE verification as test-only fallback rather than production-equivalent success.
+
 ## API Endpoints
 
 ### 1. Build and Package
