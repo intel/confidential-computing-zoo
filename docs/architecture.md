@@ -30,13 +30,13 @@ The project contains three primary runtime domains:
 
 ## 3. High-Level Topology
 
-**Current implementation status:** REST API and TruCon are fully implemented and deployed. Docktap integration is planned.
+**Current implementation status:** REST API, TruCon, and Docktap are fully implemented and deployed. Docktap runs as an independent service (Unix socket proxy) alongside tc_api and TruCon.
 
 ```mermaid
 flowchart LR
   clients[External API Clients] --> rest[REST API Service<br/>multi-process workers<br/>build/publish/launch control plane]
 
-  docktap[Docktap Service<br/>Status: Planned<br/>runtime interception and lifecycle events] -.->|trusted event calls<br/>planned| trucon[TruCon Core Service<br/>single-instance sequencer<br/>commit/queue/submit lifecycle]
+  docktap[Docktap Service<br/>runtime interception and lifecycle events] -->|trusted event calls| trucon[TruCon Core Service<br/>single-instance sequencer<br/>commit/queue/submit lifecycle]
 
   rest -->|signed DSSE bundles via REST| trucon
   trucon --> daemon[Embedded Submit Daemon<br/>threading.Thread<br/>polls queue, submits to backends]
@@ -61,15 +61,18 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 
 ### 4.2 Docktap Service
 
-> **Status: Design confirmed — implementation pending.**
+> **Status: Implemented.** Deployed as independent container/process with health endpoint, per-workload chain routing, and service auth.
 
 - Runs as a separate process (Unix socket proxy) with independent lifecycle.
+- Deployed as an independent container (Docker Compose) or background process (`start.sh`).
 - Captures Docker runtime events: `pull`, `create`, `start`, `stop`, `rm`.
 - Submits each operation as an independent signed DSSE commit to TruCon `POST /commit`.
 - Shares tc_api's OIDC signing infrastructure (`sigstore.oidc.detect_credential()`); token re-acquired per commit.
 - Uses `Entry(key, value)` objects imported from `tc_api.tlog.types` for event data (same types as tc_api). Values are native JSON-compatible types (not stringified).
-- v1: all events submitted to `"default"` chain_id. Per-workload chain assignment planned for follow-up (GAP-11).
+- Routes events to per-workload chains via `tc.workload_id` container label; containers without the label default to `"default"` chain.
 - Best-effort submission: TruCon failures log a warning but do not block Docker API responses.
+- Exposes HTTP health endpoint (`/healthz` on configurable port, default 8002) for container health checks.
+- Docktap down = Docker CLI unavailable (by design — all operations must be recorded).
 - Does not directly write trust chain entries — all chain mutations go through TruCon.
 
 ### 4.3 TruCon Core Service
@@ -89,10 +92,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - If baseline submission fails terminally, the chain is considered dead (no trust anchor).
 
 **Planned (not yet implemented):**
-- ~~Idempotency key enforcement for duplicate commit detection.~~ ✅ Completed (GAP-02).
-- ~~Workload-to-instance and instance-to-event mapping (GAP-03, blocked by GAP-11).~~ ✅ Completed (GAP-03).
-- ~~Docktap event ingestion path (GAP-01, design confirmed 2026-04-17).~~ ✅ Completed (GAP-01).
-- ~~Event Log 0 / baseline record (GAP-05, design confirmed 2026-04-17).~~ ✅ Completed (GAP-05).
+- On-chain backend adapter (GAP-07, blocked by target chain selection).
 
 For implementation details, see [trusted-log/architecture.md](trusted-log/architecture.md).
 
@@ -124,8 +124,6 @@ Reserved (not yet used):
 
 ### 5.2 Mapping Model
 
-> **Status: Design confirmed — implementation in progress (GAP-03).**
-
 TruCon stores instance correlation data directly in the `commit_queue` table via an `instance_id TEXT` column:
 
 - `instance_id` = full 64-character Docker `container_id`, representing one `create→rm` lifecycle.
@@ -153,12 +151,10 @@ Correlation queries exposed by TruCon:
 
 ### 6.2 Runtime Interception via Docktap
 
-> **Status: Design confirmed — implementation pending (GAP-01).**
-
 1. Docktap intercepts Docker API call (`pull`/`create`/`start`/`stop`/`rm`) on the proxy socket.
 2. Docktap forwards request to Docker daemon, receives response, and returns it to CLI.
 3. Docktap constructs `Entry(key, value)` objects from operation metadata (values are native JSON types) and signs a DSSE bundle using ambient OIDC credentials.
-4. Docktap POSTs the signed bundle to TruCon `POST /commit` with `chain_id="default"` (v1).
+4. Docktap POSTs the signed bundle to TruCon `POST /commit` with `chain_id` resolved from `tc.workload_id` container label (defaults to `"default"`).
 5. TruCon performs idempotency and ordering checks, commits and queues event.
 6. If TruCon is unreachable or returns an error, Docktap logs a warning and continues (best-effort).
 7. Submission worker confirms events to immutable backends asynchronously.
@@ -227,8 +223,10 @@ Phase B would also enable per-caller identity differentiation (tc_api vs Docktap
 - REST API deployed with multiple workers/processes (uvicorn `--workers N`).
 - TruCon deployed as single-instance service (`--workers 1`) to preserve lock-based serialization.
 - Submission daemon runs as an embedded thread inside TruCon.
-- Docktap deployment: planned as dedicated process/service units.
+- Docktap deployed as an independent container (Docker Compose) or background process (`start.sh`). Shares the same Docker image as tc_api and TruCon with a different command override. Exposes proxy socket via bind-mount (`/var/run/docktap/`) and health endpoint on port 8002.
 - SQLite commit queue stored in ephemeral tmpfs (`/dev/shm/`) for confidential computing compliance.
+- `TRUCON_SERVICE_TOKEN` shared across all three services: via environment variable inheritance (bare-metal) or `.env` file interpolation (Docker Compose).
+- Docktap failure model: Docktap down = Docker CLI unavailable. Automatic restart via `restart: unless-stopped` (compose) or process supervision (bare-metal).
 
 ## 11. Migration Plan (Architecture-Level)
 

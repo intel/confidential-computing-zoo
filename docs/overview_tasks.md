@@ -311,7 +311,98 @@ Each task has:
 
 ---
 
-## Part C: Open Architecture Questions (Unresolved in Code)
+## Part C: Deployment, Tooling & Documentation Gaps (Previously Untracked)
+
+### ~~GAP-13: Docktap Deployment Integration~~ ✅ COMPLETED
+
+- **Priority**: HIGH
+- **Scope**: `start.sh`, `docker-compose.yml`, `Dockerfile`, `docktap/main.py`
+- **References**: architecture.md §4.2, §6.2, §10; docktap/architecture.md
+- **Dependencies**: GAP-01 ✅, GAP-10 ✅, GAP-11 ✅
+- **Completed**: 2026-04-17 | Archive: `openspec/changes/docktap-deployment-integration/`
+- **Design Decisions** (confirmed 2026-04-17):
+  - **Deployment topology**: Independent container (Docker Compose) + background process (`start.sh`). Same image as tc_api/trucon with different command override.
+  - **Failure model**: Docktap down = Docker CLI unavailable (security: all operations must be recorded). `restart: unless-stopped` for auto-recovery.
+  - **Health check**: HTTP `/healthz` endpoint on port 8002 via daemon thread in `SockBridge`.
+  - **Token sharing**: Compose `.env` file + variable interpolation. Bare-metal: environment variable inheritance.
+  - **Proxy socket**: Bind-mount `/var/run/docktap/` directory. Users set `DOCKER_HOST=unix:///var/run/docktap/docker.sock`.
+- **Acceptance Criteria**:
+  1. ✅ `docker-compose.yml` includes `docktap` service with daemon socket mount, proxy socket volume, healthcheck, depends_on, and `TRUCON_SERVICE_TOKEN`.
+  2. ✅ `start.sh` launches Docktap as managed background process with PID tracking and graceful shutdown.
+  3. ✅ `Dockerfile` exposes port 8002 for health endpoint.
+  4. ✅ Healthcheck configured via `curl -f http://localhost:8002/healthz`.
+  5. ✅ `DOCKER_HOST` configuration and deployment instructions documented in README.md.
+- **Tests**: Compose config validated (`docker compose config --services` lists all 4 services). 107 existing tests pass. Syntax checks pass for all modified files.
+
+---
+
+### GAP-14: Chain Verification CLI Tool
+
+- **Priority**: MEDIUM
+- **Scope**: new `scripts/verify_chain.py` or `src/tc_api/cli/verify.py`
+- **References**: trusted-log/architecture.md §Verification Plane; trusted-log/api.md `verify_record()`; architecture.md §6.3
+- **Dependencies**: None (verification code exists in `tlog_client.py`)
+- **Current State**: `TrustedLogAPI.verify_record()` exists and can query Rekor + replay chain. `verify_chain_state()` in `services.py` does lightweight TruCon health checks. But no standalone CLI tool exists for operators or auditors. Verification is only accessible through the Python API or REST API call flows. Architecture docs describe a Verification Plane and audit tooling that can "resolve workload → instance → event chain relationships", but no such audit tool exists.
+- **Acceptance Criteria**:
+  1. CLI script that accepts a `chain_id` and performs full chain verification: Rekor traversal, digest replay, signature validation, RTMR consistency check (if available).
+  2. Supports both TEE mode (RTMR chain validation) and non-TEE mode (`prev_log_id` linkage per GAP-09).
+  3. Human-readable output with per-record pass/fail and summary.
+  4. Machine-readable JSON output option (`--json`).
+  5. Documented in README.md and docs/TESTING.md.
+
+---
+
+### GAP-15: Docktap In-Memory Retention / Garbage Collection
+
+- **Priority**: MEDIUM
+- **Scope**: `docktap/proxy/operation_log.py`, `docktap/workload_store.py`
+- **References**: docktap/architecture.md §Data Model (`cleanup_old_operations(max_age_hours=24)`)
+- **Dependencies**: GAP-13 (meaningful only after Docktap is deployed)
+- **Current State**: `OperationTracker.cleanup_old_operations()` method exists in `operation_log.py` but is **never called** by any runtime code path — no background thread or periodic trigger invokes it. The `WorkloadStore` SQLite table in `workload_store.py` also has no retention policy; rows accumulate indefinitely. In long-running deployments, both data structures will grow without bound.
+- **Acceptance Criteria**:
+  1. Periodic cleanup of `OperationTracker` entries (e.g., background thread or call after every N operations).
+  2. Retention policy for `WorkloadStore` rows (e.g., remove records for containers that have been `rm`'d for > N hours).
+  3. Configurable retention parameters via environment variables.
+
+---
+
+### GAP-16: Architecture Documentation Sync
+
+- **Priority**: LOW
+- **Scope**: `docs/architecture.md`, `docs/trusted-log/architecture.md`, `docs/docktap/architecture.md`
+- **References**: All completed GAP/FIX tasks
+- **Dependencies**: None
+- **Current State**: Multiple architecture docs still contain stale "planned" / "implementation pending" / "Status: Design confirmed" annotations for features that have been fully implemented. Examples:
+  - `architecture.md` §4.2 Docktap: "Status: Design confirmed — implementation pending" → GAP-01 completed.
+  - `architecture.md` §5.2 Mapping Model: "Status: Design confirmed — implementation in progress (GAP-03)" → GAP-03 completed.
+  - `architecture.md` §6.2: "Status: Design confirmed — implementation pending (GAP-01)" → completed.
+  - `architecture.md` §4.3 "Planned" items list still shows Docktap event ingestion and Mapping model as planned with strikethrough — should be cleaned to final state.
+  - `trusted-log/architecture.md` and `trusted-log/api.md` reference `src/tc_api/trucon.py` (old single-file layout) instead of `src/tc_api/trucon/app.py`.
+- **Acceptance Criteria**:
+  1. All "planned" / "pending" / "in progress" annotations updated to reflect completed status.
+  2. All file path references updated to current module layout (`trucon/app.py`, not `trucon.py`).
+  3. Mermaid diagrams updated to show Docktap as implemented (not dashed/planned).
+  4. No functional changes to code.
+
+---
+
+### FIX-05: `SubmitStatus.OPEN` Enum Value Dead Code
+
+- **Priority**: LOW
+- **Scope**: `src/tc_api/tlog/types.py`
+- **References**: architecture.md §5.1; GAP-06 acceptance criteria §4 ("deferred until pre-commit assembly flow")
+- **Dependencies**: None
+- **Current State**: `SubmitStatus.OPEN = "open"` is defined in the enum but referenced by zero lines of runtime or test code. It was reserved for a pre-commit assembly flow (multi-entry accumulation before commit) that has never been designed. The current `init_record → add_entry → commit_record` flow handles this in-memory without needing a DB-persisted OPEN state.
+- **Decision Needed**: Remove the dead enum value (simplify) or design the pre-commit assembly flow that would use it. If removed, ensure no migration impact on existing SQLite records.
+- **Acceptance Criteria**:
+  1. Either: Remove `OPEN` from `SubmitStatus` and confirm no records in `commit_queue` have `status='open'`.
+  2. Or: Design and implement the pre-commit assembly feature that uses `OPEN` (would be a separate GAP task at that point).
+
+---
+
+## Part D: Open Architecture Questions (Unresolved in Code)
+
+_Renamed from former Part C._
 
 These are not implementation tasks but **design decisions** that should be resolved before certain GAP tasks can proceed.
 
@@ -338,18 +429,23 @@ GAP-01 (Docktap → TruCon, v1 default chain) ✅
   │               │
   └───────────────┘
 
+GAP-01 ✅ + GAP-10 ✅ + GAP-11 ✅ ──▶ GAP-13 (Docktap Deployment) ✅ ──▶ GAP-15 (Retention/GC)
+
 GAP-05 (Event Log 0) ✅ ── standalone (Q-05 resolved: TDX RTMR[2] only)
-GAP-07 (On-Chain Adapter) ── standalone
+GAP-07 (On-Chain Adapter) ── standalone (blocked: target chain selection)
 GAP-08 (Feature-Flag Fallback) ── CLOSED (Won't Do)
 GAP-09 (Non-TEE Ordering) ✅ ── standalone
 GAP-10 (Service Auth Phase A) ✅ ── standalone
 GAP-11 (Per-Workload Chain) ✅
 GAP-12 (Service Auth Phase B) ◀── GAP-10 ✅ ── LOW priority
+GAP-14 (Verification CLI) ── standalone
+GAP-16 (Doc Sync) ── standalone (LOW)
 
 FIX-03 (SubmitResult) ── standalone
-FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
+FIX-04 (Entry Type) ✅ ── completed
+FIX-05 (OPEN Dead Code) ── standalone (LOW)
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05, FIX-04, GAP-13
 ✗ CLOSED: GAP-08
 ```
 
@@ -377,9 +473,25 @@ FIX-04 (Entry Type) ── standalone (Docktap will benefit when done)
 **Phase 4 — Trust chain completion** ✅ COMPLETE:
 12. ~~`GAP-05`~~ ✅ completed 2026-04-17 — Event Log 0 / baseline record
 
-**Phase 5 — Extensions**:
-13. `GAP-07` — On-chain backend adapter
-14. ~~`GAP-08`~~ — CLOSED (Won't Do): legacy path removed, RTMR chain integrity prevents viable fallback
-15. `FIX-03` — SubmitResult exposure
-16. `FIX-04` — Entry type enrichment (Docktap and REST both benefit)
-17. `GAP-12` — Service auth Phase B (mTLS / Unix socket credentials)
+**Phase 5 — Deployment & Operational Tooling**:
+13. ~~`GAP-13`~~ ✅ completed 2026-04-17 — Docktap deployment integration
+14. `GAP-14` — Chain verification CLI tool
+15. `GAP-15` — Docktap in-memory retention / garbage collection
+
+**Phase 6 — Cleanup & Extensions**:
+16. `FIX-03` — SubmitResult exposure or removal
+17. `FIX-05` — SubmitStatus.OPEN dead code resolution
+18. `GAP-16` — Architecture documentation sync
+19. `GAP-07` — On-chain backend adapter (blocked: target chain selection)
+20. ~~`GAP-08`~~ — CLOSED (Won't Do): legacy path removed, RTMR chain integrity prevents viable fallback
+21. `GAP-12` — Service auth Phase B (mTLS / Unix socket credentials)
+
+---
+
+## Part E: Active Change Reconciliation
+
+### introduce-trucon-event-orchestrator remaining items
+
+- `2.3` REST control-plane integration coverage is still missing. Current code routes build, publish, and launch writes through `TrustedLogAPI.commit_record()` and `DockerService.commit_and_save_receipt()`, but there is no focused integration test that proves those endpoints keep their expected status/result fields while the trust-event path is routed through TruCon.
+- `3.2` Docktap retry and acknowledgement handling is not implemented. `docktap/trucon_client.py` performs a single best-effort `POST /commit`; failures are logged and returned as `False`, with no retry queue, no bounded retry state, and no acknowledgement protocol.
+- `5.3` is no longer a valid implementation target as written. The requested legacy write-path feature-flag rollback was later closed as Won't Do in `GAP-08`, because the legacy direct path has been removed and RTMR chain integrity forbids fallback outside TruCon's serialized path. If this change stays active, replace this task with operational rollout/runbook guidance based on process supervision and parity checks rather than feature-flag fallback.

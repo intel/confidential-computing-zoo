@@ -10,13 +10,26 @@ Docktap is a Unix socket proxy for Docker API traffic that:
 - forwards requests to the real Docker daemon socket
 - captures operation metadata and response status
 - tracks operation relationships for pull/create/start/stop/rm flows
+- submits signed DSSE bundles to TruCon for trusted event recording
 - emits structured JSON logs for audit and troubleshooting
+- exposes an HTTP health endpoint (`/healthz`) for container orchestration
 
 Primary runtime entrypoints:
 
 - `stream_test.py`: thin launcher used by test automation
-- `main.py`: sidecar bootstrap path that starts `DockerProxyServer`
+- `main.py`: sidecar bootstrap path that starts `DockerProxyServer` and health server
 - `test_suite.py`: single test entrypoint for all integration checks
+
+## Deployment
+
+Docktap is deployed as an independent service alongside tc_api and TruCon:
+
+- **Docker Compose**: Independent container using the same image as tc_api, with Docker daemon socket bind-mount and proxy socket exposed via `/var/run/docktap/`.
+- **Bare-metal** (`start.sh`): Background process launched after TruCon, with PID tracking and graceful shutdown.
+
+Users route Docker CLI through the proxy by setting `DOCKER_HOST=unix:///var/run/docktap/docker.sock`.
+
+Docktap failure model: if Docktap goes down, Docker CLI traffic is blocked (by design — all operations must be recorded). Automatic restart ensures minimal downtime.
 
 ## High-Level Architecture
 

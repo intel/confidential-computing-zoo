@@ -79,7 +79,7 @@ RUN mkdir -p /app/uploads /app/builds /app/logs /app/certs
 COPY ./certs /app/certs/
 
 # Expose port
-EXPOSE 8000 8001 8006
+EXPOSE 8000 8001 8002 8006
 
 # Set environment variables
 ENV HOST=0.0.0.0

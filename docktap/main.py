@@ -14,6 +14,8 @@ import sys
 import signal
 import argparse
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -28,6 +30,32 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    """Minimal HTTP handler for /healthz endpoint."""
+
+    def do_GET(self):
+        if self.path == "/healthz":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        # Suppress default stderr logging for health checks
+        pass
+
+
+def start_health_server(port: int = 8002) -> None:
+    """Start a lightweight HTTP health server as a daemon thread."""
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    logger.info("Health server listening on port %d", port)
 
 
 class SockBridge:
@@ -49,7 +77,11 @@ class SockBridge:
     def start(self):
         """Start the docktap sidecar"""
         logger.info("Starting docktap...")
-        
+
+        # Start health endpoint before proxy accept loop
+        health_port = int(os.environ.get("DOCKTAP_HEALTH_PORT", "8002"))
+        start_health_server(health_port)
+
         self.proxy = DockerProxyServer(
             listen_socket_path=self.socket_path,
             docker_socket_path=self.docker_socket_path,

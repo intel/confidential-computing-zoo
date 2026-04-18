@@ -2,6 +2,8 @@
 
 import json
 import logging
+import time
+import urllib.error
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -219,3 +221,127 @@ class TestDSSEConstruction:
         chain_id = "default"
         expected = f"trusted-log-chain_{chain_id}"
         assert expected == "trusted-log-chain_default"
+
+
+# ---------------------------------------------------------------------------
+# 3.5  Retry and acknowledgement handling
+# ---------------------------------------------------------------------------
+
+class TestRetryAndAcknowledgement:
+    def _make_committer(self):
+        return TruConCommitter(
+            trucon_url="http://127.0.0.1:8001",
+            start_retry_worker=False,
+            max_retry_attempts=2,
+            retry_base_delay=0.0,
+            retry_max_delay=0.0,
+        )
+
+    def _signing_patches(self):
+        return patch("trucon_client.detect_credential", return_value="fake-token"), \
+            patch("trucon_client.IdentityToken", return_value="tok"), \
+            patch("trucon_client.SigningContext")
+
+    def test_retryable_failure_is_queued(self):
+        committer = self._make_committer()
+        rec = _make_record(operation={"type": "start"}, container={"id": "abc123"})
+
+        with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("down")), \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
+             patch("trucon_client.IdentityToken", return_value="tok"), \
+             patch("trucon_client.SigningContext") as mock_ctx:
+            mock_ctx.production.return_value._rekor = None
+            mock_signer = MagicMock()
+            mock_bundle = MagicMock()
+            mock_bundle.to_json.return_value = '{"fake": "bundle"}'
+            mock_signer.sign_dsse.return_value = mock_bundle
+            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+
+            result = committer.submit_operation(rec, "start")
+
+        assert result is False
+        snapshot = committer.get_retry_snapshot()
+        assert len(snapshot) == 1
+        assert snapshot[0]["status"] == "retryable"
+        assert snapshot[0]["retry_attempts"] == 0
+
+    def test_retry_reuses_same_idempotency_key(self):
+        committer = self._make_committer()
+        rec = _make_record(operation={"type": "start"}, container={"id": "abc123"})
+
+        with patch.object(
+            committer,
+            "_post_to_trucon",
+            side_effect=[urllib.error.URLError("down"), {"record_id": "rec-1", "sequence_num": 7}],
+        ) as mock_post, \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
+             patch("trucon_client.IdentityToken", return_value="tok"), \
+             patch("trucon_client.SigningContext") as mock_ctx:
+            mock_ctx.production.return_value._rekor = None
+            mock_signer = MagicMock()
+            mock_bundle = MagicMock()
+            mock_bundle.to_json.return_value = '{"fake": "bundle"}'
+            mock_signer.sign_dsse.return_value = mock_bundle
+            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+
+            committer.submit_operation(rec, "start")
+            committer.process_retry_queue(now=time.monotonic())
+
+        assert mock_post.call_count == 2
+        first_key = mock_post.call_args_list[0].kwargs["idempotency_key"]
+        second_key = mock_post.call_args_list[1].kwargs["idempotency_key"]
+        assert first_key == second_key
+
+    def test_acknowledged_retry_is_marked_complete(self):
+        committer = self._make_committer()
+        rec = _make_record(operation={"type": "stop"}, container={"id": "xyz789"})
+
+        with patch.object(
+            committer,
+            "_post_to_trucon",
+            side_effect=[urllib.error.URLError("down"), {"record_id": "rec-9", "sequence_num": 9}],
+        ), \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
+             patch("trucon_client.IdentityToken", return_value="tok"), \
+             patch("trucon_client.SigningContext") as mock_ctx:
+            mock_ctx.production.return_value._rekor = None
+            mock_signer = MagicMock()
+            mock_bundle = MagicMock()
+            mock_bundle.to_json.return_value = '{"fake": "bundle"}'
+            mock_signer.sign_dsse.return_value = mock_bundle
+            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+
+            committer.submit_operation(rec, "stop")
+            committer.process_retry_queue(now=time.monotonic())
+
+        snapshot = committer.get_retry_snapshot()
+        assert snapshot[0]["status"] == "acknowledged"
+        assert snapshot[0]["record_id"] == "rec-9"
+        assert snapshot[0]["sequence_num"] == 9
+
+    def test_retry_exhaustion_marks_terminal_failure(self):
+        committer = self._make_committer()
+        rec = _make_record(operation={"type": "rm"}, container={"id": "del456"})
+
+        with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("still-down")), \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
+             patch("trucon_client.IdentityToken", return_value="tok"), \
+             patch("trucon_client.SigningContext") as mock_ctx:
+            mock_ctx.production.return_value._rekor = None
+            mock_signer = MagicMock()
+            mock_bundle = MagicMock()
+            mock_bundle.to_json.return_value = '{"fake": "bundle"}'
+            mock_signer.sign_dsse.return_value = mock_bundle
+            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+
+            committer.submit_operation(rec, "rm")
+            committer.process_retry_queue(now=time.monotonic())
+            committer.process_retry_queue(now=time.monotonic())
+
+        snapshot = committer.get_retry_snapshot()
+        assert snapshot[0]["status"] == "failed_terminal"
+        assert snapshot[0]["retry_attempts"] == 2

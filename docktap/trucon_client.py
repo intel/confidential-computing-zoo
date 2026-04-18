@@ -9,7 +9,10 @@ responses.
 import json
 import logging
 import os
+import threading
+import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional
 import urllib.request
@@ -30,6 +33,27 @@ logger = logging.getLogger(__name__)
 
 # Only these Docker operation types trigger a TruCon commit.
 SUBMITTABLE_OPERATIONS = {"pull", "create", "start", "stop", "rm"}
+
+
+@dataclass
+class PendingSubmission:
+    operation_type: str
+    bundle_json: str
+    chain_id: str
+    event_digest: str
+    event_id: str
+    idempotency_key: str
+    instance_id: Optional[str]
+    status: str = "retryable"
+    retry_attempts: int = 0
+    next_attempt_at: float = 0.0
+    last_error: Optional[str] = None
+    record_id: Optional[str] = None
+    sequence_num: Optional[int] = None
+
+
+class RetryQueuedError(RuntimeError):
+    """Raised after an initial retryable failure has been queued for retry."""
 
 
 def _build_entries(op_record, operation_type: str) -> List[Entry]:
@@ -67,11 +91,43 @@ def _build_entries(op_record, operation_type: str) -> List[Entry]:
 class TruConCommitter:
     """Lightweight client that signs and submits Docker operation events to TruCon."""
 
-    def __init__(self, trucon_url: Optional[str] = None, workload_store=None) -> None:
+    def __init__(
+        self,
+        trucon_url: Optional[str] = None,
+        workload_store=None,
+        *,
+        max_retry_attempts: Optional[int] = None,
+        retry_base_delay: Optional[float] = None,
+        retry_max_delay: Optional[float] = None,
+        retry_poll_interval: float = 0.25,
+        start_retry_worker: bool = True,
+    ) -> None:
         self._trucon_url = trucon_url or os.environ.get(
             "TRUCON_URL", "http://127.0.0.1:8001"
         )
         self._workload_store = workload_store
+        self._max_retry_attempts = max_retry_attempts if max_retry_attempts is not None else int(
+            os.environ.get("DOCKTAP_TRUCON_MAX_RETRY_ATTEMPTS", "3")
+        )
+        self._retry_base_delay = retry_base_delay if retry_base_delay is not None else float(
+            os.environ.get("DOCKTAP_TRUCON_RETRY_BASE_DELAY", "1.0")
+        )
+        self._retry_max_delay = retry_max_delay if retry_max_delay is not None else float(
+            os.environ.get("DOCKTAP_TRUCON_RETRY_MAX_DELAY", "30.0")
+        )
+        self._retry_poll_interval = retry_poll_interval
+        self._retry_lock = threading.Lock()
+        self._pending_submissions: Dict[str, PendingSubmission] = {}
+        self._stop_retry_worker = threading.Event()
+        self._retry_worker = None
+
+        if start_retry_worker:
+            self._retry_worker = threading.Thread(
+                target=self._retry_loop,
+                daemon=True,
+                name="docktap-trucon-retry",
+            )
+            self._retry_worker.start()
 
     def submit_operation(self, op_record, operation_type: str, *, workload_id: Optional[str] = None) -> bool:
         """Submit a single Docker operation to TruCon as a signed DSSE bundle.
@@ -88,6 +144,44 @@ class TruConCommitter:
                 "TruCon commit failed for %s operation: %s", operation_type, exc
             )
             return False
+
+    def shutdown(self) -> None:
+        """Stop the background retry worker, if one is running."""
+        self._stop_retry_worker.set()
+        if self._retry_worker is not None:
+            self._retry_worker.join(timeout=1.0)
+
+    def process_retry_queue(self, now: Optional[float] = None) -> None:
+        """Process all retryable submissions whose next attempt is due."""
+        current_time = time.monotonic() if now is None else now
+        with self._retry_lock:
+            due_items = [
+                submission
+                for submission in self._pending_submissions.values()
+                if submission.status == "retryable" and submission.next_attempt_at <= current_time
+            ]
+
+        for submission in due_items:
+            self._retry_submission(submission, current_time)
+
+    def get_retry_snapshot(self) -> List[Dict[str, Optional[str]]]:
+        """Return a serializable snapshot of local retry state for tests and diagnostics."""
+        with self._retry_lock:
+            items = list(self._pending_submissions.values())
+
+        return [
+            {
+                "event_id": submission.event_id,
+                "operation_type": submission.operation_type,
+                "idempotency_key": submission.idempotency_key,
+                "status": submission.status,
+                "retry_attempts": submission.retry_attempts,
+                "last_error": submission.last_error,
+                "record_id": submission.record_id,
+                "sequence_num": submission.sequence_num,
+            }
+            for submission in items
+        ]
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -114,6 +208,92 @@ class TruConCommitter:
             if stored:
                 return stored
         return "default"
+
+    def _retry_loop(self) -> None:
+        while not self._stop_retry_worker.wait(self._retry_poll_interval):
+            self.process_retry_queue()
+
+    def _compute_backoff_delay(self, retry_attempts: int) -> float:
+        delay = self._retry_base_delay * (2 ** max(retry_attempts - 1, 0))
+        return min(delay, self._retry_max_delay)
+
+    @staticmethod
+    def _is_retryable_commit_error(exc: Exception) -> bool:
+        if isinstance(exc, urllib.error.HTTPError):
+            return exc.code >= 500
+        return isinstance(exc, urllib.error.URLError)
+
+    def _mark_acknowledged(self, submission: PendingSubmission, response: Dict) -> None:
+        with self._retry_lock:
+            submission.status = "acknowledged"
+            submission.last_error = None
+            submission.record_id = response.get("record_id")
+            submission.sequence_num = response.get("sequence_num")
+            self._pending_submissions[submission.event_id] = submission
+
+    def _mark_terminal(self, submission: PendingSubmission, error: Exception) -> None:
+        with self._retry_lock:
+            submission.status = "failed_terminal"
+            submission.last_error = str(error)
+            self._pending_submissions[submission.event_id] = submission
+
+    def _queue_retry(self, submission: PendingSubmission, error: Exception) -> None:
+        with self._retry_lock:
+            submission.status = "retryable"
+            submission.last_error = str(error)
+            submission.next_attempt_at = time.monotonic() + self._compute_backoff_delay(submission.retry_attempts + 1)
+            self._pending_submissions[submission.event_id] = submission
+
+    def _retry_submission(self, submission: PendingSubmission, current_time: float) -> None:
+        try:
+            response = self._post_to_trucon(
+                bundle_json=submission.bundle_json,
+                chain_id=submission.chain_id,
+                event_digest=submission.event_digest,
+                event_id=submission.event_id,
+                idempotency_key=submission.idempotency_key,
+                instance_id=submission.instance_id,
+            )
+        except Exception as exc:
+            if self._is_retryable_commit_error(exc):
+                submission.retry_attempts += 1
+                if submission.retry_attempts >= self._max_retry_attempts:
+                    self._mark_terminal(submission, exc)
+                    logger.warning(
+                        "TruCon commit terminally failed for %s operation after %d retries: %s",
+                        submission.operation_type,
+                        submission.retry_attempts,
+                        exc,
+                    )
+                    return
+
+                submission.next_attempt_at = current_time + self._compute_backoff_delay(submission.retry_attempts + 1)
+                submission.last_error = str(exc)
+                with self._retry_lock:
+                    self._pending_submissions[submission.event_id] = submission
+                logger.warning(
+                    "Retrying queued TruCon commit for %s operation (retry %d/%d): %s",
+                    submission.operation_type,
+                    submission.retry_attempts,
+                    self._max_retry_attempts,
+                    exc,
+                )
+                return
+
+            self._mark_terminal(submission, exc)
+            logger.warning(
+                "TruCon commit terminally failed for %s operation with non-retryable error: %s",
+                submission.operation_type,
+                exc,
+            )
+            return
+
+        self._mark_acknowledged(submission, response)
+        logger.info(
+            "TruCon commit acknowledged after retry for %s (event_id=%s)",
+            submission.operation_type,
+            submission.event_id,
+        )
 
     def _do_submit(self, op_record, operation_type: str, *, workload_id: Optional[str] = None) -> bool:
         # 1. Build entries
@@ -176,7 +356,8 @@ class TruConCommitter:
 
         # 7. POST to TruCon /commit
         idempotency_key = f"idk-{uuid.uuid4().hex[:12]}"
-        self._post_to_trucon(
+        submission = PendingSubmission(
+            operation_type=operation_type,
             bundle_json=bundle_json,
             chain_id=chain_id,
             event_digest=event_digest,
@@ -184,6 +365,23 @@ class TruConCommitter:
             idempotency_key=idempotency_key,
             instance_id=instance_id,
         )
+
+        try:
+            response = self._post_to_trucon(
+                bundle_json=bundle_json,
+                chain_id=chain_id,
+                event_digest=event_digest,
+                event_id=event_id,
+                idempotency_key=idempotency_key,
+                instance_id=instance_id,
+            )
+        except Exception as exc:
+            if self._is_retryable_commit_error(exc):
+                self._queue_retry(submission, exc)
+                raise RetryQueuedError(str(exc)) from exc
+            raise
+
+        self._mark_acknowledged(submission, response)
         logger.info("TruCon commit succeeded for %s (event_id=%s)", operation_type, event_id)
         return True
 

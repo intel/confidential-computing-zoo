@@ -42,8 +42,13 @@ mkdir -p uploads builds logs /dev/shm
 export HOST=${HOST:-0.0.0.0}
 export PORT=${PORT:-8000}
 export TRUCON_PORT=${TRUCON_PORT:-8001}
+export DOCKTAP_SOCKET=${DOCKTAP_SOCKET:-/var/run/docktap/docker.sock}
 export DEBUG=${DEBUG:-false}
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+
+# Create Docktap proxy socket directory
+DOCKTAP_SOCKET_DIR=$(dirname "$DOCKTAP_SOCKET")
+mkdir -p "$DOCKTAP_SOCKET_DIR"
 
 # Generate a session-scoped service token for TruCon authentication
 if [ -z "$TRUCON_SERVICE_TOKEN" ]; then
@@ -64,12 +69,29 @@ fi
 
 export TRUCON_URL="http://127.0.0.1:${TRUCON_PORT}"
 
-# Function to gracefully shutdown TruCon when the script exits
+echo "Starting Docktap (Docker proxy sidecar) on $DOCKTAP_SOCKET..."
+python -m docktap.main --socket-path "$DOCKTAP_SOCKET" --docker-socket-path /var/run/docker.sock &
+DOCKTAP_PID=$!
+
+# Wait briefly for Docktap to be ready
+sleep 2
+if ! kill -0 $DOCKTAP_PID 2>/dev/null; then
+    echo "Error: Docktap failed to start"
+    kill -TERM $TRUCON_PID 2>/dev/null || true
+    exit 1
+fi
+echo "✓ Docktap started (PID: $DOCKTAP_PID)"
+echo "  Use 'export DOCKER_HOST=unix://$DOCKTAP_SOCKET' to route Docker CLI through proxy"
+
+# Function to gracefully shutdown services when the script exits
 cleanup() {
+    echo "Stopping Docktap (PID: $DOCKTAP_PID)..."
+    kill -TERM $DOCKTAP_PID 2>/dev/null || true
     echo "Stopping TruCon (PID: $TRUCON_PID)..."
     kill -TERM $TRUCON_PID 2>/dev/null || true
+    wait $DOCKTAP_PID 2>/dev/null || true
     wait $TRUCON_PID 2>/dev/null || true
-    echo "TruCon stopped."
+    echo "All services stopped."
 }
 trap cleanup EXIT INT TERM
 

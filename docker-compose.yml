@@ -22,6 +22,7 @@ services:
       - DOCKER_REPOSITORY=myrepo
       - ENABLE_TDX=${ENABLE_TDX:-false}
       - TRUCON_URL=http://trucon:8001
+      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-}
@@ -57,6 +58,7 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-}
@@ -72,6 +74,42 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  docktap:
+    build:
+      context: .
+      args:
+        - http_proxy=${http_proxy:-}
+        - https_proxy=${https_proxy:-}
+        - no_proxy=${no_proxy:-}
+    command: ["/app/venv/bin/python", "-m", "docktap.main", "--socket-path", "/var/run/docktap/docker.sock", "--docker-socket-path", "/var/run/docker-daemon.sock"]
+    ports:
+      - "8002:8002"
+    environment:
+      - TRUCON_URL=http://trucon:8001
+      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
+      - DOCKER_SOCKET=/var/run/docker-daemon.sock
+      - SOCK_BRIDGE_SOCKET=/var/run/docktap/docker.sock
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=${no_proxy:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker-daemon.sock
+      - /var/run/docktap:/var/run/docktap
+      - ./logs:/app/logs
+    tmpfs:
+      - /dev/shm
+    mem_swappiness: 0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      trucon:
+        condition: service_healthy
 
   # Optional: Add a reverse proxy
   nginx:

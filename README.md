@@ -377,6 +377,57 @@ docker run -it --network host --privileged \
 
 ##### Notice: Check the port in Dockerfile to ensure the ports are not in use. 
 
+### Deploy with Docker Compose
+
+Docker Compose deploys three services: `tc-api`, `trucon`, and `docktap`.
+
+1. Generate a service token and start all services:
+
+```bash
+# Generate shared service token
+export TRUCON_SERVICE_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+echo "TRUCON_SERVICE_TOKEN=$TRUCON_SERVICE_TOKEN" >> .env
+
+# Create Docktap proxy socket directory on host
+sudo mkdir -p /var/run/docktap
+
+# Start all services
+docker compose up -d
+```
+
+2. Configure Docker CLI to route through Docktap proxy:
+
+```bash
+export DOCKER_HOST=unix:///var/run/docktap/docker.sock
+```
+
+To make this permanent for all users on the TD VM:
+
+```bash
+echo 'export DOCKER_HOST=unix:///var/run/docktap/docker.sock' | sudo tee /etc/profile.d/docktap.sh
+sudo chmod +x /etc/profile.d/docktap.sh
+```
+
+3. Verify all services are healthy:
+
+```bash
+docker compose ps
+curl http://localhost:8000/        # tc-api health
+curl http://localhost:8001/status   # trucon status
+curl http://localhost:8002/healthz  # docktap health
+```
+
+### Docktap Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRUCON_URL` | `http://127.0.0.1:8001` | TruCon endpoint for event submission |
+| `TRUCON_SERVICE_TOKEN` | (generated) | Shared Bearer token for TruCon auth |
+| `SOCK_BRIDGE_SOCKET` | `/tmp/docker-proxy.sock` | Proxy socket listen path |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker daemon socket path |
+| `DOCKTAP_HEALTH_PORT` | `8002` | HTTP health endpoint port |
+| `DOCKTAP_SOCKET` | `/var/run/docktap/docker.sock` | Proxy socket path (bare-metal `start.sh`) |
+
 ## Configuration
 
 Configure via environment variables:
