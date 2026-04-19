@@ -174,6 +174,14 @@ tc-verify <chain_id>
 
 The CLI first resolves `head_log_id` via TruCon `GET /chain-state/{chain_id}`, then calls immutable-backend replay verification and combines it with TruCon `GET /verify-chain/{chain_id}` diagnostics.
 
+For producer-side attested evidence export, TruCon also exposes:
+
+```bash
+GET /evidence/<chain_id>
+```
+
+This endpoint returns a v1 attested-head evidence package for the chain's latest confirmed public head only. It is a strict read-only surface: if the chain has no confirmed `head_log_id`, if quote acquisition fails, or if the quote-backed report-data value does not match the producer-computed binding target, the request fails rather than returning degraded evidence.
+
 For the longer-term operator-facing verification model and evidence-package boundary, see [verification.md](verification.md).
 
 ## Error Model
@@ -222,6 +230,7 @@ The TruCon is a single-instance FastAPI service (started with `--workers 1`) tha
 |---|---|---|
 | `/commit` | POST | Accept a signed DSSE bundle. Serialize RTMR extend + INSERT + chain state under lock. Return `{record_id, chain_id, sequence_num, mr_value, status}`. |
 | `/chain-state/{chain_id}` | GET | Return current chain state: `{chain_id, head_record_id, head_log_id, sequence_num, mr_value}`. |
+| `/evidence/{chain_id}` | GET | Return a v1 attested-head evidence package for the chain's latest confirmed public head. Fails if no confirmed immutable-log head exists or if quote acquisition / binding validation fails. |
 | `/verify-chain/{chain_id}` | GET | Return local chain verification details: sequence continuity, RTMR checks, Rekor confirmation state, and non-TEE `prev_log_id` fallback diagnostics. |
 | `/status` | GET | Return aggregate queue statistics: total pending, confirmed, and failed counts per chain. |
 

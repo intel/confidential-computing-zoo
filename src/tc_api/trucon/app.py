@@ -38,6 +38,7 @@ from .database import (
     get_failed_by_chain,
     get_highest_extended_record,
     get_instances_for_workload,
+    get_latest_confirmed_record,
     get_latest_state,
     get_pending_by_chain,
     get_queue_stats,
@@ -53,6 +54,14 @@ from .database import (
 )
 from .adapters.sigstore import SigstoreLogAdapter
 from .adapters.ccel import compute_ccel_digest
+from .adapters.tdx_quote import TdxQuoteAdapter
+from .evidence import (
+    AttestedHeadEvidence,
+    BINDING_ALGORITHM,
+    REQUIRED_BOUND_FIELDS,
+    compute_binding_expected_value,
+    validate_attested_head_evidence_payload,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger("trucon")
@@ -150,6 +159,10 @@ class EventSummary(BaseModel):
     created_at: Optional[str] = None
     instance_id: Optional[str] = None
 
+
+class EvidenceErrorResponse(BaseModel):
+    detail: str
+
 # ---------------------------------------------------------------------------
 # Single-instance file lock
 # ---------------------------------------------------------------------------
@@ -189,6 +202,7 @@ def release_instance_lock():
 _sequencer_lock = threading.Lock()
 _local_mr = None       # Set during lifespan
 _immutable_log = None   # Set during lifespan
+_quote_adapter = None    # Set during lifespan
 
 # RTMR[2] is the OS/application-layer measurement register in TDX.
 # RTMR[0]/[1] are firmware/boot-locked; RTMR[3] is reserved.
@@ -361,7 +375,7 @@ def _handle_retry(record_id: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _local_mr, _immutable_log
+    global _local_mr, _immutable_log, _quote_adapter
 
     # Service authentication startup checks
     if _AUTH_DISABLED:
@@ -391,6 +405,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Could not init local MR adapter: %s", e)
 
     _immutable_log = SigstoreLogAdapter()
+    _quote_adapter = TdxQuoteAdapter()
 
     # Start submit daemon thread
     daemon_thread = threading.Thread(target=_submit_daemon_loop, daemon=True, name="submit-daemon")
@@ -637,6 +652,62 @@ def get_chain_state_endpoint(chain_id: str):
         mr_value=state['mr_value'],
         updated_at=state['updated_at'],
     )
+
+
+@app.get(
+    "/evidence/{chain_id}",
+    response_model=AttestedHeadEvidence,
+    responses={404: {"model": EvidenceErrorResponse}, 409: {"model": EvidenceErrorResponse}, 500: {"model": EvidenceErrorResponse}},
+)
+def get_attested_head_evidence(chain_id: str):
+    """Return attested-head evidence for the latest confirmed public head of a chain."""
+    state = get_chain_state(chain_id)
+    if not state:
+        raise HTTPException(status_code=404, detail=f"No chain state for '{chain_id}'")
+
+    confirmed = get_latest_confirmed_record(chain_id)
+    if not confirmed or not confirmed["log_id"]:
+        raise HTTPException(status_code=409, detail=f"Chain '{chain_id}' has no confirmed immutable-log head")
+    if not confirmed["mr_value"]:
+        raise HTTPException(status_code=409, detail=f"Chain '{chain_id}' has no measured confirmed head state")
+    if _quote_adapter is None:
+        raise HTTPException(status_code=500, detail="Quote adapter is unavailable")
+
+    expected_value = compute_binding_expected_value(
+        chain_id=chain_id,
+        sequence_num=confirmed["sequence_num"],
+        head_log_id=confirmed["log_id"],
+        mr_value=confirmed["mr_value"],
+    )
+
+    try:
+        quote_material = _quote_adapter.quote(expected_value)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Quote acquisition failed: {exc}") from exc
+
+    if quote_material.report_data != expected_value:
+        raise HTTPException(status_code=500, detail="Quote-backed report data did not match the expected binding value")
+
+    evidence = validate_attested_head_evidence_payload(
+        {
+            "version": "v1",
+            "tee_type": "tdx",
+            "chain_id": chain_id,
+            "sequence_num": confirmed["sequence_num"],
+            "head_log_id": confirmed["log_id"],
+            "mr_value": confirmed["mr_value"],
+            "generated_at": datetime.utcnow(),
+            "quote": quote_material.quote,
+            "quote_format": quote_material.quote_format,
+            "head_event_digest": confirmed["event_digest"],
+            "report_data_binding": {
+                "algorithm": BINDING_ALGORITHM,
+                "bound_fields": list(REQUIRED_BOUND_FIELDS),
+                "expected_value": expected_value,
+            },
+        }
+    )
+    return evidence
 
 
 @app.get("/status", response_model=CommitQueueStatusResponse)

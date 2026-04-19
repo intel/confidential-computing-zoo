@@ -181,6 +181,23 @@ In particular, v1 evidence packages do not need to embed:
 
 Those fields remain part of Rekor-backed epoch replay. Event Log 0 answers where the chain epoch began; attested head evidence answers which public head the current CVM is endorsing now.
 
+### Export Surface
+
+The current producer-side export surface is a strict read-only TruCon endpoint:
+
+- `GET /evidence/{chain_id}`
+
+v1 export semantics are intentionally narrow:
+
+- export only the latest confirmed public head for the chain
+- fail if the chain has no confirmed `head_log_id`
+- fail if quote acquisition fails
+- fail if quote-backed report data does not match the producer-computed `expected_value`
+
+In other words, the export surface does not return degraded evidence for pending-only chains. Pending local state can still be observed through internal TruCon control APIs, but it is not eligible for external evidence export.
+
+For v1, TruCon computes `report_data_binding.expected_value` from canonical serialization of the ordered bound fields and then compares that derived value against the quote-backed report-data value. The quote proves TEE endorsement; it does not define the contract value by itself.
+
 ## Verification Inputs
 
 ### Required Inputs
@@ -196,8 +213,9 @@ The current implementation also consumes live TruCon APIs for:
 
 - `GET /chain-state/{chain_id}`
 - `GET /verify-chain/{chain_id}`
+- `GET /evidence/{chain_id}`
 
-This is acceptable for in-CVM and transitional operational workflows, but the design should not require live TruCon connectivity as the final external verifier model.
+`GET /evidence/{chain_id}` is the producer-side bridge toward the long-term model. `GET /chain-state/{chain_id}` and `GET /verify-chain/{chain_id}` remain transitional operational inputs and should not be treated as the final external verifier contract.
 
 ## Verification Flow
 

@@ -1,10 +1,12 @@
 import json
+import hashlib
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 REQUIRED_BOUND_FIELDS = ("chain_id", "sequence_num", "head_log_id", "mr_value")
+BINDING_ALGORITHM = "sha384"
 
 
 def canonical_json(data: Any) -> str:
@@ -84,11 +86,29 @@ def load_attested_head_evidence_json(payload: str) -> AttestedHeadEvidence:
     return validate_attested_head_evidence_payload(json.loads(payload))
 
 
+def compute_binding_expected_value(
+    chain_id: str,
+    sequence_num: int,
+    head_log_id: str,
+    mr_value: str,
+) -> str:
+    bound_items = [
+        ["chain_id", chain_id],
+        ["sequence_num", sequence_num],
+        ["head_log_id", head_log_id],
+        ["mr_value", mr_value],
+    ]
+    payload = canonical_json(bound_items).encode("utf-8")
+    return f"{BINDING_ALGORITHM}:" + hashlib.sha384(payload).hexdigest()
+
+
 __all__ = [
     "AttestedHeadEvidence",
+    "BINDING_ALGORITHM",
     "REQUIRED_BOUND_FIELDS",
     "ReportDataBinding",
     "ValidationError",
+    "compute_binding_expected_value",
     "canonicalize_attested_head_evidence",
     "canonical_json",
     "load_attested_head_evidence_json",

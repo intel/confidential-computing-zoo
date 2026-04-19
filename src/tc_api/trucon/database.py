@@ -214,6 +214,21 @@ def get_chain_state(chain_id: str, db_path: str = DB_PATH) -> Optional[sqlite3.R
         )
         return cursor.fetchone()
 
+
+def get_latest_confirmed_record(chain_id: str, db_path: str = DB_PATH) -> Optional[sqlite3.Row]:
+    """Return the latest confirmed record for a chain, if any."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute(
+            '''
+            SELECT * FROM commit_queue
+            WHERE chain_id = ? AND status = 'CONFIRMED' AND log_id IS NOT NULL
+            ORDER BY sequence_num DESC
+            LIMIT 1
+            ''',
+            (chain_id,),
+        )
+        return cursor.fetchone()
+
 def update_chain_state(chain_id: str, head_record_id: str, sequence_num: int,
                        mr_value: Optional[str] = None, head_log_id: Optional[str] = None,
                        db_path: str = DB_PATH):
