@@ -69,6 +69,8 @@ bash run_tests.sh --type all
 The operator-facing chain verification CLI can be exercised directly:
 
 ```bash
+tc-verify --evidence evidence.json
+tc-verify --evidence evidence.json --json
 tc-verify default
 tc-verify default --json
 tc-verify default --signer-identity alice@example.com
@@ -84,6 +86,8 @@ Recommended targeted regression for the verification plane:
 ```
 
 `--require-tee` should fail when TruCon reports non-TEE fallback mode. Non-TEE verification remains suitable for development and test environments only.
+
+Prefer exported evidence as the primary operator input. Using `tc-verify <chain_id>` without `--evidence` is a transitional live TruCon fallback path for tightly coupled deployments and troubleshooting.
 
 ## Test Coverage
 

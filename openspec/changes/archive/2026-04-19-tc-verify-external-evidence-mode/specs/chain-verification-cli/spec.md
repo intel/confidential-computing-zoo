@@ -1,16 +1,5 @@
 ## ADDED Requirements
 
-### Requirement: Package verification CLI entry point
-The system SHALL expose a package-level chain verification CLI command for operators and auditors.
-
-#### Scenario: Console script is installed
-- **WHEN** the package is installed in a supported environment
-- **THEN** a console command for chain verification SHALL be available without invoking a repository-local helper script
-
-#### Scenario: CLI uses package configuration
-- **WHEN** the CLI starts verification
-- **THEN** it SHALL use the package's configured runtime settings and shared verification code paths rather than maintaining an independent script-only configuration path
-
 ### Requirement: Evidence-backed verification input mode
 The CLI SHALL support a primary verification mode that consumes a v1 attested-head evidence package and derives replay targets from that package.
 
@@ -43,6 +32,8 @@ The CLI SHALL retain live TruCon-assisted verification as a transitional fallbac
 #### Scenario: Evidence-backed invocation avoids live TruCon dependency
 - **WHEN** an operator invokes the CLI with an evidence package
 - **THEN** the CLI SHALL complete without requiring successful live TruCon connectivity for chain-state discovery or local verification
+
+## MODIFIED Requirements
 
 ### Requirement: `chain_id` is the only v1 verification target
 The CLI SHALL accept either a `chain_id` for transitional live fallback verification or a v1 attested-head evidence package for primary evidence-backed verification in v1.
@@ -87,33 +78,3 @@ The CLI SHALL produce a human-readable summary by default that clearly separates
 #### Scenario: Pending or incomplete state displayed
 - **WHEN** the verified chain contains records that are not yet confirmed in the immutable backend or evidence is unavailable for a pending-only chain
 - **THEN** the human-readable output SHALL identify the verification as incomplete or ineligible for evidence-backed verification rather than omitting that state
-
-### Requirement: Supported verification policy flags
-The CLI SHALL support the flags `--signer-identity`, `--expected-entry-count`, `--fail-on-pending`, and `--require-tee`.
-
-#### Scenario: Signer identity filter applied
-- **WHEN** an operator passes `--signer-identity <value>`
-- **THEN** immutable-backend replay verification SHALL apply that identity constraint and report whether matching verified entries remain
-
-#### Scenario: Expected entry count mismatch
-- **WHEN** an operator passes `--expected-entry-count <n>` and the normalized result contains a different number of verified entries
-- **THEN** the CLI SHALL fail verification and SHALL report the mismatch in the summary and errors output
-
-#### Scenario: Fail on pending enabled
-- **WHEN** an operator passes `--fail-on-pending` and one or more records remain pending
-- **THEN** the CLI SHALL return a failure result even if structural verification succeeded for the confirmed portion of the chain
-
-#### Scenario: Require TEE enabled without TEE evidence
-- **WHEN** an operator passes `--require-tee` and the chain can only be verified in non-TEE fallback mode
-- **THEN** the CLI SHALL fail verification and SHALL report that TEE evidence was required but unavailable
-
-### Requirement: Non-TEE results are test-only
-The CLI SHALL classify non-TEE fallback verification as test-only behavior rather than production-equivalent TEE verification.
-
-#### Scenario: Non-TEE fallback result
-- **WHEN** TruCon reports that RTMR evidence is unavailable and verification proceeds via non-TEE fallback checks
-- **THEN** the normalized result SHALL identify the effective verification mode as non-TEE fallback and SHALL mark it as test-only
-
-#### Scenario: TEE result
-- **WHEN** RTMR-backed verification is available
-- **THEN** the normalized result SHALL identify the effective verification mode as TEE-backed verification

@@ -81,6 +81,8 @@ def _normalize_verification_entry(entry: Dict[str, Any], index: int, expected_id
         "event_id": predicate.get("event_id"),
         "event_type": predicate.get("event_type"),
         "digest": predicate.get("digest"),
+        "predicate_entries": predicate.get("entries", []),
+        "created": predicate.get("created"),
         "prev_log_id": predicate.get("prev_log_id") or payload.get("prev_log_id"),
         "signer_identity": signer_identity,
         "signer_identity_match": signer_match,

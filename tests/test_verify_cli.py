@@ -1,7 +1,10 @@
 import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 from tc_api.cli.verify import main
+from tc_api.trucon.evidence import compute_binding_expected_value
 
 
 class _Response:
@@ -28,6 +31,26 @@ def _urlopen_factory(chain_state_payload, verify_payload):
         raise AssertionError(f"Unexpected URL: {url}")
 
     return _urlopen
+
+
+def _immutable_entry(event_id, event_type, digest, index, predicate_entries=None):
+    return {
+        "index": index,
+        "event_id": event_id,
+        "event_type": event_type,
+        "digest": digest,
+        "predicate_entries": predicate_entries or [],
+        "subject_names": ["trusted-log-chain_default"],
+        "signer_identity": "alice@example.com",
+        "signer_identity_match": True,
+        "errors": [],
+    }
+
+
+def _write_evidence(tmp_path, payload):
+    evidence_path = Path(tmp_path) / "evidence.json"
+    evidence_path.write_text(json.dumps(payload), encoding="utf-8")
+    return str(evidence_path)
 
 
 def test_verify_cli_json_success(capsys):
@@ -86,7 +109,8 @@ def test_verify_cli_json_success(capsys):
     assert exit_code == 0
     assert captured["summary"]["status"] == "verified"
     assert captured["mode"]["verification_mode"] == "tee"
-    assert captured["entries"][0]["event_id"] == "evt-1"
+    assert captured["replay"]["entries"][0]["event_id"] == "evt-1"
+    assert captured["fallback"]["note"] == "transitional live TruCon fallback"
 
 
 def test_verify_cli_require_tee_fails_in_non_tee_mode(capsys):
@@ -198,5 +222,208 @@ def test_verify_cli_human_output_contains_per_record_detail(capsys):
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Per-record detail:" in output
-    assert "seq=1 record_id=rec-1 event_id=evt-1 status=confirmed" in output
+    assert "Per-record replay detail:" in output
+    assert "event_id=evt-1" in output
+
+
+def test_verify_cli_evidence_mode_success(tmp_path, capsys):
+    baseline_rtmr = "11" * 48
+    head_digest = "sha384:" + ("22" * 48)
+    derived_mr = __import__("hashlib").sha384(bytes.fromhex(baseline_rtmr) + bytes.fromhex("22" * 48)).hexdigest()
+    evidence_payload = {
+        "version": "v1",
+        "tee_type": "tdx",
+        "chain_id": "default",
+        "sequence_num": 2,
+        "head_log_id": "log-tail",
+        "mr_value": derived_mr,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "quote": "base64-quote",
+        "head_event_digest": head_digest,
+        "report_data_binding": {
+            "algorithm": "sha384",
+            "bound_fields": ["chain_id", "sequence_num", "head_log_id", "mr_value"],
+            "expected_value": compute_binding_expected_value("default", 2, "log-tail", derived_mr),
+        },
+    }
+    evidence_path = _write_evidence(tmp_path, evidence_payload)
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "chain_id": "default",
+                "entry_count": 2,
+                "entries": [
+                    _immutable_entry("evt-1", "launch", head_digest, 1),
+                    _immutable_entry(
+                        "evt-log0-default",
+                        "chain.init",
+                        None,
+                        2,
+                        predicate_entries=[
+                            {"key": "baseline_rtmr", "value": baseline_rtmr},
+                            {"key": "ccel_digest", "value": "sha384:" + ("33" * 48)},
+                            {"key": "pub_key", "value": "pem"},
+                        ],
+                    ),
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+        MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+        exit_code = main(["--evidence", evidence_path, "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert captured["mode"]["input_mode"] == "evidence-backed"
+    assert captured["summary"]["status"] == "verified"
+    assert captured["attested_head"]["matches_replay"] is True
+    assert captured["replay"]["derived"]["sequence_num"] == 2
+
+
+def test_verify_cli_rejects_invalid_evidence_binding(tmp_path, capsys):
+    evidence_path = _write_evidence(
+        tmp_path,
+        {
+            "version": "v1",
+            "tee_type": "tdx",
+            "chain_id": "default",
+            "sequence_num": 1,
+            "head_log_id": "log-tail",
+            "mr_value": "aa" * 48,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "quote": "base64-quote",
+            "report_data_binding": {
+                "algorithm": "sha384",
+                "bound_fields": ["chain_id", "sequence_num", "head_log_id", "mr_value"],
+                "expected_value": "sha384:" + ("ff" * 48),
+            },
+        },
+    )
+
+    exit_code = main(["--evidence", evidence_path, "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["summary"]["status"] == "failed"
+    assert "Invalid evidence package" in captured["errors"][0]
+
+
+def test_verify_cli_rejects_expired_evidence(tmp_path, capsys):
+    baseline_rtmr = "11" * 48
+    head_digest = "sha384:" + ("22" * 48)
+    derived_mr = __import__("hashlib").sha384(bytes.fromhex(baseline_rtmr) + bytes.fromhex("22" * 48)).hexdigest()
+    evidence_payload = {
+        "version": "v1",
+        "tee_type": "tdx",
+        "chain_id": "default",
+        "sequence_num": 2,
+        "head_log_id": "log-tail",
+        "mr_value": derived_mr,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(),
+        "quote": "base64-quote",
+        "report_data_binding": {
+            "algorithm": "sha384",
+            "bound_fields": ["chain_id", "sequence_num", "head_log_id", "mr_value"],
+            "expected_value": compute_binding_expected_value("default", 2, "log-tail", derived_mr),
+        },
+    }
+    evidence_path = _write_evidence(tmp_path, evidence_payload)
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "chain_id": "default",
+                "entry_count": 2,
+                "entries": [
+                    _immutable_entry("evt-1", "launch", head_digest, 1),
+                    _immutable_entry(
+                        "evt-log0-default",
+                        "chain.init",
+                        None,
+                        2,
+                        predicate_entries=[{"key": "baseline_rtmr", "value": baseline_rtmr}],
+                    ),
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+        MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+        exit_code = main(["--evidence", evidence_path, "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["attested_head"]["expired"] is True
+    assert "Evidence package has expired" in captured["errors"]
+
+
+def test_verify_cli_evidence_mode_detects_replay_mismatch(tmp_path, capsys):
+    baseline_rtmr = "11" * 48
+    replay_digest = "sha384:" + ("22" * 48)
+    wrong_mr = "44" * 48
+    evidence_path = _write_evidence(
+        tmp_path,
+        {
+            "version": "v1",
+            "tee_type": "tdx",
+            "chain_id": "default",
+            "sequence_num": 2,
+            "head_log_id": "log-tail",
+            "mr_value": wrong_mr,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "quote": "base64-quote",
+            "report_data_binding": {
+                "algorithm": "sha384",
+                "bound_fields": ["chain_id", "sequence_num", "head_log_id", "mr_value"],
+                "expected_value": compute_binding_expected_value("default", 2, "log-tail", wrong_mr),
+            },
+        },
+    )
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "chain_id": "default",
+                "entry_count": 2,
+                "entries": [
+                    _immutable_entry("evt-1", "launch", replay_digest, 1),
+                    _immutable_entry(
+                        "evt-log0-default",
+                        "chain.init",
+                        None,
+                        2,
+                        predicate_entries=[{"key": "baseline_rtmr", "value": baseline_rtmr}],
+                    ),
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+        MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+        exit_code = main(["--evidence", evidence_path, "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["attested_head"]["matches_replay"] is False
+    assert any("mr_value mismatch" in error for error in captured["errors"])

@@ -42,10 +42,17 @@ Operators can verify a trust chain with the package CLI:
 tc-verify default
 ```
 
+The preferred operator path is to verify from exported attested-head evidence:
+
+```shell
+tc-verify --evidence evidence.json
+```
+
 Machine-readable output is available with:
 
 ```shell
 tc-verify default --json
+tc-verify --evidence evidence.json --json
 ```
 
 Useful policy flags:
@@ -57,7 +64,7 @@ tc-verify default --fail-on-pending
 tc-verify default --require-tee
 ```
 
-The CLI uses `chain_id` as its only target in v1. It combines immutable-backend replay verification with TruCon local chain diagnostics, and it marks non-TEE verification as test-only fallback rather than production-equivalent success.
+Use `chain_id` without `--evidence` only for transitional live fallback verification. In the preferred evidence-backed flow, `tc-verify` derives `chain_id`, `head_log_id`, `sequence_num`, and `mr_value` from the exported evidence package, replays immutable-backend history from the attested head, and reports attested-head results separately from fallback diagnostics. Live TruCon verification remains available as fallback and non-TEE fallback remains test-only rather than production-equivalent success.
 
 ## API Endpoints
 

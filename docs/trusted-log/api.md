@@ -169,10 +169,10 @@ Note: `submit_record()` and `get_latest_state()` are no longer exposed on the tc
 For operator-facing workflows, prefer the package CLI:
 
 ```bash
-tc-verify <chain_id>
+tc-verify --evidence evidence.json
 ```
 
-The CLI first resolves `head_log_id` via TruCon `GET /chain-state/{chain_id}`, then calls immutable-backend replay verification and combines it with TruCon `GET /verify-chain/{chain_id}` diagnostics.
+In the preferred flow, the CLI derives `chain_id` and `head_log_id` from an exported attested-head evidence package, performs immutable-backend replay from that attested tail, and validates that replay reaches the exported head. The legacy `tc-verify <chain_id>` form remains available only as a transitional live TruCon fallback.
 
 For producer-side attested evidence export, TruCon also exposes:
 
