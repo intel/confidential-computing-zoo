@@ -174,6 +174,8 @@ tc-verify <chain_id>
 
 The CLI first resolves `head_log_id` via TruCon `GET /chain-state/{chain_id}`, then calls immutable-backend replay verification and combines it with TruCon `GET /verify-chain/{chain_id}` diagnostics.
 
+For the longer-term operator-facing verification model and evidence-package boundary, see [verification.md](verification.md).
+
 ## Error Model
 
 ```python

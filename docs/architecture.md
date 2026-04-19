@@ -165,6 +165,14 @@ Correlation queries exposed by TruCon:
 - Operational services query TruCon for queue/status/confirmation.
 - Audit tooling resolves workload, instance, and event chain relationships.
 
+### 6.4 External Verification
+
+- Operator-facing verification is expected to consume immutable-backend history together with verification evidence exported from the CVM.
+- TruCon's internal REST endpoints (`/commit`, `/chain-state`, `/verify-chain`, `/status`) are service-to-service control surfaces, not the long-term external verifier contract.
+- Event Log 0 remains the baseline anchor for each chain epoch: it records the initial RTMR[2] snapshot, the CCEL digest, and the TEE-generated public key used to anchor chain origin.
+- For remote verification, the exported evidence must bind the current chain head (`chain_id`, `head_log_id`, `sequence_num`) to attested TEE state (for example quote-backed RTMR evidence) rather than requiring the verifier to trust TruCon's live internal state directly.
+- Detailed verification result models, evidence-package format, and replay rules belong in the trusted-log design documents rather than this top-level architecture overview.
+
 ## 7. Concurrency and Ordering Strategy
 
 - REST and Docktap can emit events concurrently.
@@ -198,6 +206,7 @@ Minimum required metrics:
 - TruCon is the policy boundary for trusted event admission.
 - Identity and signature handling should avoid leaking ephemeral credentials into long-lived queue payloads.
 - Verification endpoints should enforce caller policy and provide auditable outcomes.
+- External verification should rely on immutable-log records plus exported attested evidence, not on implicit trust in internal control-plane APIs.
 
 ### 9.1 Internal Service Authentication (Phase A — Implemented)
 
@@ -249,11 +258,13 @@ Rollback principle:
 - Confirmation SLA target from commit accepted to backend confirmed.
 - ~~Canonical mandatory fields for stable instance mapping across restarts/replacements.~~ **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`; one `create→rm` lifecycle = one instance. Cross-restart identity is `workload_id`'s role, not `instance_id`'s.
 - Worker ownership model: local ownership or shared lease coordination.
+- External verification evidence format: which attested fields bind the current chain head to the current CVM state.
 - ~~How to handle runtimes that allow quote/report reads but not MR extend.~~ **Resolved** (2026-04-17): Out of scope. Only TDX RTMR[2] is supported. AMD SEV-SNP and quote-only runtimes are not targeted.
 
 ## 13. Related Documents
 
 - [trusted-log/architecture.md](trusted-log/architecture.md) — TruCon internal architecture, lock model, SQLite schema, crash recovery, verification.
+- [trusted-log/verification.md](trusted-log/verification.md) — operator-facing verification design, evidence-package boundaries, and chain replay model.
 - [trusted-log/api.md](trusted-log/api.md) — Python API signatures, type contracts, caller lifecycle.
 - [trusted-log/README.md](trusted-log/README.md) — Module overview and core concepts.
 - openspec/changes/introduce-trucon-event-orchestrator/ — Upstream TruCon vision (proposal, design, specs).

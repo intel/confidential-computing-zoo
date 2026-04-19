@@ -206,4 +206,5 @@ Out of scope for this page:
 ## Related Documents
 
 - See [architecture.md](architecture.md) for the component-level view, concurrency model, and replay verification requirements.
+- See [verification.md](verification.md) for operator-facing verification design, evidence-package boundaries, and per-flow verification profiles.
 - See [api.md](api.md) for Python API signatures, type contracts, and caller lifecycle examples.

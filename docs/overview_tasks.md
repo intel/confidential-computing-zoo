@@ -337,19 +337,105 @@ Each task has:
 
 ---
 
-### GAP-14: Chain Verification CLI Tool
+### ~~GAP-14: Chain Verification CLI Tool~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: new `scripts/verify_chain.py` or `src/tc_api/cli/verify.py`
+- **Scope**: `src/tc_api/cli/verify.py`, `src/tc_api/tlog_client.py`, package metadata, verification docs
 - **References**: trusted-log/architecture.md §Verification Plane; trusted-log/api.md `verify_record()`; architecture.md §6.3
-- **Dependencies**: None (verification code exists in `tlog_client.py`)
-- **Current State**: `TrustedLogAPI.verify_record()` exists and can query Rekor + replay chain. `verify_chain_state()` in `services.py` does lightweight TruCon health checks. But no standalone CLI tool exists for operators or auditors. Verification is only accessible through the Python API or REST API call flows. Architecture docs describe a Verification Plane and audit tooling that can "resolve workload → instance → event chain relationships", but no such audit tool exists.
+- **Dependencies**: None
+- **Completed**: 2026-04-18 | Archive: `openspec/changes/archive/2026-04-18-add-chain-verification-cli/`
+- **Design Decisions** (confirmed 2026-04-18):
+  - **Packaging**: Exposed as package console script `tc-verify`, not an ad hoc helper script.
+  - **Target model**: v1 accepts `chain_id` only.
+  - **Verdict model**: Immutable-backend replay is the primary source; TruCon local verification is retained as secondary diagnostic input.
+  - **Policy flags**: Supports `--signer-identity`, `--expected-entry-count`, `--fail-on-pending`, and `--require-tee`.
+  - **Non-TEE handling**: Explicitly reported as test-only fallback rather than TEE-equivalent success.
 - **Acceptance Criteria**:
-  1. CLI script that accepts a `chain_id` and performs full chain verification: Rekor traversal, digest replay, signature validation, RTMR consistency check (if available).
-  2. Supports both TEE mode (RTMR chain validation) and non-TEE mode (`prev_log_id` linkage per GAP-09).
-  3. Human-readable output with per-record pass/fail and summary.
-  4. Machine-readable JSON output option (`--json`).
-  5. Documented in README.md and docs/TESTING.md.
+  1. ✅ CLI accepts a `chain_id` and performs Rekor traversal, digest replay, signature validation, and local RTMR / non-TEE diagnostics.
+  2. ✅ Supports both TEE mode and non-TEE fallback mode.
+  3. ✅ Human-readable output with per-record detail and summary.
+  4. ✅ Machine-readable JSON output option (`--json`).
+  5. ✅ Documented in README.md, docs/TESTING.md, and trusted-log docs.
+
+---
+
+### GAP-17: Attested Head Evidence Export
+
+- **Priority**: HIGH
+- **Scope**: `src/tc_api/trucon/`, quote/evidence production path, `docs/trusted-log/verification.md`
+- **References**: architecture.md §6.4, §12; trusted-log/architecture.md §Operator Verification Surfaces; trusted-log/verification.md §Attested Head Evidence
+- **Dependencies**: GAP-05 ✅, GAP-14 ✅
+- **Sizing**: Too large for one propose -> apply -> archive cycle; treat as an umbrella task.
+- **Current State**: Event Log 0 anchors the chain baseline in Rekor, and TruCon maintains live `chain_state` (`chain_id`, `head_log_id`, `sequence_num`, `mr_value`) locally. But there is no exported evidence package that binds the current chain head to current attested CVM state for remote operators who cannot log into the CVM.
+- **Suggested Subtasks**:
+  1. `GAP-17A` — Attested head evidence contract
+    - Define the exported evidence schema, mandatory fields, serialization format, and quote-binding requirements.
+    - Resolve `Q-06` enough to freeze the v1 contract.
+    - Output is design + docs + test fixture shape, without requiring full verifier integration.
+  2. `GAP-17B` — TruCon evidence export surface
+    - Implement a read-only export path that emits the attested head evidence package for a chain.
+    - Include freshness metadata and explicit association to `chain_id` / `sequence_num` / `head_log_id`.
+    - Cover success and stale/missing-chain failure cases with tests.
+- **Acceptance Criteria**:
+  1. Define and expose a read-only evidence package containing at least `chain_id`, `sequence_num`, `head_log_id`, `mr_value`, and `quote`.
+  2. Evidence package explicitly associates attested state with the public Rekor chain head.
+  3. Event Log 0 is treated as the epoch baseline anchor during evidence generation and verification.
+  4. Documentation explains trust assumptions, evidence lifetime, and how exported evidence relates to Rekor replay.
+
+---
+
+### GAP-18: tc-verify External Evidence Mode
+
+- **Priority**: HIGH
+- **Scope**: `src/tc_api/cli/verify.py`, verification support code, package interfaces, tests
+- **References**: trusted-log/verification.md §Verification Inputs, §Verification Flow; architecture.md §6.4
+- **Dependencies**: GAP-14 ✅, GAP-17
+- **Sizing**: Too large for one propose -> apply -> archive cycle; treat as an umbrella task.
+- **Current State**: `tc-verify` currently combines Rekor replay with live TruCon calls (`GET /chain-state/{chain_id}` and `GET /verify-chain/{chain_id}`). This works for in-CVM or tightly coupled deployments but does not match the intended long-term model for remote operator verification.
+- **Suggested Subtasks**:
+  1. `GAP-18A` — tc-verify evidence input mode
+    - Add CLI inputs for an exported evidence package and teach the verifier to resolve replay targets from that package.
+    - Keep live TruCon mode intact as a clearly separate transitional path.
+    - Cover argument validation and evidence-to-chain association failures.
+  2. `GAP-18B` — Attested-head verification in tc-verify
+    - Verify that replayed chain state reaches the attested head described by the evidence package.
+    - Separate immutable-log replay diagnostics from attested-head diagnostics in output and JSON results.
+    - Cover quote mismatch, `mr_value` mismatch, and stale-head cases.
+  3. `GAP-18C` — Transitional TruCon fallback demotion
+    - Mark live TruCon verification as transitional in UX and docs.
+    - Ensure operator-facing help and output make evidence-backed mode the primary path.
+- **Acceptance Criteria**:
+  1. `tc-verify` can verify a chain using Rekor plus exported attested evidence, without requiring live TruCon connectivity.
+  2. Live TruCon-backed verification remains, at most, a transitional or explicitly marked fallback mode.
+  3. CLI output distinguishes public replay results from attested-head evidence results.
+  4. Tests cover remote-verifier mode, missing-evidence failures, and mismatched evidence-to-chain association.
+
+---
+
+### GAP-19: Verification Profiles for Application Flows
+
+- **Priority**: MEDIUM
+- **Scope**: event producers in `src/tc_api/`, `docktap/`, `tc-verify` verification logic, trusted-log verification docs
+- **References**: trusted-log/verification.md §Verification Profiles; architecture.md §6.1, §6.2
+- **Dependencies**: GAP-14 ✅, GAP-18
+- **Sizing**: Too large for one propose -> apply -> archive cycle; treat as an umbrella task.
+- **Current State**: Replay currently proves chain integrity and signature validity, but application-layer verification semantics are still too loose. The project does not yet define which event fields are required for `build`, `publish`, `launch`, and `docktap-runtime` verdicts, nor which omissions are hard failures versus warnings.
+- **Suggested Subtasks**:
+  1. `GAP-19A` — Verification profile contract
+    - Define canonical profile schemas for `build`, `publish`, `launch`, and `docktap-runtime`.
+    - Document required fields, hard failures, and warning-only omissions.
+    - Keep this step doc-first so producer and verifier changes can follow a frozen contract.
+  2. `GAP-19B` — Producer payload alignment
+    - Update event producers to emit the minimum fields required by the agreed profiles, or explicitly mark unavailable data.
+    - Add focused tests for emitted payload shape by flow.
+  3. `GAP-19C` — tc-verify profile enforcement
+    - Add per-flow profile evaluation and reporting to `tc-verify`.
+    - Ensure output reports profile-specific verdicts rather than one synthesized global lifecycle verdict.
+- **Acceptance Criteria**:
+  1. Define canonical verification profiles for `build`, `publish`, `launch`, and `docktap-runtime` flows.
+  2. For each profile, document required fields, hard-fail conditions, and warning-only omissions.
+  3. Event producers emit the minimum data required by the corresponding profile, or explicitly mark unavailable data.
+  4. `tc-verify` reports per-flow verdicts rather than inventing one global workload-lifecycle status.
 
 ---
 
@@ -380,10 +466,10 @@ Each task has:
 - **Scope**: `docs/architecture.md`, `docs/trusted-log/architecture.md`, `docs/trusted-log/api.md`, `docs/docktap/architecture.md`
 - **References**: All completed GAP/FIX tasks
 - **Dependencies**: None
-- **Current State**: The main architecture docs have been substantially synced, including Docktap deployment, per-workload routing, bounded local retention, and TruCon-only rollout posture. The remaining gap is now narrower: a few trusted-log documents still describe outdated module paths or caller-facing contracts that no longer match the live implementation. Examples:
-  - `trusted-log/api.md` still references `src/tc_api/trucon.py` instead of `src/tc_api/trucon/app.py`.
+- **Current State**: The main architecture docs have been substantially synced, including Docktap deployment, per-workload routing, bounded local retention, and the initial external-verification boundary. The remaining gap is now narrower: a few trusted-log documents still describe outdated caller-facing contracts or need follow-up reconciliation with the new `trusted-log/verification.md` design. Examples:
   - `trusted-log/architecture.md` still documents `SubmitResult` as a caller-facing submission contract even though runtime flows no longer expose it directly.
-  - `docs/overview_tasks.md` itself required status reconciliation after multiple archived changes.
+  - `tc-verify` is now documented as an external verification surface, but not all trusted-log documents yet distinguish transitional TruCon-backed verification from the longer-term evidence-package model.
+  - `docs/overview_tasks.md` itself requires status reconciliation as archived changes and new verification tasks are added.
 - **Acceptance Criteria**:
   1. Remaining stale "planned" / "pending" / outdated contract annotations updated to reflect completed status and current runtime behavior.
   2. All file path references updated to current module layout (`trucon/app.py`, not `trucon.py`).
@@ -418,6 +504,7 @@ These are not implementation tasks but **design decisions** that should be resol
 | Q-02 | Confirmation SLA target from commit to backend confirmed? | GAP-04 | architecture.md §12 | Open |
 | Q-03 | Canonical mandatory fields for stable instance mapping across restarts? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`. One `create→rm` lifecycle = one instance. No cross-restart identity — that's `workload_id`'s role. |
 | Q-04 | Worker ownership model: local ownership or shared lease? | — | architecture.md §12 | Open |
+| Q-06 | Which quote-backed fields are mandatory to bind the current chain head to the current CVM state? | GAP-17A, GAP-18B | architecture.md §12; trusted-log/verification.md §Attested Head Evidence | Open |
 | Q-05 | How to handle runtimes that allow quote/report reads but not MR extend? | GAP-05 | trusted-log/architecture.md §Trust Log Initialization | **Resolved** (2026-04-17): Out of scope. Only TDX RTMR[2] is supported. AMD SEV-SNP and quote-only runtimes are not targeted. |
 
 ---
@@ -444,14 +531,25 @@ GAP-09 (Non-TEE Ordering) ✅ ── standalone
 GAP-10 (Service Auth Phase A) ✅ ── standalone
 GAP-11 (Per-Workload Chain) ✅
 GAP-12 (Service Auth Phase B) ◀── GAP-10 ✅ ── LOW priority
-GAP-14 (Verification CLI) ── standalone
+GAP-14 (Verification CLI) ✅ ── standalone
+GAP-17 (Attested Head Evidence Export) ── umbrella
+  ├──▶ GAP-17A (Evidence Contract) ◀── GAP-05 ✅, GAP-14 ✅, Q-06
+  └──▶ GAP-17B (Evidence Export Surface) ◀── GAP-17A
+GAP-18 (tc-verify External Evidence Mode) ── umbrella
+  ├──▶ GAP-18A (Evidence Input Mode) ◀── GAP-17B
+  ├──▶ GAP-18B (Attested-Head Verification) ◀── GAP-18A, Q-06
+  └──▶ GAP-18C (Fallback Demotion) ◀── GAP-18B
+GAP-19 (Verification Profiles) ── umbrella
+  ├──▶ GAP-19A (Profile Contract) ◀── GAP-18C
+  ├──▶ GAP-19B (Producer Payload Alignment) ◀── GAP-19A
+  └──▶ GAP-19C (tc-verify Profile Enforcement) ◀── GAP-19A, GAP-19B
 GAP-16 (Doc Sync) ── standalone (LOW)
 
 FIX-03 (SubmitResult) ── standalone
 FIX-04 (Entry Type) ✅ ── completed
 FIX-05 (OPEN Dead Code) ── standalone (LOW)
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05, FIX-04, GAP-13, GAP-15
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05, FIX-04, GAP-13, GAP-14, GAP-15
 ✗ CLOSED: GAP-08
 ```
 
@@ -481,16 +579,26 @@ FIX-05 (OPEN Dead Code) ── standalone (LOW)
 
 **Phase 5 — Deployment & Operational Tooling**:
 13. ~~`GAP-13`~~ ✅ completed 2026-04-17 — Docktap deployment integration
-14. `GAP-14` — Chain verification CLI tool
+14. ~~`GAP-14`~~ ✅ completed 2026-04-18 — Chain verification CLI tool
 15. ~~`GAP-15`~~ ✅ completed 2026-04-18 — Docktap local-state retention / garbage collection
 
-**Phase 6 — Cleanup & Extensions**:
-16. `FIX-03` — SubmitResult exposure or removal
-17. `FIX-05` — SubmitStatus.OPEN dead code resolution
-18. `GAP-16` — Architecture documentation sync
-19. `GAP-07` — On-chain backend adapter (blocked: target chain selection)
-20. ~~`GAP-08`~~ — CLOSED (Won't Do): legacy path removed, RTMR chain integrity prevents viable fallback
-21. `GAP-12` — Service auth Phase B (mTLS / Unix socket credentials)
+**Phase 6 — Remote Verification Completion**:
+16. `GAP-17A` — Attested head evidence contract
+17. `GAP-17B` — TruCon evidence export surface
+18. `GAP-18A` — tc-verify evidence input mode
+19. `GAP-18B` — Attested-head verification in tc-verify
+20. `GAP-18C` — Transitional TruCon fallback demotion
+21. `GAP-19A` — Verification profile contract
+22. `GAP-19B` — Producer payload alignment
+23. `GAP-19C` — tc-verify profile enforcement
+
+**Phase 7 — Cleanup & Extensions**:
+24. `FIX-03` — SubmitResult exposure or removal
+25. `FIX-05` — SubmitStatus.OPEN dead code resolution
+26. `GAP-16` — Architecture documentation sync
+27. `GAP-07` — On-chain backend adapter (blocked: target chain selection)
+28. ~~`GAP-08`~~ — CLOSED (Won't Do): legacy path removed, RTMR chain integrity prevents viable fallback
+29. `GAP-12` — Service auth Phase B (mTLS / Unix socket credentials)
 
 ---
 
@@ -498,7 +606,14 @@ FIX-05 (OPEN Dead Code) ── standalone (LOW)
 
 The items below are the primary tasks that remain genuinely open after reconciling this table with the live code and archived changes:
 
-- `GAP-14` — verification CLI for operators and auditors
+- `GAP-17A` — freeze the attested head evidence contract
+- `GAP-17B` — export attested head evidence from TruCon
+- `GAP-18A` — let `tc-verify` accept exported evidence as an input mode
+- `GAP-18B` — verify replayed chain state against the attested head
+- `GAP-18C` — demote live TruCon verification to a transitional fallback path
+- `GAP-19A` — freeze verification profile contracts for build / publish / launch / docktap runtime
+- `GAP-19B` — align producer payloads with profile requirements
+- `GAP-19C` — enforce profile-specific verdicts in `tc-verify`
 - `GAP-12` — stronger internal service authentication for multi-node or multi-tenant deployments
 - `FIX-03` — decide whether to expose or remove `SubmitResult`
 - `FIX-05` — remove or justify the unused `SubmitStatus.OPEN` state

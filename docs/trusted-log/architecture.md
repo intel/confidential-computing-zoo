@@ -844,6 +844,31 @@ $$Replayed\_Event\_Digest = Stored\_Event\_Digest$$
 
 If measurement correlation is enabled, verification should additionally check that the replayed event digest is the digest logically extended into MR state for that event, even if the verifier only has an attested MR snapshot rather than a full local replay environment.
 
+### Operator Verification Surfaces
+
+The current implementation exposes two verification inputs:
+
+- immutable-backend history from Rekor, used for public replay and signature validation
+- TruCon local chain state, used for sequence, RTMR, and pending-status diagnostics
+
+This split is acceptable for in-CVM operator tooling, but it should not be treated as the final external verifier contract.
+
+For remote operators who may not be able to log into the CVM, the design should distinguish between:
+
+- **internal control APIs**: TruCon service endpoints used by tc_api, Docktap, and local operational tooling
+- **external verification evidence**: a read-only exported evidence package that binds the current chain head to attested TEE state
+
+The external verifier model should therefore be:
+
+1. Replay the public event chain from the immutable backend, starting from `head_log_id`.
+2. Validate Event Log 0 as the epoch baseline anchor (`baseline_rtmr`, `ccel_digest`, `pub_key`).
+3. Consume exported evidence that identifies the current chain head (`chain_id`, `head_log_id`, `sequence_num`) and binds it to the attested local measurement state (for example a quote-backed RTMR snapshot).
+4. Compare the replayed chain result against that attested head evidence rather than trusting live TruCon API responses alone.
+
+In other words, Rekor remains the public audit log, Event Log 0 remains the baseline anchor, and exported attested head evidence bridges the gap between public replay and the current CVM state.
+
+This architecture intentionally keeps detailed evidence-package format, quote field selection, and operator CLI behavior out of the top-level architecture doc. Those details should evolve in verification-specific design docs and OpenSpec changes.
+
 ## Integration Touchpoints
 
 ### API Layer
