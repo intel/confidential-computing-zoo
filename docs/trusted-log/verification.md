@@ -209,13 +209,12 @@ The preferred long-term inputs for `tc-verify` are:
 
 ### Transitional Inputs
 
-The current implementation also consumes live TruCon APIs for:
+The current implementation prefers exported evidence as the primary operator input and retains live TruCon APIs only as fallback inputs for tightly coupled or in-CVM workflows:
 
 - `GET /chain-state/{chain_id}`
 - `GET /verify-chain/{chain_id}`
-- `GET /evidence/{chain_id}`
 
-`GET /evidence/{chain_id}` is the producer-side bridge toward the long-term model. `GET /chain-state/{chain_id}` and `GET /verify-chain/{chain_id}` remain transitional operational inputs and should not be treated as the final external verifier contract.
+`GET /evidence/{chain_id}` is no longer just a producer-side bridge in the abstract design; it is the concrete producer surface used to obtain the preferred v1 evidence package. `GET /chain-state/{chain_id}` and `GET /verify-chain/{chain_id}` remain transitional operational inputs and should not be treated as the final external verifier contract.
 
 ## Verification Flow
 
@@ -419,7 +418,7 @@ The current repository layout may continue to co-locate `tc-verify` with `tc-api
 - Which exact quote fields should be required in the evidence package for current-head binding?
 - Should the evidence package contain `head_event_digest` in addition to `mr_value`?
 - How should operator tooling fetch exported evidence in production deployments?
-- Should transitional TruCon-backed verification remain a fallback mode or be removed once exported evidence is available?
+- When should transitional TruCon-backed fallback verification be removed entirely from operator workflows?
 
 ## Related Documents
 

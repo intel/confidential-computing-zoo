@@ -171,12 +171,12 @@ The structures fall into four groups:
 
 - Record construction: `RecordContext`, `Record`, and `Entry` describe a record while it is still being assembled.
 - Committed event payload: `EventLog` is the canonical immutable payload submitted to remote backends.
-- Submission and state reporting: `SubmitResult`, `CommitQueueStatus`, and `LatestState` report commit outcomes and current chain state.
+- Submission and state reporting: `CommitResult`, `CommitQueueStatus`, and `LatestState` report commit outcomes and current chain state.
 - Verification output: `VerificationResult` reports whether a target record or chain satisfies integrity and policy checks.
 
 For API simplicity, `LatestState` should remain a summary view rather than a full queue-inspection contract.
 Returning pending event identifiers is acceptable, but detailed retry and queue-management metadata should stay outside this summary API.
-The common operational path is queue-driven: once a committed record enters the commit queue, a submission worker should attempt `submit_record(record_id)` without requiring the caller to orchestrate publication through repeated rich state polling.
+The common operational path is queue-driven: once a committed record enters the commit queue, the embedded submit daemon publishes it asynchronously without requiring the caller to orchestrate a second explicit submission step.
 
 Core contract definitions:
 
@@ -184,7 +184,7 @@ Core contract definitions:
 - `Record`: an ordered collection of entries accumulated before submission; ordering is significant because it affects the event digest.
 - `RecordContext`: the mutable handle returned by initialization, containing the in-progress `record_id`, creation timestamp, and chain reference information such as `prev_log_id`.
 - `EventLog`: the immutable committed event containing event identity, canonical digest, ordered record payload, creation time, and optionally the MR value and globally resolvable backend identifier.
-- `SubmitResult`: the caller-facing result of `submit_record`, including commit status, backend outcome, and MR values associated with the submission.
+- `CommitResult`: the caller-facing result of `commit_record`, including queue state and MR values associated with the synchronized TruCon commit path.
 - `CommitQueueStatus`: a lightweight worker-facing view that reports whether the commit queue contains committed work, how many records are queued, and which `record_id` should be attempted next.
 - `LatestState`: a compact snapshot view of the most recently confirmed immutable-log entry, pending-record count, pending event identifiers, and the latest observed MR value.
 - `VerificationResult`: the aggregate verification outcome for a record or chain, including a success flag, collected errors, and structured details for policy or backend-specific diagnostics.
@@ -288,15 +288,13 @@ classDiagram
         +Any value
     }
 
-    class SubmitResult {
+    class CommitResult {
         +string record_id
         +string event_id(optional)
-        +SubmitStatus status
+        +SubmitStatus queue_status
         +string mr_value(optional)
         +string prev_mr_value(optional)
         +string pending_reason(optional)
-        +string backend(optional)
-        +datetime confirmed_at(optional)
     }
 
     class CommitQueueStatus {
@@ -322,8 +320,8 @@ classDiagram
     Record "1" *-- "*" Entry : contains
     RecordContext ..> Record : builds
     RecordContext ..> EventLog : commits to
-    SubmitResult ..> EventLog : reports outcome for
-    SubmitResult --> SubmitStatus : uses
+    CommitResult ..> EventLog : reports queued outcome for
+    CommitResult --> SubmitStatus : uses
     CommitQueueStatus ..> EventLog : identifies next queued work
     LatestState ..> EventLog : summarizes latest
     VerificationResult ..> EventLog : evaluates
@@ -334,7 +332,7 @@ Message flow through these structures is intentional:
 1. `init_record` creates a `RecordContext`.
 2. `add_entry` appends ordered `Entry` values into the `Record` associated with that context.
 3. `commit_record` seals the record into an `EventLog`, computes its digest, and moves it into committed queued state.
-4. `submit_record` publishes a previously committed queued event, applies queue-state transitions internally, and returns a `SubmitResult`.
+4. The embedded submit daemon publishes previously committed queued events in `sequence_num` order and applies queue-state transitions internally.
 5. Later queries can expose `LatestState`, `EventLog`, or `VerificationResult` for that committed event chain.
 
 If operators or a worker need per-record retry metadata, that detail should be exposed through a queue-specific monitoring or inspection view rather than enlarging `LatestState` itself.
@@ -717,8 +715,8 @@ The meaning of each result state is:
 - `FAILED`: legacy terminal state retained for backward compatibility with older records.
 - `OPEN`: reserved for a future pre-commit assembly flow and not currently used by the runtime path.
 
-These queue mutations should happen inside `submit_record()` itself rather than in the submission worker.
-The worker should treat `SubmitResult` as the authoritative outcome and decide only whether to continue, back off, or escalate.
+These queue mutations happen inside the embedded submit daemon and its database update path rather than through a caller-facing `submit_record()` API.
+The daemon remains the authoritative mutation agent for confirmation, retry, and terminal failure transitions.
 
 Commit queue entries retain the following metadata for safe resubmission and operator visibility:
 
@@ -755,7 +753,7 @@ Publication retry should follow these rules:
 
 The submission worker remains responsible for draining queued pending state, deciding when to retry, and surfacing persistent failures to higher-level orchestration.
 This worker may be implemented by Trust Bootstrap itself or by a separate asynchronous retry component, but the public API should keep a clean split between summary state and publication actions.
-Because `commit_record` and `submit_record` may execute in separate worker contexts, queue inspection and queue mutation must remain concurrency-safe under overlapping calls.
+Because `commit_record` and daemon-driven submission execute in separate worker contexts, queue inspection and queue mutation must remain concurrency-safe under overlapping calls.
 
 #### Submission Worker Walkthrough
 
@@ -763,13 +761,12 @@ The default walkthrough should be straightforward:
 
 1. `commit_record` finalizes an `EventLog` and enqueues it into the commit queue.
 2. Queue enqueue wakes the submission worker immediately, or the worker observes the queue on a short periodic interval.
-3. The worker calls `get_commit_queue_status()`.
-4. If `has_queued_records=false`, the worker returns or sleeps.
-5. If committed records exist, the worker uses `next_record_id`.
-6. The worker calls `submit_record(next_record_id)`.
-7. On `CONFIRMED`, `submit_record()` has already removed the record from the commit queue, and the worker continues with the next queued item.
-8. On `PENDING`, `submit_record()` has already preserved the record and updated retry metadata, and the worker backs off according to policy.
-9. On `FAILED`, `submit_record()` has already persisted operator-visible failure details when appropriate, and the worker stops or escalates according to policy.
+3. The daemon checks the queue for the next eligible pending record.
+4. If no eligible records exist, the daemon returns or sleeps.
+5. If pending records exist, the daemon submits them to the immutable backend in `sequence_num` order.
+6. On confirmation, the daemon updates `status=CONFIRMED`, persists `log_id`/`confirmed_at`, updates `chain_state.head_log_id`, and continues.
+7. On retryable failure, the daemon preserves the record, updates retry metadata, and backs off according to policy.
+8. On terminal failure, the daemon persists operator-visible failure details and blocks subsequent records in the same chain until intervention.
 
 This walkthrough matches the operational expectation that any committed queued record should be submitted as soon as practical, without forcing the caller to repeatedly poll and dispatch each item manually.
 
@@ -782,21 +779,20 @@ sequenceDiagram
     participant PQ as Commit Queue
     participant RB as Remote Backend
 
-    TL_SW->>TL: get_commit_queue_status()
-    TL->>PQ: inspect commit queue
-    TL-->>TL_SW: CommitQueueStatus(has_queued_records, queued_record_count, next_record_id)
-    TL_SW->>TL: submit_record(next_record_id)
+    TL_SW->>PQ: inspect commit queue
+    PQ-->>TL_SW: next eligible pending record
+    TL_SW->>TL: submit next eligible record
     TL->>PQ: load finalized queued EventLog
     TL->>RB: submit(EventLog, prev_log_id)
 
     alt backend confirms
         RB-->>TL: log_id, confirmed
         TL->>PQ: remove record if present
-        TL-->>TL_SW: SubmitResult(status=CONFIRMED, event_id, confirmed_at)
+        TL-->>TL_SW: confirmation persisted
     else backend not yet confirmed
         RB-->>TL: pending or retryable error
         TL->>PQ: update pending record metadata
-        TL-->>TL_SW: SubmitResult(status=PENDING, event_id, pending_reason)
+        TL-->>TL_SW: retry metadata persisted
     end
 ```
 
@@ -871,12 +867,13 @@ If measurement correlation is enabled, verification should additionally check th
 
 ### Operator Verification Surfaces
 
-The current implementation exposes two verification inputs:
+The current implementation exposes a preferred external verification path and a narrower fallback path:
 
 - immutable-backend history from Rekor, used for public replay and signature validation
-- TruCon local chain state, used for sequence, RTMR, and pending-status diagnostics
+- exported attested-head evidence from `GET /evidence/{chain_id}`, used as the preferred operator input for current-head binding
+- live TruCon local chain state, retained only as a transitional fallback for sequence, RTMR, and pending-status diagnostics
 
-This split is acceptable for in-CVM operator tooling, but it should not be treated as the final external verifier contract.
+This split is acceptable for the current transition period, but only the evidence-backed path should be treated as the long-term external verifier contract.
 
 For remote operators who may not be able to log into the CVM, the design should distinguish between:
 
