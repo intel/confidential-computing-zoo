@@ -368,10 +368,9 @@ Each task has:
 - **Sizing**: Too large for one propose -> apply -> archive cycle; treat as an umbrella task.
 - **Current State**: Event Log 0 anchors the chain baseline in Rekor, and TruCon maintains live `chain_state` (`chain_id`, `head_log_id`, `sequence_num`, `mr_value`) locally. But there is no exported evidence package that binds the current chain head to current attested CVM state for remote operators who cannot log into the CVM.
 - **Suggested Subtasks**:
-  1. `GAP-17A` — Attested head evidence contract
-    - Define the exported evidence schema, mandatory fields, serialization format, and quote-binding requirements.
-    - Resolve `Q-06` enough to freeze the v1 contract.
-    - Output is design + docs + test fixture shape, without requiring full verifier integration.
+  1. ~~`GAP-17A` — Attested head evidence contract~~ ✅ COMPLETED
+    - Completed: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-attested-head-evidence-contract/`
+    - Outcome: v1 evidence schema, quote-binding field set, canonical JSON contract, and validation fixtures are frozen.
   2. `GAP-17B` — TruCon evidence export surface
     - Implement a read-only export path that emits the attested head evidence package for a chain.
     - Include freshness metadata and explicit association to `chain_id` / `sequence_num` / `head_log_id`.
@@ -504,7 +503,7 @@ These are not implementation tasks but **design decisions** that should be resol
 | Q-02 | Confirmation SLA target from commit to backend confirmed? | GAP-04 | architecture.md §12 | Open |
 | Q-03 | Canonical mandatory fields for stable instance mapping across restarts? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`. One `create→rm` lifecycle = one instance. No cross-restart identity — that's `workload_id`'s role. |
 | Q-04 | Worker ownership model: local ownership or shared lease? | — | architecture.md §12 | Open |
-| Q-06 | Which quote-backed fields are mandatory to bind the current chain head to the current CVM state? | GAP-17A, GAP-18B | architecture.md §12; trusted-log/verification.md §Attested Head Evidence | Open |
+| Q-06 | Which quote-backed fields are mandatory to bind the current chain head to the current CVM state? | GAP-18B | architecture.md §12; trusted-log/verification.md §Attested Head Evidence | **Resolved** (2026-04-19): v1 binding covers `chain_id`, `sequence_num`, `head_log_id`, and `mr_value`. `expected_value` is computed by TruCon from canonical serialization of those bound fields and then compared against quote-backed report data; it is not derived from the quote itself. |
 | Q-05 | How to handle runtimes that allow quote/report reads but not MR extend? | GAP-05 | trusted-log/architecture.md §Trust Log Initialization | **Resolved** (2026-04-17): Out of scope. Only TDX RTMR[2] is supported. AMD SEV-SNP and quote-only runtimes are not targeted. |
 
 ---
@@ -533,11 +532,11 @@ GAP-11 (Per-Workload Chain) ✅
 GAP-12 (Service Auth Phase B) ◀── GAP-10 ✅ ── LOW priority
 GAP-14 (Verification CLI) ✅ ── standalone
 GAP-17 (Attested Head Evidence Export) ── umbrella
-  ├──▶ GAP-17A (Evidence Contract) ◀── GAP-05 ✅, GAP-14 ✅, Q-06
-  └──▶ GAP-17B (Evidence Export Surface) ◀── GAP-17A
+  ├──▶ GAP-17A (Evidence Contract) ✅
+  └──▶ GAP-17B (Evidence Export Surface) ◀── GAP-17A ✅
 GAP-18 (tc-verify External Evidence Mode) ── umbrella
   ├──▶ GAP-18A (Evidence Input Mode) ◀── GAP-17B
-  ├──▶ GAP-18B (Attested-Head Verification) ◀── GAP-18A, Q-06
+  ├──▶ GAP-18B (Attested-Head Verification) ◀── GAP-18A, Q-06 ✅
   └──▶ GAP-18C (Fallback Demotion) ◀── GAP-18B
 GAP-19 (Verification Profiles) ── umbrella
   ├──▶ GAP-19A (Profile Contract) ◀── GAP-18C
@@ -583,7 +582,7 @@ FIX-05 (OPEN Dead Code) ── standalone (LOW)
 15. ~~`GAP-15`~~ ✅ completed 2026-04-18 — Docktap local-state retention / garbage collection
 
 **Phase 6 — Remote Verification Completion**:
-16. `GAP-17A` — Attested head evidence contract
+16. ~~`GAP-17A`~~ ✅ completed 2026-04-19 — Attested head evidence contract
 17. `GAP-17B` — TruCon evidence export surface
 18. `GAP-18A` — tc-verify evidence input mode
 19. `GAP-18B` — Attested-head verification in tc-verify
@@ -606,7 +605,8 @@ FIX-05 (OPEN Dead Code) ── standalone (LOW)
 
 The items below are the primary tasks that remain genuinely open after reconciling this table with the live code and archived changes:
 
-- `GAP-17A` — freeze the attested head evidence contract
+Update (2026-04-19): `GAP-17A` is complete and archived at `openspec/changes/archive/2026-04-19-attested-head-evidence-contract/`.
+
 - `GAP-17B` — export attested head evidence from TruCon
 - `GAP-18A` — let `tc-verify` accept exported evidence as an input mode
 - `GAP-18B` — verify replayed chain state against the attested head

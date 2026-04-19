@@ -1,0 +1,26 @@
+{
+  "version": "v1",
+  "tee_type": "tdx",
+  "chain_id": "workload.demo",
+  "sequence_num": 7,
+  "head_log_id": "rekor-log-0007",
+  "mr_value": "sha384:rtmr-head",
+  "generated_at": "2026-04-19T10:15:00Z",
+  "quote": "base64-tdx-quote",
+  "report_data_binding": {
+    "algorithm": "sha384",
+    "bound_fields": [
+      "chain_id",
+      "sequence_num",
+      "head_log_id",
+      "mr_value"
+    ],
+    "expected_value": "sha384:bound-value"
+  },
+  "head_event_digest": "sha384:event-digest",
+  "quote_format": "tdx-quote-v4",
+  "expires_at": "2026-04-19T10:20:00Z",
+  "extensions": {
+    "issuer": "test-fixture"
+  }
+}

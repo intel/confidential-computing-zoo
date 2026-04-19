@@ -104,20 +104,45 @@ The verifier should consume an exported evidence package that binds the current 
 
 ### Minimum Evidence Package Fields
 
-The first version should require at least:
+The first version requires these top-level fields:
+
+- `version`
+- `tee_type`
+- `chain_id`
+- `sequence_num`
+- `head_log_id`
+- `mr_value`
+- `generated_at`
+- `quote`
+- `report_data_binding`
+
+The first version may additionally carry:
+
+- `head_event_digest`
+- `quote_format`
+- `expires_at`
+- `extensions`
+
+The v1 contract is intentionally JSON and versioned so TruCon, `tc-verify`, and tests can share one canonical evidence shape before any export transport is chosen.
+
+### Report Data Binding
+
+`report_data_binding` records how the evidence package is tied to quote-backed report data.
+
+The first version requires:
+
+- `algorithm`: the digest algorithm used to derive the bound value
+- `bound_fields`: the ordered list of fields included in the binding
+- `expected_value`: the canonical digest value expected to appear in quote-bound report data
+
+For v1, `bound_fields` must be ordered as:
 
 - `chain_id`
 - `sequence_num`
 - `head_log_id`
 - `mr_value`
-- `quote`
 
-Optional but useful additions:
-
-- `head_event_digest`
-- `generated_at`
-- `report_data_binding`
-- `tee_type`
+This ordering is part of the contract. External verifiers should not infer field order from implementation details.
 
 ### Why This Package Exists
 
@@ -140,7 +165,21 @@ At minimum, the verifier should require:
 - `head_log_id`
 - `sequence_num`
 
+In v1, `mr_value` is also part of the quote-backed binding. That keeps the evidence package tied not only to a public chain head position but also to the measured RTMR[2] state expected at that position.
+
 Without those fields, the evidence package is only a detached TEE snapshot and cannot be tied to a specific public event chain.
+
+### Event Log 0 Boundary
+
+The attested head evidence package does not duplicate Event Log 0 baseline data.
+
+In particular, v1 evidence packages do not need to embed:
+
+- `baseline_rtmr`
+- `ccel_digest`
+- Event Log 0 payload bodies
+
+Those fields remain part of Rekor-backed epoch replay. Event Log 0 answers where the chain epoch began; attested head evidence answers which public head the current CVM is endorsing now.
 
 ## Verification Inputs
 

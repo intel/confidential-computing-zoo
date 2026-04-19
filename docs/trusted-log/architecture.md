@@ -869,6 +869,8 @@ In other words, Rekor remains the public audit log, Event Log 0 remains the base
 
 This architecture intentionally keeps detailed evidence-package format, quote field selection, and operator CLI behavior out of the top-level architecture doc. Those details should evolve in verification-specific design docs and OpenSpec changes.
 
+For the current v1 contract, exported attested head evidence is a versioned JSON envelope whose trust-critical binding covers `chain_id`, `sequence_num`, `head_log_id`, and `mr_value`. Event Log 0 baseline fields remain outside that package and continue to come from Rekor replay.
+
 ## Integration Touchpoints
 
 ### API Layer
