@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from proxy.docker_proxy import DockerProxyServer, WORKLOAD_LABEL
+from proxy.docker_proxy import DockerProxyServer, WORKLOAD_LABEL, LAUNCH_LABEL
 from trucon_client import TruConCommitter
 from proxy.operation_log import OperationRecord
 from workload_store import WorkloadStore
@@ -75,6 +75,10 @@ class TestExtractWorkloadId:
             WORKLOAD_LABEL: "prod-svc",
         })
         assert DockerProxyServer._extract_workload_id(req) == "prod-svc"
+
+    def test_extract_launch_id(self):
+        req = _make_create_request(labels={LAUNCH_LABEL: "launch-123"})
+        assert DockerProxyServer._extract_launch_id(req) == "launch-123"
 
 
 # ---------------------------------------------------------------------------

@@ -56,6 +56,10 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Owns user-facing APIs and existing request/response contracts.
 - Executes build, publish, launch orchestration logic.
 - Emits trusted events to TruCon instead of mutating trust-log chain state directly.
+- Emits profile-aligned audit fields for `build`, `publish`, and `launch` flows so external verification can evaluate application semantics instead of only raw command success.
+- Build commits now carry stable output and input identities such as `output_image_digest`, `dockerfile_digest`, `build_context_digest`, and `base_image_digests`.
+- Publish commits now carry `pushed_subject_digest`, `target_ref`, and `publish_status`.
+- Launch commits now carry workload-scoped launch identity (`workload_id`, `launch_id`), launch outcome, `launch_config_digest`, and explicit security projection fields (`privileged`, `network_mode`, `mounts`, `devices`, `capabilities`).
 - Continues exposing status endpoints for build/publish/launch results.
 - On startup (`lifespan()`), generates an ECDSA P-384 keypair in TEE memory and calls TruCon `/init-chain` to create Event Log 0 (baseline record). The TEE private key signs Event Log 0's DSSE envelope; subsequent events use Sigstore OIDC signing. The private key is discarded after Event Log 0 is committed.
 
@@ -70,6 +74,8 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Shares tc_api's OIDC signing infrastructure (`sigstore.oidc.detect_credential()`); token re-acquired per commit.
 - Uses `Entry(key, value)` objects imported from `tc_api.tlog.types` for event data (same types as tc_api). Values are native JSON-compatible types (not stringified).
 - Routes events to per-workload chains via `io.trucon.workload-id` container label; containers without the label default to `"default"` chain.
+- Emits explicit runtime outcomes (`operation_result`) plus workload, instance, and image-target identity fields required by the `docktap-runtime` verification profile.
+- Persists and propagates `launch_id` for runtime events attributable to a REST-originated launch flow so launch verification can correlate REST launch intent with Docktap `create`/`start` evidence.
 - Best-effort submission: TruCon failures log a warning but do not block Docker API responses.
 - Retains local routing, mapping, and retry state only for bounded operational windows; replay and verification rely on TruCon and immutable backends, not on Docktap-local persistence.
 - Exposes HTTP health endpoint (`/healthz` on configurable port, default 8002) for container health checks.
@@ -79,12 +85,13 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 ### 4.3 TruCon Core Service
 
 **Currently implemented:**
-- Exposes REST endpoints: `POST /commit`, `POST /init-chain`, `GET /init-chain/{chain_id}/baseline`, `GET /chain-state/{chain_id}`, `GET /status`.
+- Exposes REST endpoints: `POST /commit`, `POST /init-chain`, `GET /init-chain/{chain_id}/baseline`, `GET /chain-state/{chain_id}`, `GET /evidence/{chain_id}`, `GET /verify-chain/{chain_id}`, and `GET /status`.
 - Serializes commit operations (RTMR[2] extend + SQLite INSERT + chain state update) behind a single-process lock.
 - Maintains per-chain state tracking (sequence number, head record, measurement value).
 - Runs with `--workers 1` to preserve lock-based serialization.
 - Performs crash recovery on startup based on RTMR extension flags.
 - Only TDX RTMR[2] is supported for measurement extensions (RTMR[0]/[1] are firmware/boot-locked; AMD SEV-SNP is out of scope).
+- Exports a strict v1 attested-head evidence package only for the latest confirmed public head of a chain; pending-only local state is not eligible for external evidence export.
 
 **Chain initialization (`/init-chain`):**
 - Two-phase protocol: `GET /init-chain/{chain_id}/baseline` returns current RTMR[2] value and CCEL digest (no extend); `POST /init-chain` accepts a signed baseline bundle and initializes `chain_state`.
@@ -140,22 +147,26 @@ Correlation queries exposed by TruCon:
 
 `instance_id` is caller-provided metadata on `CommitRequest` (same pattern as `chain_id`), outside the DSSE signed predicate. Records without `instance_id` (e.g., REST API events without container context) are included in workload-level queries but excluded from instance-specific queries.
 
+Launch-oriented verification additionally uses `launch_id` as the v1 launch-attempt boundary. REST launch commits and attributable Docktap runtime events carry that identifier so the verifier can select and evaluate the latest workload-scoped launch attempt without inventing a separate attempt namespace.
+
 ## 6. Key Runtime Flows
 
 ### 6.1 Build/Publish/Launch via REST
 
 1. REST worker executes business step.
-2. Worker sends trusted event actions to TruCon.
-3. TruCon commits event into durable queue.
-4. Worker returns existing external API semantics.
-5. Submission worker confirms events asynchronously.
+2. Worker computes and attaches the profile-aligned audit fields required for the flow being emitted.
+3. Worker sends trusted event actions to TruCon.
+4. For launch flows, the worker also assigns `workload_id` and `launch_id` so downstream runtime evidence can be correlated to the same launch boundary.
+5. TruCon commits event into durable queue.
+6. Worker returns existing external API semantics.
+7. Submission worker confirms events asynchronously.
 
 ### 6.2 Runtime Interception via Docktap
 
 1. Docktap intercepts Docker API call (`pull`/`create`/`start`/`stop`/`rm`) on the proxy socket.
 2. Docktap forwards request to Docker daemon, receives response, and returns it to CLI.
 3. Docktap constructs `Entry(key, value)` objects from operation metadata (values are native JSON types) and signs a DSSE bundle using ambient OIDC credentials.
-4. Docktap POSTs the signed bundle to TruCon `POST /commit` with `chain_id` resolved from `io.trucon.workload-id` container label (defaults to `"default"`).
+4. Docktap POSTs the signed bundle to TruCon `POST /commit` with `chain_id` resolved from `io.trucon.workload-id` container label (defaults to `"default"`), plus runtime audit fields including `operation_result`, workload identity, container identity, image identity, and `launch_id` when available.
 5. TruCon performs idempotency and ordering checks, commits and queues event.
 6. If TruCon is unreachable or returns a transient error, Docktap records bounded local retry state after the Docker response is already returned, then retries asynchronously until TruCon acknowledges the commit or retry exhaustion is reached.
 7. Submission worker confirms events to immutable backends asynchronously.
@@ -167,10 +178,13 @@ Correlation queries exposed by TruCon:
 
 ### 6.4 External Verification
 
-- Operator-facing verification is expected to consume immutable-backend history together with verification evidence exported from the CVM.
+- Operator-facing verification now consumes immutable-backend history together with attested-head evidence exported from the CVM.
 - TruCon's internal REST endpoints (`/commit`, `/chain-state`, `/verify-chain`, `/status`) are service-to-service control surfaces, not the long-term external verifier contract.
 - Event Log 0 remains the baseline anchor for each chain epoch: it records the initial RTMR[2] snapshot, the CCEL digest, and the TEE-generated public key used to anchor chain origin.
-- For remote verification, the exported evidence must bind the current chain head (`chain_id`, `head_log_id`, `sequence_num`) to attested TEE state (for example quote-backed RTMR evidence) rather than requiring the verifier to trust TruCon's live internal state directly.
+- `tc-verify` prefers exported evidence as its primary operator input and keeps live `chain_id`-based TruCon verification only as a transitional fallback for tightly coupled or in-CVM workflows.
+- For remote verification, the exported evidence binds the current chain head (`chain_id`, `head_log_id`, `sequence_num`) and `mr_value` to attested TEE state via quote-backed report-data binding, rather than requiring the verifier to trust TruCon's live internal state directly.
+- `tc-verify` now reports independent profile verdicts for `build`, `publish`, `launch`, and `docktap-runtime`, using shared verdict states `verified`, `warning`, `incomplete`, and `failed`.
+- Launch verification evaluates the latest workload-scoped launch attempt by `launch_id`, preserving auditability even when a launch fails before any concrete container instance exists.
 - Detailed verification result models, evidence-package format, and replay rules belong in the trusted-log design documents rather than this top-level architecture overview.
 
 ## 7. Concurrency and Ordering Strategy
@@ -258,7 +272,7 @@ Rollback principle:
 - Confirmation SLA target from commit accepted to backend confirmed.
 - ~~Canonical mandatory fields for stable instance mapping across restarts/replacements.~~ **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`; one `create→rm` lifecycle = one instance. Cross-restart identity is `workload_id`'s role, not `instance_id`'s.
 - Worker ownership model: local ownership or shared lease coordination.
-- External verification evidence format: which attested fields bind the current chain head to the current CVM state.
+- ~~External verification evidence format: which attested fields bind the current chain head to the current CVM state.~~ **Resolved** (2026-04-19): v1 binding covers `chain_id`, `sequence_num`, `head_log_id`, and `mr_value`; exported evidence is now the preferred verifier input.
 - ~~How to handle runtimes that allow quote/report reads but not MR extend.~~ **Resolved** (2026-04-17): Out of scope. Only TDX RTMR[2] is supported. AMD SEV-SNP and quote-only runtimes are not targeted.
 
 ## 13. Related Documents

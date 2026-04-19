@@ -551,13 +551,15 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
     """Deploy and launch container on worker nodes"""
     try:
         tlog = app.state.trusted_log
-        ctx = tlog.init_record()
+        workload_id = docker_service.normalize_workload_id(request.user_id, request.image_id, request.metadata)
+        ctx = tlog.init_record(context={"chain_ref": workload_id})
         record_id = ctx.record_id
 
         # Generate launch ID
         launch_id = docker_service.generate_uuid(prefix="launch")
         logger.info(f"CHECK launchID: {launch_id}")
         tlog.add_entry(record_id, Entry(key="launch_id", value={"launch_id": launch_id}))
+        tlog.add_entry(record_id, Entry(key="workload_id", value=workload_id))
 
         # Create launch directory
         launch_path = os.path.join(BUILD_DIR, launch_id)
@@ -582,6 +584,7 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
             launch_container_async,
             request,
             launch_id,
+            workload_id,
             launch_path,
             tlog,
             record_id
@@ -602,7 +605,7 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
             detail=f"Failed to initiate launch: {str(e)}"
         )
 
-async def launch_container_async(request: LaunchRequest, launch_id: str, launch_path: str, tlog: TrustedLogAPI, record_id: str):
+async def launch_container_async(request: LaunchRequest, launch_id: str, workload_id: str, launch_path: str, tlog: TrustedLogAPI, record_id: str):
     """Async function to launch container in background"""
     try:
         docker_service.update_launch_status(request.user_id, launch_id, "launching")
@@ -612,6 +615,22 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         with open(log_file, "w") as f:
             f.write(f"Launch started at {datetime.now().isoformat()}\n")
         tlog.add_entry(record_id, Entry(key="launch-log", value={"launch-log":log_file}))
+        tlog.add_entry(record_id, Entry(key="workload_id", value=workload_id))
+        image_digest = docker_service._resolve_image_digest(request.image_url or request.image_id)
+        security_projection = docker_service._build_launch_security_projection(launch_id, workload_id)
+        launch_config_digest = docker_service._json_sha384_digest({
+            "request": request.model_dump(),
+            "security_projection": security_projection,
+        })
+        tlog.add_entry(record_id, Entry(key="image_digest", value=image_digest))
+        tlog.add_entry(record_id, Entry(key="launch_config_digest", value=launch_config_digest))
+        tlog.add_entry(record_id, Entry(key="privileged", value=security_projection["privileged"]))
+        tlog.add_entry(record_id, Entry(key="network_mode", value=security_projection["network_mode"]))
+        tlog.add_entry(record_id, Entry(key="mounts", value=security_projection["mounts"]))
+        tlog.add_entry(record_id, Entry(key="devices", value=security_projection["devices"]))
+        tlog.add_entry(record_id, Entry(key="capabilities", value=security_projection["capabilities"]))
+        tlog.add_entry(record_id, Entry(key="launch_env_keys", value=security_projection["launch_env_keys"]))
+        tlog.add_entry(record_id, Entry(key="launch_env_digest", value=security_projection["launch_env_digest"]))
 
         # 3. Perform attestation and handle decryption
         attestation_result = "trusted"
@@ -660,6 +679,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                 error_message="Image pull failed"
             )
             logger.debug("Get encrypted iamge and decrypt failed")
+            tlog.add_entry(record_id, Entry(key="launch_result", value="failed"))
             return
             
         # 2. Verify SBOM if provided
@@ -681,6 +701,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
                 )
                 logger.debug("Verify SBOM failed")
                 tlog.add_entry(record_id, Entry(key="sbom_verify", value={"sbom_verify": sbom_valid}))
+                tlog.add_entry(record_id, Entry(key="launch_result", value="failed"))
                 return
         
         # 4. Launch containers on worker nodes
@@ -689,7 +710,9 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
             tlog, record_id,
             image_url=request.image_url,
             image_id=request.image_id,
-            launch_pth=launch_path
+            launch_pth=launch_path,
+            workload_id=workload_id,
+            launch_id=launch_id,
         )
         tlog.add_entry(record_id, Entry(key="launch_instance_ids", value={"launch_instance_ids": instance_ids}))
         if not instance_ids:
@@ -706,7 +729,10 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, launch_
         # 5. Create launch evidence
         evidences = {
             "launch_id": launch_id,
+            "workload_id": workload_id,
             "image_id": request.image_id,
+            "image_digest": image_digest,
+            "launch_config_digest": launch_config_digest,
             "user_id": request.user_id,
             "timestamp": datetime.now().isoformat(),
             "attestation_result": attestation_result,

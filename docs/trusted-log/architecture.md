@@ -13,7 +13,7 @@ The module combines three planes:
 
 - Immutable event persistence plane for remote tamper-evident history.
 - Local measurement plane for runtime state binding.
-- Verification plane for chain and signature validation.
+- Verification plane for chain replay, attested-head association, and profile-scoped application verdicts.
 
 The system is deployed as two cooperating services:
 
@@ -112,7 +112,7 @@ A single-instance FastAPI service (`--workers 1`) that serializes all chain-muta
 A local SQLite database with WAL mode serving as an operations buffer. To enforce strict hardware Lifecycle Alignment, this database MUST reside in a volatile, memory-backed file system (e.g., `/dev/shm`) and MUST be protected by strict DAC isolation (i.e. `0700` permissions on a dedicated directory). The expanded schema includes `chain_id`, `rtmr_extended`, `log_id`, `prev_log_id`, `mr_value`, `sequence_num`, `confirmed_at`, and `retry_count` columns. A companion `chain_state` table maintains per-chain head tracking.
 
 - Embedded Submit Daemon:
-A `threading.Thread(daemon=True)` running inside the TruCon process. It polls the commit queue every 5 seconds for records with `status=PENDING` and `rtmr_extended=TRUE`, submits them to the immutable backend in ascending `sequence_num` order, and applies retry counting (max 10 retries before marking `FAILED`). FAILED records block subsequent submissions in the same chain to preserve ordering guarantees. The daemon's lifecycle is tied to the TruCon process.
+A `threading.Thread(daemon=True)` running inside the TruCon process. It polls the commit queue every 5 seconds for records with `status=PENDING` and `rtmr_extended=TRUE`, moves active work through `SUBMITTING`, and applies retry classification up to a threshold of 10 attempts (`FAILED_RETRYABLE` during retry windows, `FAILED_TERMINAL` after exhaustion; `FAILED` remains a legacy terminal state for older records). Terminally failed predecessors block subsequent submissions in the same chain to preserve ordering guarantees. The daemon's lifecycle is tied to the TruCon process.
 
 - Local MR Adapter:
 Defines the local measurement contract (extend/query), independent of platform-specific backend details. Used exclusively by the TruCon sequencer within the lock scope.
@@ -237,8 +237,12 @@ classDiagram
 
     class SubmitStatus {
         <<enumeration>>
+        OPEN
         CONFIRMED
         PENDING
+        SUBMITTING
+        FAILED_RETRYABLE
+        FAILED_TERMINAL
         FAILED
     }
 
@@ -454,14 +458,14 @@ The split-architecture design eliminates multi-worker concurrency issues by sepa
 
 - **TruCon** (single-instance, single-worker): All chain-mutating operations (RTMR extend, SQLite INSERT, chain_state UPDATE) are serialized behind a `threading.Lock()`. This lock is process-local, which is why the TruCon MUST run with `--workers 1`. Single-instance enforcement is achieved via `fcntl.flock(LOCK_EX | LOCK_NB)` on a well-known lock file at startup; a second instance exits immediately with a clear error.
 
-- **Embedded submit daemon**: Runs as a `threading.Thread(daemon=True)` within the TruCon process. It shares the same process space as the sequencer lock and chain_state, eliminating cross-process coordination issues. The daemon only reads the queue and mutates record status (PENDING → CONFIRMED/FAILED) and chain_state.head_log_id.
+- **Embedded submit daemon**: Runs as a `threading.Thread(daemon=True)` within the TruCon process. It shares the same process space as the sequencer lock and chain_state, eliminating cross-process coordination issues. The daemon only reads the queue and mutates record status (`PENDING → SUBMITTING → CONFIRMED` or retry/terminal-failure states) and `chain_state.head_log_id`.
 
 The implementation guarantees:
 
 - Atomic transition from RTMR-extended to queue-committed state within a single lock acquisition
 - Monotonically increasing `sequence_num` per chain_id, assigned under the lock
 - No cross-worker state sharing — tc_api workers are fully stateless for the commit path
-- Ordered Rekor submission — the submit daemon processes records in ascending `sequence_num` order and blocks on FAILED predecessors
+- Ordered Rekor submission — the submit daemon processes records in ascending `sequence_num` order and blocks on terminally failed predecessors
 - Duplicate-submission protection — the daemon is the sole submitter, embedded in the single TruCon instance
 
 ### Disaster Recovery and Partial Failures
@@ -478,7 +482,7 @@ If the process crashes *between* the RTMR extend and the SQLite INSERT (both hap
 
 Because general disk storage on cloud hosts is mutually untrusted, placing the SQLite WAL log in ephemeral `tmpfs` (e.g., `/dev/shm/tc_api_queue/queue.db`) prevents plaintext leakage at rest while fully relying on Confidential VM memory encryption. In this environment, a VM reboot destroys the unsent queue; this ephemeral security trade-off is accepted by design — RTMR registers also reset on reboot, making queued records cryptographically invalid regardless.
 
-Records that fail Rekor submission after 10 retries are marked `FAILED`. FAILED records block subsequent Rekor submissions in the same chain (to preserve ordering) but do not block new RTMR extends for incoming commits.
+Records that fail Rekor submission after 10 retries are marked `FAILED_TERMINAL` (or remain `FAILED` if they predate the granular lifecycle rollout). Terminally failed records block subsequent Rekor submissions in the same chain (to preserve ordering) but do not block new RTMR extends for incoming commits.
 
 ## End-to-End Flow
 
@@ -663,7 +667,7 @@ The `commit_record` path should behave as follows:
 
 `submit_record` is handled by the embedded submit daemon inside the TruCon.
 It takes previously committed queued records and submits them to the configured immutable backend in ascending `sequence_num` order, without rebuilding or mutating the event payload.
-The daemon applies result state transitions internally: updating `status` to `CONFIRMED` with `log_id` and `confirmed_at`, or incrementing `retry_count` up to a threshold of 10 before marking `FAILED`.
+The daemon applies result state transitions internally: moving active submissions through `SUBMITTING`, updating `status` to `CONFIRMED` with `log_id` and `confirmed_at` on success, or incrementing `retry_count` and classifying failures as `FAILED_RETRYABLE` versus `FAILED_TERMINAL` as retry windows are exhausted.
 
 `get_commit_queue_status` and `GET /status` expose queue statistics.
 They answer the question of how many queued records exist, how many have failed, and which `sequence_num` is next for submission.
@@ -672,9 +676,9 @@ The publication path should behave as follows:
 
 - The embedded submit daemon polls the `commit_queue` every 5 seconds for records with `status=PENDING` and `rtmr_extended=TRUE`.
 - It processes records in ascending `sequence_num` order within each `chain_id`.
-- If a `FAILED` record exists, all subsequent records in the same chain are blocked from submission to preserve ordering guarantees.
+- If a terminally failed record (`FAILED_TERMINAL` or legacy `FAILED`) exists, all subsequent records in the same chain are blocked from submission to preserve ordering guarantees.
 - On successful submission, the daemon updates `status=CONFIRMED`, sets `confirmed_at` and `log_id`, and updates `chain_state.head_log_id`.
-- On failure, the daemon increments `retry_count`. After 10 retries, status transitions to `FAILED`.
+- On failure, the daemon increments `retry_count`. Retryable failures transition through `FAILED_RETRYABLE`; after 10 retries, status transitions to `FAILED_TERMINAL`.
 
 To keep the API surface smaller, the preferred model is not to make callers manually walk a rich state object.
 Instead, the commit queue itself drives publication through the embedded daemon:
@@ -689,9 +693,13 @@ This makes the embedded daemon the sole mutation agent for queue-driven publicat
 
 The meaning of each result state is:
 
-- `CONFIRMED`: the immutable backend accepted the event and returned a stable backend identifier; Trusted Log advances `latest_confirmed_log_id` and removes the record from the local commit queue.
-- `PENDING`: the event has been finalized locally, but immutable publication is not yet confirmed; the event remains in the local commit queue together with retry metadata and a `pending_reason`.
-- `FAILED`: Trusted Log could not finalize or persist the event in a recoverable way; the caller receives an error outcome and the implementation should indicate whether the record is safe to retry.
+- `PENDING`: the event has been finalized locally and is queued for publication.
+- `SUBMITTING`: the embedded daemon is actively attempting immutable-backend submission.
+- `CONFIRMED`: the immutable backend accepted the event and returned a stable backend identifier; Trusted Log advances `latest_confirmed_log_id` and retains confirmation metadata.
+- `FAILED_RETRYABLE`: the latest submit attempt failed, but the daemon will retry automatically.
+- `FAILED_TERMINAL`: the retry budget is exhausted and operator intervention is required before submission order can advance.
+- `FAILED`: legacy terminal state retained for backward compatibility with older records.
+- `OPEN`: reserved for a future pre-commit assembly flow and not currently used by the runtime path.
 
 These queue mutations should happen inside `submit_record()` itself rather than in the submission worker.
 The worker should treat `SubmitResult` as the authoritative outcome and decide only whether to continue, back off, or escalate.
@@ -701,7 +709,7 @@ Commit queue entries retain the following metadata for safe resubmission and ope
 - `record_id` and `event_id` — event identification
 - `chain_id` — chain membership for per-chain ordering
 - `payload` — the signed DSSE bundle (static, tokenless)
-- `status` — `PENDING`, `CONFIRMED`, or `FAILED`
+- `status` — lifecycle state such as `PENDING`, `SUBMITTING`, `CONFIRMED`, `FAILED_RETRYABLE`, `FAILED_TERMINAL`, or legacy `FAILED`
 - `rtmr_extended` — flag indicating whether the RTMR extend succeeded (used for crash recovery)
 - `sequence_num` — monotonically increasing within each chain, assigned by the TruCon under the lock
 - `prev_log_id` — system-maintained chain link (not in the DSSE signature)
@@ -827,6 +835,7 @@ The replay requirement should include the following steps:
 7. Verify signature artifacts and submission receipts against the replayed immutable payload rather than trusting stored digest fields alone.
 8. If the event claims an `mr` value or participates in attestation correlation, verify that the replayed `Event_Digest` is the same digest that would have been extended into the local MR.
 9. Return a `VerificationResult` that distinguishes structural failure, digest mismatch, signature failure, chain-link failure, measurement mismatch, and policy failure.
+10. When invoked through `tc-verify`, evaluate canonical application profiles (`build`, `publish`, `launch`, `docktap-runtime`) on top of the replayed evidence set instead of collapsing all application semantics into one global verdict.
 
 The replay computation should be deterministic and must not depend on mutable caller-side state.
 Verification must use the persisted ordered entries as the source of truth, because entry ordering is part of the event identity.
@@ -873,6 +882,10 @@ This architecture intentionally keeps detailed evidence-package format, quote fi
 
 For the current v1 contract, exported attested head evidence is a versioned JSON envelope whose trust-critical binding covers `chain_id`, `sequence_num`, `head_log_id`, and `mr_value`. Event Log 0 baseline fields remain outside that package and continue to come from Rekor replay.
 
+On top of that structural verification layer, the operator CLI now applies canonical verification profiles for `build`, `publish`, `launch`, and `docktap-runtime`. These profiles consume replayed entry fields emitted by REST and Docktap producers, use shared verdict states (`verified`, `warning`, `incomplete`, `failed`), and keep application-layer findings separate from replay/evidence success.
+
+For the `launch` profile, the verifier treats `launch_id` as the v1 launch-attempt boundary and evaluates the latest workload-scoped launch attempt attributed to that identifier. This preserves attribution for pre-create failures and avoids requiring a separate `launch_attempt_id` namespace in v1.
+
 ## Integration Touchpoints
 
 ### API Layer
@@ -895,7 +908,7 @@ Potential extension directions without changing core semantics:
 - Alternative storage backends for exported chain snapshots.
 - Backend adapters for mixed transparent-log and on-chain deployment models.
 - Additional metadata schema validation before commit.
-- Policy profiles for different verification strictness.
+- Additional policy overlays or stricter organizational rules on top of the canonical verification profiles.
 - Observability hooks for metrics and tracing around sign/verify latency.
 
 ## Invariants

@@ -12,6 +12,7 @@ from tc_api.config import TRUCON_SERVICE_TOKEN, TRUCON_URL
 from tc_api.tlog_client import TrustedLogAPI
 from tc_api.trucon.adapters.sigstore import SigstoreLogAdapter
 from tc_api.trucon.evidence import compute_binding_expected_value, load_attested_head_evidence_json
+from tc_api.verification_profiles import evaluate_profiles
 
 
 def _fetch_trucon_json(path: str) -> Dict[str, Any]:
@@ -57,6 +58,13 @@ def _normalize_replay_entries(immutable_entries: List[Dict[str, Any]]) -> List[D
         }
         for entry in immutable_entries
     ]
+
+
+def _attach_profile_results(result: Dict[str, Any]) -> Dict[str, Any]:
+    replay_entries = result.get("entries", [])
+    profiles = evaluate_profiles(replay_entries)
+    result["profiles"] = profiles
+    return result
 
 
 def _entry_value(predicate_entries: List[Dict[str, Any]], key: str) -> Optional[str]:
@@ -326,7 +334,7 @@ def _normalize_evidence_result(
     }
     if tee_error and tee_error not in result["errors"]:
         result["errors"].append(tee_error)
-    return result
+    return _attach_profile_results(result)
 
 
 def _normalize_fallback_result(
@@ -379,7 +387,7 @@ def _normalize_fallback_result(
         success = immutable_success
         status = "degraded" if immutable_success else "failed"
 
-    return {
+    return _attach_profile_results({
         "target": {
             "chain_id": chain_id,
             "head_log_id": chain_state.get("head_log_id"),
@@ -440,7 +448,7 @@ def _normalize_fallback_result(
         },
         "entries": replay_entries,
         "errors": errors,
-    }
+    })
 
 
 def _render_text(result: Dict[str, Any]) -> str:
@@ -480,6 +488,20 @@ def _render_text(result: Dict[str, Any]) -> str:
         lines.append(
             f"  - index={entry.get('index')} event_id={entry.get('event_id')} event_type={entry.get('event_type')} digest={entry.get('digest')}"
         )
+
+    profiles = result.get("profiles") or {}
+    if profiles:
+        lines.append("Profiles:")
+        for profile_name, profile_result in profiles.items():
+            lines.append(
+                f"  - {profile_name}: status={profile_result.get('status')} matched={len(profile_result.get('matched_event_ids', []))}"
+            )
+            if profile_result.get("target_launch_id"):
+                lines.append(f"    launch_id={profile_result.get('target_launch_id')}")
+            for warning in profile_result.get("warnings", []):
+                lines.append(f"    warning: {warning}")
+            for error in profile_result.get("errors", []):
+                lines.append(f"    error: {error}")
 
     if result["errors"]:
         lines.append("Errors:")

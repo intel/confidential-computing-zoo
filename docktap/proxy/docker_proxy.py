@@ -19,6 +19,7 @@ from .operation_log import (
 )
 
 WORKLOAD_LABEL = "io.trucon.workload-id"
+LAUNCH_LABEL = "io.trucon.launch-id"
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -172,15 +173,15 @@ class DockerProxyServer:
         return None
 
     @staticmethod
-    def _extract_workload_id(request_data: bytes) -> Optional[str]:
-        """Extract io.trucon.workload-id from a create request body's Labels dict."""
+    def _extract_label_value(request_data: bytes, label_name: str) -> Optional[str]:
+        """Extract a label value from a create request body's Labels dict."""
         try:
             text = request_data.decode('utf-8', errors='replace')
             for part in text.split('\r\n\r\n'):
                 try:
                     body = json.loads(part)
                     labels = body.get('Labels') or {}
-                    value = labels.get(WORKLOAD_LABEL)
+                    value = labels.get(label_name)
                     if value:  # non-empty string
                         return value
                 except Exception:
@@ -188,6 +189,16 @@ class DockerProxyServer:
         except Exception:
             pass
         return None
+
+    @staticmethod
+    def _extract_workload_id(request_data: bytes) -> Optional[str]:
+        """Extract io.trucon.workload-id from a create request body's Labels dict."""
+        return DockerProxyServer._extract_label_value(request_data, WORKLOAD_LABEL)
+
+    @staticmethod
+    def _extract_launch_id(request_data: bytes) -> Optional[str]:
+        """Extract io.trucon.launch-id from a create request body's Labels dict."""
+        return DockerProxyServer._extract_label_value(request_data, LAUNCH_LABEL)
 
     def _normalize_image(self, img: Optional[str]) -> str:
         if not img:
@@ -482,9 +493,16 @@ class DockerProxyServer:
                     if op_type in SUBMITTABLE_OPERATIONS:
                         # Resolve workload_id for create ops from labels
                         workload_id = None
+                        launch_id = None
                         if op_type == "create":
                             workload_id = self._extract_workload_id(request_data)
-                        self._trucon_committer.submit_operation(op_record, op_type, workload_id=workload_id)
+                            launch_id = self._extract_launch_id(request_data)
+                        self._trucon_committer.submit_operation(
+                            op_record,
+                            op_type,
+                            workload_id=workload_id,
+                            launch_id=launch_id,
+                        )
             else:
                 logger.error("No response from Docker")
 

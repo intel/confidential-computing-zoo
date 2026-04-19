@@ -14,7 +14,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import urllib.request
 import urllib.error
 
@@ -57,7 +57,22 @@ class RetryQueuedError(RuntimeError):
     """Raised after an initial retryable failure has been queued for retry."""
 
 
-def _build_entries(op_record, operation_type: str) -> List[Entry]:
+def _infer_operation_result(op_record) -> str:
+    status_code = (op_record.response or {}).get("status")
+    if isinstance(status_code, int):
+        return "success" if 200 <= status_code < 400 else "failed"
+    return "success"
+
+
+def _build_entries(
+    op_record,
+    operation_type: str,
+    *,
+    workload_id: Optional[str] = None,
+    launch_id: Optional[str] = None,
+    instance_id: Optional[str] = None,
+    operation_result: Optional[str] = None,
+) -> List[Entry]:
     """Convert OperationRecord fields to Entry objects per operation type.
 
     Values are native Python objects (not JSON-encoded strings).
@@ -65,6 +80,13 @@ def _build_entries(op_record, operation_type: str) -> List[Entry]:
     """
     entries: List[Entry] = []
     entries.append(Entry(key="operation_type", value=operation_type))
+    entries.append(Entry(key="operation_result", value=operation_result or _infer_operation_result(op_record)))
+    if workload_id:
+        entries.append(Entry(key="workload_id", value=workload_id))
+    if launch_id:
+        entries.append(Entry(key="launch_id", value=launch_id))
+    if instance_id:
+        entries.append(Entry(key="instance_id", value=instance_id))
 
     if operation_type == "pull":
         if op_record.image.get("name"):
@@ -142,7 +164,7 @@ class TruConCommitter:
             )
             self._retry_worker.start()
 
-    def submit_operation(self, op_record, operation_type: str, *, workload_id: Optional[str] = None) -> bool:
+    def submit_operation(self, op_record, operation_type: str, *, workload_id: Optional[str] = None, launch_id: Optional[str] = None) -> bool:
         """Submit a single Docker operation to TruCon as a signed DSSE bundle.
 
         *workload_id* is the value extracted from the ``io.trucon.workload-id``
@@ -151,7 +173,7 @@ class TruConCommitter:
         Returns True on success, False on failure.  Never raises.
         """
         try:
-            return self._do_submit(op_record, operation_type, workload_id=workload_id)
+            return self._do_submit(op_record, operation_type, workload_id=workload_id, launch_id=launch_id)
         except Exception as exc:
             logger.warning(
                 "TruCon commit failed for %s operation: %s", operation_type, exc
@@ -223,7 +245,7 @@ class TruConCommitter:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _resolve_chain_id(self, op_record, operation_type: str, workload_id: Optional[str]) -> str:
+    def _resolve_chain_id(self, op_record, operation_type: str, workload_id: Optional[str], launch_id: Optional[str] = None) -> str:
         """Determine chain_id for this operation."""
         if operation_type == "pull":
             return "default"
@@ -234,7 +256,7 @@ class TruConCommitter:
             if workload_id:
                 # Persist for future lookups
                 if self._workload_store and container_id:
-                    self._workload_store.put(container_id, workload_id, operation="create")
+                    self._workload_store.put(container_id, workload_id, launch_id=launch_id, operation="create")
                 return workload_id
             return "default"
 
@@ -245,6 +267,26 @@ class TruConCommitter:
                 self._workload_store.touch(container_id, operation_type)
                 return stored
         return "default"
+
+    def _resolve_submission_context(
+        self,
+        op_record,
+        operation_type: str,
+        workload_id: Optional[str],
+        launch_id: Optional[str],
+    ) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
+        chain_id = self._resolve_chain_id(op_record, operation_type, workload_id, launch_id=launch_id)
+        instance_id = None if operation_type == "pull" else (op_record.container.get("id") if op_record.container else None)
+        resolved_workload_id = workload_id or (chain_id if chain_id != "default" else None)
+        resolved_launch_id = launch_id
+
+        if operation_type in ("start", "stop", "rm") and self._workload_store and instance_id:
+            metadata = self._workload_store.get_metadata(instance_id)
+            if metadata:
+                resolved_workload_id = metadata.get("workload_id") or resolved_workload_id
+                resolved_launch_id = metadata.get("launch_id") or resolved_launch_id
+
+        return chain_id, resolved_workload_id, resolved_launch_id, instance_id
 
     def _retry_loop(self) -> None:
         while not self._stop_retry_worker.wait(self._retry_poll_interval):
@@ -335,9 +377,22 @@ class TruConCommitter:
             submission.event_id,
         )
 
-    def _do_submit(self, op_record, operation_type: str, *, workload_id: Optional[str] = None) -> bool:
+    def _do_submit(self, op_record, operation_type: str, *, workload_id: Optional[str] = None, launch_id: Optional[str] = None) -> bool:
+        chain_id, resolved_workload_id, resolved_launch_id, instance_id = self._resolve_submission_context(
+            op_record,
+            operation_type,
+            workload_id,
+            launch_id,
+        )
+
         # 1. Build entries
-        entry_list = _build_entries(op_record, operation_type)
+        entry_list = _build_entries(
+            op_record,
+            operation_type,
+            workload_id=resolved_workload_id,
+            launch_id=resolved_launch_id,
+            instance_id=instance_id,
+        )
 
         # 2. Compute digests (two-level algorithm)
         entry_digests = [compute_entry_digest(e.key, e.value) for e in entry_list]
@@ -347,14 +402,6 @@ class TruConCommitter:
         event_digest = compute_event_digest(event_id, event_type, created_iso, entry_digests)
 
         # 3. Build DSSE predicate
-        chain_id = self._resolve_chain_id(op_record, operation_type, workload_id)
-
-        # Resolve instance_id: container_id for lifecycle events, None for pull
-        if operation_type == "pull":
-            instance_id = None
-        else:
-            instance_id = op_record.container.get("id") if op_record.container else None
-
         predicate_payload = {
             "event_id": event_id,
             "event_type": event_type,

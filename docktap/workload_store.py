@@ -16,6 +16,7 @@ _DEFAULT_DB_PATH = os.environ.get(
 )
 
 WORKLOAD_LABEL = "io.trucon.workload-id"
+LAUNCH_LABEL = "io.trucon.launch-id"
 
 
 class WorkloadStore:
@@ -76,12 +77,16 @@ class WorkloadStore:
             self._conn.execute(
                 "UPDATE container_workload SET last_operation = 'create' WHERE last_operation IS NULL"
             )
+        if "launch_id" not in existing_columns:
+            self._conn.execute(
+                "ALTER TABLE container_workload ADD COLUMN launch_id TEXT"
+            )
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def put(self, container_id: str, workload_id: str, operation: str = "create") -> None:
+    def put(self, container_id: str, workload_id: str, launch_id: Optional[str] = None, operation: str = "create") -> None:
         """Persist a container → workload mapping (upsert)."""
         now = datetime.now(timezone.utc).isoformat()
         removed_at = now if operation == "rm" else None
@@ -95,18 +100,20 @@ class WorkloadStore:
                     created_at,
                     last_seen_at,
                     removed_at,
-                    last_operation
+                    last_operation,
+                    launch_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(container_id) DO UPDATE SET workload_id = excluded.workload_id,
                                                         last_seen_at = excluded.last_seen_at,
                                                         removed_at = CASE
                                                             WHEN excluded.last_operation = 'rm' THEN excluded.removed_at
                                                             ELSE NULL
                                                         END,
-                                                        last_operation = excluded.last_operation
+                                                        last_operation = excluded.last_operation,
+                                                        launch_id = COALESCE(excluded.launch_id, container_workload.launch_id)
                 """,
-                (container_id, workload_id, now, now, removed_at, operation),
+                (container_id, workload_id, now, now, removed_at, operation, launch_id),
             )
             self._conn.commit()
 
@@ -144,7 +151,7 @@ class WorkloadStore:
             assert self._conn is not None, "call init_db() before get_metadata()"
             row = self._conn.execute(
                 """
-                SELECT workload_id, created_at, last_seen_at, removed_at, last_operation
+                SELECT workload_id, created_at, last_seen_at, removed_at, last_operation, launch_id
                 FROM container_workload WHERE container_id = ?
                 """,
                 (container_id,),
@@ -157,6 +164,7 @@ class WorkloadStore:
                 "last_seen_at": row[2],
                 "removed_at": row[3],
                 "last_operation": row[4],
+                "launch_id": row[5],
             }
 
     def cleanup_removed(self, max_age_hours: float = 24) -> int:

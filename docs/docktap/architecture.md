@@ -11,6 +11,8 @@ Docktap is a Unix socket proxy for Docker API traffic that:
 - captures operation metadata and response status
 - tracks operation relationships for pull/create/start/stop/rm flows
 - submits signed DSSE bundles to TruCon for trusted event recording
+- emits the runtime identity and outcome fields required by the `docktap-runtime` verification profile
+- propagates `launch_id` for runtime events that belong to a REST-originated launch flow
 - maintains bounded local routing, mapping, and retry state via periodic garbage collection
 - emits structured JSON logs for audit and troubleshooting
 - exposes an HTTP health endpoint (`/healthz`) for container orchestration
@@ -66,10 +68,10 @@ Docker CLI (DOCKER_HOST=unix:///tmp/test-stream.sock)
   - operation classification (`get_operation_type`)
   - response enrichment and JSON logging
 - `workload_store.py`
-  - persisted container-to-workload mappings on tmpfs
+  - persisted container-to-workload and launch-boundary mappings on tmpfs
   - lifecycle metadata for `created_at`, `last_seen_at`, `removed_at`, and `last_operation`
 - `trucon_client.py`
-  - TruCon commit client and bounded retry bookkeeping
+  - TruCon commit client, runtime audit-field construction, and bounded retry bookkeeping
   - local retry retention for pending, acknowledged, and terminal outcomes
 - `stream_test.py`
   - lightweight runtime launcher for the `/tmp/test-stream.sock` path
@@ -95,6 +97,7 @@ Docker CLI (DOCKER_HOST=unix:///tmp/test-stream.sock)
    - create container ID (if present)
    - wait status code (if present)
 8. Final operation record is added to tracker and logged as JSON.
+9. For auditable lifecycle operations, Docktap emits a TruCon commit containing operation outcome, workload/instance/image identity, and `launch_id` when the event belongs to an active REST launch flow.
 
 ## Concurrency Model
 
@@ -130,13 +133,26 @@ Core structure in `proxy/operation_log.py`:
     - `cleanup_old_operations(max_age_hours=24)`
 
 - `WorkloadStore`
-  - persisted mapping state for `container_id -> workload_id`
+  - persisted mapping state for `container_id -> workload_id` and optional `launch_id`
   - lifecycle metadata:
     - `created_at`
     - `last_seen_at`
     - `removed_at`
     - `last_operation`
   - removed-container cleanup after an rm grace window
+
+## Trusted Event Contract
+
+For the lifecycle operations that Docktap submits to TruCon (`pull`, `create`, `start`, `stop`, `rm`), the emitted DSSE predicate now carries the minimum fields required for runtime verification:
+
+- `operation_type`
+- `operation_result`
+- `workload_id` for workload-scoped operations
+- `instance_id` for container-scoped operations
+- `image_digest` or equivalent stable image identity when the operation meaning depends on an image target
+- `launch_id` when the runtime event is attributable to a REST-originated launch flow
+
+This contract lets `tc-verify` distinguish successful versus failed runtime actions and correlate REST launch intent with observed container creation/start evidence.
 
 ## Docker Operation Mapping & Lifecycle
 

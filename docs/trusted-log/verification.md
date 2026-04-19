@@ -245,105 +245,132 @@ operator verdict
 
 ## Verification Profiles
 
-The first version should verify flows independently rather than trying to compute one global workload verdict.
+The current implementation verifies flows independently rather than trying to compute one global workload verdict.
 
-Recommended profiles:
+Implemented canonical profiles:
 
 - `build`
 - `publish`
 - `launch`
 - `docktap-runtime`
 
-Each profile should define:
+Shared verdict states:
 
-- required fields
-- hard failures
-- warnings
+- `verified`
+- `warning`
+- `incomplete`
+- `failed`
+
+The verifier keeps these profile results separate from structural replay and attested-head outcomes. A chain can replay successfully while one or more application profiles still return `warning`, `incomplete`, or `failed`.
 
 ### Build Profile
 
-Expected fields:
+Required fields:
 
-- output image digest
-- build input digest(s)
-- build result status
-- optional SBOM digest
+- `output_image_digest`
+- `dockerfile_digest`
+- `build_context_digest`
+- `base_image_digests`
+- `build_status`
+
+Warning-only field:
+
+- optional SBOM identity such as `sbom_digest`
 
 Hard fail:
 
-- missing output image digest
-- build reported success but missing identity of built artifact
-- malformed or missing required input digest
+- missing `output_image_digest`
+- build reported success but missing stable built-artifact identity
+- malformed or missing required build-input identity
 
 Warning:
 
-- SBOM digest missing
+- optional SBOM identity missing
 - non-critical build metadata absent
 
 ### Publish Profile
 
-Expected fields:
+Required fields:
 
-- image digest
-- target registry or repository
-- publish result
-- optional signature or attestation verification result
+- `pushed_subject_digest`
+- `target_ref`
+- `publish_status`
 
 Hard fail:
 
-- missing image digest
-- publish reported success but no stable published identity
-- signature verification required by policy but missing or failed
+- publish reported success but omitted `pushed_subject_digest`
+- publish reported success but omitted `target_ref`
+- bare success flag without stable pushed-subject identity
 
 Warning:
 
-- non-critical provenance fields absent
+- non-critical provenance metadata absent
 
 ### Launch Profile
 
-Expected fields:
+The verifier uses `launch_id` as the authoritative v1 launch-attempt boundary and evaluates the latest workload-scoped launch attempt present in the chain.
 
-- image digest
-- signature verification result
-- SBOM verification result
-- launch configuration digest
-- workload identifier / chain identifier
-- instance identifier when container context exists
-- create/start result
+Required fields:
+
+- `launch_id`
+- `workload_id`
+- `image_digest`
+- `launch_config_digest`
+- `privileged`
+- `network_mode`
+- `mounts`
+- `devices`
+- `capabilities`
+
+Conditionally required field:
+
+- `instance_id` after a concrete container instance exists
 
 Hard fail:
 
-- missing image digest
-- signature verification required but missing or failed
-- SBOM verification required but missing or failed
-- missing launch configuration digest
-- create or start failed
-- missing workload or instance identity when required
+- missing `workload_id`
+- missing `image_digest`
+- missing `launch_config_digest`
+- launch reported success but omitted required security projection fields
+- create/start path failed for the selected `launch_id`
+- missing `instance_id` after container scope exists
 
 Warning:
 
-- missing optional environment metadata
-- missing non-critical labels or annotations
+- missing optional environment projection such as environment-key inventory or launch environment digest
+- missing non-critical metadata that does not change launch risk
+
+Special rule:
+
+- a pre-create launch failure remains attributable by `launch_id` and does not fail solely because `instance_id` is absent
 
 ### Docktap Runtime Profile
 
-Expected fields:
+Required fields for container-scoped operations:
 
-- operation type (`pull`, `create`, `start`, `stop`, `rm`)
-- workload identifier / chain identifier
-- instance identifier for container-scoped operations
-- image reference or image digest
-- operation result
+- `operation_type`
+- `operation_result`
+- `workload_id`
+- `instance_id`
+
+Additionally required when the operation meaning depends on an image target:
+
+- `image_ref` or `image_digest`
+
+Optional correlation field:
+
+- `launch_id` when the runtime event belongs to a REST-originated launch flow
 
 Hard fail:
 
-- missing workload identifier for a workload-scoped operation
-- missing container identity for container-scoped operation
-- successful operation missing audited target identity
+- missing workload identity for a workload-scoped runtime operation
+- missing container identity for a container-scoped runtime operation
+- successful runtime operation missing the audited target identity needed to understand what was acted on
+- missing explicit `operation_result`
 
 Warning:
 
-- missing auxiliary metadata that does not change audit meaning
+- missing auxiliary metadata that does not change the audit meaning of the runtime action
 
 ## Signer Policy
 

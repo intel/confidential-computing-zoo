@@ -111,6 +111,7 @@ def test_verify_cli_json_success(capsys):
     assert captured["mode"]["verification_mode"] == "tee"
     assert captured["replay"]["entries"][0]["event_id"] == "evt-1"
     assert captured["fallback"]["note"] == "transitional live TruCon fallback"
+    assert "profiles" in captured
 
 
 def test_verify_cli_require_tee_fails_in_non_tee_mode(capsys):
@@ -223,6 +224,7 @@ def test_verify_cli_human_output_contains_per_record_detail(capsys):
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Per-record replay detail:" in output
+    assert "Profiles:" in output
     assert "event_id=evt-1" in output
 
 

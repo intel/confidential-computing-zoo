@@ -64,11 +64,12 @@ class TestWorkloadStore:
         assert store.get("c1") == "w1"
 
     def test_metadata_fields_are_recorded(self, store):
-        store.put("abc123", "my-app")
+        store.put("abc123", "my-app", launch_id="launch-123")
         metadata = store.get_metadata("abc123")
 
         assert metadata is not None
         assert metadata["workload_id"] == "my-app"
+        assert metadata["launch_id"] == "launch-123"
         assert metadata["last_operation"] == "create"
         assert metadata["last_seen_at"] is not None
         assert metadata["removed_at"] is None

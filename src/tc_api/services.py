@@ -46,6 +46,86 @@ class DockerService:
             str: Generated ID in format "{prefix}-{uuid}"
         """
         return f"{prefix}-{uuid.uuid4().hex[:7]}"
+
+    def normalize_workload_id(self, user_id: str, image_id: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+        metadata = metadata or {}
+        workload_id = metadata.get("workload_id")
+        if isinstance(workload_id, str) and workload_id.strip():
+            return workload_id.strip()
+        if image_id:
+            return image_id.split(":", 1)[0]
+        return user_id
+
+    def _sha384_digest(self, payload: str) -> str:
+        return "sha384:" + hashlib.sha384(payload.encode("utf-8")).hexdigest()
+
+    def _json_sha384_digest(self, payload: Any) -> str:
+        return self._sha384_digest(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
+
+    def _file_sha384_digest(self, file_path: str) -> str:
+        with open(file_path, "rb") as handle:
+            return "sha384:" + hashlib.sha384(handle.read()).hexdigest()
+
+    def _directory_sha384_digest(self, directory: str) -> str:
+        digest = hashlib.sha384()
+        for root, _, files in os.walk(directory):
+            for file_name in sorted(files):
+                file_path = os.path.join(root, file_name)
+                rel_path = os.path.relpath(file_path, directory)
+                digest.update(rel_path.encode("utf-8"))
+                with open(file_path, "rb") as handle:
+                    digest.update(handle.read())
+        return "sha384:" + digest.hexdigest()
+
+    def _extract_base_images(self, dockerfile_content: str) -> list[str]:
+        base_images = []
+        for line in dockerfile_content.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.upper().startswith("FROM "):
+                ref = stripped.split()[1]
+                if ref not in base_images:
+                    base_images.append(ref)
+        return base_images
+
+    def _resolve_image_digest(self, image_ref: str) -> str:
+        try:
+            cmd = [DOCKER_CMD, "image", "inspect", image_ref, "--format", "{{json .RepoDigests}}"]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0 and result.stdout.strip():
+                repo_digests = json.loads(result.stdout.strip())
+                if isinstance(repo_digests, list) and repo_digests:
+                    digest_ref = repo_digests[0]
+                    if "@" in digest_ref:
+                        return digest_ref.split("@", 1)[1]
+        except Exception as exc:
+            logger.debug("Falling back to synthetic digest for %s: %s", image_ref, exc)
+        return self._sha384_digest(image_ref)
+
+    def _build_launch_security_projection(self, launch_id: str, workload_id: str) -> Dict[str, Any]:
+        mounts = [
+            "/etc/hosts:/etc/hosts",
+        ]
+        devices = []
+        if ENABLE_TDX:
+            mounts.extend([
+                "/etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf",
+                "/usr/share/doc/libtdx-attest-dev/examples/:/td-attest/",
+                "/etc/tdx-attest.conf:/etc/tdx-attest.conf",
+            ])
+            devices.append("/dev/tdx_guest")
+        return {
+            "launch_id": launch_id,
+            "workload_id": workload_id,
+            "privileged": True,
+            "network_mode": "host",
+            "mounts": mounts,
+            "devices": devices,
+            "capabilities": ["ALL"],
+            "launch_env_keys": ["HF_HUB_OFFLINE"],
+            "launch_env_digest": self._json_sha384_digest({"HF_HUB_OFFLINE": "1"}),
+        }
     
     def build_image(self, dockerfile_content: str, build_id: str, user_id: str, tlog: TrustedLogAPI, record_id: str) -> bool:
         """Build Docker image from dockerfile content with optimized error handling"""
@@ -88,9 +168,17 @@ class DockerService:
                 "status": "success" if result.returncode == 0 else "failed"
             }
             tlog.add_entry(record_id, Entry(key="build_image", value=build_log))
+            dockerfile_digest = self._file_sha384_digest(dockerfile_path)
+            build_context_digest = self._directory_sha384_digest(build_path)
+            base_image_digests = [self._resolve_image_digest(ref) for ref in self._extract_base_images(dockerfile_content)]
+            tlog.add_entry(record_id, Entry(key="dockerfile_digest", value=dockerfile_digest))
+            tlog.add_entry(record_id, Entry(key="build_context_digest", value=build_context_digest))
+            tlog.add_entry(record_id, Entry(key="base_image_digests", value=base_image_digests))
+            tlog.add_entry(record_id, Entry(key="build_status", value=build_log["status"]))
 
             if result.returncode == 0:
                 logger.info(f"Successfully built image {image_name}")
+                tlog.add_entry(record_id, Entry(key="output_image_digest", value=self._resolve_image_digest(image_name)))
                 
                 # Save build logs
                 log_path = os.path.join(build_path, f"{build_id}-build.log")
@@ -165,6 +253,7 @@ class DockerService:
                         "status": "success"
                 }
                 tlog.add_entry(record_id, Entry(key="sbom_generation", value=sbom_log))
+                tlog.add_entry(record_id, Entry(key="sbom_digest", value=self._file_sha384_digest(sbom_path)))
 
                 return sbom_path
             else:
@@ -679,6 +768,9 @@ class DockerService:
                         "status": "success"
                     }
                     tlog.add_entry(record_id, Entry(key="image_push", value=push_log))
+                    tlog.add_entry(record_id, Entry(key="pushed_subject_digest", value=self._resolve_image_digest(source_ref.replace("oci:", "").replace("docker-daemon:", ""))))
+                    tlog.add_entry(record_id, Entry(key="target_ref", value=dest_ref))
+                    tlog.add_entry(record_id, Entry(key="publish_status", value="success"))
 
                     return True
                 else:
@@ -708,6 +800,8 @@ class DockerService:
                             }
                         }
                         tlog.add_entry(record_id, Entry(key="image_push", value=push_log))
+                        tlog.add_entry(record_id, Entry(key="target_ref", value=dest_ref))
+                        tlog.add_entry(record_id, Entry(key="publish_status", value="failed"))
 
                         return False
                 
@@ -733,6 +827,8 @@ class DockerService:
                         }
                     }
                     tlog.add_entry(record_id, Entry(key="image_push", value=push_log))
+                    tlog.add_entry(record_id, Entry(key="target_ref", value=dest_ref))
+                    tlog.add_entry(record_id, Entry(key="publish_status", value="failed"))
 
                     return False
             except FileNotFoundError:
@@ -746,6 +842,8 @@ class DockerService:
                     }
                 }
                 tlog.add_entry(record_id, Entry(key="image_push", value=push_log))
+                tlog.add_entry(record_id, Entry(key="target_ref", value=dest_ref))
+                tlog.add_entry(record_id, Entry(key="publish_status", value="failed"))
 
                 return False  # Don't retry if command not found
             except Exception as e:
@@ -1421,7 +1519,7 @@ class DockerService:
         return self.launchs.get(launch_id)
 
 
-    async def launch_containers(self, tlog, record_id, image_url, image_id, launch_pth):
+    async def launch_containers(self, tlog, record_id, image_url, image_id, launch_pth, workload_id: Optional[str] = None, launch_id: Optional[str] = None):
         # skopeo copy oci:encrypt/ docker-daemon:test_pull:latest
         image_dir = 'oci:' + os.path.join(launch_pth,'encrypted')
         Newimage_name = 'docker-daemon:'+ image_id + ":latest"
@@ -1475,6 +1573,10 @@ class DockerService:
                 "/etc/hosts:/etc/hosts",
                 "--network=host",
             ]
+            if workload_id:
+                docker_cmd.extend(["--label", f"io.trucon.workload-id={workload_id}"])
+            if launch_id:
+                docker_cmd.extend(["--label", f"io.trucon.launch-id={launch_id}"])
             if ENABLE_TDX:
                 docker_cmd.extend([
                     "-v",
@@ -1498,11 +1600,13 @@ class DockerService:
                                      "launch_status": "success",
                                      "launch_stdout": dockerRUn.stdout,
                                      }))
+                tlog.add_entry(record_id, Entry(key="launch_result", value="success"))
             else:
                 logger.info("Failed run image.")
                 logger.debug(f"CMD: {' '.join(docker_cmd)}")
                 tlog.add_entry(record_id, Entry(key="launch_status", value={"launch_status": "failed",
                                      "launch_stderr": dockerRUn.stderr}))
+                tlog.add_entry(record_id, Entry(key="launch_result", value="failed"))
                 return False
 
             # docker ps -q --latest
@@ -1515,6 +1619,7 @@ class DockerService:
                                      "getContainerID_status": "success",
                                      "getID_stdout": getID_res.stdout
                                      }))
+                tlog.add_entry(record_id, Entry(key="instance_id", value=containerID))
             else:
                 logger.info("Failed get container ID.")
                 tlog.add_entry(record_id, Entry(key="getContainerID_status", value={"getContainerID_status": "failed",
