@@ -211,7 +211,7 @@ Each task has:
   - `TRUCON_AUTH_DISABLED=true` dev-mode bypass with prominent startup warning.
   - 401 responses with descriptive JSON body for debugging.
   - Constant-time comparison via `hmac.compare_digest`.
-  - Phase B (mTLS / Unix socket peer credentials) deferred to GAP-12.
+  - Phase B follow-up was completed on 2026-04-19 in GAP-12 via UDS-first transport, caller identity, and minimal caller policy.
 - **Acceptance Criteria**:
   1. ✅ TruCon endpoints require `Authorization: Bearer <token>` header.
   2. ✅ tc_api and Docktap attach credentials when calling TruCon.
@@ -221,18 +221,26 @@ Each task has:
 
 ---
 
-### GAP-12: Internal Service Authentication — Phase B (mTLS / Unix Socket Credentials)
+### ~~GAP-12: Internal Service Authentication — Phase B (Unix Socket Peer Credentials / Caller Identity)~~ ✅ COMPLETED
 
 - **Priority**: LOW
 - **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/tlog_client.py`, `docktap/trucon_client.py`
 - **References**: architecture.md §9; GAP-10 design notes
 - **Dependencies**: GAP-10 ✅
-- **Current State**: Phase A (Bearer token) is implemented. Phase B upgrades to stronger authentication for cross-node or multi-tenant deployments.
-- **Design Notes**: Two candidate mechanisms: (a) mTLS with per-service certificates, (b) Unix socket peer credentials (`SO_PEERCRED`) for same-machine deployments. Choice depends on deployment topology at the time of implementation.
+- **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-harden-trucon-internal-auth/`
+- **Implemented Outcome**:
+  - TruCon now prefers a shared Unix domain socket transport for same-machine internal callers.
+  - TruCon derives caller identity from Linux peer credentials and records caller metadata for audit and local status reporting.
+  - Internal authorization now distinguishes at least `tc_api` and `docktap`, with Docktap kept commit-oriented by default.
+  - Existing HTTP + Bearer-token wiring remains as a compatibility path only for transitional/internal healthcheck usage; UDS is the primary control-plane transport.
+  - The refactor absorbed `FIX-03` and `FIX-05`, removing dead submit/status API surface during the transport hardening work.
 - **Acceptance Criteria**:
-  1. TruCon supports mTLS or Unix socket peer credential authentication.
-  2. Per-caller identity differentiation (tc_api vs Docktap) if granular authorization is needed.
-  3. Token rotation support for long-lived deployments.
+  1. ✅ TruCon accepts same-machine internal traffic over a Unix domain socket and validates Linux peer credentials for admission.
+  2. ✅ TruCon derives and records a caller identity that distinguishes at least `tc_api` and `docktap`.
+  3. ✅ TruCon enforces a minimal caller policy matrix, with tc_api retaining full internal access and Docktap restricted to commit-oriented endpoints unless explicitly expanded.
+  4. ✅ Existing HTTP + Bearer-token wiring is documented as transitional compatibility only while UDS is the default internal transport.
+  5. ✅ Touched record/status contracts resolved `FIX-03` and `FIX-05` rather than carrying forward dead API surface.
+- **Tests**: `tests/test_service_auth.py`, `tests/test_trucon_internal_transport.py`, `docktap/tests/test_docktap_integration.py`; broader regression suites passed during apply.
 
 ---
 
@@ -285,15 +293,16 @@ Each task has:
 
 ---
 
-### FIX-03: `SubmitResult` Type Defined but Never Exposed
+### ~~FIX-03: `SubmitResult` Type Defined but Never Exposed~~ ✅ COMPLETED
 
 - **Priority**: LOW
 - **Scope**: `src/tc_api/tlog/types.py`, `src/tc_api/trucon/app.py`
 - **References**: trusted-log/architecture.md §Data Structures, §Message Flow step 4
-- **Current Behavior**: `SubmitResult` dataclass exists in `types.py` but is never returned by any endpoint or API call. The submit daemon updates records internally without producing a `SubmitResult`.
+- **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-harden-trucon-internal-auth/`
+- **Implemented Outcome**: The unused `SubmitResult` type was removed during the GAP-12 refactor. No runtime endpoint exposed it, and the current queue-driven submit model does not produce or require a separate queryable submit-result contract.
 - **Acceptance Criteria**:
-  1. Decide: either expose `SubmitResult` via a query endpoint (e.g., `GET /records/{record_id}`) or remove the unused type.
-  2. If exposed, daemon transitions should produce `SubmitResult` objects that are queryable.
+  1. ✅ `SubmitResult` was removed instead of being exposed through a new endpoint.
+  2. ✅ No dead submit-result contract remains in the public or internal type surface.
 
 ---
 
@@ -479,17 +488,17 @@ Each task has:
 
 ---
 
-### FIX-05: `SubmitStatus.OPEN` Enum Value Dead Code
+### ~~FIX-05: `SubmitStatus.OPEN` Enum Value Dead Code~~ ✅ COMPLETED
 
 - **Priority**: LOW
 - **Scope**: `src/tc_api/tlog/types.py`
 - **References**: architecture.md §5.1; GAP-06 acceptance criteria §4 ("deferred until pre-commit assembly flow")
 - **Dependencies**: None
-- **Current State**: `SubmitStatus.OPEN = "open"` is defined in the enum but referenced by zero lines of runtime or test code. It was reserved for a pre-commit assembly flow (multi-entry accumulation before commit) that has never been designed. The current `init_record → add_entry → commit_record` flow handles this in-memory without needing a DB-persisted OPEN state.
-- **Decision Needed**: Remove the dead enum value (simplify) or design the pre-commit assembly flow that would use it. If removed, ensure no migration impact on existing SQLite records.
+- **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-harden-trucon-internal-auth/`
+- **Implemented Outcome**: `SubmitStatus.OPEN` was removed during the GAP-12 cleanup. The current record assembly flow remains in-memory and does not require a persisted pre-commit OPEN lifecycle state.
 - **Acceptance Criteria**:
-  1. Either: Remove `OPEN` from `SubmitStatus` and confirm no records in `commit_queue` have `status='open'`.
-  2. Or: Design and implement the pre-commit assembly feature that uses `OPEN` (would be a separate GAP task at that point).
+  1. ✅ `OPEN` was removed from `SubmitStatus`.
+  2. ✅ No replacement pre-commit assembly feature was introduced; the undocumented dead state is no longer part of the contract.
 
 ---
 
@@ -531,7 +540,7 @@ GAP-08 (Feature-Flag Fallback) ── CLOSED (Won't Do)
 GAP-09 (Non-TEE Ordering) ✅ ── standalone
 GAP-10 (Service Auth Phase A) ✅ ── standalone
 GAP-11 (Per-Workload Chain) ✅
-GAP-12 (Service Auth Phase B) ◀── GAP-10 ✅ ── LOW priority
+GAP-12 (Service Auth Phase B: UDS + caller identity) ✅ ◀── GAP-10 ✅
 GAP-14 (Verification CLI) ✅ ── standalone
 GAP-17 (Attested Head Evidence Export) ✅ ── umbrella complete
   ├──▶ GAP-17A (Evidence Contract) ✅
@@ -546,11 +555,11 @@ GAP-19 (Verification Profiles) ✅ ── umbrella complete
   └──▶ GAP-19C (tc-verify Profile Enforcement) ✅ ◀── GAP-19A ✅, GAP-19B ✅
 GAP-16 (Doc Sync) ✅ ── standalone complete
 
-FIX-03 (SubmitResult) ── standalone
+FIX-03 (SubmitResult) ✅ ── completed with GAP-12
 FIX-04 (Entry Type) ✅ ── completed
-FIX-05 (OPEN Dead Code) ── standalone (LOW)
+FIX-05 (OPEN Dead Code) ✅ ── completed with GAP-12
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05, FIX-04, GAP-13, GAP-14, GAP-15, GAP-16, GAP-17, GAP-18, GAP-19
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05, FIX-04, GAP-12, FIX-03, FIX-05, GAP-13, GAP-14, GAP-15, GAP-16, GAP-17, GAP-18, GAP-19
 ✗ CLOSED: GAP-08
 ```
 
@@ -594,12 +603,12 @@ FIX-05 (OPEN Dead Code) ── standalone (LOW)
 23. ~~`GAP-19C`~~ ✅ completed 2026-04-19 — tc-verify profile enforcement
 
 **Phase 7 — Cleanup & Extensions**:
-24. `FIX-03` — SubmitResult exposure or removal
-25. `FIX-05` — SubmitStatus.OPEN dead code resolution
+24. ~~`FIX-03`~~ ✅ completed 2026-04-19 — removed dead `SubmitResult` during GAP-12
+25. ~~`FIX-05`~~ ✅ completed 2026-04-19 — removed dead `SubmitStatus.OPEN` during GAP-12
 26. ~~`GAP-16`~~ ✅ completed 2026-04-19 — Architecture documentation sync
 27. `GAP-07` — On-chain backend adapter (blocked: target chain selection)
 28. ~~`GAP-08`~~ — CLOSED (Won't Do): legacy path removed, RTMR chain integrity prevents viable fallback
-29. `GAP-12` — Service auth Phase B (mTLS / Unix socket credentials)
+29. ~~`GAP-12`~~ ✅ completed 2026-04-19 — Service auth Phase B (Unix socket peer credentials / caller identity)
 
 ---
 
@@ -607,9 +616,6 @@ FIX-05 (OPEN Dead Code) ── standalone (LOW)
 
 The items below are the primary tasks that remain genuinely open after reconciling this table with the live code and archived changes:
 
-Update (2026-04-19): `GAP-17`, `GAP-18`, and `GAP-19` are complete. The remote-verification baseline and the application-layer profile model are both now in place: TruCon exports attested-head evidence, producers emit profile-aligned audit fields, and `tc-verify` reports independent per-flow verdicts.
+Update (2026-04-19): `GAP-12`, `FIX-03`, and `FIX-05` are now complete in addition to `GAP-17`, `GAP-18`, and `GAP-19`. Internal control-plane hardening is in place with UDS-first transport, caller identity, and bundled dead-contract cleanup.
 
-- `GAP-12` — stronger internal service authentication for multi-node or multi-tenant deployments
-- `FIX-03` — decide whether to expose or remove `SubmitResult`
-- `FIX-05` — remove or justify the unused `SubmitStatus.OPEN` state
 - `GAP-07` — on-chain backend adapter, still blocked by target chain selection

@@ -22,6 +22,7 @@ services:
       - DOCKER_REPOSITORY=myrepo
       - ENABLE_TDX=${ENABLE_TDX:-false}
       - TRUCON_URL=http://trucon:8001
+      - TRUCON_UDS_PATH=/var/run/trucon/trucon.sock
       - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
@@ -34,6 +35,7 @@ services:
       - ./builds:/app/builds
       - ./logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for building images
+      - /var/run/trucon:/var/run/trucon
     tmpfs:
       - /dev/shm
     mem_swappiness: 0
@@ -58,18 +60,20 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - TRUCON_UDS_PATH=/var/run/trucon/trucon.sock
       - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-}
     volumes:
       - ./logs:/app/logs
+      - /var/run/trucon:/var/run/trucon
     tmpfs:
       - /dev/shm
     mem_swappiness: 0
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/status"]
+      test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer $$TRUCON_SERVICE_TOKEN\" http://localhost:8001/status >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -87,6 +91,7 @@ services:
       - "8002:8002"
     environment:
       - TRUCON_URL=http://trucon:8001
+      - TRUCON_UDS_PATH=/var/run/trucon/trucon.sock
       - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
       - DOCKER_SOCKET=/var/run/docker-daemon.sock
       - SOCK_BRIDGE_SOCKET=/var/run/docktap/docker.sock
@@ -96,6 +101,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker-daemon.sock
       - /var/run/docktap:/var/run/docktap
+      - /var/run/trucon:/var/run/trucon
       - ./logs:/app/logs
     tmpfs:
       - /dev/shm

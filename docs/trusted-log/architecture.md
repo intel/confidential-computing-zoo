@@ -17,7 +17,7 @@ The module combines three planes:
 
 The system is deployed as two cooperating services:
 
-- **tc_api** (stateless, multi-worker): Receives caller requests, performs DSSE signing using the caller's OIDC identity, and forwards signed bundles to the TruCon via REST. For Event Log 0 (chain initialization), tc_api generates an ECDSA P-384 keypair in TEE memory and signs the baseline record with the TEE private key instead of Sigstore.
+- **tc_api** (stateless, multi-worker): Receives caller requests, performs DSSE signing using the caller's OIDC identity, and forwards signed bundles to the TruCon over the internal control-plane transport. Current implementation prefers a shared Unix domain socket for same-machine traffic and retains internal HTTP + Bearer-token wiring only as a compatibility path. For Event Log 0 (chain initialization), tc_api generates an ECDSA P-384 keypair in TEE memory and signs the baseline record with the TEE private key instead of Sigstore.
 - **TruCon** (single-instance, `--workers 1`): Serializes RTMR[2] extend + SQLite INSERT behind a `threading.Lock()`, maintains chain state, and embeds the submit daemon as a background thread.
 
 This split ensures that RTMR extends and chain state mutations are strictly serialized within a single process, while tc_api can scale horizontally for throughput. The three-layer trust model is:
@@ -41,7 +41,7 @@ flowchart LR
     end
 
     TrustBootstrap -->|Uses| TcApi
-    TcApi -->|POST /commit<br/>signed bundle| TrustApi
+    TcApi -->|internal control-plane transport<br/>signed bundle| TrustApi
     TrustApi -->|Extends and queries MR| OSTSM
     TrustApi -->|Submits event logs| TransparentLog
     TrustApi -->|Submits event logs| OnChainLog
@@ -60,7 +60,7 @@ flowchart LR
     TrustBootstrap["TrustBootstrap<br/>Captures trust event logs"]
 
     subgraph TcApiBoundary[tc_api — Stateless Multi-Worker]
-        TrustLogApi["Trusted Log API<br/>API<br/>DSSE signing + REST forwarding"]
+        TrustLogApi["Trusted Log API<br/>API<br/>DSSE signing + internal transport forwarding"]
     end
 
     subgraph TrustApiBoundary[TruCon — Single-Instance Sequencer]
@@ -84,7 +84,7 @@ flowchart LR
     TransparentLogSystem["Transparent Log System<br/>API<br/>External transparent-log service"]
 
     TrustBootstrap -->|Invokes| TrustLogApi
-    TrustLogApi -->|POST /commit<br/>signed bundle| Sequencer
+    TrustLogApi -->|internal control-plane transport<br/>signed bundle| Sequencer
     Sequencer -->|Writes| CommitQueue
     Sequencer -->|Updates| ChainState
     SubmissionDaemon -->|Polls| CommitQueue
@@ -103,7 +103,7 @@ flowchart LR
 ##### Responsibility Mapping
 
 - Trusted Log API (tc_api side):
-Receives event-log operations from TrustBootstrap, constructs In-Toto DSSE envelopes, signs them using the caller's OIDC identity token via Sigstore in offline mode, and forwards the signed bundle to the TruCon via REST `POST /commit`. The tc_api side is stateless and safe for multi-worker deployment (`--workers N`). It does not hold chain state, perform RTMR extends, or access the SQLite queue.
+Receives event-log operations from TrustBootstrap, constructs In-Toto DSSE envelopes, signs them using the caller's OIDC identity token via Sigstore in offline mode, and forwards the signed bundle to the TruCon via the shared internal transport. The default same-machine path is a Unix domain socket; the compatibility path remains HTTP with Bearer-token auth. The tc_api side is stateless and safe for multi-worker deployment (`--workers N`). It does not hold chain state, perform RTMR extends, or access the SQLite queue.
 
 - TruCon Sequencer:
 A single-instance FastAPI service (`--workers 1`) that serializes all chain-mutating operations behind a `threading.Lock()`. Within the lock, it reads `chain_state` to determine `prev_log_id` and `sequence_num`, extends RTMR[2] with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, and updates `chain_state`. Single-instance enforcement is achieved via an exclusive file lock (`fcntl.flock`) at startup.
@@ -129,7 +129,7 @@ Implement Immutable Log Adapter for different immutable backends while preservin
 ##### Interaction Model
 
 1. TrustBootstrap invokes Trusted Log API (in tc_api) to create a record context and append one or more event entries.
-2. TrustBootstrap calls `commit_record()`. The tc_api Trusted Log API constructs the DSSE predicate (without `prev_log_id`), signs it with Sigstore in offline mode, and POSTs the signed bundle to the TruCon.
+2. TrustBootstrap calls `commit_record()`. The tc_api Trusted Log API constructs the DSSE predicate (without `prev_log_id`), signs it with Sigstore in offline mode, and forwards the signed bundle to the TruCon over the internal control-plane transport. Current implementation prefers Unix domain socket transport for same-machine callers and preserves the HTTP `POST /commit` path only as a compatibility mechanism.
 3. TruCon acquires its `threading.Lock()`, reads the current `chain_state`, extends RTMR[2] with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, updates `chain_state`, and releases the lock.
 4. The embedded submit daemon asynchronously polls the queue and submits confirmed records to the immutable backend in `sequence_num` order.
 5. Backend implementations translate adapter operations into concrete syscalls or external API calls.
@@ -138,6 +138,22 @@ Implement Immutable Log Adapter for different immutable backends while preservin
 This layering allows backend evolution (for example adding new on-chain or transparent-log providers) without changing caller behavior. The split architecture allows tc_api to scale horizontally while the TruCon serializes all chain-mutating operations.
 
 Docktap-local routing state, workload mappings, and retry bookkeeping are operational cache and short-lived diagnostics only. Garbage-collecting that local state does not change replay correctness, because replay and verification depend on TruCon state and immutable backend records rather than Docktap-local persistence.
+
+### Internal Control-Plane Authentication Model
+
+Current implementation authenticates same-machine TruCon callers primarily through a shared Unix domain socket plus Linux peer credentials.
+
+The implemented model in this repository is:
+
+- internal caller traffic prefers a shared Unix domain socket rather than long-lived localhost TCP
+- TruCon authenticates callers using Linux peer credentials (`SO_PEERCRED`)
+- TruCon derives a caller identity that distinguishes at least `tc_api` and `docktap`
+- TruCon enforces a small caller policy matrix at the boundary instead of treating every authenticated caller as equivalent
+- internal HTTP + Bearer-token traffic remains available only as a compatibility path behind the same control-plane semantics
+
+This identity is an internal admission and audit concept, not part of the DSSE predicate and not part of exported attested evidence. The external verifier boundary remains immutable-log replay plus attested-head evidence.
+
+The repository still does not need token rotation, cross-node transport, or mTLS. Those remain future deployment TODOs and should not distort the same-machine design.
 
 ### External Systems
 

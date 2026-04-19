@@ -94,14 +94,14 @@ def trucon_client(tmp_path):
     old_mr = app_mod._local_mr
     app_mod._local_mr = MockMRAdapter()
 
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request
     from fastapi.testclient import TestClient as _TC
 
     test_app = FastAPI()
 
     @test_app.post("/commit", response_model=app_mod.CommitResponse)
-    def commit(req: app_mod.CommitRequest):
-        return app_mod.commit(req)
+    def commit(req: app_mod.CommitRequest, request: Request):
+        return app_mod.commit(req, request)
 
     @test_app.get("/chain-state/{chain_id}", response_model=app_mod.ChainStateResponse)
     def chain_state(chain_id: str):
@@ -225,17 +225,17 @@ class TestEndToEndDocktapFlow:
             mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
             mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
 
-            # Patch urllib to use TestClient instead
-            def fake_urlopen(req, timeout=5):
-                body = json.loads(req.data.decode("utf-8"))
-                resp = client.post("/commit", json=body)
-                mock_resp = MagicMock()
-                mock_resp.read.return_value = json.dumps(resp.json()).encode("utf-8")
-                mock_resp.__enter__ = lambda s: s
-                mock_resp.__exit__ = lambda s, *a: None
-                return mock_resp
+            def fake_request_json(method, path, **kwargs):
+                assert method == "POST"
+                assert path == "/commit"
+                resp = client.post(
+                    "/commit",
+                    json=kwargs["json_body"],
+                    headers={"Authorization": "Bearer compat-token", "X-TruCon-Caller-Service": "docktap"},
+                )
+                return resp.json()
 
-            with patch("trucon_client.urllib.request.urlopen", side_effect=fake_urlopen):
+            with patch("trucon_client.request_json", side_effect=fake_request_json):
                 result = committer.submit_operation(rec, "pull")
 
         assert result is True

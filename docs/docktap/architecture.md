@@ -30,6 +30,8 @@ Docktap is deployed as an independent service alongside tc_api and TruCon:
 - **Docker Compose**: Independent container using the same image as tc_api, with Docker daemon socket bind-mount and proxy socket exposed via `/var/run/docktap/`.
 - **Bare-metal** (`start.sh`): Background process launched after TruCon, with PID tracking and graceful shutdown.
 
+Current internal TruCon communication prefers the shared Unix domain socket transport used across the same-machine deployment. TruCon derives Docktap caller identity from peer credentials and applies a commit-oriented admission policy; internal HTTP plus a shared Bearer token remains only as a compatibility path.
+
 Users route Docker CLI through the proxy by setting `DOCKER_HOST=unix:///var/run/docktap/docker.sock`.
 
 Docktap failure model: if Docktap goes down, Docker CLI traffic is blocked (by design — all operations must be recorded). Automatic restart ensures minimal downtime.
@@ -72,6 +74,7 @@ Docker CLI (DOCKER_HOST=unix:///tmp/test-stream.sock)
   - lifecycle metadata for `created_at`, `last_seen_at`, `removed_at`, and `last_operation`
 - `trucon_client.py`
   - TruCon commit client, runtime audit-field construction, and bounded retry bookkeeping
+  - uses the shared TruCon internal transport helper with UDS-first behavior and caller-identity-aware admission policy
   - local retry retention for pending, acknowledged, and terminal outcomes
 - `stream_test.py`
   - lightweight runtime launcher for the `/tmp/test-stream.sock` path

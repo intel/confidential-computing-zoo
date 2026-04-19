@@ -16,10 +16,11 @@ from sigstore.dsse import StatementBuilder, Subject
 from sigstore.models import Bundle
 
 from .tlog.types import (
-    RecordContext, Entry, Record, EventLog, CommitResult, SubmitResult,
+    RecordContext, Entry, Record, EventLog, CommitResult,
     CommitQueueStatus, LatestState, VerificationResult, SubmitStatus
 )
 from .tlog.errors import RecordNotFoundError, BackendSubmitError, VerificationError
+from .trucon.internal_transport import request_json
 
 logger = logging.getLogger(__name__)
 
@@ -107,9 +108,6 @@ try:
     from .config import TRUCON_URL
 except ImportError:
     TRUCON_URL = "http://127.0.0.1:8001"
-
-# Service token for TruCon authentication
-_TRUCON_SERVICE_TOKEN = os.environ.get("TRUCON_SERVICE_TOKEN", "")
 
 class TrustedLogAPI:
     """
@@ -262,15 +260,14 @@ class TrustedLogAPI:
         already exists (409) or TruCon is unreachable.
         """
         # Phase 1: Get baseline from TruCon
-        baseline_url = f"{self._trucon_url}/init-chain/{chain_id}/baseline"
-        headers = {}
-        if _TRUCON_SERVICE_TOKEN:
-            headers["Authorization"] = f"Bearer {_TRUCON_SERVICE_TOKEN}"
-
         try:
-            req = urllib.request.Request(baseline_url, method="GET", headers=headers)
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                baseline = json.loads(resp.read().decode("utf-8"))
+            baseline = request_json(
+                "GET",
+                f"/init-chain/{chain_id}/baseline",
+                caller_service="tc_api",
+                timeout=30,
+                trucon_url=self._trucon_url,
+            )
         except urllib.error.HTTPError as e:
             if e.code == 409:
                 logger.info("Chain '%s' already initialized, skipping init-chain", chain_id)
@@ -326,25 +323,25 @@ class TrustedLogAPI:
         del private_key
 
         # Phase 2: POST init-chain
-        post_url = f"{self._trucon_url}/init-chain"
-        post_payload = json.dumps({
+        post_payload = {
             "chain_id": chain_id,
             "init_token": init_token,
             "signed_bundle": dsse_envelope,
             "pub_key": pub_key_pem,
-        }).encode("utf-8")
-
-        post_headers = {"Content-Type": "application/json"}
-        if _TRUCON_SERVICE_TOKEN:
-            post_headers["Authorization"] = f"Bearer {_TRUCON_SERVICE_TOKEN}"
+        }
 
         try:
-            req = urllib.request.Request(post_url, data=post_payload, headers=post_headers, method="POST")
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-                logger.info("Chain '%s' initialized: record_id=%s sequence_num=%d",
-                            chain_id, result["record_id"], result["sequence_num"])
-                return result
+            result = request_json(
+                "POST",
+                "/init-chain",
+                json_body=post_payload,
+                caller_service="tc_api",
+                timeout=30,
+                trucon_url=self._trucon_url,
+            )
+            logger.info("Chain '%s' initialized: record_id=%s sequence_num=%d",
+                        chain_id, result["record_id"], result["sequence_num"])
+            return result
         except urllib.error.HTTPError as e:
             if e.code == 409:
                 logger.info("Chain '%s' already initialized (race), skipping", chain_id)
@@ -360,30 +357,25 @@ class TrustedLogAPI:
                             idempotency_key: Optional[str] = None,
                             instance_id: Optional[str] = None) -> Dict[str, Any]:
         """POST the signed bundle to TruCon /commit endpoint."""
-        url = f"{self._trucon_url}/commit"
-        payload = json.dumps({
+        payload = {
             "bundle": bundle_json,
             "chain_id": chain_id,
             "event_digest": event_digest,
             "event_id": event_id,
             "idempotency_key": idempotency_key,
             "instance_id": instance_id,
-        }).encode("utf-8")
-
-        headers = {"Content-Type": "application/json"}
-        if _TRUCON_SERVICE_TOKEN:
-            headers["Authorization"] = f"Bearer {_TRUCON_SERVICE_TOKEN}"
-
-        req = urllib.request.Request(
-            url, data=payload,
-            headers=headers,
-            method="POST",
-        )
+        }
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+            return request_json(
+                "POST",
+                "/commit",
+                json_body=payload,
+                caller_service="tc_api",
+                timeout=30,
+                trucon_url=self._trucon_url,
+            )
         except urllib.error.URLError as e:
-            logger.error("TruCon unavailable at %s: %s", url, e)
+            logger.error("TruCon unavailable via internal transport: %s", e)
             raise BackendSubmitError(
                 f"TruCon sequencer unavailable: {e}",
                 code="TRUCON_UNAVAILABLE",
@@ -393,19 +385,20 @@ class TrustedLogAPI:
 
     def get_commit_queue_status(self, scope: Optional[str] = None) -> CommitQueueStatus:
         """Query TruCon for queue status."""
-        url = f"{self._trucon_url}/status"
         try:
-            req = urllib.request.Request(url, method="GET")
-            if _TRUCON_SERVICE_TOKEN:
-                req.add_header("Authorization", f"Bearer {_TRUCON_SERVICE_TOKEN}")
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                return CommitQueueStatus(
-                    has_queued_records=data.get("has_queued_records", False),
-                    queued_record_count=data.get("queued_record_count", 0),
-                    next_record_id=data.get("next_record_id"),
-                    total_retry_count=data.get("total_retry_count", 0),
-                )
+            data = request_json(
+                "GET",
+                "/status",
+                caller_service="tc_api",
+                timeout=10,
+                trucon_url=self._trucon_url,
+            )
+            return CommitQueueStatus(
+                has_queued_records=data.get("has_queued_records", False),
+                queued_record_count=data.get("queued_record_count", 0),
+                next_record_id=data.get("next_record_id"),
+                total_retry_count=data.get("total_retry_count", 0),
+            )
         except Exception as e:
             logger.warning("Could not reach TruCon for queue status: %s", e)
             return CommitQueueStatus(has_queued_records=False, queued_record_count=0)

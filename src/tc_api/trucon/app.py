@@ -55,6 +55,15 @@ from .database import (
 from .adapters.sigstore import SigstoreLogAdapter
 from .adapters.ccel import compute_ccel_digest
 from .adapters.tdx_quote import TdxQuoteAdapter
+from .internal_transport import (
+    AUTH_TRANSPORT_HEADER,
+    CALLER_SERVICE_HEADER,
+    INTERNAL_PROXY_SECRET_HEADER,
+    PEER_GID_HEADER,
+    PEER_PID_HEADER,
+    PEER_UID_HEADER,
+)
+from .uds_gateway import TruConUnixSocketGateway
 from .evidence import (
     AttestedHeadEvidence,
     BINDING_ALGORITHM,
@@ -375,14 +384,14 @@ def _handle_retry(record_id: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _local_mr, _immutable_log, _quote_adapter
+    global _local_mr, _immutable_log, _quote_adapter, _uds_gateway
 
     # Service authentication startup checks
     if _AUTH_DISABLED:
         logger.warning("⚠ TruCon service authentication DISABLED — development mode only")
-    elif not _SERVICE_TOKEN:
-        logger.error("TRUCON_SERVICE_TOKEN is not set and TRUCON_AUTH_DISABLED is not true. Refusing to start.")
-        raise RuntimeError("TRUCON_SERVICE_TOKEN is not set and TRUCON_AUTH_DISABLED is not true")
+    elif not _SERVICE_TOKEN and not _TRUCON_UDS_PATH:
+        logger.error("Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled. Refusing to start.")
+        raise RuntimeError("Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled")
 
     # Single-instance enforcement
     acquire_instance_lock()
@@ -407,6 +416,15 @@ async def lifespan(app: FastAPI):
     _immutable_log = SigstoreLogAdapter()
     _quote_adapter = TdxQuoteAdapter()
 
+    if _TRUCON_UDS_PATH:
+        _uds_gateway = TruConUnixSocketGateway(
+            socket_path=_TRUCON_UDS_PATH,
+            internal_proxy_secret=_INTERNAL_PROXY_SECRET,
+            forward_port=_TRUCON_HTTP_PORT,
+            auth_disabled=_AUTH_DISABLED,
+        )
+        _uds_gateway.start()
+
     # Start submit daemon thread
     daemon_thread = threading.Thread(target=_submit_daemon_loop, daemon=True, name="submit-daemon")
     daemon_thread.start()
@@ -416,6 +434,9 @@ async def lifespan(app: FastAPI):
     # Shutdown
     _stop_daemon.set()
     daemon_thread.join(timeout=10)
+    if _uds_gateway is not None:
+        _uds_gateway.stop()
+        _uds_gateway = None
     release_instance_lock()
     logger.info("TruCon shut down")
 
@@ -432,10 +453,48 @@ app = FastAPI(
 
 _AUTH_DISABLED = os.environ.get("TRUCON_AUTH_DISABLED", "").lower() == "true"
 _SERVICE_TOKEN = os.environ.get("TRUCON_SERVICE_TOKEN", "")
+_TRUCON_UDS_PATH = os.environ.get("TRUCON_UDS_PATH", "")
+_TRUCON_HTTP_PORT = int(os.environ.get("TRUCON_PORT", "8001"))
+_INTERNAL_PROXY_SECRET = secrets.token_urlsafe(32)
+_uds_gateway: Optional[TruConUnixSocketGateway] = None
+
+
+def _authorize_caller(caller_service: str, request: Request) -> Optional[JSONResponse]:
+    if caller_service in {"auth_bypass", "compat_http", "tc_api"}:
+        return None
+
+    if caller_service == "docktap":
+        if request.method == "POST" and request.url.path == "/commit":
+            return None
+        return JSONResponse(
+            status_code=403,
+            content={"detail": f"Caller '{caller_service}' is not authorized for {request.method} {request.url.path}"},
+        )
+
+    return JSONResponse(status_code=401, content={"detail": "Unrecognized caller identity"})
 
 @app.middleware("http")
 async def service_auth_middleware(request: Request, call_next):
     if _AUTH_DISABLED:
+        request.state.caller_service = "auth_bypass"
+        request.state.auth_transport = "disabled"
+        return await call_next(request)
+
+    proxy_secret = request.headers.get(INTERNAL_PROXY_SECRET_HEADER)
+    if proxy_secret and hmac.compare_digest(proxy_secret, _INTERNAL_PROXY_SECRET):
+        caller_service = request.headers.get(CALLER_SERVICE_HEADER)
+        if caller_service not in {"tc_api", "docktap"}:
+            return JSONResponse(status_code=401, content={"detail": "Invalid or missing caller service"})
+
+        request.state.caller_service = caller_service
+        request.state.auth_transport = request.headers.get(AUTH_TRANSPORT_HEADER, "uds")
+        request.state.peer_pid = request.headers.get(PEER_PID_HEADER)
+        request.state.peer_uid = request.headers.get(PEER_UID_HEADER)
+        request.state.peer_gid = request.headers.get(PEER_GID_HEADER)
+
+        denial = _authorize_caller(caller_service, request)
+        if denial is not None:
+            return denial
         return await call_next(request)
 
     auth_header = request.headers.get("authorization")
@@ -448,6 +507,12 @@ async def service_auth_middleware(request: Request, call_next):
     token = auth_header[7:]  # len("Bearer ") == 7
     if not hmac.compare_digest(token, _SERVICE_TOKEN):
         return JSONResponse(status_code=401, content={"detail": "Invalid service token"})
+
+    request.state.caller_service = request.headers.get(CALLER_SERVICE_HEADER, "compat_http")
+    request.state.auth_transport = "http_compat"
+    denial = _authorize_caller(request.state.caller_service, request)
+    if denial is not None:
+        return denial
 
     return await call_next(request)
 
@@ -493,7 +558,7 @@ def get_init_chain_baseline(chain_id: str):
 
 
 @app.post("/init-chain", response_model=InitChainResponse)
-def init_chain(req: InitChainRequest):
+def init_chain(req: InitChainRequest, request: Request):
     """
     Phase 2 of chain initialization: validate init_token and insert Event Log 0
     (baseline record) into the commit queue.
@@ -515,6 +580,9 @@ def init_chain(req: InitChainRequest):
         record_id = str(uuid.uuid4())
         sequence_num = 1
 
+        caller_service = getattr(request.state, "caller_service", None)
+        auth_transport = getattr(request.state, "auth_transport", None)
+
         # INSERT baseline record (Event Log 0)
         # rtmr_extended=True: RTMR value was captured (read, not extended).
         # This flag must be True for the submit daemon and crash recovery to
@@ -527,6 +595,8 @@ def init_chain(req: InitChainRequest):
                 "chain_id": req.chain_id,
                 "pub_key": req.pub_key,
                 "is_baseline": True,
+                "caller_service": caller_service,
+                "auth_transport": auth_transport,
             },
             status="PENDING",
             chain_id=req.chain_id,
@@ -547,12 +617,18 @@ def init_chain(req: InitChainRequest):
             mr_value=token_data["rtmr_value"],
         )
 
-        logger.info("Chain '%s' initialized with baseline record %s", req.chain_id, record_id)
+        logger.info(
+            "Chain '%s' initialized with baseline record %s caller_service=%s auth_transport=%s",
+            req.chain_id,
+            record_id,
+            caller_service,
+            auth_transport,
+        )
         return InitChainResponse(record_id=record_id, sequence_num=sequence_num)
 
 
 @app.post("/commit", response_model=CommitResponse)
-def commit(req: CommitRequest):
+def commit(req: CommitRequest, request: Request):
     """
     Sequence a signed bundle: RTMR extend + SQLite INSERT + chain_state update.
     All three operations are serialized behind a threading.Lock().
@@ -560,6 +636,8 @@ def commit(req: CommitRequest):
     t0 = time.perf_counter()
     record_id = str(uuid.uuid4())
     event_id = req.event_id or f"evt-{uuid.uuid4().hex[:8]}"
+    caller_service = getattr(request.state, "caller_service", None)
+    auth_transport = getattr(request.state, "auth_transport", None)
 
     with _sequencer_lock:
         # 0. Idempotency check — before any side effects
@@ -604,7 +682,12 @@ def commit(req: CommitRequest):
         insert_record(
             record_id=record_id,
             event_id=event_id,
-            payload={"bundle": req.bundle, "chain_id": req.chain_id},
+            payload={
+                "bundle": req.bundle,
+                "chain_id": req.chain_id,
+                "caller_service": caller_service,
+                "auth_transport": auth_transport,
+            },
             status="PENDING",
             chain_id=req.chain_id,
             rtmr_extended=True,
@@ -622,6 +705,15 @@ def commit(req: CommitRequest):
             head_record_id=record_id,
             sequence_num=sequence_num,
             mr_value=mr_value,
+        )
+
+        logger.info(
+            "Accepted commit record_id=%s chain_id=%s sequence_num=%s caller_service=%s auth_transport=%s",
+            record_id,
+            req.chain_id,
+            sequence_num,
+            caller_service,
+            auth_transport,
         )
 
     latency_ms = (time.perf_counter() - t0) * 1000

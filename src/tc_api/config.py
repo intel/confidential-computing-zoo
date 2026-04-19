@@ -36,6 +36,7 @@ ENABLE_TDX = config("ENABLE_TDX", default=False, cast=bool)
 
 # Trust API Configuration
 TRUCON_URL = config("TRUCON_URL", default="http://127.0.0.1:8001")
+TRUCON_UDS_PATH = config("TRUCON_UDS_PATH", default="")
 
 # TruCon Service Authentication
 TRUCON_SERVICE_TOKEN = config("TRUCON_SERVICE_TOKEN", default="")

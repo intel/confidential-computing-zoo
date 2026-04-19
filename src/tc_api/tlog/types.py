@@ -4,7 +4,6 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
 class SubmitStatus(str, Enum):
-    OPEN = "open"
     PENDING = "pending"
     SUBMITTING = "submitting"
     CONFIRMED = "confirmed"
@@ -47,17 +46,6 @@ class CommitResult:
     mr_value: Optional[str] = None
     prev_mr_value: Optional[str] = None
     pending_reason: Optional[str] = None
-
-@dataclass(slots=True)
-class SubmitResult:
-    record_id: str
-    event_id: Optional[str]
-    status: SubmitStatus
-    mr_value: Optional[str] = None
-    prev_mr_value: Optional[str] = None
-    pending_reason: Optional[str] = None
-    backend: Optional[str] = None
-    confirmed_at: Optional[datetime] = None
 
 @dataclass(slots=True)
 class CommitQueueStatus:

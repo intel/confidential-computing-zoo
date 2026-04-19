@@ -429,6 +429,9 @@ echo "TRUCON_SERVICE_TOKEN=$TRUCON_SERVICE_TOKEN" >> .env
 # Create Docktap proxy socket directory on host
 sudo mkdir -p /var/run/docktap
 
+# Create TruCon shared socket directory on host
+sudo mkdir -p /var/run/trucon
+
 # Start all services
 docker compose up -d
 ```
@@ -451,15 +454,18 @@ sudo chmod +x /etc/profile.d/docktap.sh
 ```bash
 docker compose ps
 curl http://localhost:8000/        # tc-api health
-curl http://localhost:8001/status   # trucon status
+curl -H "Authorization: Bearer $TRUCON_SERVICE_TOKEN" http://localhost:8001/status   # trucon compatibility HTTP health
 curl http://localhost:8002/healthz  # docktap health
 ```
+
+TruCon internal callers now prefer the shared Unix socket at `/var/run/trucon/trucon.sock`. The HTTP endpoint remains available as a compatibility path during migration, but it is no longer the preferred same-machine transport for tc_api and Docktap.
 
 ### Docktap Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TRUCON_URL` | `http://127.0.0.1:8001` | TruCon endpoint for event submission |
+| `TRUCON_UDS_PATH` | `/var/run/trucon/trucon.sock` | Preferred same-machine Unix socket path for tc_api and Docktap internal TruCon traffic |
 | `TRUCON_SERVICE_TOKEN` | (generated) | Shared Bearer token for TruCon auth |
 | `SOCK_BRIDGE_SOCKET` | `/tmp/docker-proxy.sock` | Proxy socket listen path |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker daemon socket path |

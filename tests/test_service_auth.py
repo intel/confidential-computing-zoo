@@ -28,7 +28,8 @@ class TestAuthEnforcement:
     @pytest.fixture(autouse=True)
     def setup_client(self):
         with patch(f"{MOD}._AUTH_DISABLED", False), \
-             patch(f"{MOD}._SERVICE_TOKEN", TEST_TOKEN):
+             patch(f"{MOD}._SERVICE_TOKEN", TEST_TOKEN), \
+             patch(f"{MOD}._TRUCON_UDS_PATH", ""):
             self.client = TestClient(app, raise_server_exceptions=False)
             yield
 
@@ -87,6 +88,34 @@ class TestAuthEnforcement:
         # but the auth layer is satisfied.
         assert resp.status_code != 401
 
+    def test_docktap_http_compat_restricted_from_status(self):
+        resp = self.client.get(
+            "/status",
+            headers={
+                "Authorization": f"Bearer {TEST_TOKEN}",
+                "X-TruCon-Caller-Service": "docktap",
+            },
+        )
+        assert resp.status_code == 403
+        assert "not authorized" in resp.json()["detail"]
+
+    def test_docktap_http_compat_can_commit(self):
+        resp = self.client.post(
+            "/commit",
+            json={
+                "bundle": "{}",
+                "chain_id": "auth-test",
+                "event_digest": "sha384:aaa",
+                "event_id": "evt-auth-test",
+            },
+            headers={
+                "Authorization": f"Bearer {TEST_TOKEN}",
+                "X-TruCon-Caller-Service": "docktap",
+            },
+        )
+        assert resp.status_code != 401
+        assert resp.status_code != 403
+
 
 # ---------------------------------------------------------------------------
 # Tests: dev-mode bypass
@@ -98,7 +127,8 @@ class TestDevModeBypass:
     @pytest.fixture(autouse=True)
     def setup_client(self):
         with patch(f"{MOD}._AUTH_DISABLED", True), \
-             patch(f"{MOD}._SERVICE_TOKEN", ""):
+             patch(f"{MOD}._SERVICE_TOKEN", ""), \
+             patch(f"{MOD}._TRUCON_UDS_PATH", ""):
             self.client = TestClient(app, raise_server_exceptions=False)
             yield
 
@@ -124,7 +154,17 @@ class TestStartupGuard:
     def test_startup_exits_without_token(self):
         """Lifespan should raise RuntimeError when _AUTH_DISABLED=False and _SERVICE_TOKEN=''."""
         with patch(f"{MOD}._AUTH_DISABLED", False), \
-             patch(f"{MOD}._SERVICE_TOKEN", ""):
-            with pytest.raises(RuntimeError, match="TRUCON_SERVICE_TOKEN is not set"):
+             patch(f"{MOD}._SERVICE_TOKEN", ""), \
+             patch(f"{MOD}._TRUCON_UDS_PATH", ""):
+            with pytest.raises(RuntimeError, match="Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH"):
                 with TestClient(app):
                     pass
+
+    def test_startup_allows_uds_without_token(self):
+        with patch(f"{MOD}._AUTH_DISABLED", False), \
+             patch(f"{MOD}._SERVICE_TOKEN", ""), \
+             patch(f"{MOD}._TRUCON_UDS_PATH", "/tmp/test-trucon.sock"), \
+             patch(f"{MOD}.TruConUnixSocketGateway.start"), \
+             patch(f"{MOD}.TruConUnixSocketGateway.stop"):
+            with TestClient(app):
+                pass

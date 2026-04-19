@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: TruCon token validation middleware
 TruCon SHALL authenticate internal callers before dispatching to endpoint handlers. In the same-machine Phase B model, the primary authentication mechanism SHALL be Linux peer credentials from the shared Unix socket transport. If an HTTP compatibility path remains enabled during migration, that path MAY continue to validate a Bearer token from `TRUCON_SERVICE_TOKEN`.
 
@@ -54,6 +56,8 @@ Docktap's internal TruCon client SHALL use the configured same-machine authentic
 - **WHEN** Docktap uses the explicitly enabled compatibility HTTP path and `TRUCON_SERVICE_TOKEN` is set
 - **THEN** the request SHALL include the expected Bearer token
 
+## ADDED Requirements
+
 ### Requirement: TruCon SHALL derive caller identity for internal policy and audit
 TruCon SHALL derive a caller identity for authenticated internal requests that distinguishes at least `tc_api` and `docktap`. This identity SHALL be available to admission policy and audit logging.
 
@@ -75,3 +79,9 @@ TruCon SHALL enforce endpoint access according to caller identity. At minimum, t
 #### Scenario: Docktap is restricted from admin-style endpoints
 - **WHEN** an authenticated Docktap request targets chain-initialization or other non-commit administrative endpoints
 - **THEN** TruCon SHALL reject the request as unauthorized
+
+## REMOVED Requirements
+
+### Requirement: Token generation at startup
+**Reason**: Phase B no longer depends on a shared Bearer token as the primary same-machine authentication mechanism.
+**Migration**: Existing startup token generation MAY remain only for an explicitly documented HTTP compatibility window and should be removed once all internal callers use the Unix socket transport.

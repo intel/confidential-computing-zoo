@@ -24,6 +24,7 @@ from tc_api.tlog_client import (
     compute_entry_digest,
     compute_event_digest,
 )
+from tc_api.trucon.internal_transport import request_json
 
 from sigstore.oidc import IdentityToken, detect_credential
 from sigstore.sign import SigningContext
@@ -481,26 +482,19 @@ class TruConCommitter:
         idempotency_key: Optional[str] = None,
         instance_id: Optional[str] = None,
     ) -> Dict:
-        url = f"{self._trucon_url}/commit"
-        payload = json.dumps({
+        payload = {
             "bundle": bundle_json,
             "chain_id": chain_id,
             "event_digest": event_digest,
             "event_id": event_id,
             "idempotency_key": idempotency_key,
             "instance_id": instance_id,
-        }).encode("utf-8")
-
-        headers = {"Content-Type": "application/json"}
-        service_token = os.environ.get("TRUCON_SERVICE_TOKEN", "")
-        if service_token:
-            headers["Authorization"] = f"Bearer {service_token}"
-
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            headers=headers,
-            method="POST",
+        }
+        return request_json(
+            "POST",
+            "/commit",
+            json_body=payload,
+            caller_service="docktap",
+            timeout=5,
+            trucon_url=self._trucon_url,
         )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            return json.loads(resp.read().decode("utf-8"))

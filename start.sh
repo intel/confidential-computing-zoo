@@ -43,12 +43,17 @@ export HOST=${HOST:-0.0.0.0}
 export PORT=${PORT:-8000}
 export TRUCON_PORT=${TRUCON_PORT:-8001}
 export DOCKTAP_SOCKET=${DOCKTAP_SOCKET:-/var/run/docktap/docker.sock}
+export TRUCON_UDS_PATH=${TRUCON_UDS_PATH:-/var/run/trucon/trucon.sock}
 export DEBUG=${DEBUG:-false}
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
 # Create Docktap proxy socket directory
 DOCKTAP_SOCKET_DIR=$(dirname "$DOCKTAP_SOCKET")
 mkdir -p "$DOCKTAP_SOCKET_DIR"
+
+# Create TruCon socket directory
+TRUCON_SOCKET_DIR=$(dirname "$TRUCON_UDS_PATH")
+mkdir -p "$TRUCON_SOCKET_DIR"
 
 # Generate a session-scoped service token for TruCon authentication
 if [ -z "$TRUCON_SERVICE_TOKEN" ]; then
@@ -82,6 +87,7 @@ if ! kill -0 $DOCKTAP_PID 2>/dev/null; then
 fi
 echo "✓ Docktap started (PID: $DOCKTAP_PID)"
 echo "  Use 'export DOCKER_HOST=unix://$DOCKTAP_SOCKET' to route Docker CLI through proxy"
+echo "  TruCon internal UDS path: $TRUCON_UDS_PATH"
 
 # Function to gracefully shutdown services when the script exits
 cleanup() {

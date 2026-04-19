@@ -1720,12 +1720,15 @@ class DockerService:
         """Lightweight verification: query TruCon chain-state and check head."""
         logger.info("Verifying chain state via TruCon...")
         try:
-            import urllib.request
-            import urllib.error
-            url = f"{tlog._trucon_url}/chain-state/{chain_id}"
-            req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+            from .trucon.internal_transport import request_json
+
+            data = request_json(
+                "GET",
+                f"/chain-state/{chain_id}",
+                caller_service="tc_api",
+                timeout=10,
+                trucon_url=tlog._trucon_url,
+            )
             if data.get("head_record_id"):
                 logger.info(f"Chain '{chain_id}' head at record {data['head_record_id']}, seq={data.get('sequence_num')}")
                 return "success"

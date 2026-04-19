@@ -38,12 +38,12 @@ flowchart LR
 
   docktap[Docktap Service<br/>runtime interception and lifecycle events] -->|trusted event calls| trucon[TruCon Core Service<br/>single-instance sequencer<br/>commit/queue/submit lifecycle]
 
-  rest -->|signed DSSE bundles via REST| trucon
+  rest -->|signed DSSE bundles via internal UDS-first transport| trucon
   trucon --> daemon[Embedded Submit Daemon<br/>threading.Thread<br/>polls queue, submits to backends]
   daemon --> backends[Immutable Trust Backends<br/>transparency log and/or on-chain backends]
 ```
 
-The REST API signs DSSE envelopes locally using the caller's OIDC identity token, then POSTs the signed bundle to TruCon's `/commit` endpoint. TruCon serializes RTMR[2] extend, SQLite queue insert, and chain state update, then returns sequencing metadata. An embedded submit daemon publishes confirmed records to immutable backends asynchronously.
+The REST API signs DSSE envelopes locally using the caller's OIDC identity token, then sends the signed bundle to TruCon over the internal control-plane transport. The current implementation prefers a shared Unix domain socket and retains internal HTTP plus Bearer-token wiring only as a compatibility path. TruCon serializes RTMR[2] extend, SQLite queue insert, and chain state update, then returns sequencing metadata. An embedded submit daemon publishes confirmed records to immutable backends asynchronously.
 
 At startup, tc_api initializes the trust chain by calling TruCon's `/init-chain` endpoint to create Event Log 0 (baseline record). This captures the current RTMR[2] snapshot and CCEL digest without performing an RTMR extend, anchoring the chain to the platform's boot-time measurement state.
 
@@ -76,7 +76,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Routes events to per-workload chains via `io.trucon.workload-id` container label; containers without the label default to `"default"` chain.
 - Emits explicit runtime outcomes (`operation_result`) plus workload, instance, and image-target identity fields required by the `docktap-runtime` verification profile.
 - Persists and propagates `launch_id` for runtime events attributable to a REST-originated launch flow so launch verification can correlate REST launch intent with Docktap `create`/`start` evidence.
-- Best-effort submission: TruCon failures log a warning but do not block Docker API responses.
+- Best-effort submission: Docktap uses the shared internal transport and identifies as a commit-oriented internal caller; TruCon failures still log a warning and do not block Docker API responses.
 - Retains local routing, mapping, and retry state only for bounded operational windows; replay and verification rely on TruCon and immutable backends, not on Docktap-local persistence.
 - Exposes HTTP health endpoint (`/healthz` on configurable port, default 8002) for container health checks.
 - Docktap down = Docker CLI unavailable (by design — all operations must be recorded).
@@ -125,10 +125,6 @@ Record lifecycle states (currently implemented):
 - FAILED_RETRYABLE: retry scheduled (worker will re-attempt).
 - FAILED_TERMINAL: terminal failure requiring operator intervention.
 - FAILED: legacy state — submission no longer retried automatically (max retries exceeded).
-
-Reserved (not yet used):
-
-- OPEN: record initialized, entries can be appended (deferred until pre-commit assembly flow).
 
 ### 5.2 Mapping Model
 
@@ -233,14 +229,20 @@ TruCon authenticates all incoming HTTP requests via Bearer token:
 - A development-mode bypass (`TRUCON_AUTH_DISABLED=true`) skips authentication with a prominent startup warning.
 - Token lifetime equals VM lifetime; token is never persisted to disk (CVM disk is untrusted).
 
-### 9.2 Internal Service Authentication (Phase B — Planned)
+### 9.2 Internal Service Authentication (Phase B — Implemented)
 
-For cross-node or multi-tenant deployments, Phase A Bearer tokens may be upgraded to:
+The repository's current deployment assumption remains same-machine operation for tc_api, Docktap, and TruCon. Under that constraint, the implemented Phase B design uses Unix domain socket transport plus Linux peer credential validation rather than mTLS.
 
-- Mutual TLS (mTLS) with per-service certificates, or
-- Unix socket peer credentials (`SO_PEERCRED`) for same-machine deployments.
+Current implementation:
 
-Phase B would also enable per-caller identity differentiation (tc_api vs Docktap) and token rotation for long-lived deployments. See GAP-12 in `docs/overview_tasks.md`.
+- Internal TruCon control traffic prefers a shared Unix socket path configured by `TRUCON_UDS_PATH`.
+- TruCon authenticates UDS callers using peer credentials and derives a stable caller identity for policy and audit. The minimum supported identity is `caller_service` (`tc_api` or `docktap`) plus OS-observed peer metadata such as uid and pid.
+- TruCon enforces a small authorization matrix: tc_api retains full internal access, while Docktap remains a commit-oriented caller and cannot initialize chains or use admin-style endpoints by default.
+- Internal HTTP + Bearer-token wiring remains only as a compatibility mechanism for transitional/internal paths such as health checks.
+- Token rotation is still not a goal in the same-machine model.
+- Broader deployment extensions such as systemd hardening, Kubernetes wiring, remote or cross-node transports, and mTLS remain deferred TODOs and do not affect the current implementation.
+
+See GAP-12 in `docs/overview_tasks.md`.
 
 ## 10. Deployment Model
 
@@ -250,7 +252,8 @@ Phase B would also enable per-caller identity differentiation (tc_api vs Docktap
 - Docktap deployed as an independent container (Docker Compose) or background process (`start.sh`). Shares the same Docker image as tc_api and TruCon with a different command override. Exposes proxy socket via bind-mount (`/var/run/docktap/`) and health endpoint on port 8002.
 - Docktap also owns a periodic local-state sweeper that bounds in-memory operation state, removed-container mappings, and resolved retry bookkeeping via environment-configured retention windows.
 - SQLite commit queue stored in ephemeral tmpfs (`/dev/shm/`) for confidential computing compliance.
-- `TRUCON_SERVICE_TOKEN` shared across all three services: via environment variable inheritance (bare-metal) or `.env` file interpolation (Docker Compose).
+- Current implementation shares a mounted/internal socket directory and prefers `TRUCON_UDS_PATH` for same-machine internal traffic in both bare-metal and Docker Compose deployments.
+- Internal HTTP + `TRUCON_SERVICE_TOKEN` support remains available only as a compatibility path where the UDS gateway or internal health checks still rely on it.
 - Docktap failure model: Docktap down = Docker CLI unavailable. Automatic restart via `restart: unless-stopped` (compose) or process supervision (bare-metal).
 
 ## 11. Migration Plan (Architecture-Level)
@@ -268,6 +271,7 @@ Rollback principle:
 
 ## 12. Open Architecture Questions
 
+- ~~Internal service auth transport for same-machine deployment.~~ **Resolved and implemented** (2026-04-19): Phase B now uses Unix domain socket transport plus `SO_PEERCRED` caller validation. Internal HTTP + Bearer token remains compatibility-only; mTLS is deferred unless deployment topology changes.
 - ~~Chain scope default: per workload, per tenant, or global.~~ **Resolved** (2026-04-17): Per-workload via `io.trucon.workload-id` container label (GAP-11).
 - Confirmation SLA target from commit accepted to backend confirmed.
 - ~~Canonical mandatory fields for stable instance mapping across restarts/replacements.~~ **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`; one `create→rm` lifecycle = one instance. Cross-restart identity is `workload_id`'s role, not `instance_id`'s.
