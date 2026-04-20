@@ -34,16 +34,123 @@ The project contains three primary runtime domains:
 
 ```mermaid
 flowchart LR
-  clients[External API Clients] --> rest[REST API Service<br/>multi-process workers<br/>build/publish/launch control plane]
+  clients[External API Clients] --> rest[tc_api REST API]
+  dockercli[Docker CLI or Docker API Clients] --> docktap[Docktap Proxy]
+  rest --> trucon[TruCon]
+  docktap --> trucon
+  trucon --> backends[Immutable Trust Backends]
 
-  docktap[Docktap Service<br/>runtime interception and lifecycle events] -->|trusted event calls| trucon[TruCon Core Service<br/>single-instance sequencer<br/>commit/queue/submit lifecycle]
-
-  rest -->|signed DSSE bundles via internal UDS-first transport| trucon
-  trucon --> daemon[Embedded Submit Daemon<br/>threading.Thread<br/>polls queue, submits to backends]
-  daemon --> backends[Immutable Trust Backends<br/>transparency log and/or on-chain backends]
+  operators[Operators] --> tcverify[tc-verify]
+  backends --> tcverify
+  trucon --> evidence[Attested Head Evidence]
+  evidence --> tcverify
 ```
 
-The REST API signs DSSE envelopes locally using the caller's OIDC identity token, then sends the signed bundle to TruCon over the internal control-plane transport. The current implementation prefers a shared Unix domain socket and retains internal HTTP plus Bearer-token wiring only as a compatibility path. TruCon serializes RTMR[2] extend, SQLite queue insert, and chain state update, then returns sequencing metadata. An embedded submit daemon publishes confirmed records to immutable backends asynchronously.
+This overview intentionally keeps only the major boundaries: tc_api is the business control plane, Docktap is the runtime interception plane, TruCon is the trust core, immutable backends provide public history, and `tc-verify` is the main external verification tool. The detailed mechanics are broken out into the diagrams below.
+
+### 3.1 Runtime Detail
+
+```mermaid
+flowchart LR
+  clients[External API Clients] --> rest_api[tc_api user-facing APIs]
+  dockercli[Docker CLI or Docker API Clients] --> docktap_proxy[Docktap Unix socket proxy]
+  docktap_proxy --> dockerd[Docker daemon]
+
+  subgraph REST[tc_api internals]
+    rest_logic[build publish launch orchestration]
+    tlog_sdk[TrustedLogAPI<br/>init_record add_entry commit_record init_chain]
+    rest_api --> rest_logic --> tlog_sdk
+  end
+
+  subgraph DOCKTAP[Docktap internals]
+    docktap_router[workload routing and label extraction]
+    docktap_committer[DSSE signing and TruCon commit client]
+    docktap_retry[bounded local retry state]
+    docktap_proxy --> docktap_router --> docktap_committer
+    docktap_committer --> docktap_retry
+  end
+
+  subgraph TRUCON[TruCon internals]
+    trucon_gateway[internal ingress<br/>UDS-first transport plus caller auth]
+    trucon_commit[commit and init-chain endpoints]
+    trucon_lock[single-process sequencer lock]
+    trucon_measure[RTMR2 read and extend]
+    trucon_db[SQLite commit_queue and chain_state]
+    trucon_submit[embedded submit daemon]
+
+    trucon_gateway --> trucon_commit --> trucon_lock --> trucon_measure --> trucon_db --> trucon_submit
+  end
+
+  tlog_sdk -->|signed DSSE bundles| trucon_gateway
+  docktap_committer -->|runtime signed DSSE bundles| trucon_gateway
+```
+
+### 3.2 Commit and Submission Flow
+
+```mermaid
+flowchart TD
+  app[tc_api or Docktap caller] --> assemble[assemble entries and event metadata]
+  assemble --> sign[sign DSSE bundle locally]
+  sign --> submit[POST to TruCon internal ingress]
+
+  subgraph SEQ[TruCon sequencing path]
+    idem[idempotency check]
+    seq[allocate sequence_num and prev_log_id]
+    rtmr[RTMR2 extend or baseline read]
+    insert[insert PENDING record into commit_queue]
+    state[update chain_state]
+  end
+
+  submit --> idem --> seq --> rtmr --> insert --> state
+  state --> ack[return record_id and sequencing metadata]
+  insert --> daemon[embedded submit daemon]
+  daemon --> rekor[Rekor or other immutable backend]
+  rekor --> confirm[mark record CONFIRMED and persist log_id]
+```
+
+### 3.3 External Verification Detail
+
+```mermaid
+flowchart LR
+  operators[Operators] --> tcverify[tc-verify CLI]
+  rekor[Immutable backend history] --> tcverify
+  evidence[TruCon exported attested-head evidence] --> tcverify
+  tcverify --> verdicts[replay plus evidence verdicts]
+  tcverify -. transitional fallback .-> live[TruCon live query APIs]
+```
+
+### 3.4 Chain Scope Model
+
+```mermaid
+flowchart TB
+  subgraph DEFAULT[default chain]
+    d0[Event Log 0 baseline]
+    d1[build events]
+    d2[publish events]
+    d0 --> d1 --> d2
+  end
+
+  subgraph W1[workload chain A]
+    w10[workload baseline<br/>planned for implicit chains]
+    w11[launch event]
+    w12[create start stop rm events]
+    w10 --> w11 --> w12
+  end
+
+  subgraph W2[workload chain B]
+    w20[workload baseline<br/>planned for implicit chains]
+    w21[launch event]
+    w22[runtime events]
+    w20 --> w21 --> w22
+  end
+
+  buildid[build_id publish_id] -. business correlation .-> DEFAULT
+  workloadid[workload_id equals chain_id in launch and runtime paths] -. chain key .-> W1
+  workloadid -. chain key .-> W2
+  launchid[launch_id] -. attempt boundary .-> w11
+  instanceid[instance_id or container_id] -. instance correlation inside workload chain .-> w12
+  instanceid -. instance correlation inside workload chain .-> w22
+```
 
 At startup, tc_api initializes the trust chain by calling TruCon's `/init-chain` endpoint to create Event Log 0 (baseline record). This captures the current RTMR[2] snapshot and CCEL digest without performing an RTMR extend, anchoring the chain to the platform's boot-time measurement state.
 
@@ -74,6 +181,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Shares tc_api's OIDC signing infrastructure (`sigstore.oidc.detect_credential()`); token re-acquired per commit.
 - Uses `Entry(key, value)` objects imported from `tc_api.tlog.types` for event data (same types as tc_api). Values are native JSON-compatible types (not stringified).
 - Routes events to per-workload chains via `io.trucon.workload-id` container label; containers without the label default to `"default"` chain.
+- The first event routed to a previously unseen non-`default` chain causes TruCon to lazily create that workload chain's Event Log 0 baseline under the sequencer lock, so every workload chain still begins with an explicit baseline record before its first business or runtime event.
 - Emits explicit runtime outcomes (`operation_result`) plus workload, instance, and image-target identity fields required by the `docktap-runtime` verification profile.
 - Persists and propagates `launch_id` for runtime events attributable to a REST-originated launch flow so launch verification can correlate REST launch intent with Docktap `create`/`start` evidence.
 - Best-effort submission: Docktap uses the shared internal transport and identifies as a commit-oriented internal caller; TruCon failures still log a warning and do not block Docker API responses.
@@ -98,6 +206,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Event Log 0 (baseline record) does not perform RTMR extend — it captures the current register value as baseline evidence.
 - Initialization is a logical state: subsequent `/commit` calls can proceed while Event Log 0 is still pending Rekor confirmation. Ordered submission guarantees baseline is published first.
 - If baseline submission fails terminally, the chain is considered dead (no trust anchor).
+- The explicit `/init-chain` flow remains specific to the startup-initialized `default` chain. Previously unseen non-`default` workload chains are initialized lazily inside `POST /commit`; TruCon inserts Event Log 0 as `sequence_num=1` and only then accepts the triggering business/runtime record as `sequence_num=2`.
 
 **Planned (not yet implemented):**
 - On-chain backend adapter (GAP-07, blocked by target chain selection).
