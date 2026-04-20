@@ -33,14 +33,14 @@ def _urlopen_factory(chain_state_payload, verify_payload):
     return _urlopen
 
 
-def _immutable_entry(event_id, event_type, digest, index, predicate_entries=None):
+def _immutable_entry(event_id, event_type, digest, index, predicate_entries=None, chain_id="default"):
     return {
         "index": index,
         "event_id": event_id,
         "event_type": event_type,
         "digest": digest,
         "predicate_entries": predicate_entries or [],
-        "subject_names": ["trusted-log-chain_default"],
+        "subject_names": [f"trusted-log-chain_{chain_id}"],
         "signer_identity": "alice@example.com",
         "signer_identity_match": True,
         "errors": [],
@@ -429,3 +429,102 @@ def test_verify_cli_evidence_mode_detects_replay_mismatch(tmp_path, capsys):
     assert exit_code == 1
     assert captured["attested_head"]["matches_replay"] is False
     assert any("mr_value mismatch" in error for error in captured["errors"])
+
+
+def test_verify_cli_evidence_mode_rejects_non_default_chain_without_baseline(tmp_path, capsys):
+    evidence_payload = {
+        "version": "v1",
+        "tee_type": "tdx",
+        "chain_id": "workload-a",
+        "sequence_num": 1,
+        "head_log_id": "log-tail",
+        "mr_value": "44" * 48,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "quote": "base64-quote",
+        "report_data_binding": {
+            "algorithm": "sha384",
+            "bound_fields": ["chain_id", "sequence_num", "head_log_id", "mr_value"],
+            "expected_value": compute_binding_expected_value("workload-a", 1, "log-tail", "44" * 48),
+        },
+    }
+    evidence_path = _write_evidence(tmp_path, evidence_payload)
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_workload-a",
+                "chain_id": "workload-a",
+                "entry_count": 1,
+                "entries": [
+                    _immutable_entry("evt-1", "launch", "sha384:" + ("22" * 48), 1, chain_id="workload-a"),
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+        MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+        exit_code = main(["--evidence", evidence_path, "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["summary"]["status"] == "failed"
+    assert any("did not begin with Event Log 0" in error for error in captured["errors"])
+
+
+def test_verify_cli_live_fallback_fails_non_default_chain_without_baseline(capsys):
+    chain_state = {"chain_id": "workload-a", "head_log_id": "log-tail"}
+    trucon_verify = {
+        "valid": False,
+        "chain_id": "workload-a",
+        "total_entries": 1,
+        "mr_verified": 0,
+        "rekor_confirmed": 1,
+        "rekor_pending": 0,
+        "rtmr_available": False,
+        "head_mr_value": None,
+        "first_error_at": 1,
+        "entries": [
+            {
+                "seq": 1,
+                "record_id": "rec-1",
+                "event_id": "evt-1",
+                "mr_ok": None,
+                "rekor_ok": True,
+                "rtmr_extended": True,
+                "mr_value": None,
+                "prev_log_id_ok": True,
+                "error": "non-default chain 'workload-a' does not begin with Event Log 0",
+            }
+        ],
+    }
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_workload-a",
+                "chain_id": "workload-a",
+                "entry_count": 1,
+                "entries": [
+                    _immutable_entry("evt-1", "launch", "sha384:" + ("22" * 48), 1, chain_id="workload-a"),
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
+        with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+            MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+            exit_code = main(["workload-a", "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["summary"]["status"] == "failed"

@@ -261,6 +261,23 @@ Each task has:
 
 ---
 
+### ~~GAP-20: Event Log 0 Baseline for Implicit Workload Chains~~ ✅ COMPLETED
+
+- **Priority**: MEDIUM
+- **Scope**: `src/tc_api/tlog_client.py`, `src/tc_api/trucon/app.py`, `docktap/trucon_client.py`, workload-chain verification/docs
+- **References**: trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow; architecture.md workload-chain model
+- **Dependencies**: GAP-05 ✅, GAP-11 ✅, GAP-17 ✅
+- **Completed**: 2026-04-20 | Change: `openspec/changes/add-workload-chain-baseline/`
+- **Current State**: The startup-initialized `default` chain keeps its explicit Event Log 0 bootstrap path, and previously unseen non-`default` workload chains now receive the same explicit baseline lazily inside TruCon's `/commit` path before the triggering business/runtime event is accepted.
+- **Implemented Outcome**: Workload chains now share the same chain-origin semantics as `default`: Event Log 0 is always `sequence_num=1`, the first business/runtime record is `sequence_num=2`, baseline creation is sequencer-locked and race-safe, and verification fails non-`default` chains whose first record is not the baseline.
+- **Acceptance Criteria**:
+  1. ✅ The first commit routed to a previously unseen non-`default` `chain_id` ensures a workload-scoped Event Log 0 baseline exists before the first business/runtime event is accepted.
+  2. ✅ Baseline creation for workload chains is idempotent and race-safe across concurrent launch/runtime submissions.
+  3. ✅ Verification and evidence export paths treat workload-chain Event Log 0 the same way they treat the `default` chain baseline.
+  4. ✅ Documentation explains that workload-chain baselines are created lazily on first use while the `default` chain keeps explicit startup initialization.
+
+---
+
 ## Part B: Implementation Inconsistencies (Code Diverges from Architecture)
 
 ### ~~FIX-01: Digest Algorithm — Two-Level Hashing Not Implemented~~ ✅ COMPLETED
@@ -553,13 +570,14 @@ GAP-19 (Verification Profiles) ✅ ── umbrella complete
   ├──▶ GAP-19A (Profile Contract) ✅ ◀── GAP-18C ✅
   ├──▶ GAP-19B (Producer Payload Alignment) ✅ ◀── GAP-19A ✅
   └──▶ GAP-19C (tc-verify Profile Enforcement) ✅ ◀── GAP-19A ✅, GAP-19B ✅
+GAP-20 (Workload-chain Event Log 0 baseline) ✅ ◀── GAP-05 ✅, GAP-11 ✅, GAP-17 ✅
 GAP-16 (Doc Sync) ✅ ── standalone complete
 
 FIX-03 (SubmitResult) ✅ ── completed with GAP-12
 FIX-04 (Entry Type) ✅ ── completed
 FIX-05 (OPEN Dead Code) ✅ ── completed with GAP-12
 
-✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05, FIX-04, GAP-12, FIX-03, FIX-05, GAP-13, GAP-14, GAP-15, GAP-16, GAP-17, GAP-18, GAP-19
+✅ DONE: GAP-02, FIX-01, GAP-06, FIX-02, GAP-04, GAP-09, GAP-01, GAP-10, GAP-11, GAP-03, GAP-05, FIX-04, GAP-12, FIX-03, FIX-05, GAP-13, GAP-14, GAP-15, GAP-16, GAP-17, GAP-18, GAP-19, GAP-20
 ✗ CLOSED: GAP-08
 ```
 
@@ -609,6 +627,7 @@ FIX-05 (OPEN Dead Code) ✅ ── completed with GAP-12
 27. `GAP-07` — On-chain backend adapter (blocked: target chain selection)
 28. ~~`GAP-08`~~ — CLOSED (Won't Do): legacy path removed, RTMR chain integrity prevents viable fallback
 29. ~~`GAP-12`~~ ✅ completed 2026-04-19 — Service auth Phase B (Unix socket peer credentials / caller identity)
+30. ~~`GAP-20`~~ ✅ completed 2026-04-20 — Add explicit Event Log 0 baseline for workload chains created from new `workload_id`s
 
 ---
 
@@ -616,6 +635,6 @@ FIX-05 (OPEN Dead Code) ✅ ── completed with GAP-12
 
 The items below are the primary tasks that remain genuinely open after reconciling this table with the live code and archived changes:
 
-Update (2026-04-19): `GAP-12`, `FIX-03`, and `FIX-05` are now complete in addition to `GAP-17`, `GAP-18`, and `GAP-19`. Internal control-plane hardening is in place with UDS-first transport, caller identity, and bundled dead-contract cleanup.
+Update (2026-04-20): `GAP-20` is now complete in addition to `GAP-12`, `FIX-03`, `FIX-05`, `GAP-17`, `GAP-18`, and `GAP-19`. Workload chains now share the same explicit Event Log 0 origin semantics as the startup-initialized `default` chain.
 
 - `GAP-07` — on-chain backend adapter, still blocked by target chain selection

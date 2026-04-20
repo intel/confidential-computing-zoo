@@ -1,3 +1,9 @@
+## Purpose
+
+Define the canonical verification profiles for audited build, publish, launch, and docktap-runtime flows, including their required evidence and verdict semantics.
+
+## Requirements
+
 ## ADDED Requirements
 
 ### Requirement: Canonical verification profiles for audited flows

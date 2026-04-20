@@ -362,11 +362,13 @@ Design notes:
 
 > **Implemented 2026-04-17 (GAP-05). See `docs/overview_tasks.md` for full decision record.**
 
-Event Log 0 is the baseline record created when the trust chain is initialized during tc_api startup.
+Event Log 0 is the baseline record created when a chain epoch is initialized.
 It captures the environment's pre-existing platform state using the current RTMR[2] value and a digest of the CCEL system event log.
 
 Event Log 0 is persisted to the immutable log backend, but its creation does not perform a new RTMR extend.
 The purpose of this record is to anchor the trusted-log chain to the pre-existing platform state rather than to mutate that state again during initialization.
+
+For the `default` chain, tc_api creates Event Log 0 during service startup via the explicit `/init-chain` flow. For previously unseen non-`default` workload chains, TruCon creates the same baseline lazily inside `POST /commit` while holding the sequencer lock. In both cases, the baseline record is persisted locally as `sequence_num=1`, and the first business or runtime record for that chain is accepted only afterward as `sequence_num=2`.
 
 **Signing model**: Event Log 0 is signed with a TEE-generated ECDSA P-384 keypair, not with Sigstore OIDC. tc_api generates the keypair in TEE memory at startup, signs the baseline DSSE envelope, embeds the public key in Event Log 0's `pub_key` field, and discards the private key after signing. Subsequent events continue to use Sigstore OIDC keyless signing (existing flow unchanged).
 
@@ -375,13 +377,13 @@ The purpose of this record is to anchor the trusted-log chain to the pre-existin
 - SHA-384 digest of the raw CCEL binary read from ACPI tables (`/sys/firmware/acpi/tables/CCEL`). Only the digest is stored, not the full CCEL binary. In non-TEE environments, the CCEL field is null.
 - The TEE-generated ECDSA P-384 public key in PEM format (`pub_key` field).
 
-**Initialization semantics**: Event Log 0 creation is a logical prerequisite, not a blocking gate. Subsequent `/commit` calls can proceed and queue while Event Log 0 is still PENDING. The submit daemon's ordered-submission behavior (ascending `sequence_num`) guarantees that Event Log 0 (sequence_num=1) is published to Rekor before any subsequent records. If Event Log 0 submission fails terminally, the entire chain is dead — no trust anchor exists.
+**Initialization semantics**: Event Log 0 creation is a logical prerequisite, not a blocking gate. Subsequent `/commit` calls can proceed and queue while Event Log 0 is still PENDING. The submit daemon's ordered-submission behavior (ascending `sequence_num`) guarantees that Event Log 0 (sequence_num=1) is published to Rekor before any subsequent records. If Event Log 0 submission fails terminally, the entire chain is dead — no trust anchor exists. For lazily bootstrapped workload chains, failure to create the local baseline rejects the triggering first commit instead of admitting a chain whose first record is not Event Log 0.
 
 **Protocol**: tc_api calls TruCon via a two-phase `/init-chain` protocol:
 1. `GET /init-chain/{chain_id}/baseline` — TruCon reads RTMR[2] (no extend) and computes the CCEL digest. Returns `{rtmr_value, ccel_digest, init_token}`.
 2. `POST /init-chain` — tc_api sends `{chain_id, init_token, signed_bundle, pub_key}`. TruCon verifies no existing chain, INSERTs the baseline record (sequence_num=1), and initializes `chain_state`.
 
-Every subsequent event log created by tc_api or Docktap references Event Log 0, directly or indirectly, as the base entry of the chain.
+Every subsequent event log created by tc_api or Docktap references Event Log 0, directly or indirectly, as the base entry of the chain. This invariant now applies to both the startup-initialized `default` chain and lazily bootstrapped workload chains.
 
 
 #### JSON Mock-Up
@@ -883,7 +885,7 @@ For remote operators who may not be able to log into the CVM, the design should 
 The external verifier model should therefore be:
 
 1. Replay the public event chain from the immutable backend, starting from `head_log_id`.
-2. Validate Event Log 0 as the epoch baseline anchor (`baseline_rtmr`, `ccel_digest`, `pub_key`).
+2. Validate Event Log 0 as the epoch baseline anchor (`baseline_rtmr`, `ccel_digest`, `pub_key`). For non-`default` chains, absence of Event Log 0 as the first replayed record is a structural verification failure rather than a warning.
 3. Consume exported evidence that identifies the current chain head (`chain_id`, `head_log_id`, `sequence_num`) and binds it to the attested local measurement state (for example a quote-backed RTMR snapshot).
 4. Compare the replayed chain result against that attested head evidence rather than trusting live TruCon API responses alone.
 

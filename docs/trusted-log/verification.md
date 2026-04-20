@@ -96,6 +96,8 @@ Event Log 0 answers: where did this chain epoch begin, and what trusted platform
 
 Event Log 0 does **not** answer: what is the current attested state of the CVM right now?
 
+For every non-`default` chain, `tc-verify` must require that the first replayed immutable record is Event Log 0. A workload chain that begins with a business or runtime event instead of `chain.init` is structurally invalid even if later records, signatures, and attested-head evidence otherwise look well-formed.
+
 ## Attested Head Evidence
 
 Remote verification requires more than Event Log 0. It also needs attested evidence for the current chain head.

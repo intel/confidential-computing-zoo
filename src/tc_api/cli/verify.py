@@ -78,8 +78,9 @@ def _entry_value(predicate_entries: List[Dict[str, Any]], key: str) -> Optional[
 def _derive_replay_chain_state(immutable_result: Dict[str, Any]) -> Dict[str, Any]:
     immutable_data = immutable_result.get("details") or {}
     entries = list(reversed(immutable_data.get("entries", [])))
+    chain_id = immutable_data.get("chain_id")
     derived = {
-        "chain_id": immutable_data.get("chain_id"),
+        "chain_id": chain_id,
         "sequence_num": len(entries),
         "head_log_id": immutable_result.get("head_log_id"),
         "mr_value": None,
@@ -91,7 +92,12 @@ def _derive_replay_chain_state(immutable_result: Dict[str, Any]) -> Dict[str, An
         derived["errors"].append("Immutable replay returned no entries")
         return derived
 
-    baseline_entries = entries[0].get("predicate_entries") or []
+    first_entry = entries[0]
+    baseline_entries = first_entry.get("predicate_entries") or []
+    if chain_id != "default" and first_entry.get("event_type") != "chain.init":
+        derived["errors"].append(f"Immutable replay for non-default chain '{chain_id}' did not begin with Event Log 0")
+        return derived
+
     baseline_rtmr = _entry_value(baseline_entries, "baseline_rtmr")
     if not baseline_rtmr or baseline_rtmr == "null":
         derived["errors"].append("Immutable replay did not expose a usable Event Log 0 baseline_rtmr")

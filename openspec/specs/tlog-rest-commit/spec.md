@@ -1,3 +1,9 @@
+## Purpose
+
+Define the requirements for REST-originated trusted-log commits emitted by tc_api, including signing behavior and the audit fields required by verification profiles.
+
+## Requirements
+
 ## MODIFIED Requirements
 
 ### Requirement: tc_api performs DSSE signing locally

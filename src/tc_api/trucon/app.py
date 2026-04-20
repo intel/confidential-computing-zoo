@@ -8,6 +8,7 @@ MUST be run with --workers 1 to preserve lock semantics.
 """
 
 import fcntl
+import base64
 import hashlib
 import hmac
 import json
@@ -74,6 +75,111 @@ from .evidence import (
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger("trucon")
+
+
+def _build_baseline_bundle(chain_id: str, rtmr_value: Optional[str], ccel_digest: Optional[str]) -> tuple[str, str]:
+    """Build a DSSE envelope for Event Log 0 using an ephemeral ECDSA P-384 keypair."""
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    private_key = ec.generate_private_key(ec.SECP384R1())
+    pub_key_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+
+    predicate_payload = {
+        "event_id": f"evt-log0-{chain_id}",
+        "event_type": "chain.init",
+        "entries": [
+            {"key": "baseline_rtmr", "value": rtmr_value or "null"},
+            {"key": "ccel_digest", "value": ccel_digest or "null"},
+            {"key": "pub_key", "value": pub_key_pem},
+        ],
+        "chain_id": chain_id,
+    }
+    payload_bytes = json.dumps(predicate_payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    payload_b64 = base64.b64encode(payload_bytes).decode("utf-8")
+    signature = private_key.sign(payload_bytes, ec.ECDSA(hashes.SHA384()))
+    sig_b64 = base64.b64encode(signature).decode("utf-8")
+    dsse_envelope = json.dumps(
+        {
+            "payloadType": "application/vnd.dsse+json",
+            "payload": payload_b64,
+            "signatures": [{"keyid": "", "sig": sig_b64}],
+        }
+    )
+    del private_key
+    return dsse_envelope, pub_key_pem
+
+
+def _create_workload_chain_baseline(chain_id: str, caller_service: Optional[str], auth_transport: Optional[str]) -> None:
+    """Create Event Log 0 for a previously unseen non-default chain."""
+    if chain_id == "default" or get_chain_state(chain_id):
+        return
+
+    rtmr_value = None
+    if _local_mr:
+        try:
+            rtmr_value = _local_mr.read(RTMR_INDEX)
+        except Exception as exc:
+            logger.error("Failed to read RTMR[%d] for lazy baseline on chain '%s': %s", RTMR_INDEX, chain_id, exc)
+            raise HTTPException(status_code=500, detail=f"Baseline creation failed: {exc}") from exc
+
+    try:
+        ccel_digest = compute_ccel_digest()
+        signed_bundle, pub_key_pem = _build_baseline_bundle(chain_id, rtmr_value, ccel_digest)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to construct lazy baseline bundle for chain '%s': %s", chain_id, exc)
+        raise HTTPException(status_code=500, detail=f"Baseline creation failed: {exc}") from exc
+
+    record_id = str(uuid.uuid4())
+    insert_record(
+        record_id=record_id,
+        event_id=f"evt-log0-{chain_id}",
+        payload={
+            "bundle": signed_bundle,
+            "chain_id": chain_id,
+            "pub_key": pub_key_pem,
+            "is_baseline": True,
+            "caller_service": caller_service,
+            "auth_transport": auth_transport,
+        },
+        status="PENDING",
+        chain_id=chain_id,
+        rtmr_extended=True,
+        prev_log_id=None,
+        mr_value=rtmr_value,
+        sequence_num=1,
+        event_digest=None,
+        idempotency_key=f"init-chain-{chain_id}",
+        instance_id=None,
+    )
+    update_chain_state(
+        chain_id=chain_id,
+        head_record_id=record_id,
+        sequence_num=1,
+        mr_value=rtmr_value,
+    )
+    logger.info(
+        "Auto-created workload baseline for chain '%s' record_id=%s caller_service=%s auth_transport=%s",
+        chain_id,
+        record_id,
+        caller_service,
+        auth_transport,
+    )
+
+
+def _record_is_baseline(record: Any) -> bool:
+    payload = record["payload"]
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return False
+    return isinstance(payload, dict) and bool(payload.get("is_baseline"))
 
 # ---------------------------------------------------------------------------
 # Request / Response models
@@ -660,6 +766,10 @@ def commit(req: CommitRequest, request: Request):
                     prev_mr_value=None,
                 )
 
+        # 0.5 Lazy baseline bootstrap for new non-default workload chains
+        if req.chain_id != "default" and get_chain_state(req.chain_id) is None:
+            _create_workload_chain_baseline(req.chain_id, caller_service, auth_transport)
+
         # 1. Read current chain state
         state = get_chain_state(req.chain_id)
         if state:
@@ -845,8 +955,14 @@ def verify_chain(chain_id: str):
     expected_seq = 1
     prev_mr: Optional[str] = None
     prev_confirmed_log_id: Optional[str] = None  # tracks preceding confirmed record's log_id
+    baseline_error: Optional[str] = None
     # Determine if RTMR is available: at least one non-NULL mr_value
     rtmr_available = any(r['mr_value'] is not None for r in records)
+
+    if chain_id != 'default' and not _record_is_baseline(records[0]):
+        baseline_error = f"non-default chain '{chain_id}' does not begin with Event Log 0"
+        valid = False
+        first_error_at = records[0]['sequence_num']
 
     for r in records:
         seq = r['sequence_num']
@@ -859,6 +975,9 @@ def verify_chain(chain_id: str):
         error: Optional[str] = None
         mr_ok: Optional[bool] = None
         prev_log_id_ok: Optional[bool] = None
+
+        if baseline_error and seq == records[0]['sequence_num']:
+            error = baseline_error
 
         # 1. Sequence continuity check
         if seq != expected_seq:
