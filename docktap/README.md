@@ -7,6 +7,8 @@ Docktap is a Docker Unix socket proxy sidecar with operation tracking and JSON a
 Detailed design and architecture are maintained in `../docs/docktap/architecture.md` for proxy specifics and `../docs/architecture.md` for system-level behavior, including
 Docker request lifecycle details and endpoint-to-operation mapping used by the proxy.
 
+Python-side API contracts and runtime-surface definitions are documented in `../docs/docktap/api.md`.
+
 ## Quick Start
 
 ```bash

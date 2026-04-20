@@ -394,4 +394,5 @@ Rollback principle:
 - [trusted-log/verification.md](trusted-log/verification.md) — operator-facing verification design, evidence-package boundaries, and chain replay model.
 - [trusted-log/api.md](trusted-log/api.md) — Python API signatures, type contracts, caller lifecycle.
 - [trusted-log/README.md](trusted-log/README.md) — Module overview and core concepts.
+- [docktap/api.md](docktap/api.md) — Docktap Python-side APIs, runtime surfaces, proxy lifecycle, and TruCon commit client behavior.
 - openspec/changes/introduce-trucon-event-orchestrator/ — Upstream TruCon vision (proposal, design, specs).
