@@ -10,11 +10,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import urllib.request
 import urllib.error
 
+from cryptography import x509
+from cryptography.x509.oid import NameOID
 from sigstore.sign import SigningContext
 from sigstore.oidc import IdentityToken
 from sigstore.dsse import StatementBuilder, Subject
 from sigstore.models import Bundle
 
+from .sigstore_baseline import build_baseline_sigstore_bundle, build_signing_context
 from .tlog.types import (
     RecordContext, Entry, Record, EventLog, CommitResult,
     CommitQueueStatus, LatestState, VerificationResult, SubmitStatus
@@ -53,7 +56,9 @@ def _decode_rekor_body(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _decode_dsse_payload(body: Dict[str, Any]) -> Dict[str, Any]:
-    payload = body.get("spec", {}).get("payload")
+    spec = body.get("spec", {})
+
+    payload = spec.get("payload")
     if isinstance(payload, dict):
         return payload
     if isinstance(payload, str):
@@ -63,6 +68,33 @@ def _decode_dsse_payload(body: Dict[str, Any]) -> Dict[str, Any]:
             return json.loads(base64.b64decode(payload).decode("utf-8"))
         except Exception:
             return {}
+
+    proposed_content = spec.get("proposedContent", {})
+    if isinstance(proposed_content, dict):
+        envelope = proposed_content.get("envelope")
+        if isinstance(envelope, str):
+            try:
+                envelope_json = json.loads(envelope)
+                envelope_payload = envelope_json.get("payload")
+                if isinstance(envelope_payload, str):
+                    import base64
+
+                    return json.loads(base64.b64decode(envelope_payload).decode("utf-8"))
+            except Exception:
+                return {}
+
+    content = spec.get("content", {})
+    if isinstance(content, dict):
+        envelope = content.get("envelope")
+        if isinstance(envelope, dict):
+            envelope_payload = envelope.get("payload")
+            if isinstance(envelope_payload, str):
+                try:
+                    import base64
+
+                    return json.loads(base64.b64decode(envelope_payload).decode("utf-8"))
+                except Exception:
+                    return {}
     return {}
 
 
@@ -213,8 +245,8 @@ class TrustedLogAPI:
         )
 
         # Sign with Sigstore (Offline Mode)
-        ctx_prod = SigningContext.production()
-        ctx_prod._rekor = None
+        rekor_url = getattr(self.immutable_log, "rekor_url", None)
+        ctx_prod = build_signing_context(rekor_url)
         
         bundle = None
         try:
@@ -234,6 +266,7 @@ class TrustedLogAPI:
             event_id=event_id,
             idempotency_key=idempotency_key,
             instance_id=instance_id,
+            identity_token=identity_token_str,
         )
 
         # Clean up per-request scratch
@@ -254,7 +287,7 @@ class TrustedLogAPI:
 
         Two-phase protocol:
           1. GET /init-chain/{chain_id}/baseline → rtmr_value, ccel_digest, init_token
-          2. Generate ECDSA P-384 keypair, sign DSSE envelope, POST /init-chain
+                    2. Build a Sigstore DSSE bundle for Event Log 0, POST /init-chain
 
         Returns the init-chain response dict on success, or None if the chain
         already exists (409) or TruCon is unreachable.
@@ -282,51 +315,22 @@ class TrustedLogAPI:
         rtmr_value = baseline.get("rtmr_value")
         ccel_digest = baseline.get("ccel_digest")
 
-        # Generate ECDSA P-384 keypair
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.hazmat.primitives import hashes, serialization
-
-        private_key = ec.generate_private_key(ec.SECP384R1())
-        pub_key_pem = private_key.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        ).decode("utf-8")
-
-        # Build Event Log 0 DSSE payload
-        entries = [
-            {"key": "baseline_rtmr", "value": rtmr_value or "null"},
-            {"key": "ccel_digest", "value": ccel_digest or "null"},
-            {"key": "pub_key", "value": pub_key_pem},
-        ]
-        predicate_payload = {
-            "event_id": f"evt-log0-{chain_id}",
-            "event_type": "chain.init",
-            "entries": entries,
-            "chain_id": chain_id,
-        }
-        # DSSE envelope: payloadType + base64(payload)
-        import base64
-        payload_bytes = json.dumps(predicate_payload, separators=(',', ':'), sort_keys=True).encode("utf-8")
-        payload_b64 = base64.b64encode(payload_bytes).decode("utf-8")
-
-        # Sign with ECDSA P-384
-        signature = private_key.sign(payload_bytes, ec.ECDSA(hashes.SHA384()))
-        sig_b64 = base64.b64encode(signature).decode("utf-8")
-
-        dsse_envelope = json.dumps({
-            "payloadType": "application/vnd.dsse+json",
-            "payload": payload_b64,
-            "signatures": [{"keyid": "", "sig": sig_b64}],
-        })
-
-        # Zero the private key material
-        del private_key
+        try:
+            signed_bundle, pub_key_pem, _event_digest = build_baseline_sigstore_bundle(
+                chain_id=chain_id,
+                rtmr_value=rtmr_value,
+                ccel_digest=ccel_digest,
+                rekor_url=getattr(self.immutable_log, "rekor_url", None),
+            )
+        except Exception as e:
+            logger.warning("Failed to build baseline Sigstore bundle for chain '%s': %s", chain_id, e)
+            return None
 
         # Phase 2: POST init-chain
         post_payload = {
             "chain_id": chain_id,
             "init_token": init_token,
-            "signed_bundle": dsse_envelope,
+            "signed_bundle": signed_bundle,
             "pub_key": pub_key_pem,
         }
 
@@ -355,7 +359,8 @@ class TrustedLogAPI:
     def _post_to_trucon(self, bundle_json: str, chain_id: str,
                             event_digest: str, event_id: str,
                             idempotency_key: Optional[str] = None,
-                            instance_id: Optional[str] = None) -> Dict[str, Any]:
+                            instance_id: Optional[str] = None,
+                            identity_token: Optional[str] = None) -> Dict[str, Any]:
         """POST the signed bundle to TruCon /commit endpoint."""
         payload = {
             "bundle": bundle_json,
@@ -364,6 +369,7 @@ class TrustedLogAPI:
             "event_id": event_id,
             "idempotency_key": idempotency_key,
             "instance_id": instance_id,
+            "identity_token": identity_token,
         }
         try:
             return request_json(
@@ -541,18 +547,53 @@ def _extract_signer_identity(entry: dict) -> Optional[str]:
         body = entry.get("body", {})
         if isinstance(body, str):
             body = json.loads(base64.b64decode(body).decode("utf-8"))
-        
-        # Navigate to the certificate in the DSSE/intoto entry
+
+        # Navigate to the certificate in DSSE/intoto-style entries.
         spec = body.get("spec", {})
-        signatures = spec.get("signatures", [])
-        if signatures:
-            cert_b64 = signatures[0].get("publicKey", {}).get("content")
+        cert_b64_candidates = []
+
+        signatures = spec.get("signatures", []) or []
+        for signature in signatures:
+            if not isinstance(signature, dict):
+                continue
+            verifier = signature.get("verifier")
+            if verifier:
+                cert_b64_candidates.append(verifier)
+            public_key = signature.get("publicKey")
+            if isinstance(public_key, dict):
+                content = public_key.get("content")
+                if content:
+                    cert_b64_candidates.append(content)
+            elif public_key:
+                cert_b64_candidates.append(public_key)
+
+        proposed_content = spec.get("proposedContent", {})
+        if isinstance(proposed_content, dict):
+            verifiers = proposed_content.get("verifiers", []) or []
+            cert_b64_candidates.extend(v for v in verifiers if isinstance(v, str) and v)
+
+        for cert_b64 in cert_b64_candidates:
             if cert_b64:
-                # Decode cert and extract SAN/identity
-                cert_pem = base64.b64decode(cert_b64)
-                # For Fulcio certs, the identity is in the SAN extension
-                # Using basic parsing — full X.509 parsing would use cryptography lib
-                return cert_pem.decode("utf-8", errors="replace")
+                cert_bytes = base64.b64decode(cert_b64)
+                try:
+                    cert = x509.load_pem_x509_certificate(cert_bytes)
+                except ValueError:
+                    cert = x509.load_der_x509_certificate(cert_bytes)
+
+                try:
+                    san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+                    emails = san.get_values_for_type(x509.RFC822Name)
+                    if emails:
+                        return emails[0]
+                    uris = san.get_values_for_type(x509.UniformResourceIdentifier)
+                    if uris:
+                        return uris[0]
+                except x509.ExtensionNotFound:
+                    pass
+
+                subject_emails = cert.subject.get_attributes_for_oid(NameOID.EMAIL_ADDRESS)
+                if subject_emails:
+                    return subject_emails[0].value
     except Exception as e:
         logger.debug("Could not extract signer identity: %s", e)
     return None

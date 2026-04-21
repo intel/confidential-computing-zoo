@@ -86,6 +86,7 @@ def trucon_client(tmp_path):
              patch.object(trucon_app_mod, "_crash_recovery"), \
              patch.object(trucon_app_mod, "_submit_daemon_loop"), \
              patch.object(trucon_app_mod, "init_db"), \
+               patch.object(trucon_app_mod, "build_baseline_sigstore_bundle", return_value=('{"mock":"bundle"}', 'test-pub-key', 'sha384:' + ('11' * 48))), \
              patch.object(trucon_app_mod, "SigstoreLogAdapter"), \
              patch.object(trucon_app_mod, "insert_record", side_effect=patches["insert_record"]), \
              patch.object(trucon_app_mod, "get_chain_state", side_effect=patches["get_chain_state"]), \
@@ -124,6 +125,7 @@ def trucon_client_no_tee(tmp_path):
              patch.object(trucon_app_mod, "_crash_recovery"), \
              patch.object(trucon_app_mod, "_submit_daemon_loop"), \
              patch.object(trucon_app_mod, "init_db"), \
+               patch.object(trucon_app_mod, "build_baseline_sigstore_bundle", return_value=('{"mock":"bundle"}', 'test-pub-key', 'sha384:' + ('11' * 48))), \
              patch.object(trucon_app_mod, "SigstoreLogAdapter"), \
              patch.object(trucon_app_mod, "insert_record", side_effect=patches["insert_record"]), \
              patch.object(trucon_app_mod, "get_chain_state", side_effect=patches["get_chain_state"]), \

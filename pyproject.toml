@@ -14,6 +14,7 @@ dynamic = ["dependencies"]
 tc-api = "tc_api.main:main"
 tc-trucon = "tc_api.trucon.app:main"
 tc-verify = "tc_api.cli.verify:main"
+tc-oidc-preflight = "tc_api.oidc_preflight:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -26,3 +27,6 @@ dependencies = {file = ["requirements.txt"]}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+	"integration: opt-in or broader workflow tests that may require external services",
+]

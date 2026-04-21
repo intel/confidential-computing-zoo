@@ -53,6 +53,7 @@ from .database import (
     update_record_confirmed,
     update_status,
 )
+from tc_api.sigstore_baseline import build_baseline_sigstore_bundle
 from .adapters.sigstore import SigstoreLogAdapter
 from .adapters.ccel import compute_ccel_digest
 from .adapters.tdx_quote import TdxQuoteAdapter
@@ -77,43 +78,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("trucon")
 
 
-def _build_baseline_bundle(chain_id: str, rtmr_value: Optional[str], ccel_digest: Optional[str]) -> tuple[str, str]:
-    """Build a DSSE envelope for Event Log 0 using an ephemeral ECDSA P-384 keypair."""
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
-
-    private_key = ec.generate_private_key(ec.SECP384R1())
-    pub_key_pem = private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    ).decode("utf-8")
-
-    predicate_payload = {
-        "event_id": f"evt-log0-{chain_id}",
-        "event_type": "chain.init",
-        "entries": [
-            {"key": "baseline_rtmr", "value": rtmr_value or "null"},
-            {"key": "ccel_digest", "value": ccel_digest or "null"},
-            {"key": "pub_key", "value": pub_key_pem},
-        ],
-        "chain_id": chain_id,
-    }
-    payload_bytes = json.dumps(predicate_payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    payload_b64 = base64.b64encode(payload_bytes).decode("utf-8")
-    signature = private_key.sign(payload_bytes, ec.ECDSA(hashes.SHA384()))
-    sig_b64 = base64.b64encode(signature).decode("utf-8")
-    dsse_envelope = json.dumps(
-        {
-            "payloadType": "application/vnd.dsse+json",
-            "payload": payload_b64,
-            "signatures": [{"keyid": "", "sig": sig_b64}],
-        }
-    )
-    del private_key
-    return dsse_envelope, pub_key_pem
-
-
-def _create_workload_chain_baseline(chain_id: str, caller_service: Optional[str], auth_transport: Optional[str]) -> None:
+def _create_workload_chain_baseline(
+    chain_id: str,
+    caller_service: Optional[str],
+    auth_transport: Optional[str],
+    identity_token_str: Optional[str] = None,
+) -> None:
     """Create Event Log 0 for a previously unseen non-default chain."""
     if chain_id == "default" or get_chain_state(chain_id):
         return
@@ -128,7 +98,13 @@ def _create_workload_chain_baseline(chain_id: str, caller_service: Optional[str]
 
     try:
         ccel_digest = compute_ccel_digest()
-        signed_bundle, pub_key_pem = _build_baseline_bundle(chain_id, rtmr_value, ccel_digest)
+        signed_bundle, pub_key_pem, event_digest = build_baseline_sigstore_bundle(
+            chain_id=chain_id,
+            rtmr_value=rtmr_value,
+            ccel_digest=ccel_digest,
+            identity_token_str=identity_token_str,
+            rekor_url=getattr(_immutable_log, "rekor_url", None),
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -153,7 +129,7 @@ def _create_workload_chain_baseline(chain_id: str, caller_service: Optional[str]
         prev_log_id=None,
         mr_value=rtmr_value,
         sequence_num=1,
-        event_digest=None,
+        event_digest=event_digest,
         idempotency_key=f"init-chain-{chain_id}",
         instance_id=None,
     )
@@ -192,6 +168,7 @@ class CommitRequest(BaseModel):
     event_id: Optional[str] = None
     idempotency_key: Optional[str] = None
     instance_id: Optional[str] = None
+    identity_token: Optional[str] = None
 
 class CommitResponse(BaseModel):
     record_id: str
@@ -230,7 +207,7 @@ class InitChainBaselineResponse(BaseModel):
 class InitChainRequest(BaseModel):
     chain_id: str
     init_token: str
-    signed_bundle: str   # DSSE bundle JSON signed with TEE keypair
+    signed_bundle: str   # Sigstore Bundle JSON for the explicit baseline record
     pub_key: str         # ECDSA P-384 public key in PEM format
 
 class InitChainResponse(BaseModel):
@@ -768,7 +745,12 @@ def commit(req: CommitRequest, request: Request):
 
         # 0.5 Lazy baseline bootstrap for new non-default workload chains
         if req.chain_id != "default" and get_chain_state(req.chain_id) is None:
-            _create_workload_chain_baseline(req.chain_id, caller_service, auth_transport)
+            _create_workload_chain_baseline(
+                req.chain_id,
+                caller_service,
+                auth_transport,
+                req.identity_token,
+            )
 
         # 1. Read current chain state
         state = get_chain_state(req.chain_id)

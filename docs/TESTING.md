@@ -85,6 +85,75 @@ Recommended targeted regression for the verification plane:
 /home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_tlog_impl.py tests/test_non_tee_verification.py tests/test_verify_cli.py -q
 ```
 
+## Public Rekor Smoke Test
+
+An opt-in smoke test is available for validating tc_api's real Sigstore signing path against a public Rekor service:
+
+```bash
+TC_API_RUN_REAL_REKOR_TESTS=1 \
+TC_API_REAL_REKOR_IDENTITY_TOKEN='<oidc-jwt>' \
+/home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_real_rekor_integration.py -q
+```
+
+Optional environment variables:
+
+```bash
+TC_API_REAL_REKOR_URL=https://rekor.sigstore.dev
+TC_API_REAL_REKOR_SIGNER_IDENTITY=alice@example.com
+```
+
+Before running the public Rekor smoke test, you can preflight-check the OIDC token locally without printing the raw token:
+
+```bash
+tc-oidc-preflight --json
+```
+
+Or read the token from stdin instead of an environment variable:
+
+```bash
+printf '%s' "$TC_API_REAL_REKOR_IDENTITY_TOKEN" | tc-oidc-preflight --stdin --json
+```
+
+The preflight check validates the basic Sigstore expectations that commonly cause failures before Fulcio issuance:
+
+- required JWT claims exist (`iss`, `aud`, `sub`, `iat`, `exp`)
+- `aud` includes `sigstore`
+- the token is still within its validity window
+- the signer identity that sigstore-python will derive matches `TC_API_REAL_REKOR_SIGNER_IDENTITY` when provided
+
+For common issuers, the derived signer identity follows sigstore-python's built-in rules:
+
+- `https://token.actions.githubusercontent.com` → uses `sub`
+- `https://accounts.google.com` → uses `email`
+- `https://oauth2.sigstore.dev/auth` → uses `email`
+
+Notes:
+
+- The test is skipped unless `TC_API_RUN_REAL_REKOR_TESTS=1` and `TC_API_REAL_REKOR_IDENTITY_TOKEN` are set.
+- It validates real bundle signing, public Rekor upload, retrieval, and immutable replay.
+- It now includes both a direct Event Log 0 bundle smoke test and a fuller `init_chain -> submit -> verify` smoke test for the explicit `default`-chain init path, where baseline records are emitted as Sigstore Bundles.
+- It also includes a lazy non-`default` workload-chain smoke test, where the first workload commit causes TruCon to mint Event Log 0 via the same Sigstore/Rekor path before the triggering event is accepted as `sequence_num=2`.
+- It does not yet prove multi-entry public chain traversal, because `prev_log_id` is not currently embedded in the public DSSE payload used by immutable replay.
+- The current smoke path assumes signing, submit, and replay occur in the same Python process. This is intentional: the Sigstore adapter now caches bundle-derived DSSE payloads by Rekor log reference so replay can recover `event_id` and predicate entries even when a raw Rekor readback does not preserve the original statement in tc_api's normalized shape.
+
+### Short-Lived Token Guidance
+
+The public Rekor smoke test typically uses an OIDC token with an approximately 1-minute validity window. That is acceptable for manual integration testing, but it should be treated as a just-in-time credential and not as a deploy-time configuration value.
+
+Practical guidance:
+
+- acquire the token immediately before running the test;
+- do not expect a manually exported token to survive multiple retries or long debugging pauses;
+- if the token expires, reacquire it rather than reusing the old environment variable;
+- keep preflight checks and the live pytest invocation close together in time.
+
+This short lifetime does not, by itself, create a production design problem. In an actual deployment, the service should not rely on a human-exported static token. Instead it should obtain a fresh ambient or workload identity token just before each signing operation and let Sigstore exchange that short-lived token for the signing certificate immediately.
+
+In other words:
+
+- manual exported token: suitable for opt-in smoke tests only;
+- automatic just-in-time token acquisition: suitable for deployed services.
+
 `--require-tee` should fail when TruCon reports non-TEE fallback mode. Non-TEE verification remains suitable for development and test environments only.
 
 Prefer exported evidence as the primary operator input. Using `tc-verify <chain_id>` without `--evidence` is a transitional live TruCon fallback path for tightly coupled deployments and troubleshooting.

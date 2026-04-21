@@ -58,6 +58,8 @@ In the current repository, `tc-verify` is packaged together with `tc-api`, but i
 5. **Internal and external interfaces are distinct**
    TruCon internal APIs are operational control surfaces; they are not the final external verifier contract.
 
+For the current repository implementation, one practical nuance matters: a Sigstore bundle produced by the live signing path can contain richer DSSE payload material than a later raw Rekor readback alone exposes in directly normalized form. The verifier therefore prefers bundle-derived payload content when it is available from the producer side or from same-process replay helpers, while still treating Rekor inclusion, log identity, and signer certificate provenance as authoritative.
+
 ## Chain Concepts
 
 The verifier should distinguish the following fields:
@@ -90,7 +92,7 @@ Roles:
 
 - `baseline_rtmr`: captures the initial RTMR[2] snapshot for the epoch
 - `ccel_digest`: captures the platform boot baseline digest
-- `pub_key`: anchors chain origin to the TEE-generated key used to sign Event Log 0
+- `pub_key`: anchors chain origin to the TEE-generated key material recorded in Event Log 0 during baseline initialization
 
 Event Log 0 answers: where did this chain epoch begin, and what trusted platform baseline did it start from?
 

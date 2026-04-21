@@ -17,7 +17,8 @@ The module combines three planes:
 
 The system is deployed as two cooperating services:
 
-- **tc_api** (stateless, multi-worker): Receives caller requests, performs DSSE signing using the caller's OIDC identity, and forwards signed bundles to the TruCon over the internal control-plane transport. Current implementation prefers a shared Unix domain socket for same-machine traffic and retains internal HTTP + Bearer-token wiring only as a compatibility path. For Event Log 0 (chain initialization), tc_api generates an ECDSA P-384 keypair in TEE memory and signs the baseline record with the TEE private key instead of Sigstore.
+- **tc_api** (stateless, multi-worker): Receives caller requests, performs DSSE signing using the caller's OIDC identity, and forwards signed bundles to the TruCon over the internal control-plane transport. Current implementation prefers a shared Unix domain socket for same-machine traffic and retains internal HTTP + Bearer-token wiring only as a compatibility path. For explicit Event Log 0 initialization on the `default` chain, tc_api still derives an ephemeral ECDSA P-384 public key in TEE memory and embeds it in the baseline predicate, but the record is now emitted as a Sigstore bundle so it can traverse the same immutable-backend path as other public entries. In the real Sigstore path, `sign_dsse()` is online: it exchanges the short-lived OIDC token for a Fulcio certificate and creates the Rekor transparency-log entry before returning the bundle.
+- For a previously unseen non-`default` workload chain, tc_api's first business/runtime commit now also forwards that same short-lived identity token to TruCon over the trusted internal transport. TruCon consumes it immediately to mint Event Log 0 for the lazy workload baseline path and does not persist it as part of chain state.
 - **TruCon** (single-instance, `--workers 1`): Serializes RTMR[2] extend + SQLite INSERT behind a `threading.Lock()`, maintains chain state, and embeds the submit daemon as a background thread.
 
 This split ensures that RTMR extends and chain state mutations are strictly serialized within a single process, while tc_api can scale horizontally for throughput. The three-layer trust model is:
@@ -120,6 +121,11 @@ Defines the local measurement contract (extend/query), independent of platform-s
 - Immutable Log Adapter:
 Defines immutable-persistence operations (submit, resolve log id, chain traversal) independent of backend type. Used by the embedded submit daemon for asynchronous Rekor/on-chain submission.
 
+For the Sigstore/Rekor implementation, "submit" now has two concrete cases:
+
+- bundles that already contain a confirmed Rekor log entry are treated as already integrated, and the adapter resolves/reuses the embedded `uuid` or `log_index` instead of posting a duplicate entry;
+- bundles that do not yet contain a transparency-log entry are posted to Rekor in the usual way.
+
 - TdxMR implementation:
 Implements Local MR Adapter using OS trust-service interfaces (for example Sysfs-backed TSM access with binary 48-byte read/write against `/sys/class/misc/tdx_guest/measurements/rtmr{index}:sha384`). Only RTMR[2] is used for application-layer measurement extensions; RTMR[0] and RTMR[1] are firmware/boot-locked and must not be written to. AMD SEV-SNP and other non-TDX TEE platforms are out of scope.
 
@@ -129,13 +135,24 @@ Implement Immutable Log Adapter for different immutable backends while preservin
 ##### Interaction Model
 
 1. TrustBootstrap invokes Trusted Log API (in tc_api) to create a record context and append one or more event entries.
-2. TrustBootstrap calls `commit_record()`. The tc_api Trusted Log API constructs the DSSE predicate (without `prev_log_id`), signs it with Sigstore in offline mode, and forwards the signed bundle to the TruCon over the internal control-plane transport. Current implementation prefers Unix domain socket transport for same-machine callers and preserves the HTTP `POST /commit` path only as a compatibility mechanism.
+2. TrustBootstrap calls `commit_record()`. The tc_api Trusted Log API constructs the DSSE predicate (without `prev_log_id`), signs it with Sigstore, and forwards the signed bundle to the TruCon over the internal control-plane transport. In the real public-Sigstore path this signing step is online: the caller identity token is exchanged for a Fulcio-backed signing certificate and the returned bundle may already carry a confirmed Rekor transparency-log entry. Current implementation prefers Unix domain socket transport for same-machine callers and preserves the HTTP `POST /commit` path only as a compatibility mechanism.
 3. TruCon acquires its `threading.Lock()`, reads the current `chain_state`, extends RTMR[2] with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, updates `chain_state`, and releases the lock.
-4. The embedded submit daemon asynchronously polls the queue and submits confirmed records to the immutable backend in `sequence_num` order.
+4. The embedded submit daemon asynchronously polls the queue and submits confirmed records to the immutable backend in `sequence_num` order. For Sigstore/Rekor bundles that already contain a confirmed transparency-log entry, the adapter reuses the embedded log reference instead of creating a second public record.
 5. Backend implementations translate adapter operations into concrete syscalls or external API calls.
 6. Trusted Log API returns combined result state to the caller, including `sequence_num`, `mr_value`, and `prev_mr_value`.
 
 This layering allows backend evolution (for example adding new on-chain or transparent-log providers) without changing caller behavior. The split architecture allows tc_api to scale horizontally while the TruCon serializes all chain-mutating operations.
+
+### Public Rekor Replay Detail
+
+Real public-Rekor DSSE retrieval is not identical to the simplified mocked payloads used in deterministic unit tests.
+
+- Rekor-native readback can emphasize transparency-log-native fields such as envelope hashes, payload hashes, signatures, verifiers, and inclusion proof material.
+- The original application-facing predicate is not guaranteed to be returned in the exact shape expected by tc_api's replay normalizer.
+
+To keep verification behavior stable for the opt-in real-Rekor smoke path, the Sigstore adapter now caches the bundle-derived DSSE payload and signer-certificate material at submission time, keyed by the resolved log reference. Replay within the same process can then recover `event_id`, `event_type`, and predicate entries from the submitted bundle while still relying on Rekor for public inclusion and log identity.
+
+This is intentionally an implementation compatibility layer for replay fidelity, not a replacement for Rekor as the public append-only backend.
 
 Docktap-local routing state, workload mappings, and retry bookkeeping are operational cache and short-lived diagnostics only. Garbage-collecting that local state does not change replay correctness, because replay and verification depend on TruCon state and immutable backend records rather than Docktap-local persistence.
 
@@ -368,9 +385,9 @@ It captures the environment's pre-existing platform state using the current RTMR
 Event Log 0 is persisted to the immutable log backend, but its creation does not perform a new RTMR extend.
 The purpose of this record is to anchor the trusted-log chain to the pre-existing platform state rather than to mutate that state again during initialization.
 
-For the `default` chain, tc_api creates Event Log 0 during service startup via the explicit `/init-chain` flow. For previously unseen non-`default` workload chains, TruCon creates the same baseline lazily inside `POST /commit` while holding the sequencer lock. In both cases, the baseline record is persisted locally as `sequence_num=1`, and the first business or runtime record for that chain is accepted only afterward as `sequence_num=2`.
+For the `default` chain, tc_api creates Event Log 0 during service startup via the explicit `/init-chain` flow. For previously unseen non-`default` workload chains, TruCon creates the same baseline lazily inside `POST /commit` while holding the sequencer lock. In both cases, the baseline record is now constructed as a Sigstore/Rekor-compatible bundle, persisted locally as `sequence_num=1`, and the first business or runtime record for that chain is accepted only afterward as `sequence_num=2`.
 
-**Signing model**: Event Log 0 is signed with a TEE-generated ECDSA P-384 keypair, not with Sigstore OIDC. tc_api generates the keypair in TEE memory at startup, signs the baseline DSSE envelope, embeds the public key in Event Log 0's `pub_key` field, and discards the private key after signing. Subsequent events continue to use Sigstore OIDC keyless signing (existing flow unchanged).
+**Signing model**: For the explicit `default`-chain init path, Event Log 0 is now emitted as a Sigstore DSSE bundle so it can be submitted to Rekor through the same bundle-oriented path as other public entries. tc_api still generates an ephemeral ECDSA P-384 keypair in TEE memory, embeds the derived public key in Event Log 0's `pub_key` field, and discards the private key immediately afterward. Subsequent events continue to use Sigstore OIDC keyless signing. Lazily created workload-chain baselines still retain their existing local baseline-construction path.
 
 **Contents**:
 - Current RTMR[2] snapshot (read, not extended).
@@ -519,7 +536,7 @@ This initialization step defines the trust context for every later `add_entry`, 
 
 Trusted Log uses two signing mechanisms:
 
-- **Event Log 0 (baseline)**: Signed with a TEE-generated ECDSA P-384 keypair. The public key is embedded in Event Log 0's `pub_key` field. The private key is discarded after signing (single-use). This anchors the chain to a cryptographic identity that was provably generated inside the TEE at initialization time.
+- **Event Log 0 (baseline)**: The baseline predicate embeds a TEE-generated ECDSA P-384 public key in Event Log 0's `pub_key` field, and the explicit `default`-chain init path wraps that predicate in a Sigstore bundle for public-log submission. The private key is discarded immediately after deriving the public key. This preserves a TEE-origin marker in the baseline payload while making the record compatible with the same immutable-backend ingestion path as other bundles.
 - **Subsequent events**: Signed with Sigstore OIDC keyless signing (existing flow). Each event's DSSE envelope contains a short-lived Fulcio certificate proving the signer's OIDC identity.
 
 Because subsequent logs are strictly linked via cryptographic hashes (`prev_log_id` / `previous_hash`), any verifier can securely traverse from Event Log 0, extract the verified public key, and confirm the chain's origin. The public key does not need to be attached to every log entry.

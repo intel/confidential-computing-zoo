@@ -49,7 +49,6 @@ flowchart LR
 This overview intentionally keeps only the major boundaries: tc_api is the business control plane, Docktap is the runtime interception plane, TruCon is the trust core, immutable backends provide public history, and `tc-verify` is the main external verification tool. The detailed mechanics are broken out into the diagrams below.
 
 ### 3.1 Runtime Detail
-
 ```mermaid
 flowchart LR
   clients[External API Clients] --> rest_api[tc_api user-facing APIs]
@@ -168,7 +167,8 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Publish commits now carry `pushed_subject_digest`, `target_ref`, and `publish_status`.
 - Launch commits now carry workload-scoped launch identity (`workload_id`, `launch_id`), launch outcome, `launch_config_digest`, and explicit security projection fields (`privileged`, `network_mode`, `mounts`, `devices`, `capabilities`).
 - Continues exposing status endpoints for build/publish/launch results.
-- On startup (`lifespan()`), generates an ECDSA P-384 keypair in TEE memory and calls TruCon `/init-chain` to create Event Log 0 (baseline record). The TEE private key signs Event Log 0's DSSE envelope; subsequent events use Sigstore OIDC signing. The private key is discarded after Event Log 0 is committed.
+- On startup (`lifespan()`), generates an ECDSA P-384 keypair in TEE memory and calls TruCon `/init-chain` to create Event Log 0 (baseline record). The baseline payload still carries the TEE-generated public key as `pub_key`, but the explicit `default`-chain init path now wraps Event Log 0 as a Sigstore DSSE bundle so it can follow the same immutable-backend submission path as other public records. The private key is discarded immediately after the public key is derived.
+- For Sigstore-backed public records, the current implementation uses Sigstore's real `sign_dsse()` path, which both issues the Fulcio-backed signing certificate and creates the transparency-log entry before the bundle is forwarded to TruCon. As a result, the bundle arriving at TruCon may already carry a confirmed Rekor log entry.
 
 ### 4.2 Docktap Service
 
@@ -182,6 +182,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Uses `Entry(key, value)` objects imported from `tc_api.tlog.types` for event data (same types as tc_api). Values are native JSON-compatible types (not stringified).
 - Routes events to per-workload chains via `io.trucon.workload-id` container label; containers without the label default to `"default"` chain.
 - The first event routed to a previously unseen non-`default` chain causes TruCon to lazily create that workload chain's Event Log 0 baseline under the sequencer lock, so every workload chain still begins with an explicit baseline record before its first business or runtime event.
+- That lazy baseline path now uses the same Sigstore bundle construction flow as the explicit `default`-chain baseline path. The first triggering internal commit carries the caller's short-lived OIDC identity token over the same-machine internal transport so TruCon can mint the workload baseline as a real Sigstore/Rekor-compatible bundle before accepting the business/runtime event as `sequence_num=2`.
 - Emits explicit runtime outcomes (`operation_result`) plus workload, instance, and image-target identity fields required by the `docktap-runtime` verification profile.
 - Persists and propagates `launch_id` for runtime events attributable to a REST-originated launch flow so launch verification can correlate REST launch intent with Docktap `create`/`start` evidence.
 - Best-effort submission: Docktap uses the shared internal transport and identifies as a commit-oriented internal caller; TruCon failures still log a warning and do not block Docker API responses.
@@ -207,6 +208,26 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Initialization is a logical state: subsequent `/commit` calls can proceed while Event Log 0 is still pending Rekor confirmation. Ordered submission guarantees baseline is published first.
 - If baseline submission fails terminally, the chain is considered dead (no trust anchor).
 - The explicit `/init-chain` flow remains specific to the startup-initialized `default` chain. Previously unseen non-`default` workload chains are initialized lazily inside `POST /commit`; TruCon inserts Event Log 0 as `sequence_num=1` and only then accepts the triggering business/runtime record as `sequence_num=2`.
+- In the current implementation, the same first internal `/commit` request also carries a short-lived identity token for this lazy bootstrap case only. TruCon uses that token immediately to construct the workload baseline Sigstore bundle; the token is not persisted as chain state or exported evidence.
+
+Event Log 0 is best understood as a baseline record composition rather than a runtime sequence diagram. It combines platform-measured baseline material from TruCon with an ephemeral public key generated by `tc_api` during initialization, then wraps the result as a Sigstore DSSE bundle for chain anchoring.
+
+```mermaid
+flowchart LR
+  A[TruCon baseline read] --> B[baseline_rtmr<br/>RTMR2 snapshot]
+  A --> C[ccel_digest<br/>CCEL digest]
+  D[tc_api initialization] --> E[Ephemeral ECDSA P-384 keypair]
+  E --> F[pub_key]
+  D --> G[Sigstore DSSE signature]
+  B --> H[Event Log 0 payload]
+  C --> H
+  F --> H
+  H --> I[DSSE envelope]
+  G --> I
+  I --> J[Event Log 0 baseline record]
+```
+
+In this model, `baseline_rtmr` and `ccel_digest` are acquired from TruCon's baseline read path, while `pub_key` is produced from a short-lived ECDSA P-384 keypair created inside the TEE-backed initialization flow. The explicit `default`-chain init path then signs the Event Log 0 predicate as a Sigstore bundle for immutable-backend compatibility, and the ephemeral private key is discarded immediately after the public key is derived.
 
 **Planned (not yet implemented):**
 - On-chain backend adapter (GAP-07, blocked by target chain selection).
@@ -221,6 +242,14 @@ For implementation details, see [trusted-log/architecture.md](trusted-log/archit
 - Applies retry policy (up to 10 attempts) with failure classification.
 - Updates confirmation metadata and chain state on success.
 - Failed records block subsequent submissions in the same chain until operator intervention.
+- For Sigstore/Rekor bundles that already contain an integrated transparency-log entry, the backend adapter treats submission as a log-reference resolution step instead of re-posting the DSSE envelope. This preserves sequence/order bookkeeping in TruCon without creating duplicate public Rekor entries.
+
+### 4.5 Rekor Replay Compatibility Notes
+
+- Public Rekor DSSE retrieval does not always preserve the original application-facing predicate in the same directly consumable shape used by local tests and mocked adapters.
+- To keep `tc-verify` and immutable replay behavior stable in the real public-Rekor smoke path, the Sigstore adapter now caches the bundle-derived DSSE payload and signer certificate material at submission time, keyed by the resolved log reference.
+- Subsequent replay in the same process can therefore recover `event_id`, `event_type`, and `predicate_entries` from the submitted bundle even when the raw Rekor readback is reduced to transparency-log-native fields.
+- This cache is an adapter-local replay aid for verification fidelity. It does not replace Rekor as the public source of truth for inclusion, log identity, or signer certificate provenance.
 
 ## 5. Core Data and State Model
 
