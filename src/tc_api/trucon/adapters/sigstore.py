@@ -11,6 +11,7 @@ from sigstore.models import LogEntry
 from sigstore.models import Bundle
 
 from tc_api.tlog.immutable import ImmutableLogAdapter
+from tc_api.trucon.adapters.oci_mirror import OciBundleMirror
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,14 @@ logger = logging.getLogger(__name__)
 class SigstoreLogAdapter(ImmutableLogAdapter):
     _bundle_entry_cache: dict[tuple[str, str], dict[str, Any]] = {}
 
-    def __init__(self, rekor_url: str = "https://rekor.sigstore.dev"):
+    def __init__(
+        self,
+        rekor_url: str = "https://rekor.sigstore.dev",
+        bundle_mirror_dir: Optional[str] = None,
+        bundle_mirror: Optional[OciBundleMirror] = None,
+    ):
         self.rekor_url = rekor_url
+        self.bundle_mirror = bundle_mirror or (OciBundleMirror(bundle_mirror_dir) if bundle_mirror_dir else None)
 
     @classmethod
     def _cache_key(cls, rekor_url: str, log_id: str) -> tuple[str, str]:
@@ -188,6 +195,119 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
 
         return "sha256:" + hashlib.sha256(payload_bytes).hexdigest()
 
+    @staticmethod
+    def _decode_body(entry: Any) -> dict[str, Any]:
+        body = entry.get("body", {}) if isinstance(entry, dict) else {}
+        if isinstance(body, dict):
+            return body
+        if isinstance(body, str):
+            try:
+                return json.loads(body)
+            except json.JSONDecodeError:
+                try:
+                    return json.loads(base64.b64decode(body).decode("utf-8"))
+                except Exception:
+                    return {}
+        return {}
+
+    @classmethod
+    def _public_payload_hash_from_entry(cls, entry: Any) -> Optional[str]:
+        body = cls._decode_body(entry)
+        spec = body.get("spec", {}) if isinstance(body, dict) else {}
+        if not isinstance(spec, dict):
+            return None
+        payload_hash = spec.get("payloadHash")
+        if isinstance(payload_hash, dict):
+            algorithm = payload_hash.get("algorithm")
+            value = payload_hash.get("value")
+            if isinstance(algorithm, str) and isinstance(value, str):
+                return f"{algorithm}:{value}"
+        return None
+
+    @classmethod
+    def _entry_has_decodable_payload(cls, entry: Any) -> bool:
+        body = cls._decode_body(entry)
+        spec = body.get("spec", {}) if isinstance(body, dict) else {}
+        if not isinstance(spec, dict):
+            return False
+        payload = spec.get("payload")
+        if isinstance(payload, str):
+            return True
+        proposed_content = spec.get("proposedContent")
+        if isinstance(proposed_content, dict) and isinstance(proposed_content.get("envelope"), str):
+            return True
+        return False
+
+    @classmethod
+    def _merge_cached_payload_into_public_entry(
+        cls,
+        rekor_url: str,
+        log_id: str,
+        public_entry: dict[str, Any],
+    ) -> dict[str, Any]:
+        cached_entry = cls._get_cached_entry(rekor_url, log_id)
+        if cached_entry is None:
+            return public_entry
+        if cls._entry_has_decodable_payload(public_entry):
+            return public_entry
+
+        cached_payload_hash = cls._payload_hash_from_entry(cached_entry)
+        public_payload_hash = cls._public_payload_hash_from_entry(public_entry)
+        if not cached_payload_hash or not public_payload_hash or cached_payload_hash != public_payload_hash:
+            return public_entry
+
+        merged_entry = cls._clone_cached_entry(cached_entry)
+        merged_body = cls._decode_body(merged_entry)
+        public_body = cls._decode_body(public_entry)
+        merged_spec = merged_body.get("spec", {}) if isinstance(merged_body, dict) else {}
+        public_spec = public_body.get("spec", {}) if isinstance(public_body, dict) else {}
+        if isinstance(merged_spec, dict) and isinstance(public_spec, dict):
+            for key in ("payloadHash", "envelopeHash", "signatures"):
+                if key in public_spec:
+                    merged_spec[key] = public_spec[key]
+            merged_body["spec"] = merged_spec
+            merged_entry["body"] = merged_body
+        for key in ("uuid", "entryUUID", "log_id", "logID", "log_index", "logIndex", "integratedTime", "verification"):
+            if key in public_entry:
+                merged_entry[key] = public_entry[key]
+        merged_entry["_tc_replay_provenance"] = "public"
+        return merged_entry
+
+    def _merge_mirror_payload_into_public_entry(self, public_entry: dict[str, Any]) -> dict[str, Any]:
+        if self.bundle_mirror is None:
+            return public_entry
+        if self._entry_has_decodable_payload(public_entry):
+            return public_entry
+
+        public_payload_hash = self._public_payload_hash_from_entry(public_entry)
+        if not public_payload_hash:
+            return public_entry
+
+        mirrored_record = self.bundle_mirror.resolve_bundle(public_payload_hash)
+        if mirrored_record is None:
+            return public_entry
+
+        mirrored_entry = self._mirror_entry_from_bundle_record(mirrored_record)
+        if mirrored_entry is None:
+            return public_entry
+
+        merged_entry = self._clone_cached_entry(mirrored_entry)
+        merged_body = self._decode_body(merged_entry)
+        public_body = self._decode_body(public_entry)
+        merged_spec = merged_body.get("spec", {}) if isinstance(merged_body, dict) else {}
+        public_spec = public_body.get("spec", {}) if isinstance(public_body, dict) else {}
+        if isinstance(merged_spec, dict) and isinstance(public_spec, dict):
+            for key in ("payloadHash", "envelopeHash", "signatures"):
+                if key in public_spec:
+                    merged_spec[key] = public_spec[key]
+            merged_body["spec"] = merged_spec
+            merged_entry["body"] = merged_body
+        for key in ("uuid", "entryUUID", "log_id", "logID", "log_index", "logIndex", "integratedTime", "verification"):
+            if key in public_entry:
+                merged_entry[key] = public_entry[key]
+        merged_entry["_tc_replay_provenance"] = "public"
+        return merged_entry
+
     @classmethod
     def _find_cached_entry_by_payload_hash(cls, rekor_url: str, payload_hash: str) -> Optional[dict[str, Any]]:
         for (cached_rekor_url, _log_id), entry in cls._bundle_entry_cache.items():
@@ -196,6 +316,31 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
             if cls._payload_hash_from_entry(entry) == payload_hash:
                 return entry
         return None
+
+    @staticmethod
+    def _mirror_entry_from_bundle_record(record: dict[str, Any]) -> Optional[dict[str, Any]]:
+        annotations = record.get("annotations") or {}
+        payload_b64 = annotations.get("payload_b64")
+        if not isinstance(payload_b64, str) or not payload_b64:
+            return None
+
+        body = {
+            "apiVersion": "0.0.1",
+            "kind": "dsse",
+            "spec": {
+                "payload": payload_b64,
+                "signatures": [],
+            },
+        }
+        return {
+            "uuid": f"mirror-{record['payload_hash']}",
+            "entryUUID": f"mirror-{record['payload_hash']}",
+            "body": body,
+            "integratedTime": None,
+            "verification": None,
+            "_tc_replay_provenance": "mirror",
+            "_tc_mirror_artifact_digest": record.get("artifact_digest"),
+        }
         
     def submit_bundle(self, bundle: Bundle, prev_log_id: Optional[str] = None) -> Tuple[str, str, Any]:
         try:
@@ -240,7 +385,11 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
             from sigstore._internal.rekor.client import RekorClient
             client = RekorClient(self.rekor_url)
             entry = client.log.entries.get(**self._parse_log_reference(log_id))
-            return self._entry_to_dict(entry)
+            entry_dict = self._entry_to_dict(entry)
+            if isinstance(entry_dict, dict):
+                merged_entry = self._merge_cached_payload_into_public_entry(self.rekor_url, log_id, entry_dict)
+                return self._merge_mirror_payload_into_public_entry(merged_entry)
+            return entry_dict
         except Exception as e:
             cached_entry = self._get_cached_entry(self.rekor_url, log_id)
             if cached_entry is not None:
@@ -299,13 +448,17 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
             seen_ids.add(candidate_key)
             results.append(entry)
 
-        if results:
-            return results
-
         cached_entry = self._find_cached_entry_by_payload_hash(self.rekor_url, payload_hash)
         if cached_entry is not None:
             if public_lookup_failed or not candidate_ids:
                 results.append(self._clone_cached_entry(cached_entry))
+
+        if self.bundle_mirror is not None:
+            mirrored_record = self.bundle_mirror.resolve_bundle(payload_hash)
+            if mirrored_record is not None:
+                mirrored_entry = self._mirror_entry_from_bundle_record(mirrored_record)
+                if mirrored_entry is not None:
+                    results.append(mirrored_entry)
 
         return results
 

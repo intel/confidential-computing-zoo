@@ -45,6 +45,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-entry-count", type=int, dest="expected_entry_count")
     parser.add_argument("--fail-on-pending", action="store_true")
     parser.add_argument("--require-tee", action="store_true")
+    parser.add_argument("--mirror-dir", dest="mirror_dir")
+    parser.add_argument("--require-mirror", action="store_true", dest="require_mirror")
     parser.add_argument("--json", action="store_true", dest="json_output")
     return parser
 
@@ -69,6 +71,7 @@ def _normalize_replay_entries(immutable_entries: List[Dict[str, Any]]) -> List[D
             "public_history_ok": entry.get("public_history_ok"),
             "public_history_status": entry.get("public_history_status"),
             "replay_provenance": entry.get("replay_provenance"),
+            "history_materialization_provenance": entry.get("history_materialization_provenance"),
             "subject_names": entry.get("subject_names", []),
             "signer_identity": entry.get("signer_identity"),
             "signer_identity_match": entry.get("signer_identity_match"),
@@ -78,10 +81,62 @@ def _normalize_replay_entries(immutable_entries: List[Dict[str, Any]]) -> List[D
     ]
 
 
+def _build_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
+    replay = result.get("replay") or {}
+    fallback = result.get("fallback") or {}
+    attested_head = result.get("attested_head") or {}
+    replay_entries = replay.get("entries") or []
+
+    entry_status_counts: Dict[str, int] = {}
+    first_entry_issue = None
+    for entry in replay_entries:
+        predecessor_status = entry.get("predecessor_status") or "unknown"
+        entry_status_counts[predecessor_status] = entry_status_counts.get(predecessor_status, 0) + 1
+        if first_entry_issue is None and (
+            entry.get("predecessor_ok") is False
+            or entry.get("public_history_ok") is False
+            or entry.get("boundary_status") is not None
+            or entry.get("errors")
+        ):
+            first_entry_issue = {
+                "index": entry.get("index"),
+                "event_id": entry.get("event_id"),
+                "sequence_num": entry.get("sequence_num"),
+                "predecessor_status": entry.get("predecessor_status"),
+                "public_history_status": entry.get("public_history_status"),
+                "boundary_status": entry.get("boundary_status"),
+                "history_materialization_provenance": entry.get("history_materialization_provenance"),
+                "errors": entry.get("errors", []),
+            }
+
+    return {
+        "replay": {
+            "reachable": replay.get("reachable"),
+            "success": replay.get("success"),
+            "provenance_status": (replay.get("provenance") or {}).get("status"),
+            "entry_status_counts": entry_status_counts,
+            "first_entry_issue": first_entry_issue,
+        },
+        "attested_head": {
+            "present": attested_head.get("present"),
+            "valid": attested_head.get("valid"),
+            "matches_replay": attested_head.get("matches_replay"),
+            "errors": attested_head.get("errors", []),
+        },
+        "fallback": {
+            "reachable": fallback.get("reachable"),
+            "valid": fallback.get("valid"),
+            "rtmr_available": fallback.get("rtmr_available"),
+        },
+        "first_error": (result.get("errors") or [None])[0],
+    }
+
+
 def _attach_profile_results(result: Dict[str, Any]) -> Dict[str, Any]:
     replay_entries = result.get("entries", [])
     profiles = evaluate_profiles(replay_entries)
     result["profiles"] = profiles
+    result["diagnostics"] = _build_diagnostics(result)
     return result
 
 
@@ -96,13 +151,28 @@ def _summarize_replay_rollout(entries: List[Dict[str, Any]]) -> tuple[str, str]:
 
 def _summarize_replay_provenance(entries: List[Dict[str, Any]]) -> tuple[str, str]:
     public_history_statuses = [entry.get("public_history_status") for entry in entries if entry.get("public_history_status")]
+    materialization_sources = [
+        entry.get("history_materialization_provenance")
+        for entry in entries
+        if entry.get("history_materialization_provenance")
+    ]
     if not entries:
         return "unavailable", "no immutable replay entries were available"
     if any(status == "cache-assisted" for status in public_history_statuses):
         return "unsupported", "historical replay facts depended on process-local cache rather than Rekor-auditable materialization"
     if any(status in {"unmaterialized", "baseline-missing"} for status in public_history_statuses):
         return "degraded", "public Rekor materialization did not expose all verifier-critical historical facts"
+    if any(source == "mirror" for source in materialization_sources):
+        return "mirrored", "historical continuity required mirrored bundle materialization in addition to public Rekor inclusion proof"
     return "public", "historical continuity and baseline origin were derived from publicly materialized replay data"
+
+
+def _compute_verification_tier(provenance_status: str, attested_valid: bool) -> str:
+    if provenance_status == "mirrored" and attested_valid:
+        return "public+mirrored+attested"
+    if provenance_status == "mirrored":
+        return "public+mirrored"
+    return "public-only"
 
 
 def _entry_value(predicate_entries: List[Dict[str, Any]], key: str) -> Optional[str]:
@@ -220,13 +290,17 @@ def _run_fallback_verification(args: argparse.Namespace, chain_id: str) -> Dict[
 
 def _load_immutable_result(args: argparse.Namespace, chain_id: str, head_log_id: Optional[str]) -> Dict[str, Any]:
     if head_log_id:
-        tlog = TrustedLogAPI(immutable_log=SigstoreLogAdapter(), trucon_url=TRUCON_URL)
+        tlog = TrustedLogAPI(
+            immutable_log=SigstoreLogAdapter(bundle_mirror_dir=args.mirror_dir),
+            trucon_url=TRUCON_URL,
+        )
         result = tlog.verify_record(
             head_log_id,
             policy={
                 "chain_id": chain_id,
                 "signer_identity": args.signer_identity,
                 "expected_entry_count": args.expected_entry_count,
+                "require_mirror": args.require_mirror,
             },
         )
         return {
@@ -310,6 +384,8 @@ def _normalize_evidence_result(
     attested_valid = not attested_errors
     success = immutable_success and attested_valid
     status = "verified" if success else "failed"
+    provenance_status, provenance_detail = _summarize_replay_provenance(replay_entries)
+    verification_tier = _compute_verification_tier(provenance_status, attested_valid)
 
     result = {
         "target": {
@@ -324,10 +400,13 @@ def _normalize_evidence_result(
             "verification_mode": "evidence-backed",
             "status_detail": "tee-attested",
             "fallback_used": False,
+            "mirror_required": args.require_mirror,
+            "mirror_configured": bool(args.mirror_dir),
         },
         "summary": {
             "success": success,
             "status": status,
+            "verification_tier": verification_tier,
             "entry_count": immutable_data.get("entry_count", 0),
             "confirmed_count": immutable_data.get("entry_count", 0),
             "pending_count": 0,
@@ -342,8 +421,8 @@ def _normalize_evidence_result(
             "entries": replay_entries,
             "derived": derived_replay,
             "provenance": {
-                "status": _summarize_replay_provenance(replay_entries)[0],
-                "detail": _summarize_replay_provenance(replay_entries)[1],
+                "status": provenance_status,
+                "detail": provenance_detail,
             },
         },
         "attested_head": {
@@ -436,6 +515,9 @@ def _normalize_fallback_result(
         success = immutable_success
         status = "degraded" if immutable_success else "failed"
 
+    provenance_status, provenance_detail = _summarize_replay_provenance(replay_entries)
+    verification_tier = _compute_verification_tier(provenance_status, False)
+
     return _attach_profile_results({
         "target": {
             "chain_id": chain_id,
@@ -449,10 +531,13 @@ def _normalize_fallback_result(
             "verification_mode": verification_mode,
             "status_detail": f"{status_detail}; troubleshooting-only",
             "fallback_used": True,
+            "mirror_required": args.require_mirror,
+            "mirror_configured": bool(args.mirror_dir),
         },
         "summary": {
             "success": success,
             "status": status,
+            "verification_tier": verification_tier,
             "entry_count": total_entries,
             "confirmed_count": trucon_data.get("rekor_confirmed", immutable_data.get("entry_count", 0)),
             "pending_count": pending_count,
@@ -467,8 +552,8 @@ def _normalize_fallback_result(
             "entries": replay_entries,
             "derived": None,
             "provenance": {
-                "status": _summarize_replay_provenance(replay_entries)[0],
-                "detail": _summarize_replay_provenance(replay_entries)[1],
+                "status": provenance_status,
+                "detail": provenance_detail,
             },
         },
         "attested_head": {
@@ -512,6 +597,7 @@ def _render_text(result: Dict[str, Any]) -> str:
     lines = [
         f"Chain: {result['target']['chain_id']}",
         f"Status: {result['summary']['status']}",
+        f"Verification tier: {result['summary'].get('verification_tier')}",
         f"Mode: {result['mode']['input_mode']} -> {result['mode']['verification_mode']} ({result['mode']['status_detail']})",
         f"Entries: {result['summary']['entry_count']} total, {result['summary']['confirmed_count']} confirmed, {result['summary']['pending_count']} pending",
         "Replay:",
@@ -543,6 +629,24 @@ def _render_text(result: Dict[str, Any]) -> str:
             f"reachable={fallback.get('reachable')} valid={fallback.get('valid')} rtmr_available={fallback.get('rtmr_available')}"
         )
 
+    diagnostics = result.get("diagnostics") or {}
+    replay_diagnostics = diagnostics.get("replay") or {}
+    first_entry_issue = replay_diagnostics.get("first_entry_issue")
+    if diagnostics:
+        lines.append("Diagnostics:")
+        lines.append(
+            "  "
+            f"replay_success={replay_diagnostics.get('success')} provenance_status={replay_diagnostics.get('provenance_status')} "
+            f"fallback_valid={(diagnostics.get('fallback') or {}).get('valid')} first_error={diagnostics.get('first_error')}"
+        )
+        if first_entry_issue is not None:
+            lines.append(
+                "  "
+                f"first_entry_issue=index={first_entry_issue.get('index')} seq={first_entry_issue.get('sequence_num')} "
+                f"event_id={first_entry_issue.get('event_id')} predecessor_status={first_entry_issue.get('predecessor_status')} "
+                f"public_history_status={first_entry_issue.get('public_history_status')} boundary_status={first_entry_issue.get('boundary_status')}"
+            )
+
     lines.append("Per-record replay detail:")
 
     for entry in replay.get("entries", []):
@@ -559,6 +663,10 @@ def _render_text(result: Dict[str, Any]) -> str:
             diagnostic_bits.append(f"public_history_status={entry.get('public_history_status')}")
         if entry.get("replay_provenance") is not None:
             diagnostic_bits.append(f"replay_provenance={entry.get('replay_provenance')}")
+        if entry.get("history_materialization_provenance") is not None:
+            diagnostic_bits.append(
+                f"history_materialization_provenance={entry.get('history_materialization_provenance')}"
+            )
         lines.append(
             "  - "
             f"index={entry.get('index')} seq={entry.get('sequence_num')} event_id={entry.get('event_id')} "

@@ -32,6 +32,7 @@ from .database import (
     DB_PATH,
     create_commit_intent,
     delete_non_extended_records,
+    enqueue_mirror_publish,
     expire_active_commit_intents,
     get_active_commit_intent_for_chain,
     get_all_chain_ids,
@@ -47,6 +48,8 @@ from .database import (
     get_instances_for_workload,
     get_latest_confirmed_record,
     get_latest_state,
+    get_mirror_publish_job,
+    get_pending_mirror_publishes,
     get_pending_by_chain,
     get_queue_stats,
     get_record_by_id,
@@ -58,10 +61,12 @@ from .database import (
     set_status_submitting,
     update_commit_intent_status,
     update_chain_state,
+    update_mirror_publish_status,
     update_record_confirmed,
     update_status,
 )
 from tc_api.sigstore_baseline import build_baseline_sigstore_bundle
+from .adapters.oci_mirror import OciBundleMirror, build_mirror_annotations
 from .adapters.sigstore import SigstoreLogAdapter
 from .adapters.ccel import compute_ccel_digest
 from .adapters.tdx_quote import TdxQuoteAdapter
@@ -450,6 +455,73 @@ def _crash_recovery():
 _stop_daemon = threading.Event()
 MAX_RETRIES = 10
 POLL_INTERVAL = 5.0
+_bundle_mirror: Optional[OciBundleMirror] = None
+
+
+def _extract_bundle_payload_b64(bundle_json: str) -> str:
+    bundle = Bundle.from_json(bundle_json)
+    envelope = bundle._dsse_envelope
+    if envelope is None:
+        raise ValueError("Bundle does not contain a DSSE envelope")
+    envelope_json = json.loads(envelope.to_json())
+    payload_b64 = envelope_json.get("payload")
+    if not isinstance(payload_b64, str) or not payload_b64:
+        raise ValueError("Bundle DSSE envelope is missing payload")
+    return payload_b64
+
+
+def _enqueue_mirror_publish_for_record(record: Any, log_id: Optional[str]) -> None:
+    payload = json.loads(record["payload"])
+    bundle_json = payload.get("bundle")
+    if not isinstance(bundle_json, str) or not bundle_json:
+        return
+
+    payload_hash = _compute_bundle_payload_hash(bundle_json)
+    payload_b64 = _extract_bundle_payload_b64(bundle_json)
+    annotations = build_mirror_annotations(
+        chain_id=record["chain_id"],
+        sequence_num=record["sequence_num"],
+        event_digest=record["event_digest"] if "event_digest" in record.keys() else None,
+        rekor_log_id=log_id,
+        payload_b64=payload_b64,
+        event_id=record["event_id"] if "event_id" in record.keys() else None,
+        prev_event_digest=record["prev_event_digest"] if "prev_event_digest" in record.keys() else None,
+        prev_lookup_hash=record["prev_lookup_hash"] if "prev_lookup_hash" in record.keys() else None,
+    )
+    enqueue_mirror_publish(
+        record_id=record["record_id"],
+        chain_id=record["chain_id"],
+        payload_hash=payload_hash,
+        bundle_json=bundle_json,
+        annotations=annotations,
+    )
+
+
+def _drain_mirror_publish_queue() -> None:
+    if _bundle_mirror is None:
+        return
+
+    for job in get_pending_mirror_publishes():
+        try:
+            manifest = _bundle_mirror.publish_bundle(
+                payload_hash=job["payload_hash"],
+                bundle_json=job["bundle_json"],
+                annotations=json.loads(job["annotations"]),
+            )
+            update_mirror_publish_status(
+                job["record_id"],
+                "PUBLISHED",
+                artifact_digest=manifest.get("artifactDigest"),
+                last_error=None,
+            )
+        except Exception as exc:
+            logger.warning("Mirror publish failed for record %s: %s", job["record_id"], exc)
+            update_mirror_publish_status(
+                job["record_id"],
+                "FAILED_RETRYABLE",
+                last_error=str(exc),
+                increment_retry_count=True,
+            )
 
 def _submit_daemon_loop():
     """Background thread: drain commit_queue to Rekor in sequence order."""
@@ -526,6 +598,7 @@ def _submit_daemon_tick():
                             sequence_num=seq,
                             head_log_id=log_id,
                         )
+                        _enqueue_mirror_publish_for_record(record, log_id)
                         logger.info("Record %s confirmed with log_id=%s", record_id, log_id)
                     else:
                         submit_ms = (time.perf_counter() - t_submit) * 1000
@@ -533,7 +606,8 @@ def _submit_daemon_tick():
                         _handle_retry(record_id)
                 else:
                     # No immutable log backend — mark confirmed (testing/dev)
-                    update_record_confirmed(record_id, f"mock-{uuid.uuid4().hex[:8]}")
+                    mock_log_id = f"mock-{uuid.uuid4().hex[:8]}"
+                    update_record_confirmed(record_id, mock_log_id)
                     submit_ms = (time.perf_counter() - t_submit) * 1000
                     logger.info("metric=submit_latency latency_ms=%.1f record_id=%s outcome=%s", submit_ms, record_id, "confirmed")
                     # Emit confirmation_lag if created_at is available
@@ -543,6 +617,7 @@ def _submit_daemon_tick():
                         created_dt = datetime.fromisoformat(created_at)
                         lag_ms = (confirmed_at - created_dt).total_seconds() * 1000
                         logger.info("metric=confirmation_lag lag_ms=%.1f record_id=%s", lag_ms, record_id)
+                    _enqueue_mirror_publish_for_record(record, mock_log_id)
                     logger.info("Record %s mock-confirmed (no immutable log)", record_id)
 
             except Exception as e:
@@ -550,6 +625,8 @@ def _submit_daemon_tick():
                 logger.info("metric=submit_latency latency_ms=%.1f record_id=%s outcome=%s", submit_ms, record_id, "failed_retryable")
                 logger.error("Failed to submit record %s to Rekor: %s", record_id, e)
                 _handle_retry(record_id)
+
+    _drain_mirror_publish_queue()
 
     # Emit queue snapshot at end of each tick
     stats = get_queue_stats()
@@ -578,7 +655,7 @@ def _handle_retry(record_id: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _local_mr, _immutable_log, _quote_adapter, _uds_gateway
+    global _local_mr, _immutable_log, _quote_adapter, _uds_gateway, _bundle_mirror
 
     # Service authentication startup checks
     if _AUTH_DISABLED:
@@ -607,7 +684,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Could not init local MR adapter: %s", e)
 
-    _immutable_log = SigstoreLogAdapter()
+    mirror_location = (
+        os.environ.get("TRUCON_BUNDLE_MIRROR")
+        or os.environ.get("TRUCON_BUNDLE_MIRROR_URL")
+        or os.environ.get("TRUCON_BUNDLE_MIRROR_DIR")
+    )
+    _bundle_mirror = OciBundleMirror(mirror_location) if mirror_location else None
+    _immutable_log = SigstoreLogAdapter(bundle_mirror=_bundle_mirror)
     _quote_adapter = TdxQuoteAdapter()
 
     if _TRUCON_UDS_PATH:
@@ -631,6 +714,7 @@ async def lifespan(app: FastAPI):
     if _uds_gateway is not None:
         _uds_gateway.stop()
         _uds_gateway = None
+    _bundle_mirror = None
     release_instance_lock()
     logger.info("TruCon shut down")
 
@@ -1333,7 +1417,11 @@ def verify_chain(chain_id: str):
                 first_error_at = seq
 
         # 2. RTMR chain integrity check
-        if mr_value is None or event_digest is None:
+        if _record_is_baseline(r):
+            # Event Log 0 stores the observed baseline snapshot, not the result of
+            # extending a prior MR value with its own digest.
+            mr_ok = None
+        elif mr_value is None or event_digest is None:
             # Cannot verify — skip
             mr_ok = None
         else:

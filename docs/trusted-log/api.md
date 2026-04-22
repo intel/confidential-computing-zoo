@@ -174,6 +174,12 @@ For the current real-Rekor smoke path, two implementation limitations remain imp
 - replay treats Rekor `payloadHash(sha256)` lookup as predecessor candidate discovery only, not protocol truth
 - opt-in real-Rekor coverage now distinguishes public replay proof from cache-assisted fallback; same-process cache may still help local retrieval, but it no longer counts as publicly auditable replay truth
 
+For the current mirror-backed replay path, one more implementation detail matters:
+
+- when public Rekor readback is hash-only, the Sigstore adapter can re-materialize DSSE payload fields from `OciBundleMirror`, keyed by `payload_hash`;
+- the mirror is non-authoritative and may be local OCI-layout-style storage or a live registry-backed repository;
+- this enables `tc-verify --mirror-dir ... --require-mirror` to distinguish `public-only` replay from `public+mirrored` replay.
+
 For operator-facing workflows, prefer the package CLI:
 
 ```bash
@@ -185,8 +191,11 @@ In the current CLI contract, the CLI derives `chain_id` and `head_log_id` from a
 The CLI also reports the provenance boundary explicitly:
 
 - public replay covers history, predecessor continuity, and Event Log 0 baseline origin;
+- mirrored replay covers the same history while obtaining DSSE payload material from `OciBundleMirror` rather than from public Rekor entry bodies alone;
 - exported evidence covers current-head quote binding only;
 - cache-assisted replay is surfaced as degraded or unsupported rather than silently reported as public proof.
+
+The operator-facing CLI result now also includes a top-level `diagnostics` object containing replay reachability and provenance, fallback validity, the first top-level error string, and the first replay entry with a boundary, predecessor, or materialization problem.
 
 For producer-side attested evidence export, TruCon also exposes:
 

@@ -26,6 +26,8 @@ This split ensures that RTMR extends and chain state mutations are strictly seri
 - **RTMR** proves ordering (hardware measurement register chain).
 - **Rekor** proves public auditability (transparent log).
 
+The current implementation also supports a non-authoritative OCI bundle mirror keyed by `payload_hash`. That mirror can be filesystem-backed or registry-backed, and is used only to re-materialize DSSE payload fields during replay when public Rekor readback is hash-only.
+
 Two immutable backends are currently in scope: transparent log and on-chain log.
 
 ```mermaid
@@ -120,6 +122,9 @@ Defines the local measurement contract (extend/query), independent of platform-s
 - Immutable Log Adapter:
 Defines immutable-persistence operations (submit, resolve log id, chain traversal) independent of backend type. Used by the embedded submit daemon for asynchronous Rekor/on-chain submission.
 
+- OCI Bundle Mirror:
+The current Sigstore/Rekor path can additionally publish confirmed bundle material into `OciBundleMirror`, keyed by `payload_hash`. The verifier may consult that mirror to rehydrate current-head or predecessor DSSE payload fields during replay, but Rekor inclusion remains the authoritative public anchor.
+
 For the Sigstore/Rekor implementation, "submit" now has two concrete cases:
 
 - bundles that already contain a confirmed Rekor log entry are treated as already integrated, and the adapter resolves/reuses the embedded `uuid` or `log_index` instead of posting a duplicate entry;
@@ -150,6 +155,8 @@ Real public-Rekor DSSE retrieval is not identical to the simplified mocked paylo
 - The original application-facing predicate is not guaranteed to be returned in the exact shape expected by tc_api's replay normalizer.
 
 To keep retrieval efficient, the Sigstore adapter caches bundle-derived DSSE payload and signer-certificate material at submission time, keyed by the resolved log reference. That cache is now treated as a local fetch optimization and diagnostic fallback only: verifier-critical historical facts such as Event Log 0 baseline origin and signed predecessor continuity count as publicly proven only when they can be materialized from Rekor-auditable entry data.
+
+The current implementation extends this with mirror-assisted materialization through `OciBundleMirror`. When a public Rekor entry body is hash-only, the verifier can recover DSSE payload material from the mirror for either the current head or predecessor candidates, while still reporting the provenance boundary explicitly as `public+mirrored` rather than `public-only`.
 
 This is intentionally an implementation compatibility layer for replay fidelity, not a replacement for Rekor as the public append-only backend. If replay succeeds only because process-local cache supplied facts that public Rekor materialization did not expose, operator tooling reports that state as cache-assisted or unsupported rather than as fully verified public history.
 

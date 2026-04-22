@@ -147,6 +147,15 @@ def _normalize_verification_entry(entry: Dict[str, Any], index: int, expected_id
     }
 
 
+def _entry_matches_chain(entry: Dict[str, Any], chain_id: str, subject_name: str) -> bool:
+    if entry.get("chain_id") == chain_id:
+        return True
+    subject_names = entry.get("subject_names") or []
+    if not entry.get("chain_id") and not subject_names:
+        return True
+    return subject_name in subject_names
+
+
 def _entry_has_required_history_fields(entry: Dict[str, Any]) -> bool:
     return all(
         entry.get(field) is not None
@@ -190,6 +199,15 @@ def _candidate_identity(candidate: Dict[str, Any]) -> str:
     entry_id = candidate.get("entry_id")
     payload_hash = candidate.get("payload_hash")
     return f"{entry_id}|{payload_hash}"
+
+
+def _matched_predecessor_contract(candidate: Dict[str, Any]) -> tuple[Any, Any, Any, Any]:
+    return (
+        candidate.get("chain_id"),
+        candidate.get("sequence_num"),
+        candidate.get("digest"),
+        candidate.get("payload_hash"),
+    )
 
 
 def _has_signed_predecessor_contract(entry: Dict[str, Any]) -> bool:
@@ -264,6 +282,8 @@ def _annotate_predecessor_verification(entries: List[Dict[str, Any]], immutable_
     """Annotate head->tail replay entries with signed predecessor verification details."""
     annotated: List[Dict[str, Any]] = []
 
+    require_mirror = bool(getattr(immutable_log, "require_mirror", False))
+
     for entry in entries:
         current = dict(entry)
         sequence_num = current.get("sequence_num")
@@ -296,6 +316,7 @@ def _annotate_predecessor_verification(entries: List[Dict[str, Any]], immutable_
 
         current["public_history_ok"] = True
         current["public_history_status"] = "public"
+        current["history_materialization_provenance"] = "public"
 
         if sequence_num == 1 and prev_event_digest is None and prev_lookup_hash is None:
             current["predecessor_ok"] = True
@@ -385,6 +406,18 @@ def _annotate_predecessor_verification(entries: List[Dict[str, Any]], immutable_
             for candidate in materialized_candidates
             if _classify_public_history_status(candidate) is None
         ]
+        mirrored_candidates = [
+            candidate for candidate in public_candidates if candidate.get("replay_provenance") == "mirror"
+        ]
+        if require_mirror and not mirrored_candidates:
+            current["predecessor_ok"] = False
+            current["matched_candidate_count"] = 0
+            current["predecessor_status"] = "unsupported"
+            current.setdefault("errors", []).append(
+                "Mirror-required policy could not resolve mirrored predecessor material for the signed lookup hash"
+            )
+            annotated.append(current)
+            continue
         if not public_candidates:
             current["predecessor_ok"] = False
             current["matched_candidate_count"] = 0
@@ -407,12 +440,20 @@ def _annotate_predecessor_verification(entries: List[Dict[str, Any]], immutable_
         if len(matches) == 1:
             current["predecessor_ok"] = True
             current["predecessor_status"] = "proven"
+            current["history_materialization_provenance"] = matches[0].get("replay_provenance", "public")
         elif len(matches) > 1:
-            current["predecessor_ok"] = False
-            current["predecessor_status"] = "ambiguous"
-            current.setdefault("errors", []).append(
-                "Multiple predecessor candidates matched the signed replay contract"
-            )
+            mirror_matches = [candidate for candidate in matches if candidate.get("replay_provenance") == "mirror"]
+            equivalent_contracts = {_matched_predecessor_contract(candidate) for candidate in matches}
+            if mirror_matches and len(equivalent_contracts) == 1:
+                current["predecessor_ok"] = True
+                current["predecessor_status"] = "proven"
+                current["history_materialization_provenance"] = "mirror"
+            else:
+                current["predecessor_ok"] = False
+                current["predecessor_status"] = "ambiguous"
+                current.setdefault("errors", []).append(
+                    "Multiple predecessor candidates matched the signed replay contract"
+                )
         else:
             current["predecessor_ok"] = False
             current["predecessor_status"] = "missing"
@@ -741,8 +782,8 @@ class TrustedLogAPI:
         except urllib.error.URLError as e:
             logger.error("TruCon unavailable via internal transport: %s", e)
             raise BackendSubmitError(
-                f"TruCon sequencer unavailable: {e}",
                 code="TRUCON_UNAVAILABLE",
+                message=f"TruCon sequencer unavailable: {e}",
                 stage="commit",
                 retryable=True,
             )
@@ -776,6 +817,8 @@ class TrustedLogAPI:
         chain_id = applied_policy.get("chain_id", "default")
         expected_identity = applied_policy.get("signer_identity")
         expected_entry_count = applied_policy.get("expected_entry_count")
+        if self.immutable_log is not None:
+            setattr(self.immutable_log, "require_mirror", bool(applied_policy.get("require_mirror")))
         subject_name = f"trusted-log-chain_{chain_id}"
 
         try:
@@ -817,20 +860,25 @@ class TrustedLogAPI:
                 for index, entry in enumerate(entries)
             ]
 
-            # Filter by signer identity if provided
-            verified_entries = []
-            for normalized_entry, raw_entry in zip(normalized_entries, entries):
+            # Filter replay results to the requested chain before applying signer constraints.
+            matched_entries: List[Dict[str, Any]] = []
+            for normalized_entry in normalized_entries:
+                if not _entry_matches_chain(normalized_entry, chain_id, subject_name):
+                    continue
                 if expected_identity:
                     cert_identity = normalized_entry["signer_identity"]
                     if cert_identity and cert_identity != expected_identity:
                         logger.warning("Discarding entry with mismatched signer identity: %s", cert_identity)
                         continue
-                verified_entries.append(raw_entry)
+                matched_entries.append(normalized_entry)
 
-            if not verified_entries:
+            if not matched_entries:
+                error_message = "No entries matched the expected signer identity"
+                if expected_identity is None:
+                    error_message = f"No entries matched the requested chain_id {chain_id!r}"
                 return VerificationResult(
                     success=False,
-                    errors=["No entries matched the expected signer identity"],
+                    errors=[error_message],
                     details={
                         "source": "immutable_backend",
                         "target": target,
@@ -845,7 +893,6 @@ class TrustedLogAPI:
                     },
                 )
 
-            matched_entries = [entry for entry in normalized_entries if entry["included"]]
             matched_entries = _annotate_predecessor_verification(matched_entries, self.immutable_log)
 
             predecessor_errors = [

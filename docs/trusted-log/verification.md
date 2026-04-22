@@ -60,6 +60,8 @@ In the current repository, `tc-verify` is packaged together with `tc-api`, but i
 
 For the current repository implementation, one practical nuance matters: a Sigstore bundle produced by the live signing path can contain richer DSSE payload material than a later raw Rekor readback alone exposes in directly normalized form. The verifier may use bundle-derived or cached payload material as a local retrieval aid, but it no longer treats that cache-assisted reconstruction as public proof truth. Historical continuity and Event Log 0 origin count as publicly verified only when those facts can be materialized from Rekor-auditable entry data.
 
+The current implementation extends that retrieval aid with `OciBundleMirror`, a non-authoritative OCI artifact mirror keyed by `payload_hash`. When a public Rekor DSSE entry is hash-only, the verifier can rehydrate the current head or predecessor bundle payload from the mirror while still treating Rekor inclusion as the authoritative public anchor.
+
 ## Chain Concepts
 
 The verifier should distinguish the following fields:
@@ -238,8 +240,15 @@ The intended external verification flow is:
 Operator output should keep provenance explicit:
 
 - `replay.provenance=public` means the verifier recovered the required historical facts from public immutable replay material;
+- `replay.provenance=mirrored` means public Rekor inclusion was present but verifier-critical DSSE payload fields had to be re-materialized from mirrored bundle content;
 - `replay.provenance=degraded` means public materialization did not expose every verifier-critical historical fact;
 - `replay.provenance=unsupported` means replay depended on process-local cache or another non-public reconstruction path.
+
+The current CLI summarizes this explicitly as verification tiers:
+
+- `public-only`
+- `public+mirrored`
+- `public+mirrored+attested`
 
 ```text
 Rekor chain replay
@@ -257,6 +266,12 @@ operator verdict
 ## Operator Result Vocabulary
 
 `tc-verify` should keep three result layers distinct:
+
+- `summary`: top-level success, status, counts, and verification tier;
+- `replay`: immutable replay entries plus provenance summary;
+- `attested_head`: exported evidence binding status for the current head;
+- `fallback`: live TruCon troubleshooting state when explicitly requested;
+- `diagnostics`: a compact failure-oriented summary, including the first replay entry with a boundary, predecessor, or materialization problem.
 
 - replay outcome: whether immutable-backend replay and signed predecessor continuity succeeded
 - attested-head outcome: whether exported evidence validly binds the current public head to current TEE state

@@ -87,6 +87,24 @@ def _migrate_legacy_schema(conn: sqlite3.Connection):
     conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_intents_chain_status ON commit_intents(chain_id, status)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_intents_chain_idem ON commit_intents(chain_id, idempotency_key)')
 
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS mirror_publish_queue (
+            record_id TEXT PRIMARY KEY,
+            chain_id TEXT NOT NULL,
+            payload_hash TEXT NOT NULL,
+            bundle_json TEXT NOT NULL,
+            annotations TEXT NOT NULL,
+            status TEXT NOT NULL,
+            retry_count INTEGER DEFAULT 0,
+            artifact_digest TEXT,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_mirror_publish_queue_status ON mirror_publish_queue(status, updated_at)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_mirror_publish_queue_payload_hash ON mirror_publish_queue(payload_hash)')
+
     conn.commit()
 
 def init_db(db_path: str = DB_PATH):
@@ -142,6 +160,24 @@ def init_db(db_path: str = DB_PATH):
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_intents_chain_status ON commit_intents(chain_id, status)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_intents_chain_idem ON commit_intents(chain_id, idempotency_key)')
+
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS mirror_publish_queue (
+                record_id TEXT PRIMARY KEY,
+                chain_id TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                bundle_json TEXT NOT NULL,
+                annotations TEXT NOT NULL,
+                status TEXT NOT NULL,
+                retry_count INTEGER DEFAULT 0,
+                artifact_digest TEXT,
+                last_error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mirror_publish_queue_status ON mirror_publish_queue(status, updated_at)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mirror_publish_queue_payload_hash ON mirror_publish_queue(payload_hash)')
 
         # Composite index for instance mapping queries
         conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_queue_instance ON commit_queue(chain_id, instance_id)')
@@ -500,6 +536,78 @@ def get_queue_stats(db_path: str = DB_PATH) -> Dict[str, Any]:
             'next_record_id': next_record_id,
             'total_retry_count': total_retry_count,
         }
+
+
+def enqueue_mirror_publish(
+    record_id: str,
+    chain_id: str,
+    payload_hash: str,
+    bundle_json: str,
+    annotations: Dict[str, Any],
+    db_path: str = DB_PATH,
+):
+    now = datetime.utcnow().isoformat()
+    with get_db_connection(db_path) as conn:
+        conn.execute(
+            '''
+            INSERT INTO mirror_publish_queue (
+                record_id, chain_id, payload_hash, bundle_json, annotations,
+                status, retry_count, artifact_digest, last_error, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 'PENDING', 0, NULL, NULL, ?, ?)
+            ON CONFLICT(record_id) DO UPDATE SET
+                payload_hash = excluded.payload_hash,
+                bundle_json = excluded.bundle_json,
+                annotations = excluded.annotations,
+                updated_at = excluded.updated_at
+            ''' ,
+            (record_id, chain_id, payload_hash, bundle_json, json.dumps(annotations), now, now),
+        )
+        conn.commit()
+
+
+def get_pending_mirror_publishes(db_path: str = DB_PATH) -> List[sqlite3.Row]:
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute(
+            '''
+            SELECT * FROM mirror_publish_queue
+            WHERE status IN ('PENDING', 'FAILED_RETRYABLE')
+            ORDER BY updated_at ASC
+            '''
+        )
+        return cursor.fetchall()
+
+
+def update_mirror_publish_status(
+    record_id: str,
+    status: str,
+    *,
+    artifact_digest: Optional[str] = None,
+    last_error: Optional[str] = None,
+    increment_retry_count: bool = False,
+    db_path: str = DB_PATH,
+):
+    now = datetime.utcnow().isoformat()
+    with get_db_connection(db_path) as conn:
+        conn.execute(
+            '''
+            UPDATE mirror_publish_queue
+            SET status = ?,
+                artifact_digest = COALESCE(?, artifact_digest),
+                last_error = ?,
+                retry_count = retry_count + ?,
+                updated_at = ?
+            WHERE record_id = ?
+            ''',
+            (status, artifact_digest, last_error, 1 if increment_retry_count else 0, now, record_id),
+        )
+        conn.commit()
+
+
+def get_mirror_publish_job(record_id: str, db_path: str = DB_PATH) -> Optional[sqlite3.Row]:
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute('SELECT * FROM mirror_publish_queue WHERE record_id = ?', (record_id,))
+        return cursor.fetchone()
 
 def get_latest_state(chain_id: str = 'default', db_path: str = DB_PATH) -> Dict[str, Any]:
     """Get LatestState for a chain: confirmed head + pending summary."""

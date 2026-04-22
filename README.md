@@ -28,6 +28,44 @@ python -m tests.test_runner --type unit
 python -m tests.test_runner --type manual --name health
 ```
 
+For the opt-in public Rekor smoke test, prefer the just-in-time helper flow so the short-lived OIDC token is fetched and consumed immediately:
+
+```shell
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke
+```
+
+In the normal `--fetch` path, the helper now explicitly tries to open a browser for the OIDC login step and falls back to printing the login URL if automatic browser launch is unavailable.
+
+If you already have a real OIDC token and want to enter it interactively instead of exporting it, use:
+
+```shell
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --prompt-token --json
+```
+
+If you also want to enter the expected signer identity interactively, use:
+
+```shell
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --prompt-token --prompt-expected-identity --json
+```
+
+For the combined real Rekor + real OCI mirror + real verify multi-chain smoke path, use:
+
+```shell
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke --run-real-rekor-oci-multi-chain-smoke
+```
+
+That helper flow opens a browser for Sigstore OIDC login when possible, fetches a fresh short-lived token, enables both real-Rekor and real-OCI opt-in gates, and immediately runs the end-to-end smoke before the token expires.
+
+Current real multi-chain smoke coverage includes:
+
+- real Fulcio-backed DSSE signing using a freshly acquired OIDC token;
+- public Rekor upload and lookup;
+- real OCI artifact publication to a live local registry through `OciBundleMirror`;
+- mirror-backed immutable replay after clearing the adapter's in-process cache;
+- `tc-verify --troubleshoot-live --mirror-dir ... --require-mirror` verification of each chain head.
+
+Use `--force-oob` if your environment needs the out-of-band login path.
+
 ## Operational Notes
 
 - TruCon is the sole supported trust-event path. The legacy direct trusted-log write path has been retired and is not a valid rollback target.
@@ -62,9 +100,41 @@ tc-verify default --signer-identity alice@example.com
 tc-verify default --expected-entry-count 12
 tc-verify default --fail-on-pending
 tc-verify default --require-tee
+tc-verify --evidence evidence.json --mirror-dir ./mirror-store
+tc-verify --evidence evidence.json --mirror-dir ./mirror-store --require-mirror
 ```
 
+Mirror-backed replay verification uses `payload_hash` as the primary lookup anchor for mirrored bundle material. When a mirror is configured, immutable replay can recover predecessor bundles from the mirror if public Rekor entry data does not carry enough payload material on its own.
+
+The current implementation supports both local OCI-layout-style mirrors and registry-backed OCI repositories. The mirror is non-authoritative: Rekor inclusion remains the source of truth, while mirrored bundle material is used to re-materialize verifier-critical DSSE payload fields when public Rekor readback is hash-only.
+
+Current verification tiers are `public-only`, `public+mirrored`, and `public+mirrored+attested`.
+
+Operational notes for mirror-backed replay:
+
+- `TRUCON_BUNDLE_MIRROR_DIR` enables the local OCI-layout-style bundle mirror used by TruCon after Rekor confirmation.
+- the same mirror interface also accepts registry-backed repository URLs such as `http://127.0.0.1:5000/tc-api/mirror`;
+- mirror publication happens after Rekor confirmation and may lag briefly, so a newly confirmed chain head can remain `public-only` until the mirror publish queue drains;
+- `--mirror-dir` points `tc-verify` at a mirror location for payload-hash-based bundle resolution;
+- `--require-mirror` upgrades missing mirror material from a best-effort condition to an explicit verification failure or degraded result.
+
+For failure analysis, `tc-verify --json` now emits a top-level `diagnostics` section summarizing immutable replay success, replay provenance, fallback validity, and the first replay entry with a boundary, predecessor, or materialization problem.
+
 Use `chain_id` without `--evidence` only for transitional live fallback verification. In the preferred evidence-backed flow, `tc-verify` derives `chain_id`, `head_log_id`, `sequence_num`, and `mr_value` from the exported evidence package, replays immutable-backend history from the attested head, and reports attested-head results separately from fallback diagnostics. Live TruCon verification remains available as fallback and non-TEE fallback remains test-only rather than production-equivalent success.
+
+## Real OCI Mirror Validation
+
+`OciBundleMirror` now supports both local OCI-layout-style storage and real OCI registry repositories. Pass a filesystem path for local storage, or pass a repository URL such as `http://127.0.0.1:5000/tc-api/mirror` for registry-backed storage.
+
+For a real OCI registry smoke test, use:
+
+```shell
+TC_API_RUN_REAL_OCI_MIRROR_TESTS=1 /home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_real_oci_mirror_integration.py -q
+```
+
+That test starts a local `registry:2` container, drives `OciBundleMirror.publish_bundle()` and `resolve_bundle()` against the live Registry HTTP API, and verifies round-trip retrieval.
+
+The combined helper above reuses that real registry path while also running the real Rekor multi-chain verification smoke test.
 
 ## API Endpoints
 

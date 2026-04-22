@@ -34,7 +34,9 @@ Each task has:
   - tc_api now signs DSSE using those reserved values and submits the signed bundle together with the `intent_token`.
   - TruCon validates the submitted bundle against the reserved contract before enqueueing it.
   - Immutable replay, TruCon verification, and CLI verification now treat signed predecessor fields as protocol truth and use Rekor payload-hash lookup as candidate discovery only.
-  - Remaining work is rollout hardening, mixed-regime operator guidance, and legacy compatibility cleanup rather than primary protocol design.
+  - Immutable replay can now re-materialize hash-only public Rekor DSSE entries from a non-authoritative OCI bundle mirror keyed by `payload_hash`, including registry-backed mirrors.
+  - Opt-in real integration coverage now includes a public Rekor + real OCI mirror + real verify multi-chain smoke path driven from `tc_api.oidc_preflight --fetch`.
+  - Remaining work is mostly rollout hardening and legacy compatibility cleanup rather than primary protocol design.
 
 #### Task 13.1: Define the reservation protocol and state model
 
@@ -110,9 +112,9 @@ Each task has:
 - **Status**: PARTIALLY COMPLETED
 - **Acceptance Criteria**:
   1. ✅ Unit tests cover reservation lifecycle, idempotent retry semantics, baseline null-predecessor behavior, and missing/multiple Rekor candidates.
-  2. ◐ Public Rekor opt-in integration tests validate real signing, baseline paths, and immutable replay, but multi-entry predecessor-proof coverage remains limited.
+  2. ◐ Public Rekor opt-in integration tests now validate real signing, baseline paths, immutable replay, and a real OCI mirror-backed multi-chain verification smoke; mixed-regime and broader rollout coverage remain limited.
   3. ✅ Documentation clearly explains that Rekor `/api/v1/index/retrieve` is best-effort candidate discovery, not protocol truth.
-  4. ◐ Rollout guidance for mixed-format chains still needs a clearer operator-facing deployment rule.
+  4. ◐ Rollout guidance for mixed-format chains is clearer for operators now, but legacy cleanup rules still need tightening.
 
 ---
 

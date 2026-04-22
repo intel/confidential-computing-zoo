@@ -291,6 +291,48 @@ class TestPredecessorVerification:
         assert resp.rtmr_available is True
         assert resp.entries[2].boundary_status == "invalid"
 
+    def test_workload_baseline_snapshot_does_not_fail_rtmr_verification(self, db):
+        insert_record(
+            record_id="rec-log0",
+            event_id="evt-log0-workload-a",
+            payload={"bundle": "test", "is_baseline": True},
+            status="PENDING",
+            chain_id="workload-a",
+            rtmr_extended=True,
+            prev_event_digest=None,
+            prev_lookup_hash=None,
+            mr_value="aa" * 48,
+            sequence_num=1,
+            event_digest="sha384:" + ("11" * 48),
+            db_path=db,
+        )
+        update_record_confirmed("rec-log0", "log-log0", db_path=db)
+        insert_record(
+            record_id="rec-2",
+            event_id="evt-2",
+            payload={"bundle": "test"},
+            status="PENDING",
+            chain_id="workload-a",
+            rtmr_extended=True,
+            prev_event_digest="sha384:" + ("11" * 48),
+            prev_lookup_hash="sha256:" + ("22" * 32),
+            mr_value=__import__("hashlib").sha384(bytes.fromhex("aa" * 48) + bytes.fromhex("33" * 48)).hexdigest(),
+            sequence_num=2,
+            event_digest="sha384:" + ("33" * 48),
+            db_path=db,
+        )
+        update_record_confirmed("rec-2", "log-2", db_path=db)
+
+        records = get_chain_records("workload-a", db)
+        from tc_api.trucon.app import verify_chain
+        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+            resp = verify_chain("workload-a")
+
+        assert resp.valid is True
+        assert resp.rtmr_available is True
+        assert resp.entries[0].mr_ok is None
+        assert resp.entries[1].mr_ok is True
+
 
 class TestStartupWarning:
     """Test for NON-TEE MODE startup warning."""

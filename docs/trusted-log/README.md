@@ -165,10 +165,12 @@ At a high level, verification includes:
 - Optional correlation of replayed event digests with local-measurement claims such as RTMR values.
 - Aggregated success/error reporting across the chain.
 
-In operator workflows, `tc-verify` is the primary verification surface. It emits a stable JSON result model with top-level `target`, `mode`, `summary`, `replay`, `attested_head`, and `errors` sections, and it may include troubleshooting diagnostics when explicit live TruCon mode is used. Non-TEE troubleshooting verification is reported as test-only rather than TEE-equivalent success.
+In operator workflows, `tc-verify` is the primary verification surface. It emits a stable JSON result model with top-level `target`, `mode`, `summary`, `replay`, `attested_head`, `diagnostics`, and `errors` sections, and it may include troubleshooting diagnostics when explicit live TruCon mode is used. Non-TEE troubleshooting verification is reported as test-only rather than TEE-equivalent success.
 
 Verification should treat the persisted immutable `EventLog` payload as the source of truth.
 The verifier should resolve the target log, replay ordered entry digests from canonical data, recompute the event digest, validate signatures, and confirm predecessor continuity from the signed `sequence_num`, `prev_event_digest`, and `prev_lookup_hash` fields. Rekor lookup is candidate discovery only; proof comes from the signed predicate and, when available, RTMR-backed ordering.
+
+For public Rekor chains where raw readback is hash-only, the verifier can now re-materialize DSSE payload fields from `OciBundleMirror`, a non-authoritative OCI artifact mirror keyed by `payload_hash`. The mirror supports both local OCI-layout-style storage and live registry-backed repositories.
 
 ## Integration with `tc_api` Workflows
 

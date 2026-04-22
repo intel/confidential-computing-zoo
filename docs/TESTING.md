@@ -77,13 +77,47 @@ tc-verify default --signer-identity alice@example.com
 tc-verify default --expected-entry-count 12
 tc-verify default --fail-on-pending
 tc-verify default --require-tee
+tc-verify --evidence evidence.json --mirror-dir ./mirror-store
+tc-verify --evidence evidence.json --mirror-dir ./mirror-store --require-mirror
 ```
+
+Mirror-backed verification notes:
+
+- set `TRUCON_BUNDLE_MIRROR_DIR=/path/to/mirror-store` when exercising TruCon post-confirmation mirror publication locally;
+- use `--mirror-dir` to point `tc-verify` at the mirrored bundle store;
+- use `--require-mirror` to turn missing mirrored bundle material into an explicit failure or degraded verification result instead of a best-effort `public-only` replay run;
+- a short-lived `public-only` window is expected immediately after Rekor confirmation and before the asynchronous mirror publish queue drains.
 
 Recommended targeted regression for the verification plane:
 
 ```bash
-/home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_tlog_impl.py tests/test_non_tee_verification.py tests/test_verify_cli.py -q
+/home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_tlog_impl.py tests/test_non_tee_verification.py tests/test_verify_cli.py tests/test_oci_bundle_mirror.py -q
 ```
+
+## Real OCI Mirror Smoke Test
+
+`OciBundleMirror` supports both local OCI-layout-style storage and real registry-backed repositories. To exercise a real OCI artifact round-trip against an actual registry API, use the opt-in smoke test below.
+
+Prerequisites:
+
+- local Docker daemon available to the test process;
+- ability to pull and run `registry:2`, or set `TC_API_REAL_OCI_REGISTRY_IMAGE` to an equivalent registry image.
+
+Run:
+
+```bash
+TC_API_RUN_REAL_OCI_MIRROR_TESTS=1 \
+/home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_real_oci_mirror_integration.py -q
+```
+
+Optional environment variables:
+
+```bash
+TC_API_REAL_OCI_REGISTRY_IMAGE=registry:2
+TC_API_REAL_OCI_MIRROR_REPOSITORY=tc-api/oci-bundle-mirror-smoke
+```
+
+This smoke test starts a real local registry container, runs `OciBundleMirror.publish_bundle()` and `resolve_bundle()` against that live registry, and verifies bundle and annotation integrity.
 
 ## Public Rekor Smoke Test
 
@@ -105,13 +139,61 @@ TC_API_REAL_REKOR_SIGNER_IDENTITY=alice@example.com
 Before running the public Rekor smoke test, you can preflight-check the OIDC token locally without printing the raw token:
 
 ```bash
-tc-oidc-preflight --json
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --json
+```
+
+If you already have a real OIDC token and prefer an interactive prompt instead of exporting an environment variable, use:
+
+```bash
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --prompt-token --json
+```
+
+If you also want to enter the expected signer identity interactively, use:
+
+```bash
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --prompt-token --prompt-expected-identity --json
+```
+
+To reduce friction from the short token lifetime, you can also let the helper fetch a fresh token on demand and immediately run the smoke test in the same process:
+
+```bash
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke
+```
+
+In the normal `--fetch` flow, the helper now explicitly tries to open a browser for the OIDC login step. If automatic browser launch fails, it prints the login URL so you can open it manually and continue the same flow.
+
+For the combined real Rekor + real OCI mirror + real verify multi-chain smoke path, use:
+
+```bash
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke --run-real-rekor-oci-multi-chain-smoke
+```
+
+That helper enables both the real Rekor and real OCI mirror opt-in gates, fetches a fresh token via browser-assisted OIDC login, then runs the multi-chain smoke node that publishes mirrored bundles to a live local OCI registry and verifies each chain through the `tc-verify` troubleshooting path with `--require-mirror`.
+
+The current real multi-chain smoke validates all of the following in one run:
+
+- real Sigstore signing with a freshly acquired token;
+- public Rekor persistence and replay;
+- registry-backed OCI artifact publication and resolution through `OciBundleMirror`;
+- mirror-backed replay after clearing the adapter's in-process bundle cache;
+- live troubleshooting verification output from `tc-verify` with `verification_tier=public+mirrored`.
+
+If your environment needs the out-of-band flow, use:
+
+```bash
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --force-oob --run-real-rekor-smoke
+```
+
+You can still pass extra pytest selectors through the helper when narrowing the smoke run:
+
+```bash
+/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke --pytest-args -q -k multi_chain
 ```
 
 Or read the token from stdin instead of an environment variable:
 
 ```bash
-printf '%s' "$TC_API_REAL_REKOR_IDENTITY_TOKEN" | tc-oidc-preflight --stdin --json
+printf '%s' "$TC_API_REAL_REKOR_IDENTITY_TOKEN" | /home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --stdin --json
 ```
 
 The preflight check validates the basic Sigstore expectations that commonly cause failures before Fulcio issuance:
@@ -119,6 +201,8 @@ The preflight check validates the basic Sigstore expectations that commonly caus
 - required JWT claims exist (`iss`, `aud`, `sub`, `iat`, `exp`)
 - `aud` includes `sigstore`
 - the token is still within its validity window
+- tokens that are already expired are rejected before pytest starts
+- tokens that are about to expire trigger a warning so the smoke run can be retried with a fresh fetch
 - the signer identity that sigstore-python will derive matches `TC_API_REAL_REKOR_SIGNER_IDENTITY` when provided
 
 For common issuers, the derived signer identity follows sigstore-python's built-in rules:
@@ -134,9 +218,21 @@ Notes:
 - It now includes both a direct Event Log 0 bundle smoke test and a fuller `init_chain -> submit -> verify` smoke test for the explicit `default`-chain init path, where baseline records are emitted as Sigstore Bundles.
 - It also includes a lazy non-`default` workload-chain smoke test, where the first workload commit causes TruCon to mint Event Log 0 via the same Sigstore/Rekor path before the triggering event is accepted as `sequence_num=2`.
 - It also includes an opt-in multi-entry predecessor-proof smoke test that clears the adapter's in-process cache before replay and requires the head record to prove its predecessor through public Rekor `payloadHash(sha256)` candidate discovery.
+- It also includes an opt-in real Rekor + real OCI mirror + real verify multi-chain smoke that requires the head record to re-materialize DSSE payload fields through the mirror after the in-process cache is cleared.
 - Immutable replay now uses signed `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`, with Rekor `payloadHash(sha256)` lookup serving as candidate discovery only.
 - Mixed-regime rollout behavior is still primarily covered by local regression tests rather than live public-Rekor integration.
 - The dedicated multi-entry predecessor-proof smoke test intentionally clears the adapter's in-process cache before replay to validate the public candidate-discovery path separately. Same-process cache may still be used as a local fallback during debugging, but cache-assisted replay no longer counts as public proof in verifier results.
+
+## Verification Result Diagnostics
+
+`tc-verify --json` now emits a stable top-level `diagnostics` object alongside `summary`, `replay`, `fallback`, and `entries`.
+
+Use it first when a smoke run fails. It summarizes:
+
+- `diagnostics.replay.success` and `diagnostics.replay.provenance_status`;
+- `diagnostics.fallback.valid` and `diagnostics.fallback.rtmr_available`;
+- `diagnostics.first_error`;
+- `diagnostics.replay.first_entry_issue`, which points at the first entry with `boundary_status`, `public_history_status`, predecessor failure, or replay errors.
 
 ### Short-Lived Token Guidance
 
@@ -144,7 +240,7 @@ The public Rekor smoke test typically uses an OIDC token with an approximately 1
 
 Practical guidance:
 
-- acquire the token immediately before running the test;
+- acquire the token immediately before running the test, preferably with `tc-oidc-preflight --fetch --run-real-rekor-smoke`;
 - do not expect a manually exported token to survive multiple retries or long debugging pauses;
 - if the token expires, reacquire it rather than reusing the old environment variable;
 - keep preflight checks and the live pytest invocation close together in time.

@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from sigstore.models import Bundle
+from tc_api.trucon.adapters.oci_mirror import OciBundleMirror
 from tc_api.trucon.adapters.sigstore import SigstoreLogAdapter
 from tc_api.tlog_client import TrustedLogAPI, _decode_dsse_payload, _extract_signer_identity
 
@@ -104,6 +105,81 @@ def test_sigstore_adapter_reuses_cached_bundle_entry_across_instances(mock_rekor
     assert cached_entry["_tc_replay_provenance"] == "cache-assisted"
     mock_rekor.return_value.log.entries.get.assert_called_once()
 
+
+def test_sigstore_adapter_enriches_public_hash_only_entry_from_matching_cached_payload(mock_rekor):
+    adapter = SigstoreLogAdapter()
+    cached_entry = _make_rekor_entry("evt-1")
+    payload_hash = SigstoreLogAdapter._payload_hash_from_entry(cached_entry)
+    assert payload_hash is not None
+    algorithm, value = payload_hash.split(":", 1)
+
+    public_body = {
+        "apiVersion": "0.0.1",
+        "kind": "dsse",
+        "spec": {
+            "signatures": [{"verifier": "cert"}],
+            "payloadHash": {"algorithm": algorithm, "value": value},
+            "envelopeHash": {"algorithm": algorithm, "value": value},
+        },
+    }
+    mock_rekor.return_value.log.entries.get.return_value = {
+        "body": base64.b64encode(json.dumps(public_body).encode("utf-8")).decode("utf-8"),
+        "logIndex": 123,
+        "integratedTime": 1700000000,
+        "logID": "rekor-log-id",
+        "verification": {"inclusionProof": {}, "signedEntryTimestamp": "set"},
+    }
+
+    SigstoreLogAdapter._bundle_entry_cache[SigstoreLogAdapter._cache_key(adapter.rekor_url, "123")] = cached_entry
+
+    entry = adapter.get_entry("123")
+
+    assert entry["_tc_replay_provenance"] == "public"
+    assert entry["body"]["spec"]["payload"]
+    assert entry["body"]["spec"]["payloadHash"]["value"] == value
+
+
+def test_sigstore_adapter_enriches_public_hash_only_entry_from_mirror_when_cache_is_empty(mock_rekor):
+    adapter = SigstoreLogAdapter()
+    cached_entry = _make_rekor_entry("evt-1")
+    payload_hash = SigstoreLogAdapter._payload_hash_from_entry(cached_entry)
+    assert payload_hash is not None
+    algorithm, value = payload_hash.split(":", 1)
+
+    public_body = {
+        "apiVersion": "0.0.1",
+        "kind": "dsse",
+        "spec": {
+            "signatures": [{"verifier": "cert"}],
+            "payloadHash": {"algorithm": algorithm, "value": value},
+            "envelopeHash": {"algorithm": algorithm, "value": value},
+        },
+    }
+    mock_rekor.return_value.log.entries.get.return_value = {
+        "body": base64.b64encode(json.dumps(public_body).encode("utf-8")).decode("utf-8"),
+        "uuid": "log-id-123",
+        "integratedTime": 1700000000,
+        "logID": "rekor-log-id",
+        "verification": {"inclusionProof": {}, "signedEntryTimestamp": "set"},
+    }
+
+    class _Mirror:
+        def resolve_bundle(self, requested_payload_hash):
+            assert requested_payload_hash == payload_hash
+            return {
+                "payload_hash": requested_payload_hash,
+                "artifact_digest": "sha256:" + ("ab" * 32),
+                "annotations": {"payload_b64": cached_entry["body"]["spec"]["payload"]},
+            }
+
+    adapter.bundle_mirror = _Mirror()
+
+    entry = adapter.get_entry("log-id-123")
+
+    assert entry["_tc_replay_provenance"] == "public"
+    assert entry["body"]["spec"]["payload"] == cached_entry["body"]["spec"]["payload"]
+    assert entry["body"]["spec"]["payloadHash"]["value"] == value
+
 def test_sigstore_adapter_traverse(mock_rekor):
     adapter = SigstoreLogAdapter()
     mock_instance = mock_rekor.return_value
@@ -155,6 +231,50 @@ def test_sigstore_adapter_traverse_keeps_normalized_entry_dict(mock_rekor):
     assert len(results) == 1
     assert results[0]["uuid"] == "id-1"
     assert isinstance(results[0], dict)
+
+
+def test_oci_bundle_mirror_round_trip_by_payload_hash(tmp_path):
+    mirror = OciBundleMirror(str(tmp_path))
+    bundle_json = json.dumps({"bundle": "value", "entries": [1, 2, 3]})
+    payload_hash = "sha256:" + hashlib.sha256(b"payload-bytes").hexdigest()
+
+    manifest = mirror.publish_bundle(
+        payload_hash=payload_hash,
+        bundle_json=bundle_json,
+        annotations={"chain_id": "default", "sequence_num": 2},
+    )
+    resolved = mirror.resolve_bundle(payload_hash)
+
+    assert manifest["payloadHash"] == payload_hash
+    assert resolved is not None
+    assert resolved["payload_hash"] == payload_hash
+    assert resolved["bundle_json"] == bundle_json
+    assert resolved["annotations"]["chain_id"] == "default"
+
+
+def test_oci_bundle_mirror_uses_payload_hash_as_primary_lookup(tmp_path):
+    mirror = OciBundleMirror(str(tmp_path))
+    payload_hash = "sha256:" + hashlib.sha256(b"payload-a").hexdigest()
+    bundle_json = json.dumps({"bundle": "A"})
+
+    mirror.publish_bundle(
+        payload_hash=payload_hash,
+        bundle_json=bundle_json,
+        annotations={"chain_id": "workload-a", "sequence_num": 7},
+    )
+
+    resolved = mirror.resolve_bundle(payload_hash)
+
+    assert resolved is not None
+    assert resolved["bundle_json"] == bundle_json
+    assert mirror.resolve_bundle("sha256:" + hashlib.sha256(b"missing").hexdigest()) is None
+
+
+def test_oci_bundle_mirror_rejects_malformed_payload_hash(tmp_path):
+    mirror = OciBundleMirror(str(tmp_path))
+
+    with pytest.raises(ValueError):
+        mirror.publish_bundle(payload_hash="not-a-hash", bundle_json="{}")
 
 
 def _make_test_cert_b64(email: str) -> str:
@@ -242,11 +362,12 @@ def test_decode_dsse_payload_from_proposed_content_envelope():
 
 
 class StubImmutableLog:
-    def __init__(self, entries=None, error=None, candidates=None, lookup_error=None):
+    def __init__(self, entries=None, error=None, candidates=None, lookup_error=None, require_mirror=False):
         self._entries = entries or []
         self._error = error
         self._candidates = candidates or {}
         self._lookup_error = lookup_error
+        self.require_mirror = require_mirror
 
     def submit_bundle(self, bundle, prev_log_id=None):
         raise NotImplementedError()
@@ -272,6 +393,7 @@ def _make_rekor_entry(
     event_id: str,
     event_type: str = "commit",
     *,
+    chain_id: str = "default",
     sequence_num: int | None = None,
     digest: str | None = None,
     prev_event_digest: str | object = _UNSET,
@@ -286,9 +408,9 @@ def _make_rekor_entry(
     if prev_lookup_hash is _UNSET:
         prev_lookup_hash = None
     payload = {
-        "subject": [{"name": "trusted-log-chain_default", "digest": {"sha384": "abc"}}],
+        "subject": [{"name": f"trusted-log-chain_{chain_id}", "digest": {"sha384": "abc"}}],
         "predicate": {
-            "chain_id": "default",
+            "chain_id": chain_id,
             "sequence_num": sequence_num,
             "event_id": event_id,
             "event_type": event_type,
@@ -324,6 +446,44 @@ def test_verify_record_returns_structured_entry_details():
     assert result.details["entries"][0]["signer_identity_match"] is True
 
 
+def test_sigstore_payload_hash_lookup_keeps_mirror_candidate_when_public_lookup_succeeds():
+    public_entry = _make_rekor_entry("evt-1", sequence_num=1)
+    payload_hash = SigstoreLogAdapter._payload_hash_from_entry(public_entry)
+    assert payload_hash is not None
+
+    class _Response:
+        def read(self):
+            return json.dumps(["123"]).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _Mirror:
+        def resolve_bundle(self, requested_payload_hash):
+            assert requested_payload_hash == payload_hash
+            return {
+                "payload_hash": requested_payload_hash,
+                "bundle_json": json.dumps({"bundle": "value"}),
+                "artifact_digest": "sha256:" + ("ab" * 32),
+                "annotations": {
+                    "payload_b64": public_entry["body"]["spec"]["payload"],
+                },
+            }
+
+    adapter = SigstoreLogAdapter(bundle_mirror=_Mirror())
+
+    with patch("tc_api.trucon.adapters.sigstore.urllib.request.urlopen", return_value=_Response()):
+        with patch.object(adapter, "get_entry", return_value=public_entry):
+            candidates = adapter.find_entries_by_payload_hash(payload_hash)
+
+    assert len(candidates) == 2
+    assert any(candidate.get("_tc_replay_provenance") == "mirror" for candidate in candidates)
+    assert any(candidate.get("body") == public_entry.get("body") for candidate in candidates)
+
+
 def test_verify_record_rejects_cache_assisted_history_as_public_proof():
     cache_only_entry = _make_rekor_entry("evt-1", sequence_num=1)
     cache_only_entry["_tc_replay_provenance"] = "cache-assisted"
@@ -357,6 +517,25 @@ def test_verify_record_filters_by_signer_identity():
 
     with patch("tc_api.tlog_client._extract_signer_identity", side_effect=["alice@example.com", "bob@example.com"]):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
+
+    assert result.success is True
+    assert result.details["entry_count"] == 1
+    assert result.details["filtered_out_count"] == 1
+    assert result.details["entries"][0]["event_id"] == "evt-1"
+
+
+def test_verify_record_filters_out_entries_from_other_chains():
+    api = TrustedLogAPI(
+        immutable_log=StubImmutableLog(
+            entries=[
+                _make_rekor_entry("evt-foreign", chain_id="other"),
+                _make_rekor_entry("evt-1", chain_id="default"),
+            ]
+        )
+    )
+
+    with patch("tc_api.tlog_client._extract_signer_identity", side_effect=["alice@example.com", "alice@example.com"]):
+        result = api.verify_record("tail-log-id", policy={"chain_id": "default"})
 
     assert result.success is True
     assert result.details["entry_count"] == 1
@@ -427,6 +606,49 @@ def test_verify_record_uses_public_candidate_discovery_when_traverse_stops_early
     assert result.details["entries"][0]["candidate_count"] == 1
 
 
+def test_verify_record_marks_mirror_materialization_provenance():
+    first_entry = _make_rekor_entry("evt-1")
+    first_entry["_tc_replay_provenance"] = "mirror"
+    second_entry = _make_rekor_entry("evt-2")
+    second_payload = json.loads(base64.b64decode(second_entry["body"]["spec"]["payload"]).decode("utf-8"))
+    lookup_hash = "sha256:" + hashlib.sha256(base64.b64decode(first_entry["body"]["spec"]["payload"])).hexdigest()
+    second_payload["predicate"]["prev_lookup_hash"] = lookup_hash
+    second_entry["body"]["spec"]["payload"] = base64.b64encode(json.dumps(second_payload).encode("utf-8")).decode("utf-8")
+
+    api = TrustedLogAPI(
+        immutable_log=StubImmutableLog(entries=[second_entry], candidates={lookup_hash: [first_entry]})
+    )
+
+    with patch("tc_api.tlog_client._extract_signer_identity", return_value="alice@example.com"):
+        result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
+
+    assert result.success is True
+    assert result.details["entries"][0]["history_materialization_provenance"] == "mirror"
+
+
+def test_verify_record_requires_mirror_when_policy_demands_it():
+    first_entry = _make_rekor_entry("evt-1")
+    second_entry = _make_rekor_entry("evt-2")
+    second_payload = json.loads(base64.b64decode(second_entry["body"]["spec"]["payload"]).decode("utf-8"))
+    lookup_hash = "sha256:" + hashlib.sha256(base64.b64decode(first_entry["body"]["spec"]["payload"])).hexdigest()
+    second_payload["predicate"]["prev_lookup_hash"] = lookup_hash
+    second_entry["body"]["spec"]["payload"] = base64.b64encode(json.dumps(second_payload).encode("utf-8")).decode("utf-8")
+
+    api = TrustedLogAPI(
+        immutable_log=StubImmutableLog(entries=[second_entry], candidates={lookup_hash: [first_entry]}, require_mirror=True)
+    )
+
+    with patch("tc_api.tlog_client._extract_signer_identity", return_value="alice@example.com"):
+        result = api.verify_record(
+            "tail-log-id",
+            policy={"chain_id": "default", "signer_identity": "alice@example.com", "require_mirror": True},
+        )
+
+    assert result.success is False
+    assert result.details["entries"][0]["predecessor_status"] == "unsupported"
+    assert "Mirror-required policy" in result.details["entries"][0]["errors"][0]
+
+
 def test_verify_record_reports_decode_failed_when_candidates_cannot_be_normalized():
     first_entry = {"uuid": "broken-candidate", "body": {"spec": {"payload": "not-base64"}}}
     second_entry = _make_rekor_entry("evt-2")
@@ -465,6 +687,37 @@ def test_verify_record_reports_ambiguous_when_multiple_candidates_match():
     assert result.success is False
     assert result.details["entries"][0]["predecessor_status"] == "ambiguous"
     assert result.details["entries"][0]["matched_candidate_count"] == 2
+
+
+def test_verify_record_prefers_mirror_when_public_and_mirror_match_same_predecessor():
+    public_entry = _make_rekor_entry("evt-1")
+    public_entry["uuid"] = "public-evt-1"
+    mirror_entry = json.loads(json.dumps(public_entry))
+    mirror_entry["uuid"] = "mirror-evt-1"
+    mirror_entry["_tc_replay_provenance"] = "mirror"
+    second_entry = _make_rekor_entry("evt-2")
+    second_payload = json.loads(base64.b64decode(second_entry["body"]["spec"]["payload"]).decode("utf-8"))
+    lookup_hash = "sha256:" + hashlib.sha256(base64.b64decode(public_entry["body"]["spec"]["payload"])).hexdigest()
+    second_payload["predicate"]["prev_lookup_hash"] = lookup_hash
+    second_entry["body"]["spec"]["payload"] = base64.b64encode(json.dumps(second_payload).encode("utf-8")).decode("utf-8")
+    api = TrustedLogAPI(
+        immutable_log=StubImmutableLog(
+            entries=[second_entry],
+            candidates={lookup_hash: [public_entry, mirror_entry]},
+            require_mirror=True,
+        )
+    )
+
+    with patch("tc_api.tlog_client._extract_signer_identity", return_value="alice@example.com"):
+        result = api.verify_record(
+            "tail-log-id",
+            policy={"chain_id": "default", "signer_identity": "alice@example.com", "require_mirror": True},
+        )
+
+    assert result.success is True
+    assert result.details["entries"][0]["predecessor_status"] == "proven"
+    assert result.details["entries"][0]["matched_candidate_count"] == 2
+    assert result.details["entries"][0]["history_materialization_provenance"] == "mirror"
 
 
 def test_verify_record_reports_degraded_boundary_for_legacy_to_reservation_transition():

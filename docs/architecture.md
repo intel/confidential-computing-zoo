@@ -170,6 +170,14 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Continues exposing status endpoints for build/publish/launch results.
 - On startup (`lifespan()`), generates an ECDSA P-384 keypair in TEE memory and completes the reservation-backed `/init-chain` bootstrap for Event Log 0 (baseline record). The baseline payload still carries the TEE-generated public key as `pub_key`, but the `default`-chain init path now signs Event Log 0 as a Sigstore DSSE bundle with `sequence_num=1`, `prev_event_digest=null`, and `prev_lookup_hash=null` so it can follow the same immutable-backend submission path as other public records. The private key is discarded immediately after the public key is derived.
 - For Sigstore-backed public records, the current implementation uses Sigstore's real `sign_dsse()` path, which both issues the Fulcio-backed signing certificate and creates the transparency-log entry before the bundle is forwarded to TruCon. As a result, the bundle arriving at TruCon may already carry a confirmed Rekor log entry.
+- After Rekor confirmation, the current implementation can also publish bundle material into a non-authoritative OCI artifact mirror keyed by `payload_hash`. That mirror supports both local OCI-layout-style storage and registry-backed repositories, and is consumed only as replay materialization aid rather than append-only truth.
+
+### 4.1.1 Mirror-Assisted Public Replay
+
+- `OciBundleMirror` is the current bundle mirror adapter for both filesystem-backed and registry-backed OCI repositories.
+- Mirror publication happens after Rekor confirmation, so immutable verification may briefly report `public-only` before the asynchronous mirror queue drains.
+- During replay, the verifier can now re-materialize hash-only public Rekor DSSE entries from the mirror, including the current head entry, while still keeping Rekor inclusion as the authoritative public anchor.
+- `tc-verify` surfaces this explicitly through verification tiers: `public-only`, `public+mirrored`, and `public+mirrored+attested`.
 
 ### 4.2 Docktap Service
 
@@ -253,7 +261,8 @@ For implementation details, see [trusted-log/architecture.md](trusted-log/archit
 - To keep `tc-verify` and immutable replay behavior stable in the real public-Rekor smoke path, the Sigstore adapter now caches the bundle-derived DSSE payload and signer certificate material at submission time, keyed by the resolved log reference.
 - Subsequent replay in the same process can therefore recover `event_id`, `event_type`, and `predicate_entries` from the submitted bundle even when the raw Rekor readback is reduced to transparency-log-native fields.
 - For reservation-backed chains, replay now also uses the cached DSSE payload to recover signed `sequence_num`, `prev_event_digest`, and `prev_lookup_hash` so immutable replay can verify predecessor continuity without depending on backend-assigned predecessor IDs.
-- This cache is an adapter-local replay aid for verification fidelity. It does not replace Rekor as the public source of truth for inclusion, log identity, or signer certificate provenance.
+- The current implementation also supports mirror-assisted replay materialization through `OciBundleMirror`. When public Rekor readback is hash-only, the verifier can rehydrate current-head or predecessor bundle payloads from a non-authoritative OCI mirror keyed by `payload_hash`.
+- These cache and mirror layers are replay aids for verification fidelity. They do not replace Rekor as the public source of truth for inclusion, log identity, or signer certificate provenance.
 
 ## 5. Core Data and State Model
 
