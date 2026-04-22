@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the naming requirements for TruCon services, modules, configuration, and documentation.
+
+## Requirements
 
 ### Requirement: Canonical service name
 The TruCon core service SHALL be identified by the name "TruCon" in all code, configuration, documentation, and deployment artifacts. The prior name "Trust API" SHALL NOT be used.

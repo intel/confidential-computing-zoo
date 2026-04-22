@@ -27,13 +27,19 @@ def _fetch_trucon_json(path: str) -> Dict[str, Any]:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Verify a trusted-log chain using exported evidence or a live fallback chain_id"
+        description="Verify a trusted-log chain using exported evidence, or explicit live troubleshooting mode"
     )
-    parser.add_argument("chain_id", nargs="?", help="Chain identifier to verify in live fallback mode")
+    parser.add_argument("chain_id", nargs="?", help="Chain identifier to inspect in explicit live troubleshooting mode")
     parser.add_argument(
         "--evidence",
         dest="evidence_path",
         help="Path to exported attested-head evidence JSON, or '-' to read from stdin",
+    )
+    parser.add_argument(
+        "--troubleshoot-live",
+        action="store_true",
+        dest="troubleshoot_live",
+        help="Use live TruCon APIs as an internal troubleshooting path instead of supported external verification",
     )
     parser.add_argument("--signer-identity", dest="signer_identity")
     parser.add_argument("--expected-entry-count", type=int, dest="expected_entry_count")
@@ -49,8 +55,20 @@ def _normalize_replay_entries(immutable_entries: List[Dict[str, Any]]) -> List[D
             "index": entry.get("index"),
             "event_id": entry.get("event_id"),
             "event_type": entry.get("event_type"),
+            "sequence_num": entry.get("sequence_num"),
             "digest": entry.get("digest"),
             "created": entry.get("created"),
+            "prev_event_digest": entry.get("prev_event_digest"),
+            "prev_lookup_hash": entry.get("prev_lookup_hash"),
+            "predecessor_ok": entry.get("predecessor_ok"),
+            "candidate_count": entry.get("candidate_count"),
+            "materialized_candidate_count": entry.get("materialized_candidate_count"),
+            "matched_candidate_count": entry.get("matched_candidate_count"),
+            "predecessor_status": entry.get("predecessor_status"),
+            "boundary_status": entry.get("boundary_status"),
+            "public_history_ok": entry.get("public_history_ok"),
+            "public_history_status": entry.get("public_history_status"),
+            "replay_provenance": entry.get("replay_provenance"),
             "subject_names": entry.get("subject_names", []),
             "signer_identity": entry.get("signer_identity"),
             "signer_identity_match": entry.get("signer_identity_match"),
@@ -65,6 +83,26 @@ def _attach_profile_results(result: Dict[str, Any]) -> Dict[str, Any]:
     profiles = evaluate_profiles(replay_entries)
     result["profiles"] = profiles
     return result
+
+
+def _summarize_replay_rollout(entries: List[Dict[str, Any]]) -> tuple[str, str]:
+    boundary_statuses = [entry.get("boundary_status") for entry in entries if entry.get("boundary_status")]
+    if "invalid" in boundary_statuses:
+        return "invalid", "reservation-backed replay regressed to incompatible legacy linkage"
+    if "degraded" in boundary_statuses:
+        return "degraded", "mixed-regime migration state; replay visibility exists but continuous reservation-backed predecessor proof is unavailable across the full history"
+    return "supported", "continuous reservation-backed predecessor proof is available for the replayed history"
+
+
+def _summarize_replay_provenance(entries: List[Dict[str, Any]]) -> tuple[str, str]:
+    public_history_statuses = [entry.get("public_history_status") for entry in entries if entry.get("public_history_status")]
+    if not entries:
+        return "unavailable", "no immutable replay entries were available"
+    if any(status == "cache-assisted" for status in public_history_statuses):
+        return "unsupported", "historical replay facts depended on process-local cache rather than Rekor-auditable materialization"
+    if any(status in {"unmaterialized", "baseline-missing"} for status in public_history_statuses):
+        return "degraded", "public Rekor materialization did not expose all verifier-critical historical facts"
+    return "public", "historical continuity and baseline origin were derived from publicly materialized replay data"
 
 
 def _entry_value(predicate_entries: List[Dict[str, Any]], key: str) -> Optional[str]:
@@ -303,6 +341,10 @@ def _normalize_evidence_result(
             "subject": immutable_data.get("subject"),
             "entries": replay_entries,
             "derived": derived_replay,
+            "provenance": {
+                "status": _summarize_replay_provenance(replay_entries)[0],
+                "detail": _summarize_replay_provenance(replay_entries)[1],
+            },
         },
         "attested_head": {
             "present": True,
@@ -323,6 +365,7 @@ def _normalize_evidence_result(
             "mr_value": evidence.mr_value,
             "head_event_digest": evidence.head_event_digest,
             "errors": attested_errors,
+            "contract_scope": "current-head binding only",
         },
         "fallback": None,
         "sources": {
@@ -397,14 +440,14 @@ def _normalize_fallback_result(
         "target": {
             "chain_id": chain_id,
             "head_log_id": chain_state.get("head_log_id"),
-            "source": "live-chain-id-fallback",
+            "source": "internal-live-troubleshooting",
         },
         "mode": {
-            "input_mode": "live-fallback",
+            "input_mode": "live-troubleshooting",
             "tee_required": args.require_tee,
             "tee_available": tee_available,
             "verification_mode": verification_mode,
-            "status_detail": status_detail,
+            "status_detail": f"{status_detail}; troubleshooting-only",
             "fallback_used": True,
         },
         "summary": {
@@ -423,12 +466,17 @@ def _normalize_fallback_result(
             "subject": immutable_data.get("subject"),
             "entries": replay_entries,
             "derived": None,
+            "provenance": {
+                "status": _summarize_replay_provenance(replay_entries)[0],
+                "detail": _summarize_replay_provenance(replay_entries)[1],
+            },
         },
         "attested_head": {
             "present": False,
             "valid": None,
             "matches_replay": None,
             "errors": [],
+            "contract_scope": None,
         },
         "fallback": {
             "reachable": trucon_reachable,
@@ -436,7 +484,7 @@ def _normalize_fallback_result(
             "rtmr_available": trucon_data.get("rtmr_available"),
             "head_mr_value": trucon_data.get("head_mr_value"),
             "entries": trucon_data.get("entries", []),
-            "note": "transitional live TruCon fallback",
+            "note": "explicit internal troubleshooting mode",
         },
         "sources": {
             "immutable_backend": {
@@ -469,6 +517,11 @@ def _render_text(result: Dict[str, Any]) -> str:
         "Replay:",
         f"  immutable_backend: reachable={replay.get('reachable')} success={replay.get('success')} head_log_id={replay.get('head_log_id')}",
     ]
+    rollout_status, rollout_detail = _summarize_replay_rollout(replay.get("entries", []))
+    provenance = replay.get("provenance") or {"status": "unavailable", "detail": "no replay provenance summary available"}
+    lines.append(f"  rollout={rollout_status} {rollout_detail}")
+    lines.append(f"  provenance={provenance.get('status')} {provenance.get('detail')}")
+    lines.append("  trust_sources=public_replay(history, baseline) + exported_evidence(current_head_binding)")
 
     if attested_head.get("present"):
         lines.append("Attested head:")
@@ -477,12 +530,14 @@ def _render_text(result: Dict[str, Any]) -> str:
             f"valid={attested_head.get('valid')} matches_replay={attested_head.get('matches_replay')} "
             f"freshness={attested_head.get('freshness')}"
         )
+        if attested_head.get("contract_scope"):
+            lines.append(f"  contract_scope={attested_head.get('contract_scope')}")
     elif result["mode"].get("fallback_used"):
         lines.append("Attested head:")
-        lines.append("  not used (live fallback mode)")
+        lines.append("  not used (explicit live troubleshooting mode)")
 
     if result["mode"].get("fallback_used"):
-        lines.append("Fallback:")
+        lines.append("Troubleshooting:")
         lines.append(
             "  "
             f"reachable={fallback.get('reachable')} valid={fallback.get('valid')} rtmr_available={fallback.get('rtmr_available')}"
@@ -491,8 +546,24 @@ def _render_text(result: Dict[str, Any]) -> str:
     lines.append("Per-record replay detail:")
 
     for entry in replay.get("entries", []):
+        diagnostic_bits = [
+            f"predecessor_ok={entry.get('predecessor_ok')}",
+            f"predecessor_status={entry.get('predecessor_status')}",
+            f"candidate_count={entry.get('candidate_count')}",
+            f"materialized_candidate_count={entry.get('materialized_candidate_count')}",
+            f"matched_candidate_count={entry.get('matched_candidate_count')}",
+        ]
+        if entry.get("boundary_status") is not None:
+            diagnostic_bits.append(f"boundary_status={entry.get('boundary_status')}")
+        if entry.get("public_history_status") is not None:
+            diagnostic_bits.append(f"public_history_status={entry.get('public_history_status')}")
+        if entry.get("replay_provenance") is not None:
+            diagnostic_bits.append(f"replay_provenance={entry.get('replay_provenance')}")
         lines.append(
-            f"  - index={entry.get('index')} event_id={entry.get('event_id')} event_type={entry.get('event_type')} digest={entry.get('digest')}"
+            "  - "
+            f"index={entry.get('index')} seq={entry.get('sequence_num')} event_id={entry.get('event_id')} "
+            f"event_type={entry.get('event_type')} digest={entry.get('digest')} "
+            + " ".join(diagnostic_bits)
         )
 
     profiles = result.get("profiles") or {}
@@ -593,7 +664,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if not args.chain_id and not args.evidence_path:
-        parser.error("Either a chain_id or --evidence must be provided")
+        parser.error("--evidence is required for supported external verification, or provide chain_id with --troubleshoot-live")
+    if args.chain_id and not args.evidence_path and not args.troubleshoot_live:
+        parser.error("Bare chain_id verification is no longer a supported external path; use --evidence or add --troubleshoot-live")
+    if args.troubleshoot_live and not args.chain_id:
+        parser.error("--troubleshoot-live requires a chain_id")
 
     result = run_verification(args)
     if args.json_output:

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for the latest-state and queue-status summary APIs exposed by TruCon.
+
+## Requirements
 
 ### Requirement: GET /status returns CommitQueueStatus
 The `GET /status` endpoint SHALL return a JSON object with the following fields: `has_queued_records` (bool), `queued_record_count` (int), `next_record_id` (string or null), `submitting_count` (int), `failed_retryable_count` (int), `failed_terminal_count` (int), `total_retry_count` (int). The `has_queued_records` field SHALL be `true` when `queued_record_count > 0`. The `next_record_id` field SHALL contain the `record_id` of the pending record with the lowest `sequence_num` that has `rtmr_extended = true`, or `null` if no such record exists. The `total_retry_count` field SHALL contain the sum of `retry_count` across all records in the commit queue.

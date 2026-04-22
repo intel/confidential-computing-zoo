@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for the two-level digest algorithm used by TruCon for entries and events.
+
+## Requirements
 
 ### Requirement: Entry-level digest computation
 The system SHALL compute a per-entry digest as `SHA384(canonical_json({"key": key, "value": value}))` for each entry in a record, where `value` is a native JSON-compatible object (not a pre-serialized string). `canonical_json()` SHALL recursively serialize nested objects with `sort_keys=True` and `separators=(',', ':')`. The result SHALL be formatted as `"sha384:<96-hex-chars>"`. Entry order is significant — reordering entries SHALL produce a different event digest.

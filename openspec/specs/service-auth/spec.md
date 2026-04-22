@@ -1,3 +1,9 @@
+## Purpose
+
+Define the requirements for authenticating and authorizing internal TruCon callers across tc_api, Docktap, and compatibility paths.
+
+## Requirements
+
 ### Requirement: TruCon token validation middleware
 TruCon SHALL authenticate internal callers before dispatching to endpoint handlers. In the same-machine Phase B model, the primary authentication mechanism SHALL be Linux peer credentials from the shared Unix socket transport. If an HTTP compatibility path remains enabled during migration, that path MAY continue to validate a Bearer token from `TRUCON_SERVICE_TOKEN`.
 

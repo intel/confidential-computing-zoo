@@ -56,3 +56,14 @@ def test_canonicalization_omits_none_fields_and_is_sorted():
     assert '"extensions"' not in serialized
     assert '"head_event_digest"' not in serialized
     assert serialized.index('"chain_id"') < serialized.index('"generated_at"')
+
+
+def test_replay_only_historical_fields_are_rejected_from_evidence_contract():
+    payload = _load_fixture("attested_head_evidence_valid.json")
+    payload["baseline_rtmr"] = "11" * 48
+    payload["prev_event_digest"] = "sha384:" + ("22" * 48)
+
+    with pytest.raises(ValidationError) as excinfo:
+        validate_attested_head_evidence_payload(payload)
+
+    assert "Extra inputs are not permitted" in str(excinfo.value)

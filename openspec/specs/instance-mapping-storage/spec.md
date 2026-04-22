@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for persisting workload instance mapping information alongside commit records.
+
+## Requirements
 
 ### Requirement: CommitRequest accepts optional instance_id
 The TruCon `POST /commit` endpoint SHALL accept an optional `instance_id` field in the `CommitRequest` body. When provided, the value SHALL be stored in the `commit_queue` record alongside other commit metadata.

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for querying workload instance mappings recorded by TruCon.
+
+## Requirements
 
 ### Requirement: List instances for a workload
 TruCon SHALL expose `GET /workloads/{workload_id}/instances` that returns all distinct instances with commit records in the given workload's chain.

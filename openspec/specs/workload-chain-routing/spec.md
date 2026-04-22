@@ -1,3 +1,9 @@
+## Purpose
+
+Define the requirements for routing trusted-log events to workload-specific chains based on workload identity metadata.
+
+## Requirements
+
 ### Requirement: Workload identity extraction from container labels
 Docktap SHALL extract the value of the `io.trucon.workload-id` label from the `docker create` request body when present. The extracted value SHALL be used as the `chain_id` for all lifecycle events associated with that container.
 

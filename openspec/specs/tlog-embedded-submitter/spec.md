@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Define the requirements for TruCon's embedded submit daemon, including lifecycle, retry handling, and ordering guarantees.
+
+## Requirements
 
 ### Requirement: Background thread lifecycle
 The submit daemon SHALL run as a `threading.Thread(daemon=True)` started during TruCon's FastAPI lifespan. The daemon SHALL transition records from `PENDING` to `SUBMITTING` before attempting backend submission. On successful submission, it SHALL transition to `CONFIRMED`. On transient failure, it SHALL transition to `FAILED_RETRYABLE` and increment `retry_count`. When `retry_count` reaches `MAX_RETRIES`, it SHALL transition from `FAILED_RETRYABLE` to `FAILED_TERMINAL`.

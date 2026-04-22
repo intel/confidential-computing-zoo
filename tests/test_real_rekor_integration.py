@@ -352,3 +352,64 @@ def test_public_rekor_lazy_workload_baseline_smoke(real_rekor_trucon_harness):
     assert any(item["key"] == "baseline_rtmr" and item["value"] == "aa" * 48 for item in predicate_entries)
     assert any(item["key"] == "ccel_digest" and isinstance(item["value"], str) for item in predicate_entries)
     assert any(item["key"] == "pub_key" and item["value"].startswith("-----BEGIN PUBLIC KEY-----") for item in predicate_entries)
+
+
+@pytest.mark.integration
+def test_public_rekor_multi_entry_predecessor_proof_uses_candidate_discovery(real_rekor_trucon_harness):
+    """Opt-in smoke test for multi-entry predecessor proof against public Rekor.
+
+    This test clears the adapter's process-local bundle cache before replay so the
+    verified predecessor proof must come from public payload-hash candidate discovery
+    and normalized entry matching rather than cache adjacency alone.
+    """
+
+    identity_token, rekor_url, signer_identity = _require_real_rekor_env()
+    chain_id = f"rekor-predecessor-{uuid.uuid4().hex[:12]}"
+    event_id = f"evt-{uuid.uuid4().hex[:12]}"
+    adapter = SigstoreLogAdapter(rekor_url=rekor_url)
+    client = real_rekor_trucon_harness
+    trucon_app_mod._immutable_log = adapter
+
+    tlog = TrustedLogAPI(immutable_log=adapter)
+    ctx = tlog.init_record(context={"chain_ref": chain_id})
+    tlog.add_entry(ctx.record_id, Entry(key="operation_result", value="success"))
+    tlog.add_entry(ctx.record_id, Entry(key="timestamp_hint", value=datetime.now(timezone.utc).isoformat()))
+
+    with patch("tc_api.tlog_client.request_json", side_effect=_request_json_via_testclient(client)):
+        commit_result = tlog.commit_record(
+            ctx.record_id,
+            event_type="launch",
+            event_id=event_id,
+            commit_options={"identity_token": identity_token},
+        )
+
+    assert commit_result.record_id
+    trucon_app_mod._submit_daemon_tick()
+
+    records = trucon_db_mod.get_chain_records(chain_id, db_path=client.app.state.test_db_path)
+    assert [record["sequence_num"] for record in records] == [1, 2]
+    head_record = records[1]
+    assert head_record["event_id"] == event_id
+    assert head_record["status"] == "CONFIRMED"
+    assert isinstance(head_record["log_id"], str) and head_record["log_id"]
+
+    SigstoreLogAdapter._bundle_entry_cache.clear()
+    replay_adapter = SigstoreLogAdapter(rekor_url=rekor_url)
+    replay_tlog = TrustedLogAPI(immutable_log=replay_adapter)
+
+    verify_policy: Dict[str, Any] = {"chain_id": chain_id, "expected_entry_count": 1}
+    if signer_identity:
+        verify_policy["signer_identity"] = signer_identity
+
+    verify_result = replay_tlog.verify_record(head_record["log_id"], policy=verify_policy)
+
+    assert verify_result.success is True, verify_result.errors
+    assert verify_result.details["chain_id"] == chain_id
+    assert verify_result.details["entry_count"] == 1
+    entry = verify_result.details["entries"][0]
+    assert entry["event_id"] == event_id
+    assert entry["predecessor_ok"] is True
+    assert entry["predecessor_status"] == "proven"
+    assert entry["candidate_count"] >= 1
+    assert entry["materialized_candidate_count"] >= 1
+    assert entry["matched_candidate_count"] == 1

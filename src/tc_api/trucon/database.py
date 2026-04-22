@@ -38,6 +38,9 @@ def _migrate_legacy_schema(conn: sqlite3.Connection):
         'rtmr_extended': 'BOOLEAN DEFAULT NULL',
         'log_id': 'TEXT',
         'prev_log_id': 'TEXT',
+        'prev_event_digest': 'TEXT',
+        'prev_lookup_hash': 'TEXT',
+        'intent_token': 'TEXT',
         'mr_value': 'TEXT',
         'sequence_num': 'INTEGER DEFAULT 0',
         'confirmed_at': 'TEXT',
@@ -66,6 +69,24 @@ def _migrate_legacy_schema(conn: sqlite3.Connection):
     except sqlite3.OperationalError:
         pass  # Index already exists
 
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS commit_intents (
+            intent_token TEXT PRIMARY KEY,
+            chain_id TEXT NOT NULL,
+            idempotency_key TEXT,
+            status TEXT NOT NULL,
+            sequence_num INTEGER NOT NULL,
+            prev_event_digest TEXT,
+            prev_lookup_hash TEXT,
+            record_id TEXT,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_intents_chain_status ON commit_intents(chain_id, status)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_intents_chain_idem ON commit_intents(chain_id, idempotency_key)')
+
     conn.commit()
 
 def init_db(db_path: str = DB_PATH):
@@ -89,6 +110,9 @@ def init_db(db_path: str = DB_PATH):
                 rtmr_extended BOOLEAN DEFAULT FALSE,
                 log_id TEXT,
                 prev_log_id TEXT,
+                prev_event_digest TEXT,
+                prev_lookup_hash TEXT,
+                intent_token TEXT,
                 mr_value TEXT,
                 sequence_num INTEGER NOT NULL,
                 retry_count INTEGER DEFAULT 0,
@@ -100,6 +124,24 @@ def init_db(db_path: str = DB_PATH):
                 updated_at TEXT NOT NULL
             )
         ''')
+
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS commit_intents (
+                intent_token TEXT PRIMARY KEY,
+                chain_id TEXT NOT NULL,
+                idempotency_key TEXT,
+                status TEXT NOT NULL,
+                sequence_num INTEGER NOT NULL,
+                prev_event_digest TEXT,
+                prev_lookup_hash TEXT,
+                record_id TEXT,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_intents_chain_status ON commit_intents(chain_id, status)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_intents_chain_idem ON commit_intents(chain_id, idempotency_key)')
 
         # Composite index for instance mapping queries
         conn.execute('CREATE INDEX IF NOT EXISTS idx_commit_queue_instance ON commit_queue(chain_id, instance_id)')
@@ -131,6 +173,9 @@ def insert_record(record_id: str, event_id: Optional[str], payload: Dict[str, An
                    chain_id: str = 'default', rtmr_extended: bool = False,
                    prev_log_id: Optional[str] = None, mr_value: Optional[str] = None,
                    sequence_num: int = 0, event_digest: Optional[str] = None,
+                   prev_event_digest: Optional[str] = None,
+                   prev_lookup_hash: Optional[str] = None,
+                   intent_token: Optional[str] = None,
                    idempotency_key: Optional[str] = None,
                    instance_id: Optional[str] = None,
                    db_path: str = DB_PATH):
@@ -139,9 +184,10 @@ def insert_record(record_id: str, event_id: Optional[str], payload: Dict[str, An
     with get_db_connection(db_path) as conn:
         conn.execute('''
             INSERT INTO commit_queue (record_id, event_id, chain_id, payload, status,
-                                      rtmr_extended, prev_log_id, mr_value, sequence_num,
-                                      event_digest, idempotency_key, instance_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      rtmr_extended, prev_log_id, prev_event_digest, prev_lookup_hash,
+                                      intent_token, mr_value, sequence_num, event_digest,
+                                      idempotency_key, instance_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             record_id, 
             event_id,
@@ -150,6 +196,9 @@ def insert_record(record_id: str, event_id: Optional[str], payload: Dict[str, An
             status,
             rtmr_extended,
             prev_log_id,
+            prev_event_digest,
+            prev_lookup_hash,
+            intent_token,
             mr_value,
             sequence_num,
             event_digest,
@@ -168,6 +217,120 @@ def get_record_by_idempotency_key(idempotency_key: str, chain_id: str, db_path: 
             (idempotency_key, chain_id)
         )
         return cursor.fetchone()
+
+
+def get_record_by_id(record_id: str, db_path: str = DB_PATH) -> Optional[sqlite3.Row]:
+    """Fetch a queue record by primary key."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute('SELECT * FROM commit_queue WHERE record_id = ?', (record_id,))
+        return cursor.fetchone()
+
+
+def create_commit_intent(
+    intent_token: str,
+    chain_id: str,
+    sequence_num: int,
+    expires_at: str,
+    prev_event_digest: Optional[str] = None,
+    prev_lookup_hash: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+    status: str = 'ACTIVE',
+    db_path: str = DB_PATH,
+):
+    """Persist a new commit intent reservation."""
+    now = datetime.utcnow().isoformat()
+    with get_db_connection(db_path) as conn:
+        conn.execute(
+            '''
+            INSERT INTO commit_intents (
+                intent_token, chain_id, idempotency_key, status, sequence_num,
+                prev_event_digest, prev_lookup_hash, record_id, expires_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+            ''',
+            (
+                intent_token,
+                chain_id,
+                idempotency_key,
+                status,
+                sequence_num,
+                prev_event_digest,
+                prev_lookup_hash,
+                expires_at,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+
+
+def get_commit_intent_by_token(intent_token: str, db_path: str = DB_PATH) -> Optional[sqlite3.Row]:
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute('SELECT * FROM commit_intents WHERE intent_token = ?', (intent_token,))
+        return cursor.fetchone()
+
+
+def get_commit_intent_by_idempotency_key(chain_id: str, idempotency_key: str, db_path: str = DB_PATH) -> Optional[sqlite3.Row]:
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute(
+            '''
+            SELECT * FROM commit_intents
+            WHERE chain_id = ? AND idempotency_key = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            ''',
+            (chain_id, idempotency_key),
+        )
+        return cursor.fetchone()
+
+
+def get_active_commit_intent_for_chain(chain_id: str, db_path: str = DB_PATH) -> Optional[sqlite3.Row]:
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute(
+            '''
+            SELECT * FROM commit_intents
+            WHERE chain_id = ? AND status = 'ACTIVE'
+            ORDER BY created_at DESC
+            LIMIT 1
+            ''',
+            (chain_id,),
+        )
+        return cursor.fetchone()
+
+
+def update_commit_intent_status(
+    intent_token: str,
+    status: str,
+    record_id: Optional[str] = None,
+    db_path: str = DB_PATH,
+):
+    with get_db_connection(db_path) as conn:
+        conn.execute(
+            '''
+            UPDATE commit_intents
+            SET status = ?,
+                record_id = COALESCE(?, record_id),
+                updated_at = ?
+            WHERE intent_token = ?
+            ''',
+            (status, record_id, datetime.utcnow().isoformat(), intent_token),
+        )
+        conn.commit()
+
+
+def expire_active_commit_intents(now_iso: Optional[str] = None, db_path: str = DB_PATH) -> int:
+    effective_now = now_iso or datetime.utcnow().isoformat()
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute(
+            '''
+            UPDATE commit_intents
+            SET status = 'EXPIRED', updated_at = ?
+            WHERE status = 'ACTIVE' AND expires_at < ?
+            ''',
+            (effective_now, effective_now),
+        )
+        conn.commit()
+        return cursor.rowcount
 
 
 def update_status(record_id: str, status: str, db_path: str = DB_PATH):

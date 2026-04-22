@@ -4,8 +4,6 @@ Define the canonical verification profiles for audited build, publish, launch, a
 
 ## Requirements
 
-## ADDED Requirements
-
 ### Requirement: Canonical verification profiles for audited flows
 The system SHALL define canonical verification profiles for `build`, `publish`, `launch`, and `docktap-runtime`. Each profile SHALL specify its required fields, hard-fail conditions, warning-only omissions, and verdict semantics.
 

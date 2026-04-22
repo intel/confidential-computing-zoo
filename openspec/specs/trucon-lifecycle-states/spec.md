@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for TruCon submit lifecycle states and the allowed transitions between them.
+
+## Requirements
 
 ### Requirement: Six-state lifecycle enum
 The `SubmitStatus` enum SHALL define exactly six values: `OPEN`, `PENDING`, `SUBMITTING`, `CONFIRMED`, `FAILED_RETRYABLE`, `FAILED_TERMINAL`. The enum values SHALL be lowercase strings matching the state name (e.g., `"pending"`, `"failed_retryable"`).

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for preserving native JSON-compatible entry values throughout trusted-log recording and digest computation.
+
+## Requirements
 
 ### Requirement: Entry value accepts any JSON-compatible type
 The `Entry` dataclass SHALL define `value` as accepting any JSON-compatible Python type: `str`, `dict`, `list`, `int`, `float`, `bool`, or `None`. Callers MUST NOT wrap values in `json.dumps()` before passing them to `Entry`.

@@ -311,21 +311,34 @@ class TestClientIdempotencyKeyGeneration:
 
         captured_payload = {}
 
-        def mock_post(self_inner, bundle_json, chain_id, event_digest, event_id, idempotency_key=None, instance_id=None):
+        def mock_reserve(self_inner, chain_id, idempotency_key=None, is_baseline=False):
+            captured_payload["idempotency_key"] = idempotency_key
+            return {
+                "intent_token": "intent-1",
+                "chain_id": chain_id,
+                "sequence_num": 1,
+                "prev_event_digest": None,
+                "prev_lookup_hash": None,
+                "committed": False,
+            }
+
+        def mock_post(self_inner, bundle_json, chain_id, event_digest, event_id, intent_token=None, idempotency_key=None, instance_id=None, identity_token=None):
             captured_payload["idempotency_key"] = idempotency_key
             return {"record_id": "rec-mock", "sequence_num": 1, "mr_value": None, "prev_mr_value": None}
 
-        with patch.object(TrustedLogAPI, '_post_to_trucon', mock_post), \
-             patch('tc_api.tlog_client.SigningContext') as mock_ctx, \
+        with patch.object(TrustedLogAPI, '_reserve_commit_intent', mock_reserve), \
+             patch.object(TrustedLogAPI, '_post_to_trucon', mock_post), \
+             patch('tc_api.tlog_client.build_signing_context') as mock_build_ctx, \
              patch('tc_api.tlog_client.IdentityToken') as mock_id_token:
-            mock_id_token.return_value = MagicMock()
+            mock_id_token.return_value = MagicMock(_identity="tester@example.com")
             mock_signer = MagicMock()
             mock_bundle = MagicMock()
             mock_bundle.to_json.return_value = '{"mock": "bundle"}'
             mock_signer.sign_dsse.return_value = mock_bundle
-            mock_ctx.production.return_value._rekor = None
-            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
-            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+            mock_ctx = MagicMock()
+            mock_ctx.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_ctx.signer.return_value.__exit__ = lambda s, *a: None
+            mock_build_ctx.return_value = mock_ctx
 
             result = api.commit_record(
                 record_id=ctx.record_id,
@@ -348,21 +361,34 @@ class TestClientIdempotencyKeyGeneration:
 
         captured_payload = {}
 
-        def mock_post(self_inner, bundle_json, chain_id, event_digest, event_id, idempotency_key=None, instance_id=None):
+        def mock_reserve(self_inner, chain_id, idempotency_key=None, is_baseline=False):
+            captured_payload["idempotency_key"] = idempotency_key
+            return {
+                "intent_token": "intent-1",
+                "chain_id": chain_id,
+                "sequence_num": 1,
+                "prev_event_digest": None,
+                "prev_lookup_hash": None,
+                "committed": False,
+            }
+
+        def mock_post(self_inner, bundle_json, chain_id, event_digest, event_id, intent_token=None, idempotency_key=None, instance_id=None, identity_token=None):
             captured_payload["idempotency_key"] = idempotency_key
             return {"record_id": "rec-mock", "sequence_num": 1, "mr_value": None, "prev_mr_value": None}
 
-        with patch.object(TrustedLogAPI, '_post_to_trucon', mock_post), \
-             patch('tc_api.tlog_client.SigningContext') as mock_ctx, \
+        with patch.object(TrustedLogAPI, '_reserve_commit_intent', mock_reserve), \
+             patch.object(TrustedLogAPI, '_post_to_trucon', mock_post), \
+             patch('tc_api.tlog_client.build_signing_context') as mock_build_ctx, \
              patch('tc_api.tlog_client.IdentityToken') as mock_id_token:
-            mock_id_token.return_value = MagicMock()
+            mock_id_token.return_value = MagicMock(_identity="tester@example.com")
             mock_signer = MagicMock()
             mock_bundle = MagicMock()
             mock_bundle.to_json.return_value = '{"mock": "bundle"}'
             mock_signer.sign_dsse.return_value = mock_bundle
-            mock_ctx.production.return_value._rekor = None
-            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
-            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+            mock_ctx = MagicMock()
+            mock_ctx.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_ctx.signer.return_value.__exit__ = lambda s, *a: None
+            mock_build_ctx.return_value = mock_ctx
 
             result = api.commit_record(
                 record_id=ctx.record_id,

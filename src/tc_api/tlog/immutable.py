@@ -27,3 +27,12 @@ class ImmutableLogAdapter(ABC):
         Traverse backward through the log chain.
         """
         pass
+
+    def find_entries_by_payload_hash(self, payload_hash: str) -> list[Any]:
+        """
+        Discover immutable-log entries whose DSSE payload hash matches the given value.
+
+        Implementations may use backend-native index APIs or local caches, but callers
+        treat the results as predecessor candidates rather than protocol truth.
+        """
+        return []

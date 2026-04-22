@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for launching Docktap in the bare-metal deployment flow and managing its process lifecycle alongside TruCon and tc_api.
+
+## Requirements
 
 ### Requirement: Docktap launched as background process
 `start.sh` SHALL launch Docktap as a background process after TruCon and before tc_api, using the same pattern as TruCon (background `&`, PID capture, readiness check).

@@ -2,6 +2,8 @@ import base64
 import json
 import logging
 from typing import Any, Optional, Tuple
+import urllib.error
+import urllib.request
 
 import rekor_types
 from cryptography.hazmat.primitives.serialization import Encoding
@@ -142,6 +144,7 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
             signatures[0]["verifier"] = cert_b64
 
         entry_dict["body"] = body
+        entry_dict["_tc_replay_provenance"] = "cache-assisted"
         if log_id.isdigit():
             entry_dict["log_index"] = int(log_id)
             entry_dict["logIndex"] = int(log_id)
@@ -159,6 +162,40 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
     @classmethod
     def _get_cached_entry(cls, rekor_url: str, log_id: str) -> Optional[dict[str, Any]]:
         return cls._bundle_entry_cache.get(cls._cache_key(rekor_url, log_id))
+
+    @staticmethod
+    def _clone_cached_entry(entry: dict[str, Any]) -> dict[str, Any]:
+        return json.loads(json.dumps(entry))
+
+    @staticmethod
+    def _payload_hash_from_entry(entry: Any) -> Optional[str]:
+        body = entry.get("body", {}) if isinstance(entry, dict) else {}
+        if isinstance(body, str):
+            try:
+                body = json.loads(base64.b64decode(body).decode("utf-8"))
+            except Exception:
+                body = {}
+        if not isinstance(body, dict):
+            return None
+        payload_b64 = body.get("spec", {}).get("payload")
+        if not isinstance(payload_b64, str):
+            return None
+        try:
+            payload_bytes = base64.b64decode(payload_b64)
+        except Exception:
+            return None
+        import hashlib
+
+        return "sha256:" + hashlib.sha256(payload_bytes).hexdigest()
+
+    @classmethod
+    def _find_cached_entry_by_payload_hash(cls, rekor_url: str, payload_hash: str) -> Optional[dict[str, Any]]:
+        for (cached_rekor_url, _log_id), entry in cls._bundle_entry_cache.items():
+            if cached_rekor_url != rekor_url:
+                continue
+            if cls._payload_hash_from_entry(entry) == payload_hash:
+                return entry
+        return None
         
     def submit_bundle(self, bundle: Bundle, prev_log_id: Optional[str] = None) -> Tuple[str, str, Any]:
         try:
@@ -200,36 +237,90 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
 
     def get_entry(self, log_id: str) -> Any:
         try:
-            cached_entry = self._get_cached_entry(self.rekor_url, log_id)
-            if cached_entry is not None:
-                return cached_entry
-
             from sigstore._internal.rekor.client import RekorClient
             client = RekorClient(self.rekor_url)
             entry = client.log.entries.get(**self._parse_log_reference(log_id))
             return self._entry_to_dict(entry)
         except Exception as e:
+            cached_entry = self._get_cached_entry(self.rekor_url, log_id)
+            if cached_entry is not None:
+                logger.warning(
+                    "Falling back to process-local cached Rekor entry for %s after public fetch failure: %s",
+                    log_id,
+                    e,
+                )
+                return self._clone_cached_entry(cached_entry)
             logger.error(f"Failed to get entry {log_id} from Rekor: {e}")
             raise
+
+    def find_entries_by_payload_hash(self, payload_hash: str) -> list[Any]:
+        results: list[Any] = []
+        seen_ids: set[str] = set()
+
+        request_body = json.dumps({"hash": payload_hash}).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.rekor_url.rstrip('/')}/api/v1/index/retrieve",
+            data=request_body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        public_lookup_failed = False
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                response_data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            logger.warning("Rekor payload-hash lookup failed for %s: HTTP %s", payload_hash, exc.code)
+            public_lookup_failed = True
+            response_data = []
+        except Exception as exc:
+            logger.warning("Rekor payload-hash lookup failed for %s: %s", payload_hash, exc)
+            public_lookup_failed = True
+            response_data = []
+
+        if isinstance(response_data, dict):
+            candidate_ids = response_data.get("entries") or response_data.get("ids") or response_data.get("uuids") or []
+        elif isinstance(response_data, list):
+            candidate_ids = response_data
+        else:
+            candidate_ids = []
+
+        for candidate_id in candidate_ids:
+            if not isinstance(candidate_id, (str, int)):
+                continue
+            candidate_key = str(candidate_id)
+            if candidate_key in seen_ids:
+                continue
+            try:
+                entry = self.get_entry(candidate_key)
+            except Exception as exc:
+                logger.warning("Failed to materialize Rekor candidate %s for %s: %s", candidate_key, payload_hash, exc)
+                continue
+            seen_ids.add(candidate_key)
+            results.append(entry)
+
+        if results:
+            return results
+
+        cached_entry = self._find_cached_entry_by_payload_hash(self.rekor_url, payload_hash)
+        if cached_entry is not None:
+            if public_lookup_failed or not candidate_ids:
+                results.append(self._clone_cached_entry(cached_entry))
+
+        return results
 
     def traverse(self, end_log_id: str, count: int = 10) -> list[Any]:
         results = []
         current_id = end_log_id
         
         try:
-            from sigstore._internal.rekor.client import RekorClient
-            client = RekorClient(self.rekor_url)
-            
             for _ in range(count):
                 if not current_id:
                     break
 
-                entry = self._get_cached_entry(self.rekor_url, current_id)
-                if entry is None:
-                    entry = client.log.entries.get(**self._parse_log_reference(current_id))
-                    if not entry:
-                        break
-                    entry = self._entry_to_dict(entry)
+                entry = self.get_entry(current_id)
+                if not entry:
+                    break
 
                 # Older mocked responses may still use the raw {uuid: entry} shape.
                 if isinstance(entry, dict) and "body" not in entry and len(entry) == 1:
@@ -261,6 +352,8 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
                             current_id = predicate.get("prev_log_id")
                         elif "prev_log_id" in payload:
                             current_id = payload.get("prev_log_id")
+                        elif "prev_lookup_hash" in predicate:
+                            current_id = None
                         else:
                             current_id = None
                             

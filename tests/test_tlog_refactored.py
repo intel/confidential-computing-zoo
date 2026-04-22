@@ -50,6 +50,14 @@ def test_tokenless_rekor_push_daemon():
 from tc_api.trucon.adapters.tdx_mr import TdxMRAdapter
 import os
 
+def test_tdx_mr_adapter_detects_real_sysfs_node(tmp_path):
+    d = tmp_path / "measurements"
+    d.mkdir()
+    (d / "rtmr2:sha384").write_bytes(b'\x00' * 48)
+
+    assert TdxMRAdapter.is_available(2, sysfs_base_path=str(d / "rtmr")) is True
+    assert TdxMRAdapter.is_available(1, sysfs_base_path=str(d / "rtmr")) is False
+
 def test_tdx_mr_adapter(tmp_path):
     # Setup mock sysfs
     d = tmp_path / "measurements"

@@ -61,7 +61,7 @@ class RecordContext:
 	record_id: str
 	chain_ref: Optional[str]
 	created_at: datetime
-	prev_log_id: Optional[str] = None
+	idempotency_key: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -106,19 +106,22 @@ class LocalMRAdapter(Protocol):
 
 
 class ImmutableLogAdapter(Protocol):
-	def submit(self, event_log: EventLog, prev_log_id: Optional[str] = None) -> tuple[Optional[str], Literal["confirmed", "pending"], Dict[str, Any]]:
-		"""Return (log_id, status, backend_receipt)."""
+	def submit(self, event_log: EventLog) -> tuple[Optional[str], Literal["confirmed", "pending"], Dict[str, Any]]:
+		"""Return (log_id, status, backend_receipt). Backend linkage metadata is not protocol truth."""
 
 	def get(self, log_id: str) -> tuple[EventLog, Dict[str, Any]]:
 		"""Return (event_log, metadata)."""
 
 	def traverse(self, start_log_id: str, direction: Literal["backward", "forward"], max_hops: Optional[int] = None) -> List[EventLog]:
 		"""Return ordered records from chain traversal."""
+
+	def find_entries_by_payload_hash(self, payload_hash: str) -> List[Any]:
+		"""Return predecessor candidates discovered by immutable-backend payload hash lookup."""
 ```
 
 ## Trusted Log API Class
 
-`TrustedLogAPI` is the **tc_api-side** client. It performs DSSE signing locally using the caller's OIDC identity token and delegates sequencing (RTMR extend + queue INSERT + chain state) to the TruCon via REST.
+`TrustedLogAPI` is the **tc_api-side** client. It reserves predecessor contracts, performs DSSE signing locally using the caller's OIDC identity token, and delegates sequencing (validation + RTMR extend + queue INSERT + chain state) to the TruCon via REST.
 
 ```python
 from typing import Any, Dict, Optional
@@ -129,7 +132,7 @@ class TrustedLogAPI:
 	             trucon_url: str = "http://127.0.0.1:8001") -> None:
 		...
 
-	def init_record(self, prev_log_id: Optional[str] = None, context: Optional[Dict[str, Any]] = None) -> RecordContext:
+	def init_record(self, context: Optional[Dict[str, Any]] = None) -> RecordContext:
 		...
 
 	def add_entry(self, record_id: str, entry: Entry) -> int:
@@ -142,7 +145,7 @@ class TrustedLogAPI:
 		event_id: Optional[str] = None,
 		commit_options: Optional[Dict[str, Any]] = None,
 	) -> CommitResult:
-		"""Sign the DSSE envelope locally and POST the bundle to TruCon for sequencing."""
+		"""Reserve predecessor state, sign the DSSE envelope locally, and POST the signed bundle plus intent token to TruCon for sequencing."""
 
 	def get_commit_queue_status(self, scope: Optional[str] = None) -> CommitQueueStatus:
 		"""Query the TruCon GET /status endpoint for queue statistics."""
@@ -151,7 +154,7 @@ class TrustedLogAPI:
 		"""Return the committed EventLog resolved by immutable log UUID/log ID."""
 
 	def verify_record(self, target: str, policy: Optional[Dict[str, Any]] = None) -> VerificationResult:
-		"""Verify a target immutable-log chain tail using policy such as chain_id and signer identity."""
+		"""Verify a target immutable-log chain tail using policy such as chain_id and signer identity, returning structured predecessor diagnostics."""
 		...
 ```
 
@@ -159,12 +162,17 @@ Note: `submit_record()` and `get_latest_state()` are no longer exposed on the tc
 
 ## TrustedLogAPI Behavioral Requirements
 
-- `commit_record()` signs a DSSE envelope locally (without `prev_log_id` in the predicate), then POSTs the signed bundle to the TruCon sequencer. The TruCon serializes RTMR extend + SQLite INSERT + chain state update under a `threading.Lock()`.
+- `commit_record()` now follows `reserve -> sign -> commit(intent_token)`: it first reserves a durable predecessor contract from TruCon, signs a DSSE envelope containing `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`, then POSTs the signed bundle plus `intent_token` to the TruCon sequencer. The TruCon serializes validation, RTMR extend, SQLite INSERT, and chain state update under a `threading.Lock()`.
 - Submission to Rekor is handled by the embedded daemon inside the TruCon. Callers do not invoke submission manually.
 - `get_commit_queue_status()` queries the TruCon `GET /status` endpoint for aggregate queue statistics (total pending, confirmed, failed counts per chain).
 - `get_event_log(log_uuid)` resolves a committed immutable event by backend log identifier so callers can replay or inspect the exact persisted payload.
 - `verify_record()` verifies immutable-backend entries starting from a confirmed tail log identifier. Callers can provide policy such as `chain_id` and `signer_identity`, and the result includes structured per-entry detail for operator tooling.
 - `TrustedLogAPI` (tc_api-side) is stateless and safe for multi-worker deployment. All ordering and state are managed by the single-instance TruCon.
+
+For the current real-Rekor smoke path, two implementation limitations remain important for operators and tests:
+
+- replay treats Rekor `payloadHash(sha256)` lookup as predecessor candidate discovery only, not protocol truth
+- opt-in real-Rekor coverage now distinguishes public replay proof from cache-assisted fallback; same-process cache may still help local retrieval, but it no longer counts as publicly auditable replay truth
 
 For operator-facing workflows, prefer the package CLI:
 
@@ -172,7 +180,13 @@ For operator-facing workflows, prefer the package CLI:
 tc-verify --evidence evidence.json
 ```
 
-In the preferred flow, the CLI derives `chain_id` and `head_log_id` from an exported attested-head evidence package, performs immutable-backend replay from that attested tail, and validates that replay reaches the exported head. The legacy `tc-verify <chain_id>` form remains available only as a transitional live TruCon fallback.
+In the current CLI contract, the CLI derives `chain_id` and `head_log_id` from an exported attested-head evidence package, performs immutable-backend replay from that attested tail, and validates that replay reaches the exported head. Bare `tc-verify <chain_id>` is no longer a supported external verification path; live TruCon-backed verification requires an explicit troubleshooting selector and is labeled as internal diagnostics rather than as the operator verifier contract.
+
+The CLI also reports the provenance boundary explicitly:
+
+- public replay covers history, predecessor continuity, and Event Log 0 baseline origin;
+- exported evidence covers current-head quote binding only;
+- cache-assisted replay is surfaced as degraded or unsupported rather than silently reported as public proof.
 
 For producer-side attested evidence export, TruCon also exposes:
 
@@ -228,10 +242,13 @@ The TruCon is a single-instance FastAPI service (started with `--workers 1`) tha
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/commit` | POST | Accept a signed DSSE bundle. Serialize RTMR extend + INSERT + chain state under lock. Return `{record_id, chain_id, sequence_num, mr_value, status}`. |
+| `/commit-intents/reserve` | POST | Allocate a durable commit intent with `sequence_num`, `prev_event_digest`, `prev_lookup_hash`, and `intent_token`. Returns an existing intent or committed result for the same idempotency key. |
+| `/commit` | POST | Accept a signed DSSE bundle and optional `intent_token`. Validate the signed bundle against the reserved contract, then serialize RTMR extend + INSERT + chain state under lock. Return `{record_id, chain_id, sequence_num, mr_value, status}`. |
+| `/init-chain/{chain_id}/baseline` | GET | Return Event Log 0 baseline inputs (`rtmr_value`, `ccel_digest`, `init_token`) before signing. |
+| `/init-chain` | POST | Consume a reserved baseline intent plus `init_token` and insert Event Log 0 as `sequence_num=1`. |
 | `/chain-state/{chain_id}` | GET | Return current chain state: `{chain_id, head_record_id, head_log_id, sequence_num, mr_value}`. |
 | `/evidence/{chain_id}` | GET | Return a v1 attested-head evidence package for the chain's latest confirmed public head. Fails if no confirmed immutable-log head exists or if quote acquisition / binding validation fails. |
-| `/verify-chain/{chain_id}` | GET | Return local chain verification details: sequence continuity, RTMR checks, Rekor confirmation state, and non-TEE `prev_log_id` fallback diagnostics. |
+| `/verify-chain/{chain_id}` | GET | Return local chain verification details: sequence continuity, RTMR checks, Rekor confirmation state, and signed predecessor diagnostics exposed as `predecessor_ok`, `predecessor_status`, `prev_event_digest`, `prev_lookup_hash`, `candidate_count`, and related pipeline counts. |
 | `/status` | GET | Return aggregate queue statistics: total pending, confirmed, and failed counts per chain. |
 
 See `src/tc_api/trucon/app.py` for Pydantic request/response models (`CommitRequest`, `CommitResponse`, `ChainStateResponse`, `CommitQueueStatusResponse`, `ChainVerificationResponse`).
@@ -244,7 +261,7 @@ ctx = trusted_log.init_record()
 trusted_log.add_entry(ctx.record_id, Entry(key="docker-pull", value=image_ref))
 trusted_log.add_entry(ctx.record_id, Entry(key="verify-sbom", value={"digest": sbom_digest, "format": "spdx"}))
 
-# Signs DSSE locally, POSTs to TruCon which sequences (RTMR extend + queue INSERT)
+# Reserves predecessor contract, signs DSSE locally, POSTs to TruCon which validates and sequences (RTMR extend + queue INSERT)
 commit = trusted_log.commit_record(ctx.record_id, event_type="launch-container")
 # commit.queue_status == SubmitStatus.PENDING
 # commit.mr_value contains the extended RTMR value
@@ -262,12 +279,14 @@ event_log = trusted_log.get_event_log(log_uuid="log-uuid-example")
 verify = trusted_log.verify_record(target="head_log_id_value", policy={"chain_id": "default"})
 ```
 
+The preferred operator-facing surface remains `tc-verify --evidence ...`; direct `verify_record()` usage is best understood as the library-level replay primitive beneath that CLI flow.
+
 ## Compatibility Rules
 
 - Callers depend on `TrustedLogAPI` and Protocols, not concrete backend classes.
 - New backends must satisfy the same adapter Protocols.
 - `get_event_log(log_uuid)` should resolve the immutable backend identifier exposed by the committed log, whether the backend calls it `log_id`, `uuid`, or `global_id`.
-- `verify_record()` should support replay-based verification of committed immutable event logs, including structured per-entry detail, digest recomputation, and chain-link validation within the immutable backend's scope.
+- `verify_record()` should support replay-based verification of committed immutable event logs, including structured per-entry detail, digest recomputation, signed predecessor validation using `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`, and machine-readable predecessor verdicts such as `origin`, `proven`, `missing`, `ambiguous`, `unverifiable`, `lookup_failed`, and `decode_failed`.
 - Queue state transitions (pending → confirmed / failed) are managed internally by the embedded submit daemon in the TruCon. Callers never drive submission.
 - `TrustedLogAPI` (tc_api-side) is stateless. All sequencing state lives in the TruCon's SQLite database and in-memory chain state.
 - The TruCon must run as a single instance (`--workers 1`) to guarantee lock-based serialization.

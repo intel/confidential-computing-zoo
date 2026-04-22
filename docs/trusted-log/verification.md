@@ -58,7 +58,7 @@ In the current repository, `tc-verify` is packaged together with `tc-api`, but i
 5. **Internal and external interfaces are distinct**
    TruCon internal APIs are operational control surfaces; they are not the final external verifier contract.
 
-For the current repository implementation, one practical nuance matters: a Sigstore bundle produced by the live signing path can contain richer DSSE payload material than a later raw Rekor readback alone exposes in directly normalized form. The verifier therefore prefers bundle-derived payload content when it is available from the producer side or from same-process replay helpers, while still treating Rekor inclusion, log identity, and signer certificate provenance as authoritative.
+For the current repository implementation, one practical nuance matters: a Sigstore bundle produced by the live signing path can contain richer DSSE payload material than a later raw Rekor readback alone exposes in directly normalized form. The verifier may use bundle-derived or cached payload material as a local retrieval aid, but it no longer treats that cache-assisted reconstruction as public proof truth. Historical continuity and Event Log 0 origin count as publicly verified only when those facts can be materialized from Rekor-auditable entry data.
 
 ## Chain Concepts
 
@@ -185,6 +185,8 @@ In particular, v1 evidence packages do not need to embed:
 
 Those fields remain part of Rekor-backed epoch replay. Event Log 0 answers where the chain epoch began; attested head evidence answers which public head the current CVM is endorsing now.
 
+The same boundary applies to predecessor continuity: exported evidence does not replace the signed predecessor contract carried in replayed immutable entries, and optional evidence extensions must not be interpreted as a substitute for publicly replayable history.
+
 ### Export Surface
 
 The current producer-side export surface is a strict read-only TruCon endpoint:
@@ -213,12 +215,12 @@ The preferred long-term inputs for `tc-verify` are:
 
 ### Transitional Inputs
 
-The current implementation prefers exported evidence as the primary operator input and retains live TruCon APIs only as fallback inputs for tightly coupled or in-CVM workflows:
+The current implementation treats exported evidence as the supported external operator input. Live TruCon APIs are retained only as explicit internal troubleshooting inputs for tightly coupled or in-CVM workflows:
 
 - `GET /chain-state/{chain_id}`
 - `GET /verify-chain/{chain_id}`
 
-`GET /evidence/{chain_id}` is no longer just a producer-side bridge in the abstract design; it is the concrete producer surface used to obtain the preferred v1 evidence package. `GET /chain-state/{chain_id}` and `GET /verify-chain/{chain_id}` remain transitional operational inputs and should not be treated as the final external verifier contract.
+`GET /evidence/{chain_id}` is no longer just a producer-side bridge in the abstract design; it is the concrete producer surface used to obtain the preferred v1 evidence package. `GET /chain-state/{chain_id}` and `GET /verify-chain/{chain_id}` remain internal operational inputs and should not be treated as the final external verifier contract or a normal operator workflow.
 
 ## Verification Flow
 
@@ -233,6 +235,12 @@ The intended external verification flow is:
 7. Validate that the evidence package's `mr_value` is consistent with the quote-backed TEE state.
 8. Return a per-flow verdict and supporting diagnostics.
 
+Operator output should keep provenance explicit:
+
+- `replay.provenance=public` means the verifier recovered the required historical facts from public immutable replay material;
+- `replay.provenance=degraded` means public materialization did not expose every verifier-critical historical fact;
+- `replay.provenance=unsupported` means replay depended on process-local cache or another non-public reconstruction path.
+
 ```text
 Rekor chain replay
       |
@@ -245,6 +253,38 @@ match exported attested head evidence
       v
 operator verdict
 ```
+
+## Operator Result Vocabulary
+
+`tc-verify` should keep three result layers distinct:
+
+- replay outcome: whether immutable-backend replay and signed predecessor continuity succeeded
+- attested-head outcome: whether exported evidence validly binds the current public head to current TEE state
+- profile outcome: whether build, publish, launch, or runtime semantics satisfy operator policy
+
+For replayable records, operator-facing output should preserve the machine-readable predecessor vocabulary already used by immutable replay and TruCon verification:
+
+- `origin`
+- `proven`
+- `missing`
+- `ambiguous`
+- `unverifiable`
+- `lookup_failed`
+- `decode_failed`
+
+These predecessor verdicts should not be collapsed into generic profile failures. They explain why replay continuity did or did not hold before any application-level profile evaluation is applied.
+
+For mixed replay regimes, operator output should also distinguish degraded replay from invalid replay:
+
+- degraded replay: the verifier has incomplete predecessor-proof coverage across a regime boundary or pending-only state, so it cannot claim full replay proof for that segment
+- invalid replay: the verifier found a concrete contradiction in signed predecessor continuity, digest recomputation, signer policy, or attested-head binding
+
+This distinction matters operationally. Degraded replay means the evidence is incomplete or crosses a migration boundary; invalid replay means the available evidence contradicts the claimed chain state.
+
+For the public Rekor rollout specifically:
+
+- `boundary_status=degraded` means the verifier crossed a legacy-to-reservation migration boundary and can still observe the relevant immutable records, but it cannot claim one continuous reservation-backed predecessor proof across that whole segment.
+- `boundary_status=invalid` means a chain had already entered the reservation-backed predecessor regime and later regressed back to incompatible legacy linkage, so operators should treat the replay result as contradictory rather than merely incomplete.
 
 ## Verification Profiles
 
@@ -265,6 +305,8 @@ Shared verdict states:
 - `failed`
 
 The verifier keeps these profile results separate from structural replay and attested-head outcomes. A chain can replay successfully while one or more application profiles still return `warning`, `incomplete`, or `failed`.
+
+Conversely, a profile may remain `warning` or `incomplete` even when replay predecessor continuity is fully `proven`, and a profile should not be allowed to mask a replay-level `missing`, `ambiguous`, `lookup_failed`, `decode_failed`, or otherwise invalid predecessor result.
 
 ### Build Profile
 

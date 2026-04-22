@@ -1,3 +1,7 @@
+## Purpose
+
+Define the requirements for the trusted-log package layout and the boundaries between shared types, TruCon internals, and tc_api client code.
+
 ## Requirements
 
 ### Requirement: Three-layer package structure

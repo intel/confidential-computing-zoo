@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for running Docktap as an independent service in the Compose deployment model.
+
+## Requirements
 
 ### Requirement: Docktap runs as independent compose service
 The `docker-compose.yml` SHALL define a `docktap` service that uses the same Docker image as `tc-api` and `trucon` with a distinct `command:` override to launch Docktap's `main.py`.

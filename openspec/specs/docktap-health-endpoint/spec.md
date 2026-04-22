@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for Docktap's health endpoint so deployment wiring and operators can verify service readiness.
+
+## Requirements
 
 ### Requirement: HTTP health endpoint on dedicated port
 Docktap SHALL run a lightweight HTTP server on a configurable port (default 8002, via `DOCKTAP_HEALTH_PORT` env var) that serves `GET /healthz`.

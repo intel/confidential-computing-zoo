@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for reading CCEL data and computing the verifier-facing CCEL digest when the platform exposes ACPI CCEL tables.
+
+## Requirements
 
 ### Requirement: CCEL binary reading
 TruCon SHALL read the raw CCEL binary from the ACPI tables path (`/sys/firmware/acpi/tables/CCEL`). If the file does not exist (non-TEE environment or platform without CCEL support), the CCEL data SHALL be treated as absent (null).

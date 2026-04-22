@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the documentation requirements for the repository's two-tier trusted-log architecture.
+
+## Requirements
 
 ### Requirement: Two-tier architecture documentation model
 The project SHALL maintain two tiers of architecture documentation: a top-level `docs/architecture.md` describing system-wide topology and inter-service contracts, and `docs/trusted-log/architecture.md` describing the TruCon and trusted-log module implementation details.

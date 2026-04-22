@@ -10,10 +10,22 @@ logger = logging.getLogger(__name__)
 
 class TdxMRAdapter(LocalMRAdapter):
     """
-    Adapter for Intel TDX RTMRs directly utilizing the TDX Guest driver sysfs path.
+    Adapter for Intel TDX RTMRs via the Linux TDX guest driver's sysfs ABI.
+
+    Userspace does not invoke TDCALL directly. Writing 48 raw digest bytes to
+    the RTMR sysfs node delegates the extend operation to the kernel driver,
+    which performs the underlying TDG.MR.RTMR.EXTEND call.
     """
     def __init__(self, sysfs_base_path: str = "/sys/class/misc/tdx_guest/measurements/rtmr"):
         self.sysfs_base_path = sysfs_base_path
+
+    @classmethod
+    def is_available(
+        cls,
+        index: int,
+        sysfs_base_path: str = "/sys/class/misc/tdx_guest/measurements/rtmr",
+    ) -> bool:
+        return os.path.exists(f"{sysfs_base_path}{index}:sha384")
 
     def _get_path(self, index: int) -> str:
         # Expected pattern: /sys/class/misc/tdx_guest/measurements/rtmr0:sha384
@@ -54,6 +66,7 @@ class TdxMRAdapter(LocalMRAdapter):
             if len(raw_bytes) != 48:
                 raise ValueError(f"TDX RTMR requires exactly 48 bytes (sha384), but got {len(raw_bytes)}")
             
+            # The kernel driver's sysfs write handler performs the real RTMR extend.
             with open(path, "rb+") as f:
                 f.write(raw_bytes)
                 

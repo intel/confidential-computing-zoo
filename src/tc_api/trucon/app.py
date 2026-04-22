@@ -26,13 +26,19 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sigstore.models import Bundle
 
 from .database import (
     DB_PATH,
+    create_commit_intent,
     delete_non_extended_records,
+    expire_active_commit_intents,
+    get_active_commit_intent_for_chain,
     get_all_chain_ids,
     get_chain_records,
     get_chain_state,
+    get_commit_intent_by_idempotency_key,
+    get_commit_intent_by_token,
     get_db_connection,
     get_events_for_instance,
     get_events_for_workload,
@@ -43,12 +49,14 @@ from .database import (
     get_latest_state,
     get_pending_by_chain,
     get_queue_stats,
+    get_record_by_id,
     get_record_by_idempotency_key,
     increment_retry,
     init_db,
     insert_record,
     reset_submitting_to_pending,
     set_status_submitting,
+    update_commit_intent_status,
     update_chain_state,
     update_record_confirmed,
     update_status,
@@ -76,6 +84,79 @@ from .evidence import (
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger("trucon")
+
+INTENT_TTL_SECONDS = int(os.environ.get("TRUCON_INTENT_TTL_SECONDS", "300"))
+
+
+def _extract_bundle_payload(bundle_json: str) -> Dict[str, Any]:
+    bundle = Bundle.from_json(bundle_json)
+    envelope = bundle._dsse_envelope
+    if envelope is None:
+        raise ValueError("Bundle does not contain a DSSE envelope")
+    envelope_json = json.loads(envelope.to_json())
+    payload_b64 = envelope_json.get("payload")
+    if not isinstance(payload_b64, str):
+        raise ValueError("Bundle DSSE envelope is missing payload")
+    return json.loads(base64.b64decode(payload_b64).decode("utf-8"))
+
+
+def _extract_bundle_predicate(bundle_json: str) -> Dict[str, Any]:
+    payload = _extract_bundle_payload(bundle_json)
+    predicate = payload.get("predicate")
+    if not isinstance(predicate, dict):
+        raise ValueError("Bundle DSSE payload is missing predicate")
+    return predicate
+
+
+def _compute_bundle_payload_hash(bundle_json: str) -> str:
+    bundle = Bundle.from_json(bundle_json)
+    envelope = bundle._dsse_envelope
+    if envelope is None:
+        raise ValueError("Bundle does not contain a DSSE envelope")
+    envelope_json = json.loads(envelope.to_json())
+    payload_b64 = envelope_json.get("payload")
+    if not isinstance(payload_b64, str):
+        raise ValueError("Bundle DSSE envelope is missing payload")
+    payload_bytes = base64.b64decode(payload_b64)
+    return "sha256:" + hashlib.sha256(payload_bytes).hexdigest()
+
+
+def _compute_record_lookup_hash(record: Any) -> Optional[str]:
+    payload = record["payload"]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if not isinstance(payload, dict):
+        return None
+    bundle_json = payload.get("bundle")
+    if not isinstance(bundle_json, str):
+        return None
+    try:
+        return _compute_bundle_payload_hash(bundle_json)
+    except Exception:
+        return None
+
+
+def _intent_expired(intent: Any) -> bool:
+    expires_at = intent["expires_at"] if intent and "expires_at" in intent.keys() else None
+    return isinstance(expires_at, str) and expires_at < datetime.utcnow().isoformat()
+
+
+def _intent_response_from_row(intent: Any, committed_record: Optional[Any] = None) -> Dict[str, Any]:
+    response = {
+        "intent_token": intent["intent_token"],
+        "chain_id": intent["chain_id"],
+        "sequence_num": intent["sequence_num"],
+        "prev_event_digest": intent["prev_event_digest"],
+        "prev_lookup_hash": intent["prev_lookup_hash"],
+        "expires_at": intent["expires_at"],
+        "committed": False,
+        "record_id": None,
+    }
+    if committed_record is not None:
+        response["committed"] = True
+        response["record_id"] = committed_record["record_id"]
+        response["sequence_num"] = committed_record["sequence_num"]
+    return response
 
 
 def _create_workload_chain_baseline(
@@ -166,6 +247,7 @@ class CommitRequest(BaseModel):
     chain_id: str        # Chain identifier
     event_digest: str    # SHA-384 digest of the event
     event_id: Optional[str] = None
+    intent_token: Optional[str] = None
     idempotency_key: Optional[str] = None
     instance_id: Optional[str] = None
     identity_token: Optional[str] = None
@@ -207,8 +289,26 @@ class InitChainBaselineResponse(BaseModel):
 class InitChainRequest(BaseModel):
     chain_id: str
     init_token: str
+    intent_token: str
     signed_bundle: str   # Sigstore Bundle JSON for the explicit baseline record
     pub_key: str         # ECDSA P-384 public key in PEM format
+
+
+class CommitIntentReserveRequest(BaseModel):
+    chain_id: str
+    idempotency_key: Optional[str] = None
+    is_baseline: bool = False
+
+
+class CommitIntentReserveResponse(BaseModel):
+    intent_token: Optional[str] = None
+    chain_id: str
+    sequence_num: int
+    prev_event_digest: Optional[str] = None
+    prev_lookup_hash: Optional[str] = None
+    expires_at: Optional[str] = None
+    committed: bool = False
+    record_id: Optional[str] = None
 
 class InitChainResponse(BaseModel):
     record_id: str
@@ -222,7 +322,14 @@ class ChainEntryResult(BaseModel):
     rekor_ok: bool
     rtmr_extended: bool
     mr_value: Optional[str] = None
-    prev_log_id_ok: Optional[bool] = None
+    predecessor_ok: Optional[bool] = None
+    predecessor_status: Optional[str] = None
+    prev_event_digest: Optional[str] = None
+    prev_lookup_hash: Optional[str] = None
+    candidate_count: Optional[int] = None
+    materialized_candidate_count: Optional[int] = None
+    matched_candidate_count: Optional[int] = None
+    boundary_status: Optional[str] = None
     error: Optional[str] = None
 
 class ChainVerificationResponse(BaseModel):
@@ -313,6 +420,10 @@ def _crash_recovery():
     deleted = delete_non_extended_records()
     if deleted:
         logger.info("Crash recovery: deleted %d records without RTMR extension", deleted)
+
+    expired = expire_active_commit_intents()
+    if expired:
+        logger.info("Crash recovery: expired %d stale commit intents", expired)
 
     # Reset any SUBMITTING records back to PENDING (interrupted submission)
     reset_count = reset_submitting_to_pending()
@@ -488,7 +599,7 @@ async def lifespan(app: FastAPI):
     # Initialize adapters
     try:
         from .adapters.tdx_mr import TdxMRAdapter
-        if os.path.exists("/sys/class/misc/tdx_guest/measurements/rtmr"):
+        if TdxMRAdapter.is_available(RTMR_INDEX):
             _local_mr = TdxMRAdapter()
             logger.info("TDX RTMR adapter initialized")
         else:
@@ -640,6 +751,78 @@ def get_init_chain_baseline(chain_id: str):
         )
 
 
+@app.post("/commit-intents/reserve", response_model=CommitIntentReserveResponse)
+def reserve_commit_intent(req: CommitIntentReserveRequest):
+    """Allocate a durable predecessor contract that the caller must sign."""
+    with _sequencer_lock:
+        expire_active_commit_intents()
+
+        if req.idempotency_key:
+            existing_record = get_record_by_idempotency_key(req.idempotency_key, req.chain_id)
+            if existing_record is not None:
+                return CommitIntentReserveResponse(
+                    intent_token=None,
+                    chain_id=req.chain_id,
+                    sequence_num=existing_record["sequence_num"],
+                    prev_event_digest=existing_record["prev_event_digest"] if "prev_event_digest" in existing_record.keys() else None,
+                    prev_lookup_hash=existing_record["prev_lookup_hash"] if "prev_lookup_hash" in existing_record.keys() else None,
+                    expires_at=None,
+                    committed=True,
+                    record_id=existing_record["record_id"],
+                )
+
+            existing_intent = get_commit_intent_by_idempotency_key(req.chain_id, req.idempotency_key)
+            if existing_intent is not None and existing_intent["status"] == "ACTIVE" and not _intent_expired(existing_intent):
+                return CommitIntentReserveResponse(**_intent_response_from_row(existing_intent))
+
+        active_intent = get_active_commit_intent_for_chain(req.chain_id)
+        if active_intent is not None:
+            if _intent_expired(active_intent):
+                update_commit_intent_status(active_intent["intent_token"], "EXPIRED")
+            elif not req.idempotency_key or active_intent["idempotency_key"] != req.idempotency_key:
+                raise HTTPException(status_code=409, detail=f"Chain '{req.chain_id}' already has an active commit intent")
+
+        state = get_chain_state(req.chain_id)
+        if req.is_baseline:
+            if state is not None:
+                raise HTTPException(status_code=409, detail=f"Chain '{req.chain_id}' already initialized")
+            sequence_num = 1
+            prev_event_digest = None
+            prev_lookup_hash = None
+        else:
+            if state is None:
+                raise HTTPException(status_code=409, detail=f"Chain '{req.chain_id}' is not initialized")
+            head_record = get_record_by_id(state["head_record_id"])
+            if head_record is None:
+                raise HTTPException(status_code=500, detail=f"Chain '{req.chain_id}' head record is missing")
+            sequence_num = state["sequence_num"] + 1
+            prev_event_digest = head_record["event_digest"] if "event_digest" in head_record.keys() else None
+            prev_lookup_hash = _compute_record_lookup_hash(head_record)
+
+        intent_token = secrets.token_urlsafe(32)
+        expires_at = datetime.utcfromtimestamp(time.time() + INTENT_TTL_SECONDS).isoformat()
+        create_commit_intent(
+            intent_token=intent_token,
+            chain_id=req.chain_id,
+            idempotency_key=req.idempotency_key,
+            sequence_num=sequence_num,
+            prev_event_digest=prev_event_digest,
+            prev_lookup_hash=prev_lookup_hash,
+            expires_at=expires_at,
+        )
+
+        return CommitIntentReserveResponse(
+            intent_token=intent_token,
+            chain_id=req.chain_id,
+            sequence_num=sequence_num,
+            prev_event_digest=prev_event_digest,
+            prev_lookup_hash=prev_lookup_hash,
+            expires_at=expires_at,
+            committed=False,
+            record_id=None,
+        )
+
+
 @app.post("/init-chain", response_model=InitChainResponse)
 def init_chain(req: InitChainRequest, request: Request):
     """
@@ -647,6 +830,8 @@ def init_chain(req: InitChainRequest, request: Request):
     (baseline record) into the commit queue.
     """
     with _sequencer_lock:
+        expire_active_commit_intents()
+
         # Validate init_token
         token_data = _pending_init_tokens.pop(req.init_token, None)
         if token_data is None:
@@ -659,6 +844,34 @@ def init_chain(req: InitChainRequest, request: Request):
         state = get_chain_state(req.chain_id)
         if state:
             raise HTTPException(status_code=409, detail=f"Chain '{req.chain_id}' already initialized")
+
+        intent = get_commit_intent_by_token(req.intent_token)
+        if intent is None:
+            raise HTTPException(status_code=400, detail="Invalid or expired intent_token")
+        if intent["chain_id"] != req.chain_id:
+            raise HTTPException(status_code=400, detail="intent_token chain_id mismatch")
+        if intent["status"] != "ACTIVE" or _intent_expired(intent):
+            if intent["status"] == "ACTIVE" and _intent_expired(intent):
+                update_commit_intent_status(req.intent_token, "EXPIRED")
+            raise HTTPException(status_code=400, detail="Intent token is not active")
+        if intent["sequence_num"] != 1:
+            raise HTTPException(status_code=400, detail="Baseline intent must reserve sequence_num=1")
+
+        try:
+            predicate = _extract_bundle_predicate(req.signed_bundle)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid baseline bundle: {exc}") from exc
+
+        if predicate.get("chain_id") != req.chain_id:
+            raise HTTPException(status_code=400, detail="Baseline bundle chain_id mismatch")
+        if predicate.get("sequence_num") != 1:
+            raise HTTPException(status_code=400, detail="Baseline bundle sequence_num mismatch")
+        if predicate.get("prev_event_digest") is not None or predicate.get("prev_lookup_hash") is not None:
+            raise HTTPException(status_code=400, detail="Baseline bundle must use null predecessor fields")
+
+        event_digest = predicate.get("digest")
+        if not isinstance(event_digest, str):
+            raise HTTPException(status_code=400, detail="Baseline bundle is missing digest")
 
         record_id = str(uuid.uuid4())
         sequence_num = 1
@@ -685,10 +898,13 @@ def init_chain(req: InitChainRequest, request: Request):
             chain_id=req.chain_id,
             rtmr_extended=True,
             prev_log_id=None,
+            prev_event_digest=None,
+            prev_lookup_hash=None,
+            intent_token=req.intent_token,
             mr_value=token_data["rtmr_value"],
             sequence_num=sequence_num,
-            event_digest=None,
-            idempotency_key=f"init-chain-{req.chain_id}",
+            event_digest=event_digest,
+            idempotency_key=intent["idempotency_key"],
             instance_id=None,
         )
 
@@ -699,6 +915,7 @@ def init_chain(req: InitChainRequest, request: Request):
             sequence_num=sequence_num,
             mr_value=token_data["rtmr_value"],
         )
+        update_commit_intent_status(req.intent_token, "CONSUMED", record_id=record_id)
 
         logger.info(
             "Chain '%s' initialized with baseline record %s caller_service=%s auth_transport=%s",
@@ -723,6 +940,8 @@ def commit(req: CommitRequest, request: Request):
     auth_transport = getattr(request.state, "auth_transport", None)
 
     with _sequencer_lock:
+        expire_active_commit_intents()
+
         # 0. Idempotency check — before any side effects
         if req.idempotency_key:
             existing = get_record_by_idempotency_key(req.idempotency_key, req.chain_id)
@@ -743,13 +962,121 @@ def commit(req: CommitRequest, request: Request):
                     prev_mr_value=None,
                 )
 
-        # 0.5 Lazy baseline bootstrap for new non-default workload chains
-        if req.chain_id != "default" and get_chain_state(req.chain_id) is None:
-            _create_workload_chain_baseline(
+        if req.intent_token:
+            intent = get_commit_intent_by_token(req.intent_token)
+            if intent is None:
+                raise HTTPException(status_code=400, detail="Invalid or expired intent_token")
+            if intent["chain_id"] != req.chain_id:
+                raise HTTPException(status_code=400, detail="intent_token chain_id mismatch")
+            if intent["status"] == "CONSUMED" and intent["record_id"]:
+                existing = get_record_by_id(intent["record_id"])
+                if existing is not None:
+                    return CommitResponse(
+                        record_id=existing["record_id"],
+                        sequence_num=existing["sequence_num"],
+                        mr_value=existing["mr_value"],
+                        prev_mr_value=None,
+                    )
+            if intent["status"] != "ACTIVE" or _intent_expired(intent):
+                if intent["status"] == "ACTIVE" and _intent_expired(intent):
+                    update_commit_intent_status(req.intent_token, "EXPIRED")
+                raise HTTPException(status_code=400, detail="Intent token is not active")
+
+            try:
+                predicate = _extract_bundle_predicate(req.bundle)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"Invalid DSSE bundle: {exc}") from exc
+
+            if predicate.get("chain_id") != req.chain_id:
+                raise HTTPException(status_code=400, detail="Bundle chain_id mismatch")
+            if predicate.get("sequence_num") != intent["sequence_num"]:
+                raise HTTPException(status_code=400, detail="Bundle sequence_num mismatch")
+            if predicate.get("prev_event_digest") != intent["prev_event_digest"]:
+                raise HTTPException(status_code=400, detail="Bundle prev_event_digest mismatch")
+            if predicate.get("prev_lookup_hash") != intent["prev_lookup_hash"]:
+                raise HTTPException(status_code=400, detail="Bundle prev_lookup_hash mismatch")
+            if predicate.get("digest") != req.event_digest:
+                raise HTTPException(status_code=400, detail="Bundle digest mismatch")
+
+            state = get_chain_state(req.chain_id)
+            if state:
+                prev_log_id = state["head_log_id"]
+                if state["sequence_num"] + 1 != intent["sequence_num"]:
+                    raise HTTPException(status_code=409, detail="Reserved sequence no longer matches chain head")
+            else:
+                prev_log_id = None
+                if intent["sequence_num"] != 1:
+                    raise HTTPException(status_code=409, detail="Reserved sequence requires initialized chain state")
+
+            event_id = req.event_id or predicate.get("event_id") or event_id
+            sequence_num = intent["sequence_num"]
+
+            mr_value, prev_mr_value = None, None
+            if _local_mr:
+                try:
+                    mr_value, prev_mr_value = _local_mr.extend(RTMR_INDEX, req.event_digest)
+                except Exception as e:
+                    logger.error("RTMR extend failed: %s", e)
+                    raise HTTPException(status_code=500, detail=f"RTMR extend failed: {e}")
+
+            insert_record(
+                record_id=record_id,
+                event_id=event_id,
+                payload={
+                    "bundle": req.bundle,
+                    "chain_id": req.chain_id,
+                    "caller_service": caller_service,
+                    "auth_transport": auth_transport,
+                },
+                status="PENDING",
+                chain_id=req.chain_id,
+                rtmr_extended=True,
+                prev_log_id=prev_log_id,
+                prev_event_digest=intent["prev_event_digest"],
+                prev_lookup_hash=intent["prev_lookup_hash"],
+                intent_token=req.intent_token,
+                mr_value=mr_value,
+                sequence_num=sequence_num,
+                event_digest=req.event_digest,
+                idempotency_key=req.idempotency_key or intent["idempotency_key"],
+                instance_id=req.instance_id,
+            )
+
+            update_chain_state(
+                chain_id=req.chain_id,
+                head_record_id=record_id,
+                sequence_num=sequence_num,
+                mr_value=mr_value,
+            )
+            update_commit_intent_status(req.intent_token, "CONSUMED", record_id=record_id)
+
+            logger.info(
+                "Accepted reservation-backed commit record_id=%s chain_id=%s sequence_num=%s caller_service=%s auth_transport=%s",
+                record_id,
                 req.chain_id,
+                sequence_num,
                 caller_service,
                 auth_transport,
-                req.identity_token,
+            )
+
+            latency_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                "metric=commit_latency latency_ms=%.1f record_id=%s idempotent=%s",
+                latency_ms, record_id, False,
+            )
+
+            return CommitResponse(
+                record_id=record_id,
+                sequence_num=sequence_num,
+                mr_value=mr_value,
+                prev_mr_value=prev_mr_value,
+            )
+
+        # 0.5 Non-default chains must be explicitly bootstrapped before legacy commit
+        if req.chain_id != "default" and get_chain_state(req.chain_id) is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Chain '{req.chain_id}' is not initialized; create Event Log 0 before committing",
             )
 
         # 1. Read current chain state
@@ -916,6 +1243,36 @@ def get_state():
     return LatestStateResponse(**state)
 
 
+def _record_has_signed_predecessor_contract(record: Any) -> bool:
+    sequence_num = record['sequence_num']
+    return sequence_num > 1 and (
+        ('prev_event_digest' in record.keys() and record['prev_event_digest'] is not None)
+        or ('prev_lookup_hash' in record.keys() and record['prev_lookup_hash'] is not None)
+    )
+
+
+def _classify_verify_chain_boundary(record: Any, records: list[Any]) -> Optional[str]:
+    sequence_num = record['sequence_num']
+    if sequence_num <= 1 or _record_has_signed_predecessor_contract(record):
+        return None
+
+    lower_signed = any(
+        other['sequence_num'] < sequence_num and _record_has_signed_predecessor_contract(other)
+        for other in records
+    )
+    if lower_signed:
+        return "invalid"
+
+    higher_signed = any(
+        other['sequence_num'] > sequence_num and _record_has_signed_predecessor_contract(other)
+        for other in records
+    )
+    if higher_signed:
+        return "degraded"
+
+    return None
+
+
 @app.get("/verify-chain/{chain_id}", response_model=ChainVerificationResponse)
 def verify_chain(chain_id: str):
     """
@@ -936,7 +1293,7 @@ def verify_chain(chain_id: str):
     rekor_pending = 0
     expected_seq = 1
     prev_mr: Optional[str] = None
-    prev_confirmed_log_id: Optional[str] = None  # tracks preceding confirmed record's log_id
+    prev_confirmed_record: Optional[Any] = None
     baseline_error: Optional[str] = None
     # Determine if RTMR is available: at least one non-NULL mr_value
     rtmr_available = any(r['mr_value'] is not None for r in records)
@@ -956,7 +1313,14 @@ def verify_chain(chain_id: str):
         is_confirmed = r['status'] == 'CONFIRMED' and r['log_id'] is not None
         error: Optional[str] = None
         mr_ok: Optional[bool] = None
-        prev_log_id_ok: Optional[bool] = None
+        predecessor_ok: Optional[bool] = None
+        predecessor_status: Optional[str] = None
+        prev_event_digest = r['prev_event_digest'] if 'prev_event_digest' in r.keys() else None
+        prev_lookup_hash = r['prev_lookup_hash'] if 'prev_lookup_hash' in r.keys() else None
+        candidate_count: Optional[int] = None
+        materialized_candidate_count: Optional[int] = None
+        matched_candidate_count: Optional[int] = None
+        boundary_status: Optional[str] = None
 
         if baseline_error and seq == records[0]['sequence_num']:
             error = baseline_error
@@ -997,32 +1361,66 @@ def verify_chain(chain_id: str):
         else:
             rekor_pending += 1
 
-        # 4. prev_log_id linkage check (non-TEE fallback)
+        if is_confirmed and prev_event_digest is None and prev_lookup_hash is None:
+            boundary_status = _classify_verify_chain_boundary(r, records)
+            if boundary_status == "invalid":
+                boundary_error = "signed predecessor contract regressed after reservation-backed replay began"
+                error = f"{error}; {boundary_error}" if error else boundary_error
+                if valid:
+                    valid = False
+                    first_error_at = seq
+
+        # 4. Signed predecessor verification (non-TEE fallback)
         if not rtmr_available:
-            cur_prev_log_id = r['prev_log_id'] if 'prev_log_id' in r.keys() else None
             if not is_confirmed:
-                # Unconfirmed record — cannot verify
-                prev_log_id_ok = None
-            elif prev_confirmed_log_id is None and cur_prev_log_id is None:
-                # First record with no predecessor
-                prev_log_id_ok = True
-            elif prev_confirmed_log_id is not None and cur_prev_log_id == prev_confirmed_log_id:
-                prev_log_id_ok = True
-            elif prev_confirmed_log_id is None and cur_prev_log_id is not None:
-                # First confirmed record but has a prev_log_id — mismatch
-                prev_log_id_ok = False
-                link_error = f"prev_log_id mismatch: expected None, got {cur_prev_log_id}"
+                predecessor_ok = None
+                predecessor_status = "unverifiable"
+                candidate_count = None
+                materialized_candidate_count = None
+                matched_candidate_count = None
+            elif seq == 1 and prev_event_digest is None and prev_lookup_hash is None:
+                predecessor_ok = True
+                predecessor_status = "origin"
+                candidate_count = 0
+                materialized_candidate_count = 0
+                matched_candidate_count = 0
+            elif prev_event_digest is None and prev_lookup_hash is None:
+                predecessor_ok = False if boundary_status == "invalid" else None
+                predecessor_status = "unverifiable"
+                candidate_count = 0
+                materialized_candidate_count = 0
+                matched_candidate_count = 0
+                link_error = "signed predecessor contract unavailable for confirmed replayable record"
+                if boundary_status == "invalid":
+                    link_error = "signed predecessor contract regressed after reservation-backed replay began"
+                elif boundary_status == "degraded":
+                    link_error = "signed predecessor contract unavailable at legacy-to-reservation replay boundary"
                 error = f"{error}; {link_error}" if error else link_error
-                if valid:
-                    valid = False
-                    first_error_at = seq
             else:
-                prev_log_id_ok = False
-                link_error = f"prev_log_id mismatch: expected {prev_confirmed_log_id}, got {cur_prev_log_id}"
-                error = f"{error}; {link_error}" if error else link_error
-                if valid:
-                    valid = False
-                    first_error_at = seq
+                candidate_count = 1 if prev_confirmed_record is not None else 0
+                materialized_candidate_count = candidate_count
+                expected_digest = prev_confirmed_record['event_digest'] if prev_confirmed_record is not None else None
+                expected_lookup_hash = _compute_record_lookup_hash(prev_confirmed_record) if prev_confirmed_record is not None else None
+                expected_sequence = prev_confirmed_record['sequence_num'] + 1 if prev_confirmed_record is not None else None
+                predecessor_ok = (
+                    prev_confirmed_record is not None
+                    and seq == expected_sequence
+                    and prev_event_digest == expected_digest
+                    and prev_lookup_hash == expected_lookup_hash
+                )
+                matched_candidate_count = 1 if predecessor_ok else 0
+                predecessor_status = "proven" if predecessor_ok else "missing"
+                if candidate_count == 0:
+                    predecessor_status = "missing"
+                if not predecessor_ok:
+                    link_error = (
+                        f"signed predecessor mismatch: expected digest={expected_digest} lookup_hash={expected_lookup_hash}, "
+                        f"got digest={prev_event_digest} lookup_hash={prev_lookup_hash}"
+                    )
+                    error = f"{error}; {link_error}" if error else link_error
+                    if valid:
+                        valid = False
+                        first_error_at = seq
 
         entries.append(ChainEntryResult(
             seq=seq,
@@ -1032,7 +1430,14 @@ def verify_chain(chain_id: str):
             rekor_ok=rekor_ok,
             rtmr_extended=rtmr_ext,
             mr_value=mr_value,
-            prev_log_id_ok=prev_log_id_ok,
+            predecessor_ok=predecessor_ok,
+            predecessor_status=predecessor_status,
+            prev_event_digest=prev_event_digest,
+            prev_lookup_hash=prev_lookup_hash,
+            candidate_count=candidate_count,
+            materialized_candidate_count=materialized_candidate_count,
+            matched_candidate_count=matched_candidate_count,
+            boundary_status=boundary_status,
             error=error,
         ))
 
@@ -1040,7 +1445,7 @@ def verify_chain(chain_id: str):
         if mr_value is not None:
             prev_mr = mr_value
         if is_confirmed:
-            prev_confirmed_log_id = r['log_id']
+            prev_confirmed_record = r
         expected_seq = seq + 1
 
     head_mr = records[-1]['mr_value'] if records else None

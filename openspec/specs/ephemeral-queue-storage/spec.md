@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for ephemeral memory-backed queue storage used by the trusted-log implementation.
+
+## Requirements
 
 ### Requirement: Memory-Backed Storage Pre-requisite
 The system SHALL ensure the queue database is instantiated on a memory-backed file system (`/dev/shm`) and SHALL explicitly create a dedicated directory structure (e.g. `/dev/shm/tc_api_queue`) with exclusive ownership `0700` before initializing the SQLite connection.

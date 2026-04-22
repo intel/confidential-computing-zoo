@@ -1,7 +1,7 @@
 # Architecture Gap & Inconsistency Task Overview
 
 > Generated: 2026-04-16
-> Last Updated: 2026-04-19
+> Last Updated: 2026-04-21
 > Source: `docs/architecture.md`, `docs/trusted-log/architecture.md`
 > Purpose: Structured task list for closing gaps between architecture docs and implementation.
 
@@ -16,6 +16,103 @@ Each task has:
 - **References**: Architecture doc sections
 - **Dependencies**: Other task IDs that must complete first
 - **Acceptance Criteria**: Concrete conditions for "done"
+
+---
+
+## Part 0: Current Large Change Breakdown
+
+### GAP-13: Public Predecessor Replay Links via Two-Phase Intent Reservation
+
+- **Priority**: HIGH
+- **Scope**: `src/tc_api/tlog_client.py`, `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/trucon/adapters/sigstore.py`, `src/tc_api/tlog_client.py`, `src/tc_api/sigstore_baseline.py`, `tests/`, `docs/`
+- **References**: archived OpenSpec changes `2026-04-22-reservation-backed-replay-intents` and `2026-04-22-public-predecessor-replay-diagnostics`; architecture.md replay / verification sections; trusted-log verification docs
+- **Dependencies**: GAP-05 ✅, GAP-09 ✅, GAP-10 ✅, GAP-12 ✅
+- **Status**: PARTIALLY COMPLETED
+- **Completed Milestones**: 2026-04-22 reservation-backed commit intents and predecessor replay diagnostics archived after implementation and validation.
+- **Current implementation state**:
+  - TruCon now performs a durable reservation step under the sequencer lock and returns a single-use intent token plus the final predecessor contract (`sequence_num`, `prev_event_digest`, `prev_lookup_hash`).
+  - tc_api now signs DSSE using those reserved values and submits the signed bundle together with the `intent_token`.
+  - TruCon validates the submitted bundle against the reserved contract before enqueueing it.
+  - Immutable replay, TruCon verification, and CLI verification now treat signed predecessor fields as protocol truth and use Rekor payload-hash lookup as candidate discovery only.
+  - Remaining work is rollout hardening, mixed-regime operator guidance, and legacy compatibility cleanup rather than primary protocol design.
+
+#### Task 13.1: Define the reservation protocol and state model
+
+- **Priority**: HIGH
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, protocol docs
+- **Dependencies**: None
+- **Goal**: Introduce an explicit `reserve -> sign -> commit` control flow with a stable predecessor contract.
+- **Questions already resolved for implementation direction**:
+  - Reservation should return the final public predecessor contract.
+  - Intent tokens should be single-use and time-bounded.
+  - Idempotency should bind to the reservation / intent lifecycle.
+- **Acceptance Criteria**:
+  1. ✅ TruCon exposes a reservation API that returns `sequence_num`, `prev_event_digest`, `prev_lookup_hash`, and an intent token.
+  2. ✅ The reservation result is stable across idempotent retries of the same business request.
+  3. ✅ Reservation state has explicit lifecycle semantics: active, consumed, expired, or cancelled/garbage-collected.
+  4. ✅ Crash recovery and restart behavior for unconsumed reservations is documented.
+
+#### Task 13.2: Extend Event Log 0 and lazy baseline to the same signed replay contract
+
+- **Priority**: HIGH
+- **Scope**: `src/tc_api/sigstore_baseline.py`, `src/tc_api/trucon/app.py`, init/lazy baseline tests
+- **Dependencies**: Task 13.1
+- **Goal**: Make baseline records the null-predecessor instance of the same replay protocol, including lazy workload baseline creation.
+- **Acceptance Criteria**:
+  1. ✅ Event Log 0 signed payload includes `sequence_num = 1`, `prev_event_digest = null`, and `prev_lookup_hash = null`.
+  2. ✅ Lazy workload baseline creation participates in the same predecessor protocol rather than acting as an unrelated side effect.
+  3. ✅ The first non-baseline event after initialization references the baseline through `prev_event_digest` and `prev_lookup_hash`.
+  4. ✅ Concurrency behavior for first-event workload chains remains deterministic.
+
+#### Task 13.3: Move tc_api commit flow onto reservation-backed signing
+
+- **Priority**: HIGH
+- **Scope**: `src/tc_api/tlog_client.py`, internal transport helpers
+- **Dependencies**: Task 13.1, Task 13.2
+- **Goal**: Replace the current one-shot `sign -> /commit` path with reservation-backed DSSE signing.
+- **Acceptance Criteria**:
+  1. ✅ tc_api requests a reservation before constructing the signed DSSE predicate.
+  2. ✅ The DSSE predicate includes signed `chain_id`, `sequence_num`, `digest`, `prev_event_digest`, and `prev_lookup_hash`.
+  3. ✅ tc_api submits the signed bundle together with the intent token.
+  4. ✅ The commit path remains safe under concurrent submissions to the same chain.
+
+#### Task 13.4: Validate reserved contract at TruCon commit time and persist replay metadata
+
+- **Priority**: HIGH
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`
+- **Dependencies**: Task 13.3
+- **Goal**: Ensure TruCon treats the intent token as a strong consistency constraint rather than a weak hint.
+- **Acceptance Criteria**:
+  1. ✅ TruCon parses the submitted bundle and verifies its signed predecessor fields match the reservation.
+  2. ✅ Mismatched or expired intent tokens are rejected without mutating chain state.
+  3. ✅ Persisted record state includes enough replay metadata to support verification and operational debugging.
+  4. ✅ Existing submit-daemon responsibilities remain limited to immutable-log submission rather than predecessor assignment.
+
+#### Task 13.5: Rework immutable replay and TruCon verification around signed predecessor proof
+
+- **Priority**: HIGH
+- **Scope**: `src/tc_api/tlog_client.py`, `src/tc_api/trucon/adapters/sigstore.py`, `src/tc_api/trucon/app.py`, CLI verify paths
+- **Dependencies**: Task 13.4
+- **Goal**: Replace `prev_log_id`-based public continuity checks with signed predecessor verification.
+- **Acceptance Criteria**:
+  1. ✅ Immutable replay queries Rekor by `prev_lookup_hash` and treats the result as candidate discovery only.
+  2. ✅ Candidate filtering enforces `chain_id`, `sequence_num - 1`, and recomputed `prev_event_digest`.
+  3. ✅ `/verify-chain/{chain_id}` reports `prev_event_digest`-based continuity results and predecessor candidate counts.
+  4. ✅ Pending / unconfirmed records remain representable without falsely reporting predecessor success.
+- **Implementation Note**: verifier-facing continuity now uses `sequence_num`, `prev_event_digest`, and `prev_lookup_hash` as protocol truth. `prev_log_id` remains only in local bookkeeping, compatibility parsing, and some legacy traversal fallbacks.
+
+#### Task 13.6: Finish regression coverage, rollout rules, and operator documentation
+
+- **Priority**: MEDIUM
+- **Scope**: `tests/`, `docs/architecture.md`, `docs/trusted-log/`, public Rekor smoke tests
+- **Dependencies**: Task 13.5
+- **Goal**: Make the protocol change safe to ship and understandable to operators.
+- **Status**: PARTIALLY COMPLETED
+- **Acceptance Criteria**:
+  1. ✅ Unit tests cover reservation lifecycle, idempotent retry semantics, baseline null-predecessor behavior, and missing/multiple Rekor candidates.
+  2. ◐ Public Rekor opt-in integration tests validate real signing, baseline paths, and immutable replay, but multi-entry predecessor-proof coverage remains limited.
+  3. ✅ Documentation clearly explains that Rekor `/api/v1/index/retrieve` is best-effort candidate discovery, not protocol truth.
+  4. ◐ Rollout guidance for mixed-format chains still needs a clearer operator-facing deployment rule.
 
 ---
 
@@ -372,7 +469,7 @@ Each task has:
 - **Completed**: 2026-04-18 | Archive: `openspec/changes/archive/2026-04-18-add-chain-verification-cli/`
 - **Design Decisions** (confirmed 2026-04-18):
   - **Packaging**: Exposed as package console script `tc-verify`, not an ad hoc helper script.
-  - **Target model**: v1 accepts `chain_id` only.
+  - **Target model**: Initial v1 exposed `chain_id` as the verification selector; later changes moved the supported external contract to exported attested-head evidence, with `chain_id` retained only for explicit troubleshooting mode.
   - **Verdict model**: Immutable-backend replay is the primary source; TruCon local verification is retained as secondary diagnostic input.
   - **Policy flags**: Supports `--signer-identity`, `--expected-entry-count`, `--fail-on-pending`, and `--require-tee`.
   - **Non-TEE handling**: Explicitly reported as test-only fallback rather than TEE-equivalent success.
@@ -417,7 +514,7 @@ Each task has:
 - **Dependencies**: GAP-14 ✅, GAP-17
 - **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-tc-verify-external-evidence-mode/`
 - **Sizing**: Implemented as one archived umbrella change after GAP-17 completed.
-- **Current State**: `tc-verify` now accepts exported attested-head evidence as its primary operator input, validates replay-to-attested-head association, and retains live TruCon-backed verification only as an explicitly labeled transitional fallback.
+- **Current State**: `tc-verify` now uses exported attested-head evidence as its supported external operator input, validates replay-to-attested-head association, and retains live TruCon-backed verification only as explicit troubleshooting-only diagnostics.
 - **Suggested Subtasks**:
   1. ~~`GAP-18A` — tc-verify evidence input mode~~ ✅ COMPLETED
     - Completed: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-tc-verify-external-evidence-mode/`
@@ -425,12 +522,12 @@ Each task has:
   2. ~~`GAP-18B` — Attested-head verification in tc-verify~~ ✅ COMPLETED
     - Completed: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-tc-verify-external-evidence-mode/`
     - Outcome: CLI verifies replay-to-attested-head association and reports replay findings separately from attested-head diagnostics.
-  3. ~~`GAP-18C` — Transitional TruCon fallback demotion~~ ✅ COMPLETED
-    - Completed: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-tc-verify-external-evidence-mode/`
-    - Outcome: live TruCon verification remains available only as an explicitly labeled fallback in UX, JSON output, and docs.
+  3. ~~`GAP-18C` — Close external verifier boundary~~ ✅ COMPLETED
+    - Completed: 2026-04-22 | Archive: `openspec/changes/archive/2026-04-22-close-external-verifier-boundary/`
+    - Outcome: bare `chain_id` external verification is rejected; live TruCon verification now requires an explicit troubleshooting selector and is labeled as internal diagnostics in UX, JSON output, and docs.
 - **Acceptance Criteria**:
   1. ✅ `tc-verify` can verify a chain using Rekor plus exported attested evidence, without requiring live TruCon connectivity.
-  2. ✅ Live TruCon-backed verification remains, at most, a transitional or explicitly marked fallback mode.
+  2. ✅ Live TruCon-backed verification remains available only as explicit troubleshooting mode and is not presented as the supported external verifier contract.
   3. ✅ CLI output distinguishes public replay results from attested-head evidence results.
   4. ✅ Tests cover remote-verifier mode, missing-evidence failures, and mismatched evidence-to-chain association.
 
@@ -615,7 +712,7 @@ FIX-05 (OPEN Dead Code) ✅ ── completed with GAP-12
 17. ~~`GAP-17B`~~ ✅ completed 2026-04-19 — TruCon evidence export surface
 18. ~~`GAP-18A`~~ ✅ completed 2026-04-19 — tc-verify evidence input mode
 19. ~~`GAP-18B`~~ ✅ completed 2026-04-19 — Attested-head verification in tc-verify
-20. ~~`GAP-18C`~~ ✅ completed 2026-04-19 — Transitional TruCon fallback demotion
+20. ~~`GAP-18C`~~ ✅ completed 2026-04-22 — Close external verifier boundary
 21. ~~`GAP-19A`~~ ✅ completed 2026-04-19 — Verification profile contract
 22. ~~`GAP-19B`~~ ✅ completed 2026-04-19 — Producer payload alignment
 23. ~~`GAP-19C`~~ ✅ completed 2026-04-19 — tc-verify profile enforcement

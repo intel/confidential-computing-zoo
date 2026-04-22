@@ -17,8 +17,7 @@ The module combines three planes:
 
 The system is deployed as two cooperating services:
 
-- **tc_api** (stateless, multi-worker): Receives caller requests, performs DSSE signing using the caller's OIDC identity, and forwards signed bundles to the TruCon over the internal control-plane transport. Current implementation prefers a shared Unix domain socket for same-machine traffic and retains internal HTTP + Bearer-token wiring only as a compatibility path. For explicit Event Log 0 initialization on the `default` chain, tc_api still derives an ephemeral ECDSA P-384 public key in TEE memory and embeds it in the baseline predicate, but the record is now emitted as a Sigstore bundle so it can traverse the same immutable-backend path as other public entries. In the real Sigstore path, `sign_dsse()` is online: it exchanges the short-lived OIDC token for a Fulcio certificate and creates the Rekor transparency-log entry before returning the bundle.
-- For a previously unseen non-`default` workload chain, tc_api's first business/runtime commit now also forwards that same short-lived identity token to TruCon over the trusted internal transport. TruCon consumes it immediately to mint Event Log 0 for the lazy workload baseline path and does not persist it as part of chain state.
+- **tc_api** (stateless, multi-worker): Receives caller requests, reserves a durable commit intent from TruCon, signs the allocated DSSE contract using the caller's OIDC identity, and forwards the signed bundle plus `intent_token` to TruCon over the internal control-plane transport. Current implementation prefers a shared Unix domain socket for same-machine traffic and retains internal HTTP + Bearer-token wiring only as a compatibility path. For Event Log 0 initialization, tc_api still derives an ephemeral ECDSA P-384 public key in TEE memory and embeds it in the baseline predicate, but the baseline record now follows the same reservation-backed Sigstore flow as ordinary records. In the real Sigstore path, `sign_dsse()` is online: it exchanges the short-lived OIDC token for a Fulcio certificate and creates the Rekor transparency-log entry before returning the bundle.
 - **TruCon** (single-instance, `--workers 1`): Serializes RTMR[2] extend + SQLite INSERT behind a `threading.Lock()`, maintains chain state, and embeds the submit daemon as a background thread.
 
 This split ensures that RTMR extends and chain state mutations are strictly serialized within a single process, while tc_api can scale horizontally for throughput. The three-layer trust model is:
@@ -104,13 +103,13 @@ flowchart LR
 ##### Responsibility Mapping
 
 - Trusted Log API (tc_api side):
-Receives event-log operations from TrustBootstrap, constructs In-Toto DSSE envelopes, signs them using the caller's OIDC identity token via Sigstore in offline mode, and forwards the signed bundle to the TruCon via the shared internal transport. The default same-machine path is a Unix domain socket; the compatibility path remains HTTP with Bearer-token auth. The tc_api side is stateless and safe for multi-worker deployment (`--workers N`). It does not hold chain state, perform RTMR extends, or access the SQLite queue.
+Receives event-log operations from TrustBootstrap, reserves a commit intent from TruCon, constructs the In-Toto DSSE predicate with the reserved `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`, signs it using the caller's OIDC identity token via Sigstore, and forwards the signed bundle together with the `intent_token` to TruCon via the shared internal transport. The default same-machine path is a Unix domain socket; the compatibility path remains HTTP with Bearer-token auth. The tc_api side is stateless and safe for multi-worker deployment (`--workers N`). It does not hold chain state, perform RTMR extends, or access the SQLite queue.
 
 - TruCon Sequencer:
-A single-instance FastAPI service (`--workers 1`) that serializes all chain-mutating operations behind a `threading.Lock()`. Within the lock, it reads `chain_state` to determine `prev_log_id` and `sequence_num`, extends RTMR[2] with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, and updates `chain_state`. Single-instance enforcement is achieved via an exclusive file lock (`fcntl.flock`) at startup.
+A single-instance FastAPI service (`--workers 1`) that serializes all chain-mutating operations behind a `threading.Lock()`. Within the lock, it allocates durable commit intents carrying `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`, validates that signed bundles match that reserved contract, extends RTMR[2] with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, and updates `chain_state`. Single-instance enforcement is achieved via an exclusive file lock (`fcntl.flock`) at startup.
 
 - Local Commit Queue (Ephemeral Storage):
-A local SQLite database with WAL mode serving as an operations buffer. To enforce strict hardware Lifecycle Alignment, this database MUST reside in a volatile, memory-backed file system (e.g., `/dev/shm`) and MUST be protected by strict DAC isolation (i.e. `0700` permissions on a dedicated directory). The expanded schema includes `chain_id`, `rtmr_extended`, `log_id`, `prev_log_id`, `mr_value`, `sequence_num`, `confirmed_at`, and `retry_count` columns. A companion `chain_state` table maintains per-chain head tracking.
+A local SQLite database with WAL mode serving as an operations buffer. To enforce strict hardware Lifecycle Alignment, this database MUST reside in a volatile, memory-backed file system (e.g., `/dev/shm`) and MUST be protected by strict DAC isolation (i.e. `0700` permissions on a dedicated directory). The expanded schema includes `chain_id`, `rtmr_extended`, `log_id`, `prev_log_id`, `prev_event_digest`, `prev_lookup_hash`, `intent_token`, `mr_value`, `sequence_num`, `confirmed_at`, and `retry_count` columns. A companion `commit_intents` table stores active or consumed reservations, and `chain_state` maintains per-chain head tracking.
 
 - Embedded Submit Daemon:
 A `threading.Thread(daemon=True)` running inside the TruCon process. It polls the commit queue every 5 seconds for records with `status=PENDING` and `rtmr_extended=TRUE`, moves active work through `SUBMITTING`, and applies retry classification up to a threshold of 10 attempts (`FAILED_RETRYABLE` during retry windows, `FAILED_TERMINAL` after exhaustion; `FAILED` remains a legacy terminal state for older records). Terminally failed predecessors block subsequent submissions in the same chain to preserve ordering guarantees. The daemon's lifecycle is tied to the TruCon process.
@@ -135,8 +134,8 @@ Implement Immutable Log Adapter for different immutable backends while preservin
 ##### Interaction Model
 
 1. TrustBootstrap invokes Trusted Log API (in tc_api) to create a record context and append one or more event entries.
-2. TrustBootstrap calls `commit_record()`. The tc_api Trusted Log API constructs the DSSE predicate (without `prev_log_id`), signs it with Sigstore, and forwards the signed bundle to the TruCon over the internal control-plane transport. In the real public-Sigstore path this signing step is online: the caller identity token is exchanged for a Fulcio-backed signing certificate and the returned bundle may already carry a confirmed Rekor transparency-log entry. Current implementation prefers Unix domain socket transport for same-machine callers and preserves the HTTP `POST /commit` path only as a compatibility mechanism.
-3. TruCon acquires its `threading.Lock()`, reads the current `chain_state`, extends RTMR[2] with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, updates `chain_state`, and releases the lock.
+2. TrustBootstrap calls `commit_record()`. The tc_api Trusted Log API first reserves a commit intent from TruCon, then constructs the DSSE predicate with the reserved `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`, signs it with Sigstore, and forwards the signed bundle plus `intent_token` to TruCon over the internal control-plane transport. In the real public-Sigstore path this signing step is online: the caller identity token is exchanged for a Fulcio-backed signing certificate and the returned bundle may already carry a confirmed Rekor transparency-log entry. Current implementation prefers Unix domain socket transport for same-machine callers and preserves the HTTP `POST /commit` path only as a compatibility mechanism.
+3. TruCon acquires its `threading.Lock()`, validates that the signed bundle matches the reserved predecessor contract, extends RTMR[2] with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, updates `chain_state`, consumes the intent, and releases the lock.
 4. The embedded submit daemon asynchronously polls the queue and submits confirmed records to the immutable backend in `sequence_num` order. For Sigstore/Rekor bundles that already contain a confirmed transparency-log entry, the adapter reuses the embedded log reference instead of creating a second public record.
 5. Backend implementations translate adapter operations into concrete syscalls or external API calls.
 6. Trusted Log API returns combined result state to the caller, including `sequence_num`, `mr_value`, and `prev_mr_value`.
@@ -150,9 +149,9 @@ Real public-Rekor DSSE retrieval is not identical to the simplified mocked paylo
 - Rekor-native readback can emphasize transparency-log-native fields such as envelope hashes, payload hashes, signatures, verifiers, and inclusion proof material.
 - The original application-facing predicate is not guaranteed to be returned in the exact shape expected by tc_api's replay normalizer.
 
-To keep verification behavior stable for the opt-in real-Rekor smoke path, the Sigstore adapter now caches the bundle-derived DSSE payload and signer-certificate material at submission time, keyed by the resolved log reference. Replay within the same process can then recover `event_id`, `event_type`, and predicate entries from the submitted bundle while still relying on Rekor for public inclusion and log identity.
+To keep retrieval efficient, the Sigstore adapter caches bundle-derived DSSE payload and signer-certificate material at submission time, keyed by the resolved log reference. That cache is now treated as a local fetch optimization and diagnostic fallback only: verifier-critical historical facts such as Event Log 0 baseline origin and signed predecessor continuity count as publicly proven only when they can be materialized from Rekor-auditable entry data.
 
-This is intentionally an implementation compatibility layer for replay fidelity, not a replacement for Rekor as the public append-only backend.
+This is intentionally an implementation compatibility layer for replay fidelity, not a replacement for Rekor as the public append-only backend. If replay succeeds only because process-local cache supplied facts that public Rekor materialization did not expose, operator tooling reports that state as cache-assisted or unsupported rather than as fully verified public history.
 
 Docktap-local routing state, workload mappings, and retry bookkeeping are operational cache and short-lived diagnostics only. Garbage-collecting that local state does not change replay correctness, because replay and verification depend on TruCon state and immutable backend records rather than Docktap-local persistence.
 
@@ -199,7 +198,7 @@ Core contract definitions:
 
 - `Entry`: the smallest unit of recorded evidence, represented as a `key` and a `value` (any JSON-compatible type) for one trust-relevant fact. The value may be a string, number, boolean, null, list, or dict; it is serialized via `canonical_json` for digest computation.
 - `Record`: an ordered collection of entries accumulated before submission; ordering is significant because it affects the event digest.
-- `RecordContext`: the mutable handle returned by initialization, containing the in-progress `record_id`, creation timestamp, and chain reference information such as `prev_log_id`.
+- `RecordContext`: the mutable handle returned by initialization, containing the in-progress `record_id`, creation timestamp, and chain reference information needed before reservation and signing.
 - `EventLog`: the immutable committed event containing event identity, canonical digest, ordered record payload, creation time, and optionally the MR value and globally resolvable backend identifier.
 - `CommitResult`: the caller-facing result of `commit_record`, including queue state and MR values associated with the synchronized TruCon commit path.
 - `CommitQueueStatus`: a lightweight worker-facing view that reports whether the commit queue contains committed work, how many records are queued, and which `record_id` should be attempted next.
@@ -208,17 +207,19 @@ Core contract definitions:
 
 #### On-Chain and Transparent-Log Chain Structure
 
-- Transparent log: stores `log_id` and `prev_log_id` to preserve chain traversal.
+- Transparent log: stores `log_id` as immutable identity, while signed replay continuity is proven by `sequence_num`, `prev_event_digest`, and `prev_lookup_hash` carried in the DSSE predicate.
 - On-chain log: natively supports chained structure.
 - In both cases, each backend entry wraps one `EventLog` plus backend linkage metadata.
 
-**Important**: `prev_log_id` is maintained by the TruCon in the `chain_state` SQLite table and is **not** included in the DSSE predicate that the caller signs. This avoids a three-way contradiction where the API caller signs before the system can assign the correct `prev_log_id`. Ordering integrity is instead proven by the RTMR hardware chain — each extend incorporates the previous register value, making reordering detectable through TDX attestation quotes.
+**Important**: backend-assigned `prev_log_id` is no longer the verifier-facing predecessor contract. The caller signs `sequence_num`, `prev_event_digest`, and `prev_lookup_hash` after TruCon reserves them, so replay continuity can be checked directly against the signed predicate. RTMR still provides the hardware-backed ordering proof for measured environments.
 
-**Non-TEE Mode: prev_log_id as DB-Level Ordering Verification**
+**Non-TEE Mode: signed predecessor replay as DB-Level Ordering Verification**
 
-In environments without TEE hardware (no RTMR), `prev_log_id` chaining is used as a DB-level ordering verification fallback. This is **not** a cryptographic ordering proof — `prev_log_id` remains excluded from the DSSE-signed predicate. Instead, when `verify-chain` detects that no RTMR values are available (`rtmr_available == False`), it verifies that each confirmed record's `prev_log_id` matches the previous confirmed record's `log_id`. Unconfirmed records at the chain tail cannot be verified via `prev_log_id` (because `log_id` is only assigned on backend confirmation) and are reported as unverifiable.
+In environments without TEE hardware (no RTMR), signed predecessor replay is used as a DB-level ordering verification fallback. This is still weaker than hardware-backed RTMR ordering, but it does validate that each confirmed record's signed `prev_event_digest` and `prev_lookup_hash` match the preceding confirmed record selected by `sequence_num`. Unconfirmed records at the chain tail cannot be verified and are reported as unverifiable.
 
 This mode is suitable for development and testing only. TruCon logs a prominent warning at startup when TDX hardware is absent. The production trust model is bound to TDX RTMR hardware chains; non-TEE mode exists solely to allow functional testing of the commit/verify flow without hardware.
+
+The following diagram shows the verifier-facing replay contract. `log_id` remains the immutable backend identity, but predecessor continuity is proven from the signed predicate rather than from backend-assigned predecessor IDs.
 
 ```mermaid
 classDiagram
@@ -226,28 +227,36 @@ classDiagram
 
     class ImmutableLogEntry0 {
         +log_id(optional): r0
-        +prev_log_id(optional): null
+        +sequence_num: 1
+        +prev_event_digest: null
+        +prev_lookup_hash: null
         +event_log: EventLog
         +signature: sig0
     }
 
     class ImmutableLogEntry1 {
         +log_id(optional): r1
-        +prev_log_id(optional): r0
+        +sequence_num: 2
+        +prev_event_digest: sha384:e0
+        +prev_lookup_hash: sha256:p0
         +event_log: EventLog
         +signature: sig1
     }
 
     class ImmutableLogEntry2 {
         +log_id(optional): r2
-        +prev_log_id(optional): r1
+        +sequence_num: 3
+        +prev_event_digest: sha384:e1
+        +prev_lookup_hash: sha256:p1
         +event_log: EventLog
         +signature: sig2
     }
 
     class ImmutableLogEntry3 {
         +log_id(optional): r3
-        +prev_log_id(optional): r2
+        +sequence_num: 4
+        +prev_event_digest: sha384:e2
+        +prev_lookup_hash: sha256:p2
         +event_log: EventLog
         +signature: sig3
     }
@@ -257,9 +266,9 @@ classDiagram
     ImmutableLogEntry2 --> EventLog : stores
     ImmutableLogEntry3 --> EventLog : stores
 
-    ImmutableLogEntry1 --> ImmutableLogEntry0 : prev_log_id
-    ImmutableLogEntry2 --> ImmutableLogEntry1 : prev_log_id
-    ImmutableLogEntry3 --> ImmutableLogEntry2 : prev_log_id
+    ImmutableLogEntry1 --> ImmutableLogEntry0 : signed predecessor proof
+    ImmutableLogEntry2 --> ImmutableLogEntry1 : signed predecessor proof
+    ImmutableLogEntry3 --> ImmutableLogEntry2 : signed predecessor proof
 ```
 
 #### Core Contract Structure
@@ -283,7 +292,7 @@ classDiagram
         +string record_id
         +string chain_ref(optional)
         +datetime created_at
-        +string prev_log_id(optional)
+        +string idempotency_key(optional)
     }
 
     class EventLog {
@@ -539,7 +548,7 @@ Trusted Log uses two signing mechanisms:
 - **Event Log 0 (baseline)**: The baseline predicate embeds a TEE-generated ECDSA P-384 public key in Event Log 0's `pub_key` field, and the explicit `default`-chain init path wraps that predicate in a Sigstore bundle for public-log submission. The private key is discarded immediately after deriving the public key. This preserves a TEE-origin marker in the baseline payload while making the record compatible with the same immutable-backend ingestion path as other bundles.
 - **Subsequent events**: Signed with Sigstore OIDC keyless signing (existing flow). Each event's DSSE envelope contains a short-lived Fulcio certificate proving the signer's OIDC identity.
 
-Because subsequent logs are strictly linked via cryptographic hashes (`prev_log_id` / `previous_hash`), any verifier can securely traverse from Event Log 0, extract the verified public key, and confirm the chain's origin. The public key does not need to be attached to every log entry.
+Because subsequent logs are now linked through the signed predecessor contract (`sequence_num`, `prev_event_digest`, `prev_lookup_hash`), any verifier can replay from Event Log 0, extract the verified public key, and confirm the chain's origin. The public key does not need to be attached to every log entry.
 
 ### Identity Token Lifecycle and Separation of Duties
 
@@ -661,12 +670,14 @@ sequenceDiagram
     TB->>TL: add_entry("docker-up", ...)
     TB->>TL: commit_record(...)
     activate TL
-    Note right of TL: Sign DSSE envelope (offline mode, no prev_log_id)
-    TL->>TL: Build predicate, sign with Sigstore
-    TL->>TA: POST /commit {bundle, chain_id, event_digest}
+    Note right of TL: Reserve predecessor contract, then sign DSSE envelope
+    TL->>TA: POST /commit-intents/reserve {chain_id, idempotency_key}
+    TA-->>TL: {intent_token, sequence_num, prev_event_digest, prev_lookup_hash}
+    TL->>TL: Build reserved predicate, sign with Sigstore
+    TL->>TA: POST /commit {bundle, chain_id, event_digest, intent_token}
     activate TA
     Note right of TA: Acquire threading.Lock()
-    TA->>PQ: Read chain_state → prev_log_id, sequence_num
+    TA->>PQ: Validate intent and reserved predecessor contract
     TA->>LB: extend RTMR[2] (event_digest)
     LB-->>TA: mr_value, prev_mr_value
     TA->>PQ: INSERT commit_queue (rtmr_extended=TRUE)
@@ -691,10 +702,11 @@ This step is responsible for sealing the event before any remote publication att
 
 The `commit_record` path should behave as follows:
 
-- tc_api's Trusted Log API constructs the DSSE predicate from the sealed `Record` (without `prev_log_id` — ordering is proven by the RTMR hardware chain).
-- tc_api signs the DSSE envelope using the caller's OIDC identity token via Sigstore in offline mode (Fulcio certificate exchange, no Rekor push).
-- tc_api POSTs the signed bundle to the TruCon's `POST /commit` endpoint with `chain_id` and `event_digest`.
-- The TruCon acquires `threading.Lock()`, reads `chain_state` for the current `prev_log_id` and `sequence_num`, extends the RTMR with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, updates `chain_state`, and releases the lock.
+- tc_api's Trusted Log API first reserves a predecessor contract from TruCon.
+- tc_api constructs the DSSE predicate from the sealed `Record` using the reserved `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`.
+- tc_api signs the DSSE envelope using the caller's OIDC identity token via Sigstore.
+- tc_api POSTs the signed bundle to TruCon's `POST /commit` endpoint together with `chain_id`, `event_digest`, and `intent_token`.
+- The TruCon acquires `threading.Lock()`, validates the signed bundle against the reserved contract, extends the RTMR with the event digest, inserts the record into `commit_queue` with `rtmr_extended=TRUE`, updates `chain_state`, consumes the intent, and releases the lock.
 - The TruCon returns `record_id`, `sequence_num`, `mr_value`, and `prev_mr_value` to tc_api.
 - tc_api returns a `CommitResult` to the caller confirming the event is finalized and queued for later publication.
 
@@ -745,7 +757,9 @@ Commit queue entries retain the following metadata for safe resubmission and ope
 - `status` — lifecycle state such as `PENDING`, `SUBMITTING`, `CONFIRMED`, `FAILED_RETRYABLE`, `FAILED_TERMINAL`, or legacy `FAILED`
 - `rtmr_extended` — flag indicating whether the RTMR extend succeeded (used for crash recovery)
 - `sequence_num` — monotonically increasing within each chain, assigned by the TruCon under the lock
-- `prev_log_id` — system-maintained chain link (not in the DSSE signature)
+- `prev_log_id` — backend-oriented local predecessor reference retained only for submission/state bookkeeping and compatibility
+- `prev_event_digest` / `prev_lookup_hash` — signed predecessor contract persisted with the record for replay verification
+- `intent_token` — reservation identifier consumed by the successful commit
 - `mr_value` — the RTMR register value after extend
 - `log_id` — Rekor log entry ID once confirmed
 - `retry_count` — number of submission attempts
@@ -802,7 +816,7 @@ sequenceDiagram
     PQ-->>TL_SW: next eligible pending record
     TL_SW->>TL: submit next eligible record
     TL->>PQ: load finalized queued EventLog
-    TL->>RB: submit(EventLog, prev_log_id)
+    TL->>RB: submit(EventLog)
 
     alt backend confirms
         RB-->>TL: log_id, confirmed
@@ -858,11 +872,11 @@ Replay means reconstructing the expected event state from the persisted immutabl
 The replay requirement should include the following steps:
 
 1. Resolve the target event log by immutable identifier, event identifier, or chain traversal starting point.
-2. Load the persisted `EventLog` exactly as committed, including ordered `Record.entries`, `event_id`, `event_type`, `created`, `digest`, `mr`, and backend linkage metadata such as `prev_log_id`.
+2. Load the persisted `EventLog` exactly as committed, including ordered `Record.entries`, `event_id`, `event_type`, `created`, `digest`, `mr`, and signed predecessor metadata such as `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`.
 3. Recompute each `Entry_Digest_i` from the canonical serialized form of the stored entry values.
 4. Recompute the expected `Event_Digest` from the canonical serialized form of `event_id`, `event_type`, `created`, and the ordered list of replayed entry digests.
 5. Compare the replayed event digest against the `digest` stored inside the immutable `EventLog`.
-6. Verify that the chain linkage is valid, including any `prev_log_id` reference and any backend-specific previous-entry relationship.
+6. Verify that the chain linkage is valid by checking the signed predecessor contract against the replayed predecessor entry, and then apply any backend-specific previous-entry relationship only as auxiliary evidence.
 7. Verify signature artifacts and submission receipts against the replayed immutable payload rather than trusting stored digest fields alone.
 8. If the event claims an `mr` value or participates in attestation correlation, verify that the replayed `Event_Digest` is the same digest that would have been extended into the local MR.
 9. Return a `VerificationResult` that distinguishes structural failure, digest mismatch, signature failure, chain-link failure, measurement mismatch, and policy failure.
@@ -886,13 +900,13 @@ If measurement correlation is enabled, verification should additionally check th
 
 ### Operator Verification Surfaces
 
-The current implementation exposes a preferred external verification path and a narrower fallback path:
+The current implementation exposes a supported external verification path and a separate internal troubleshooting path:
 
 - immutable-backend history from Rekor, used for public replay and signature validation
-- exported attested-head evidence from `GET /evidence/{chain_id}`, used as the preferred operator input for current-head binding
-- live TruCon local chain state, retained only as a transitional fallback for sequence, RTMR, and pending-status diagnostics
+- exported attested-head evidence from `GET /evidence/{chain_id}`, used as the supported operator input for current-head binding
+- live TruCon local chain state, retained only for explicit troubleshooting of sequence, RTMR, and pending-status diagnostics
 
-This split is acceptable for the current transition period, but only the evidence-backed path should be treated as the long-term external verifier contract.
+Only the evidence-backed path should be treated as the external verifier contract; the live TruCon path remains an internal troubleshooting aid.
 
 For remote operators who may not be able to log into the CVM, the design should distinguish between:
 
@@ -913,6 +927,12 @@ The current TruCon export surface for that evidence is `GET /evidence/{chain_id}
 This architecture intentionally keeps detailed evidence-package format, quote field selection, and operator CLI behavior out of the top-level architecture doc. Those details should evolve in verification-specific design docs and OpenSpec changes.
 
 For the current v1 contract, exported attested head evidence is a versioned JSON envelope whose trust-critical binding covers `chain_id`, `sequence_num`, `head_log_id`, and `mr_value`. Event Log 0 baseline fields remain outside that package and continue to come from Rekor replay.
+
+Operator-facing verification now makes this provenance split explicit:
+
+- public replay is responsible for historical continuity and Event Log 0 baseline origin;
+- exported evidence is responsible for quote-backed current-head binding only;
+- process-local cache may help retrieval, but it does not upgrade historical replay to publicly auditable proof.
 
 On top of that structural verification layer, the operator CLI now applies canonical verification profiles for `build`, `publish`, `launch`, and `docktap-runtime`. These profiles consume replayed entry fields emitted by REST and Docktap producers, use shared verdict states (`verified`, `warning`, `incomplete`, `failed`), and keep application-layer findings separate from replay/evidence success.
 

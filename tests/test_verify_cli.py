@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from tc_api.cli.verify import main
 from tc_api.trucon.evidence import compute_binding_expected_value
 
@@ -36,10 +38,22 @@ def _urlopen_factory(chain_state_payload, verify_payload):
 def _immutable_entry(event_id, event_type, digest, index, predicate_entries=None, chain_id="default"):
     return {
         "index": index,
+        "sequence_num": index,
         "event_id": event_id,
         "event_type": event_type,
         "digest": digest,
         "predicate_entries": predicate_entries or [],
+        "prev_event_digest": None,
+        "prev_lookup_hash": None,
+        "predecessor_ok": True,
+        "predecessor_status": "origin" if index == 1 else "proven",
+        "candidate_count": 0,
+        "materialized_candidate_count": 0,
+        "matched_candidate_count": 0,
+        "boundary_status": None,
+        "public_history_ok": True,
+        "public_history_status": "public",
+        "replay_provenance": "public",
         "subject_names": [f"trusted-log-chain_{chain_id}"],
         "signer_identity": "alice@example.com",
         "signer_identity_match": True,
@@ -74,7 +88,7 @@ def test_verify_cli_json_success(capsys):
                 "rekor_ok": True,
                 "rtmr_extended": True,
                 "mr_value": "aa",
-                "prev_log_id_ok": None,
+                "predecessor_ok": None,
                 "error": None,
             }
         ],
@@ -94,6 +108,12 @@ def test_verify_cli_json_success(capsys):
                         "event_id": "evt-1",
                         "signer_identity": "alice@example.com",
                         "digest": "sha384:evt-1",
+                        "predecessor_ok": True,
+                        "predecessor_status": "origin",
+                        "candidate_count": 0,
+                        "materialized_candidate_count": 0,
+                        "matched_candidate_count": 0,
+                        "boundary_status": None,
                     }
                 ],
             },
@@ -103,15 +123,24 @@ def test_verify_cli_json_success(capsys):
     with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
         with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
             MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
-            exit_code = main(["default", "--json"])
+            exit_code = main(["default", "--troubleshoot-live", "--json"])
 
     captured = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert captured["summary"]["status"] == "verified"
     assert captured["mode"]["verification_mode"] == "tee"
     assert captured["replay"]["entries"][0]["event_id"] == "evt-1"
-    assert captured["fallback"]["note"] == "transitional live TruCon fallback"
+    assert captured["replay"]["entries"][0]["predecessor_status"] == "origin"
+    assert captured["mode"]["input_mode"] == "live-troubleshooting"
+    assert captured["fallback"]["note"] == "explicit internal troubleshooting mode"
     assert "profiles" in captured
+
+
+def test_verify_cli_rejects_bare_chain_id_without_troubleshooting_flag():
+    with pytest.raises(SystemExit) as exc_info:
+        main(["default", "--json"])
+
+    assert exc_info.value.code == 2
 
 
 def test_verify_cli_require_tee_fails_in_non_tee_mode(capsys):
@@ -133,7 +162,7 @@ def test_verify_cli_require_tee_fails_in_non_tee_mode(capsys):
     with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
         with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
             MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
-            exit_code = main(["default", "--json", "--require-tee"])
+            exit_code = main(["default", "--troubleshoot-live", "--json", "--require-tee"])
 
     captured = json.loads(capsys.readouterr().out)
     assert exit_code == 1
@@ -162,7 +191,7 @@ def test_verify_cli_fail_on_pending(capsys):
                 "rekor_ok": True,
                 "rtmr_extended": True,
                 "mr_value": None,
-                "prev_log_id_ok": True,
+                "predecessor_ok": True,
                 "error": None,
             },
             {
@@ -173,14 +202,14 @@ def test_verify_cli_fail_on_pending(capsys):
                 "rekor_ok": False,
                 "rtmr_extended": True,
                 "mr_value": None,
-                "prev_log_id_ok": None,
+                "predecessor_ok": None,
                 "error": None,
             },
         ],
     }
 
     with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
-        exit_code = main(["default", "--json", "--fail-on-pending"])
+        exit_code = main(["default", "--troubleshoot-live", "--json", "--fail-on-pending"])
 
     captured = json.loads(capsys.readouterr().out)
     assert exit_code == 1
@@ -209,23 +238,242 @@ def test_verify_cli_human_output_contains_per_record_detail(capsys):
                 "rekor_ok": True,
                 "rtmr_extended": True,
                 "mr_value": "aa",
-                "prev_log_id_ok": None,
+                "predecessor_ok": None,
                 "error": None,
             }
         ],
     }
-    immutable_result = type("VerifyResult", (), {"success": True, "errors": [], "details": {"entry_count": 1, "entries": [{"event_id": "evt-1"}]}})()
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "entry_count": 1,
+                "entries": [
+                    {
+                        "event_id": "evt-1",
+                        "predecessor_ok": True,
+                        "predecessor_status": "origin",
+                        "candidate_count": 0,
+                        "materialized_candidate_count": 0,
+                        "matched_candidate_count": 0,
+                        "boundary_status": None,
+                    }
+                ],
+            },
+        },
+    )()
 
     with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
         with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
             MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
-            exit_code = main(["default"])
+            exit_code = main(["default", "--troubleshoot-live"])
 
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Per-record replay detail:" in output
+    assert "Troubleshooting:" in output
     assert "Profiles:" in output
     assert "event_id=evt-1" in output
+    assert "predecessor_status=origin" in output
+
+
+def test_verify_cli_json_preserves_boundary_status(capsys):
+    chain_state = {"chain_id": "default", "head_log_id": "log-tail"}
+    trucon_verify = {
+        "valid": False,
+        "chain_id": "default",
+        "total_entries": 1,
+        "mr_verified": 0,
+        "rekor_confirmed": 1,
+        "rekor_pending": 0,
+        "rtmr_available": False,
+        "head_mr_value": None,
+        "first_error_at": 1,
+        "entries": [
+            {
+                "seq": 1,
+                "record_id": "rec-1",
+                "event_id": "evt-1",
+                "mr_ok": None,
+                "rekor_ok": True,
+                "rtmr_extended": True,
+                "mr_value": None,
+                "predecessor_ok": None,
+                "predecessor_status": "unverifiable",
+                "boundary_status": "degraded",
+                "candidate_count": 0,
+                "materialized_candidate_count": 0,
+                "matched_candidate_count": 0,
+                "error": "signed predecessor contract unavailable",
+            }
+        ],
+    }
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "entry_count": 1,
+                "entries": [
+                    {
+                        "event_id": "evt-1",
+                        "signer_identity": "alice@example.com",
+                        "digest": "sha384:evt-1",
+                        "predecessor_ok": None,
+                        "predecessor_status": "unverifiable",
+                        "candidate_count": 0,
+                        "materialized_candidate_count": 0,
+                        "matched_candidate_count": 0,
+                        "boundary_status": "degraded",
+                    }
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
+        with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+            MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+            exit_code = main(["default", "--troubleshoot-live", "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["replay"]["entries"][0]["boundary_status"] == "degraded"
+
+
+def test_verify_cli_text_reports_degraded_rollout_guidance(capsys):
+    chain_state = {"chain_id": "default", "head_log_id": "log-tail"}
+    trucon_verify = {
+        "valid": True,
+        "chain_id": "default",
+        "total_entries": 2,
+        "mr_verified": 0,
+        "rekor_confirmed": 2,
+        "rekor_pending": 0,
+        "rtmr_available": False,
+        "head_mr_value": None,
+        "first_error_at": None,
+        "entries": [],
+    }
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "entry_count": 2,
+                "entries": [
+                    {
+                        "event_id": "evt-2",
+                        "event_type": "launch",
+                        "predecessor_ok": None,
+                        "predecessor_status": "unverifiable",
+                        "candidate_count": 0,
+                        "materialized_candidate_count": 0,
+                        "matched_candidate_count": 0,
+                        "boundary_status": "degraded",
+                    },
+                    {
+                        "event_id": "evt-1",
+                        "event_type": "chain.init",
+                        "predecessor_ok": True,
+                        "predecessor_status": "origin",
+                        "candidate_count": 0,
+                        "materialized_candidate_count": 0,
+                        "matched_candidate_count": 0,
+                        "boundary_status": None,
+                    },
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
+        with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+            MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+            exit_code = main(["default", "--troubleshoot-live"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "rollout=degraded" in output
+    assert "mixed-regime migration state" in output
+
+
+def test_verify_cli_text_reports_invalid_rollout_guidance(capsys):
+    chain_state = {"chain_id": "default", "head_log_id": "log-tail"}
+    trucon_verify = {
+        "valid": False,
+        "chain_id": "default",
+        "total_entries": 3,
+        "mr_verified": 0,
+        "rekor_confirmed": 3,
+        "rekor_pending": 0,
+        "rtmr_available": False,
+        "head_mr_value": None,
+        "first_error_at": 3,
+        "entries": [],
+    }
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": False,
+            "errors": ["Signed predecessor continuity verification failed"],
+            "details": {
+                "entry_count": 3,
+                "entries": [
+                    {
+                        "event_id": "evt-3",
+                        "event_type": "launch",
+                        "predecessor_ok": False,
+                        "predecessor_status": "unverifiable",
+                        "candidate_count": 0,
+                        "materialized_candidate_count": 0,
+                        "matched_candidate_count": 0,
+                        "boundary_status": "invalid",
+                    },
+                    {
+                        "event_id": "evt-2",
+                        "event_type": "launch",
+                        "predecessor_ok": True,
+                        "predecessor_status": "proven",
+                        "candidate_count": 1,
+                        "materialized_candidate_count": 1,
+                        "matched_candidate_count": 1,
+                        "boundary_status": None,
+                    },
+                    {
+                        "event_id": "evt-1",
+                        "event_type": "chain.init",
+                        "predecessor_ok": True,
+                        "predecessor_status": "origin",
+                        "candidate_count": 0,
+                        "materialized_candidate_count": 0,
+                        "matched_candidate_count": 0,
+                        "boundary_status": None,
+                    },
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
+        with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+            MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+            exit_code = main(["default", "--troubleshoot-live"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "rollout=invalid" in output
+    assert "regressed to incompatible legacy linkage" in output
 
 
 def test_verify_cli_evidence_mode_success(tmp_path, capsys):
@@ -287,7 +535,136 @@ def test_verify_cli_evidence_mode_success(tmp_path, capsys):
     assert captured["mode"]["input_mode"] == "evidence-backed"
     assert captured["summary"]["status"] == "verified"
     assert captured["attested_head"]["matches_replay"] is True
+    assert captured["replay"]["provenance"]["status"] == "public"
+    assert captured["attested_head"]["contract_scope"] == "current-head binding only"
     assert captured["replay"]["derived"]["sequence_num"] == 2
+
+
+def test_verify_cli_json_preserves_replay_provenance_boundary(tmp_path, capsys):
+    baseline_rtmr = "44" * 48
+    evidence_payload = {
+        "version": "v1",
+        "tee_type": "tdx",
+        "chain_id": "default",
+        "sequence_num": 1,
+        "head_log_id": "log-tail",
+        "mr_value": baseline_rtmr,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "quote": "base64-quote",
+        "report_data_binding": {
+            "algorithm": "sha384",
+            "bound_fields": ["chain_id", "sequence_num", "head_log_id", "mr_value"],
+            "expected_value": compute_binding_expected_value("default", 1, "log-tail", baseline_rtmr),
+        },
+    }
+    evidence_path = _write_evidence(tmp_path, evidence_payload)
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": False,
+            "errors": ["Signed predecessor continuity verification failed"],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "chain_id": "default",
+                "entry_count": 1,
+                "entries": [
+                    {
+                        **_immutable_entry(
+                            "evt-log0-default",
+                            "chain.init",
+                            "sha384:" + ("22" * 48),
+                            1,
+                            predicate_entries=[
+                                {"key": "baseline_rtmr", "value": baseline_rtmr},
+                                {"key": "ccel_digest", "value": "sha384:" + ("33" * 48)},
+                                {"key": "pub_key", "value": "pem"},
+                            ],
+                        ),
+                        "predecessor_ok": False,
+                        "predecessor_status": "unsupported",
+                        "public_history_ok": False,
+                        "public_history_status": "cache-assisted",
+                        "replay_provenance": "cache-assisted",
+                    }
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+        MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+        exit_code = main(["--evidence", evidence_path, "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["replay"]["provenance"]["status"] == "unsupported"
+    assert captured["attested_head"]["valid"] is True
+    assert captured["summary"]["status"] == "failed"
+
+
+def test_verify_cli_text_explains_provenance_split(tmp_path, capsys):
+    baseline_rtmr = "44" * 48
+    evidence_payload = {
+        "version": "v1",
+        "tee_type": "tdx",
+        "chain_id": "default",
+        "sequence_num": 1,
+        "head_log_id": "log-tail",
+        "mr_value": baseline_rtmr,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "quote": "base64-quote",
+        "report_data_binding": {
+            "algorithm": "sha384",
+            "bound_fields": ["chain_id", "sequence_num", "head_log_id", "mr_value"],
+            "expected_value": compute_binding_expected_value("default", 1, "log-tail", baseline_rtmr),
+        },
+    }
+    evidence_path = _write_evidence(tmp_path, evidence_payload)
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": False,
+            "errors": ["Signed predecessor continuity verification failed"],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "chain_id": "default",
+                "entry_count": 1,
+                "entries": [
+                    {
+                        **_immutable_entry(
+                            "evt-log0-default",
+                            "chain.init",
+                            "sha384:" + ("22" * 48),
+                            1,
+                            predicate_entries=[
+                                {"key": "baseline_rtmr", "value": baseline_rtmr},
+                                {"key": "ccel_digest", "value": "sha384:" + ("33" * 48)},
+                                {"key": "pub_key", "value": "pem"},
+                            ],
+                        ),
+                        "predecessor_ok": False,
+                        "predecessor_status": "unsupported",
+                        "public_history_ok": False,
+                        "public_history_status": "cache-assisted",
+                        "replay_provenance": "cache-assisted",
+                    }
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+        MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+        exit_code = main(["--evidence", evidence_path])
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "trust_sources=public_replay(history, baseline) + exported_evidence(current_head_binding)" in output
+    assert "provenance=unsupported historical replay facts depended on process-local cache" in output
 
 
 def test_verify_cli_rejects_invalid_evidence_binding(tmp_path, capsys):
@@ -497,7 +874,7 @@ def test_verify_cli_live_fallback_fails_non_default_chain_without_baseline(capsy
                 "rekor_ok": True,
                 "rtmr_extended": True,
                 "mr_value": None,
-                "prev_log_id_ok": True,
+                "predecessor_ok": True,
                 "error": "non-default chain 'workload-a' does not begin with Event Log 0",
             }
         ],
@@ -523,7 +900,7 @@ def test_verify_cli_live_fallback_fails_non_default_chain_without_baseline(capsy
     with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
         with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
             MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
-            exit_code = main(["workload-a", "--json"])
+            exit_code = main(["workload-a", "--troubleshoot-live", "--json"])
 
     captured = json.loads(capsys.readouterr().out)
     assert exit_code == 1

@@ -133,8 +133,10 @@ Notes:
 - It validates real bundle signing, public Rekor upload, retrieval, and immutable replay.
 - It now includes both a direct Event Log 0 bundle smoke test and a fuller `init_chain -> submit -> verify` smoke test for the explicit `default`-chain init path, where baseline records are emitted as Sigstore Bundles.
 - It also includes a lazy non-`default` workload-chain smoke test, where the first workload commit causes TruCon to mint Event Log 0 via the same Sigstore/Rekor path before the triggering event is accepted as `sequence_num=2`.
-- It does not yet prove multi-entry public chain traversal, because `prev_log_id` is not currently embedded in the public DSSE payload used by immutable replay.
-- The current smoke path assumes signing, submit, and replay occur in the same Python process. This is intentional: the Sigstore adapter now caches bundle-derived DSSE payloads by Rekor log reference so replay can recover `event_id` and predicate entries even when a raw Rekor readback does not preserve the original statement in tc_api's normalized shape.
+- It also includes an opt-in multi-entry predecessor-proof smoke test that clears the adapter's in-process cache before replay and requires the head record to prove its predecessor through public Rekor `payloadHash(sha256)` candidate discovery.
+- Immutable replay now uses signed `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`, with Rekor `payloadHash(sha256)` lookup serving as candidate discovery only.
+- Mixed-regime rollout behavior is still primarily covered by local regression tests rather than live public-Rekor integration.
+- The dedicated multi-entry predecessor-proof smoke test intentionally clears the adapter's in-process cache before replay to validate the public candidate-discovery path separately. Same-process cache may still be used as a local fallback during debugging, but cache-assisted replay no longer counts as public proof in verifier results.
 
 ### Short-Lived Token Guidance
 
@@ -156,7 +158,13 @@ In other words:
 
 `--require-tee` should fail when TruCon reports non-TEE fallback mode. Non-TEE verification remains suitable for development and test environments only.
 
-Prefer exported evidence as the primary operator input. Using `tc-verify <chain_id>` without `--evidence` is a transitional live TruCon fallback path for tightly coupled deployments and troubleshooting.
+Prefer exported evidence as the primary operator input. Bare `tc-verify <chain_id>` is no longer a supported external verification path; local live verification now requires an explicit troubleshooting selector and should be treated as internal diagnostics only.
+
+Migration guidance:
+
+- use `tc-verify --evidence evidence.json` for supported operator verification;
+- use the explicit live troubleshooting mode only for local diagnostics, pending-state inspection, or tightly coupled debugging;
+- do not treat troubleshooting-mode output as a replacement for the external verifier contract.
 
 ## Test Coverage
 

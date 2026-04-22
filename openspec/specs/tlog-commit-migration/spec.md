@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for migrating business-event logging onto the current TrustedLogAPI and TruCon-backed commit path.
+
+## Requirements
 
 ### Requirement: Business endpoints use TrustedLogAPI for event logging
 Each business endpoint (build, publish, launch) SHALL use the `TrustedLogAPI` instance from `app.state.trusted_log` instead of constructing a `ChainedTransparencyLog` instance. The endpoint SHALL call `init_record()` at the start of its async workflow, `add_entry(record_id, entry)` at each step, and `commit_record()` once at the end. Routing trust-event commits through TruCon SHALL NOT change the endpoint's externally observable result contract for the underlying business operation: the endpoint SHALL continue returning its expected identifier and lifecycle/status fields for build, publish, and launch workflows, and SHALL surface transparency degradation separately from core workflow success when TruCon commit submission fails after the business operation succeeds.

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for TruCon observability signals, structured metrics, and diagnostic logging.
+
+## Requirements
 
 ### Requirement: commit_latency metric emission
 The `/commit` handler SHALL emit a structured log line upon completion with `metric=commit_latency`, `latency_ms` (float, milliseconds elapsed from handler entry to response), `record_id`, and `idempotent` (bool, true if the response was served from the idempotency cache). The timing SHALL include lock wait time.

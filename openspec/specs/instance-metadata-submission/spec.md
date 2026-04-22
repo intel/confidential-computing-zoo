@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the requirements for submitting instance metadata from Docktap into the TruCon commit path.
+
+## Requirements
 
 ### Requirement: Docktap passes container_id as instance_id
 Docktap's TruCon commit call SHALL include the Docker container's full 64-character `container_id` as the `instance_id` field in the `CommitRequest` payload.

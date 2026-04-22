@@ -54,7 +54,7 @@ TruCon SHALL expose a `GET /verify-chain/{chain_id}` endpoint that reads all `co
 - **THEN** the response SHALL return HTTP 404
 
 ### Requirement: Detailed per-entry verification response
-The `/verify-chain/{chain_id}` response SHALL include a top-level summary and an `entries` array with per-entry detail.
+The `/verify-chain/{chain_id}` response SHALL include a top-level summary and an `entries` array with per-entry detail. For reservation-backed replayable records, the per-entry detail SHALL expose predecessor-continuity verification using signed replay fields rather than `prev_log_id` linkage, and SHALL preserve the same predecessor result vocabulary used by immutable replay verification.
 
 #### Scenario: Response structure
 - **WHEN** the verification endpoint returns a result
@@ -62,7 +62,11 @@ The `/verify-chain/{chain_id}` response SHALL include a top-level summary and an
 
 #### Scenario: Entry structure
 - **WHEN** each entry in the `entries` array is serialized
-- **THEN** it SHALL contain: `seq` (int), `record_id` (str), `event_id` (str), `mr_ok` (bool|null), `rekor_ok` (bool), `rtmr_extended` (bool), `mr_value` (str|null), `prev_log_id_ok` (bool|null), and optionally `error` (str)
+- **THEN** it SHALL contain: `seq` (int), `record_id` (str), `event_id` (str), `mr_ok` (bool|null), `rekor_ok` (bool), `rtmr_extended` (bool), `mr_value` (str|null), `predecessor_ok` (bool|null), `predecessor_status` (str|null), `prev_event_digest` (str|null), `prev_lookup_hash` (str|null), and optionally `candidate_count` (int|null), `materialized_candidate_count` (int|null), `matched_candidate_count` (int|null), `boundary_status` (str|null), and `error` (str)
+
+#### Scenario: Entry distinguishes proof pipeline stages
+- **WHEN** a replayable entry includes predecessor verification detail
+- **THEN** the serialized entry SHALL preserve enough candidate-pipeline detail to distinguish candidate discovery failure, decode failure, no-match proof failure, and ambiguity without requiring callers to parse free-form error text
 
 ### Requirement: RTMR verification skipped in non-TDX environments
 When all `mr_value` entries in the chain are `NULL`, the endpoint SHALL set `rtmr_available: false` and report `mr_ok: null` for every entry rather than failing.
@@ -82,28 +86,43 @@ When a record has `event_digest = NULL` (pre-migration row), the RTMR chain chec
 - **WHEN** a record has `event_digest = NULL` but `mr_value` is present
 - **THEN** that entry SHALL have `mr_ok: null` (skipped, not failed) and the chain SHALL continue verification from the next entry using this entry's `mr_value` as `prev_mr`
 
-### Requirement: prev_log_id linkage verification in non-TEE mode
-When `rtmr_available` is `false`, the `GET /verify-chain/{chain_id}` endpoint SHALL verify `prev_log_id` linkage for each confirmed record. For each record (ordered by `sequence_num`), the endpoint SHALL check that `prev_log_id` matches the `log_id` of the preceding confirmed record. When `rtmr_available` is `true`, the `prev_log_id` check SHALL be skipped and `prev_log_id_ok` SHALL be `null` for all entries.
+### Requirement: Signed predecessor continuity verification
+When evaluating replayable records, `GET /verify-chain/{chain_id}` SHALL verify predecessor continuity using the signed predecessor contract persisted with each queue record. The verification logic SHALL treat immutable-backend lookup as candidate discovery, SHALL report predecessor status independently from RTMR availability, and SHALL classify replay regime boundaries separately from ordinary predecessor mismatch.
 
-#### Scenario: Valid prev_log_id chain in non-TEE mode
-- **WHEN** `GET /verify-chain/default` is called with `rtmr_available == false` and all confirmed records have `prev_log_id` matching the preceding record's `log_id`
-- **THEN** each verified entry SHALL have `prev_log_id_ok: true`
+#### Scenario: Valid signed predecessor chain in non-TEE mode
+- **WHEN** `GET /verify-chain/{chain_id}` is called in a non-TEE environment and each confirmed record's signed predecessor contract matches exactly one normalized predecessor candidate
+- **THEN** each verified entry SHALL report `predecessor_ok: true` and `predecessor_status: "proven"`
 
-#### Scenario: First record has null prev_log_id
-- **WHEN** the first record in the chain has `prev_log_id = NULL` (no predecessor)
-- **THEN** that entry SHALL have `prev_log_id_ok: true`
+#### Scenario: Baseline record uses null predecessor contract
+- **WHEN** the first record in the chain is Event Log 0 with `sequence_num=1`, `prev_event_digest=null`, and `prev_lookup_hash=null`
+- **THEN** that entry SHALL report `predecessor_ok: true` and `predecessor_status: "origin"`
 
-#### Scenario: prev_log_id mismatch detected
-- **WHEN** a confirmed record's `prev_log_id` does not match the preceding confirmed record's `log_id`
-- **THEN** that entry SHALL have `prev_log_id_ok: false` and `error` SHALL describe the mismatch, and top-level `valid` SHALL be `false`
+#### Scenario: Predecessor mismatch detected
+- **WHEN** a confirmed record's signed predecessor fields do not match any valid predecessor candidate for the prior sequence position after candidate materialization
+- **THEN** that entry SHALL have `predecessor_ok: false`, `predecessor_status: "missing"` or another more specific failure classification, `error` SHALL describe the failure, and top-level `valid` SHALL be `false`
 
-#### Scenario: Unconfirmed record in chain
-- **WHEN** a record has `log_id = NULL` (not yet confirmed by immutable backend)
-- **THEN** that entry SHALL have `prev_log_id_ok: null` (cannot verify)
+#### Scenario: Unconfirmed record cannot prove predecessor yet
+- **WHEN** a record has not yet been confirmed in the immutable backend and predecessor replay cannot be completed
+- **THEN** that entry SHALL have `predecessor_ok: null` and `predecessor_status: "unverifiable"`
 
-#### Scenario: RTMR available suppresses prev_log_id check
-- **WHEN** `GET /verify-chain/default` is called with `rtmr_available == true`
-- **THEN** every entry SHALL have `prev_log_id_ok: null` regardless of `prev_log_id` values
+#### Scenario: Mixed replay regimes remain visible to operators
+- **WHEN** verification encounters a boundary between reservation-backed replay semantics and an incompatible legacy replay regime
+- **THEN** the response SHALL preserve a machine-readable `boundary_status` classification rather than reporting only a generic predecessor mismatch for the boundary entry
+
+### Requirement: TruCon classifies replay rollout boundaries
+`GET /verify-chain/{chain_id}` SHALL preserve rollout-boundary classifications for mixed legacy and reservation-backed replay regimes so operators can distinguish degraded migration state from invalid regression. These classifications SHALL remain machine-readable and SHALL be exposed independently from RTMR availability.
+
+#### Scenario: Legacy boundary is reported as degraded migration state
+- **WHEN** chain verification encounters a boundary from legacy predecessor linkage into the reservation-backed signed predecessor regime
+- **THEN** the response SHALL preserve a machine-readable boundary classification for the affected entry or summary and SHALL identify that boundary as degraded migration state rather than as a generic predecessor mismatch
+
+#### Scenario: Regression after reservation-backed entry is reported as invalid
+- **WHEN** chain verification encounters a regression into incompatible legacy predecessor linkage after a chain has already produced reservation-backed replayable records
+- **THEN** the response SHALL preserve a machine-readable boundary classification that marks the regression as invalid rather than as degraded migration state
+
+#### Scenario: Boundary classification survives non-TEE verification
+- **WHEN** TruCon verifies a chain in non-TEE mode and a replay-regime boundary is present
+- **THEN** the response SHALL preserve the same machine-readable boundary classification even if `mr_ok` is unavailable or skipped for some entries
 
 ### Requirement: Non-TEE startup warning
 When TDX RTMR sysfs is not detected at startup, TruCon SHALL emit a `WARNING`-level log message with "NON-TEE MODE" in the text, indicating that the instance is running without hardware measurement extensions and is suitable for development/testing only.

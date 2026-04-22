@@ -1,3 +1,9 @@
+## Purpose
+
+Define the requirements for TruCon's same-machine internal transport and its compatibility posture during migration.
+
+## Requirements
+
 ### Requirement: TruCon SHALL expose a same-machine Unix socket transport for internal callers
 TruCon SHALL provide a Unix domain socket transport for tc_api and Docktap internal control-plane traffic. This transport SHALL be the steady-state internal path for same-machine deployments.
 

@@ -71,6 +71,9 @@ def build_baseline_sigstore_bundle(
     ccel_digest: Optional[str],
     identity_token_str: Optional[str] = None,
     rekor_url: Optional[str] = None,
+    sequence_num: int = 1,
+    prev_event_digest: Optional[str] = None,
+    prev_lookup_hash: Optional[str] = None,
 ) -> tuple[str, str, str]:
     pub_key_pem = generate_ephemeral_pub_key_pem()
     event_id = f"evt-log0-{chain_id}"
@@ -91,6 +94,9 @@ def build_baseline_sigstore_bundle(
         "entry_digests": entry_digests,
         "digest": event_digest,
         "chain_id": chain_id,
+        "sequence_num": sequence_num,
+        "prev_event_digest": prev_event_digest,
+        "prev_lookup_hash": prev_lookup_hash,
     }
     statement = (
         StatementBuilder()

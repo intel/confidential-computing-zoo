@@ -3,7 +3,9 @@ Tests for TruCon /init-chain endpoints (Event Log 0 baseline).
 """
 
 import importlib
+import json
 import os
+from contextlib import ExitStack
 import pytest
 from unittest.mock import patch, MagicMock
 from typing import Tuple
@@ -33,6 +35,13 @@ def _make_db_patches(db_path: str):
     orig_update_chain_state = trucon_db_mod.update_chain_state
     orig_get_record_by_idem = trucon_db_mod.get_record_by_idempotency_key
     orig_get_chain_records = trucon_db_mod.get_chain_records
+    orig_create_commit_intent = trucon_db_mod.create_commit_intent
+    orig_get_commit_intent_by_token = trucon_db_mod.get_commit_intent_by_token
+    orig_get_commit_intent_by_idempotency_key = trucon_db_mod.get_commit_intent_by_idempotency_key
+    orig_get_active_commit_intent_for_chain = trucon_db_mod.get_active_commit_intent_for_chain
+    orig_update_commit_intent_status = trucon_db_mod.update_commit_intent_status
+    orig_expire_active_commit_intents = trucon_db_mod.expire_active_commit_intents
+    orig_get_record_by_id = trucon_db_mod.get_record_by_id
 
     def patched_insert(*args, **kwargs):
         kwargs.setdefault("db_path", db_path)
@@ -54,13 +63,67 @@ def _make_db_patches(db_path: str):
         kwargs.setdefault("db_path", db_path)
         return orig_get_chain_records(*args, **kwargs)
 
+    def patched_create_commit_intent(*args, **kwargs):
+        kwargs.setdefault("db_path", db_path)
+        return orig_create_commit_intent(*args, **kwargs)
+
+    def patched_get_commit_intent_by_token(*args, **kwargs):
+        kwargs.setdefault("db_path", db_path)
+        return orig_get_commit_intent_by_token(*args, **kwargs)
+
+    def patched_get_commit_intent_by_idempotency_key(*args, **kwargs):
+        kwargs.setdefault("db_path", db_path)
+        return orig_get_commit_intent_by_idempotency_key(*args, **kwargs)
+
+    def patched_get_active_commit_intent_for_chain(*args, **kwargs):
+        kwargs.setdefault("db_path", db_path)
+        return orig_get_active_commit_intent_for_chain(*args, **kwargs)
+
+    def patched_update_commit_intent_status(*args, **kwargs):
+        kwargs.setdefault("db_path", db_path)
+        return orig_update_commit_intent_status(*args, **kwargs)
+
+    def patched_expire_active_commit_intents(*args, **kwargs):
+        kwargs.setdefault("db_path", db_path)
+        return orig_expire_active_commit_intents(*args, **kwargs)
+
+    def patched_get_record_by_id(*args, **kwargs):
+        kwargs.setdefault("db_path", db_path)
+        return orig_get_record_by_id(*args, **kwargs)
+
     return {
         "insert_record": patched_insert,
         "get_chain_state": patched_get_chain_state,
         "update_chain_state": patched_update_chain_state,
         "get_record_by_idempotency_key": patched_get_record_by_idem,
         "get_chain_records": patched_get_chain_records,
+        "create_commit_intent": patched_create_commit_intent,
+        "get_commit_intent_by_token": patched_get_commit_intent_by_token,
+        "get_commit_intent_by_idempotency_key": patched_get_commit_intent_by_idempotency_key,
+        "get_active_commit_intent_for_chain": patched_get_active_commit_intent_for_chain,
+        "update_commit_intent_status": patched_update_commit_intent_status,
+        "expire_active_commit_intents": patched_expire_active_commit_intents,
+        "get_record_by_id": patched_get_record_by_id,
     }
+
+
+def _make_baseline_bundle(chain_id: str) -> str:
+    return json.dumps(
+        {
+            "chain_id": chain_id,
+            "sequence_num": 1,
+            "prev_event_digest": None,
+            "prev_lookup_hash": None,
+            "digest": "sha384:" + ("11" * 48),
+        }
+    )
+
+
+def _reserve_baseline_intent(client: TestClient, chain_id: str, idempotency_key: str | None = None):
+    payload = {"chain_id": chain_id, "is_baseline": True}
+    if idempotency_key is not None:
+        payload["idempotency_key"] = idempotency_key
+    return client.post("/commit-intents/reserve", json=payload)
 
 
 @pytest.fixture
@@ -81,18 +144,27 @@ def trucon_client(tmp_path):
         trucon_app_mod._pending_init_tokens.clear()
         trucon_app_mod.app.state.test_db_path = db_path
 
-        with patch.object(trucon_app_mod, "acquire_instance_lock"), \
-             patch.object(trucon_app_mod, "release_instance_lock"), \
-             patch.object(trucon_app_mod, "_crash_recovery"), \
-             patch.object(trucon_app_mod, "_submit_daemon_loop"), \
-             patch.object(trucon_app_mod, "init_db"), \
-               patch.object(trucon_app_mod, "build_baseline_sigstore_bundle", return_value=('{"mock":"bundle"}', 'test-pub-key', 'sha384:' + ('11' * 48))), \
-             patch.object(trucon_app_mod, "SigstoreLogAdapter"), \
-             patch.object(trucon_app_mod, "insert_record", side_effect=patches["insert_record"]), \
-             patch.object(trucon_app_mod, "get_chain_state", side_effect=patches["get_chain_state"]), \
-             patch.object(trucon_app_mod, "update_chain_state", side_effect=patches["update_chain_state"]), \
-             patch.object(trucon_app_mod, "get_record_by_idempotency_key", side_effect=patches["get_record_by_idempotency_key"]), \
-             patch.object(trucon_app_mod, "get_chain_records", side_effect=patches["get_chain_records"]):
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(trucon_app_mod, "acquire_instance_lock"))
+            stack.enter_context(patch.object(trucon_app_mod, "release_instance_lock"))
+            stack.enter_context(patch.object(trucon_app_mod, "_crash_recovery"))
+            stack.enter_context(patch.object(trucon_app_mod, "_submit_daemon_loop"))
+            stack.enter_context(patch.object(trucon_app_mod, "init_db"))
+            stack.enter_context(patch.object(trucon_app_mod, "build_baseline_sigstore_bundle", return_value=('{"mock":"bundle"}', 'test-pub-key', 'sha384:' + ('11' * 48))))
+            stack.enter_context(patch.object(trucon_app_mod, "SigstoreLogAdapter"))
+            stack.enter_context(patch.object(trucon_app_mod, "_extract_bundle_predicate", side_effect=lambda bundle_json: json.loads(bundle_json)))
+            stack.enter_context(patch.object(trucon_app_mod, "insert_record", side_effect=patches["insert_record"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_chain_state", side_effect=patches["get_chain_state"]))
+            stack.enter_context(patch.object(trucon_app_mod, "update_chain_state", side_effect=patches["update_chain_state"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_record_by_idempotency_key", side_effect=patches["get_record_by_idempotency_key"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_chain_records", side_effect=patches["get_chain_records"]))
+            stack.enter_context(patch.object(trucon_app_mod, "create_commit_intent", side_effect=patches["create_commit_intent"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_commit_intent_by_token", side_effect=patches["get_commit_intent_by_token"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_commit_intent_by_idempotency_key", side_effect=patches["get_commit_intent_by_idempotency_key"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_active_commit_intent_for_chain", side_effect=patches["get_active_commit_intent_for_chain"]))
+            stack.enter_context(patch.object(trucon_app_mod, "update_commit_intent_status", side_effect=patches["update_commit_intent_status"]))
+            stack.enter_context(patch.object(trucon_app_mod, "expire_active_commit_intents", side_effect=patches["expire_active_commit_intents"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_record_by_id", side_effect=patches["get_record_by_id"]))
             client = TestClient(trucon_app_mod.app, raise_server_exceptions=False)
             yield client
     finally:
@@ -120,18 +192,27 @@ def trucon_client_no_tee(tmp_path):
         trucon_app_mod._pending_init_tokens.clear()
         trucon_app_mod.app.state.test_db_path = db_path
 
-        with patch.object(trucon_app_mod, "acquire_instance_lock"), \
-             patch.object(trucon_app_mod, "release_instance_lock"), \
-             patch.object(trucon_app_mod, "_crash_recovery"), \
-             patch.object(trucon_app_mod, "_submit_daemon_loop"), \
-             patch.object(trucon_app_mod, "init_db"), \
-               patch.object(trucon_app_mod, "build_baseline_sigstore_bundle", return_value=('{"mock":"bundle"}', 'test-pub-key', 'sha384:' + ('11' * 48))), \
-             patch.object(trucon_app_mod, "SigstoreLogAdapter"), \
-             patch.object(trucon_app_mod, "insert_record", side_effect=patches["insert_record"]), \
-             patch.object(trucon_app_mod, "get_chain_state", side_effect=patches["get_chain_state"]), \
-             patch.object(trucon_app_mod, "update_chain_state", side_effect=patches["update_chain_state"]), \
-             patch.object(trucon_app_mod, "get_record_by_idempotency_key", side_effect=patches["get_record_by_idempotency_key"]), \
-             patch.object(trucon_app_mod, "get_chain_records", side_effect=patches["get_chain_records"]):
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(trucon_app_mod, "acquire_instance_lock"))
+            stack.enter_context(patch.object(trucon_app_mod, "release_instance_lock"))
+            stack.enter_context(patch.object(trucon_app_mod, "_crash_recovery"))
+            stack.enter_context(patch.object(trucon_app_mod, "_submit_daemon_loop"))
+            stack.enter_context(patch.object(trucon_app_mod, "init_db"))
+            stack.enter_context(patch.object(trucon_app_mod, "build_baseline_sigstore_bundle", return_value=('{"mock":"bundle"}', 'test-pub-key', 'sha384:' + ('11' * 48))))
+            stack.enter_context(patch.object(trucon_app_mod, "SigstoreLogAdapter"))
+            stack.enter_context(patch.object(trucon_app_mod, "_extract_bundle_predicate", side_effect=lambda bundle_json: json.loads(bundle_json)))
+            stack.enter_context(patch.object(trucon_app_mod, "insert_record", side_effect=patches["insert_record"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_chain_state", side_effect=patches["get_chain_state"]))
+            stack.enter_context(patch.object(trucon_app_mod, "update_chain_state", side_effect=patches["update_chain_state"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_record_by_idempotency_key", side_effect=patches["get_record_by_idempotency_key"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_chain_records", side_effect=patches["get_chain_records"]))
+            stack.enter_context(patch.object(trucon_app_mod, "create_commit_intent", side_effect=patches["create_commit_intent"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_commit_intent_by_token", side_effect=patches["get_commit_intent_by_token"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_commit_intent_by_idempotency_key", side_effect=patches["get_commit_intent_by_idempotency_key"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_active_commit_intent_for_chain", side_effect=patches["get_active_commit_intent_for_chain"]))
+            stack.enter_context(patch.object(trucon_app_mod, "update_commit_intent_status", side_effect=patches["update_commit_intent_status"]))
+            stack.enter_context(patch.object(trucon_app_mod, "expire_active_commit_intents", side_effect=patches["expire_active_commit_intents"]))
+            stack.enter_context(patch.object(trucon_app_mod, "get_record_by_id", side_effect=patches["get_record_by_id"]))
             client = TestClient(trucon_app_mod.app, raise_server_exceptions=False)
             yield client
     finally:
@@ -171,11 +252,15 @@ class TestGetBaseline:
         resp1 = trucon_client.get("/init-chain/my-chain/baseline")
         assert resp1.status_code == 200
         token = resp1.json()["init_token"]
+        reserve = _reserve_baseline_intent(trucon_client, "my-chain", "init-chain-my-chain")
+        assert reserve.status_code == 200
+        intent_token = reserve.json()["intent_token"]
 
         resp2 = trucon_client.post("/init-chain", json={
             "chain_id": "my-chain",
             "init_token": token,
-            "signed_bundle": '{"payloadType":"application/vnd.dsse+json"}',
+            "intent_token": intent_token,
+            "signed_bundle": _make_baseline_bundle("my-chain"),
             "pub_key": "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
         })
         assert resp2.status_code == 200
@@ -200,12 +285,16 @@ class TestPostInitChain:
         resp1 = trucon_client.get("/init-chain/test-chain/baseline")
         assert resp1.status_code == 200
         token = resp1.json()["init_token"]
+        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        assert reserve.status_code == 200
+        intent_token = reserve.json()["intent_token"]
 
         # Phase 2: init chain
         resp2 = trucon_client.post("/init-chain", json={
             "chain_id": "test-chain",
             "init_token": token,
-            "signed_bundle": '{"payloadType":"application/vnd.dsse+json"}',
+            "intent_token": intent_token,
+            "signed_bundle": _make_baseline_bundle("test-chain"),
             "pub_key": "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
         })
         assert resp2.status_code == 200
@@ -214,10 +303,13 @@ class TestPostInitChain:
         assert data["sequence_num"] == 1
 
     def test_init_chain_invalid_token_400(self, trucon_client):
+        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        assert reserve.status_code == 200
         resp = trucon_client.post("/init-chain", json={
             "chain_id": "test-chain",
             "init_token": "bogus-token-that-does-not-exist",
-            "signed_bundle": "{}",
+            "intent_token": reserve.json()["intent_token"],
+            "signed_bundle": _make_baseline_bundle("test-chain"),
             "pub_key": "test-key",
         })
         assert resp.status_code == 400
@@ -227,12 +319,15 @@ class TestPostInitChain:
         # Get token for chain-a
         resp1 = trucon_client.get("/init-chain/chain-a/baseline")
         token = resp1.json()["init_token"]
+        reserve = _reserve_baseline_intent(trucon_client, "chain-a", "init-chain-chain-a")
+        assert reserve.status_code == 200
 
         # Try to use it for chain-b
         resp2 = trucon_client.post("/init-chain", json={
             "chain_id": "chain-b",
             "init_token": token,
-            "signed_bundle": "{}",
+            "intent_token": reserve.json()["intent_token"],
+            "signed_bundle": _make_baseline_bundle("chain-b"),
             "pub_key": "test-key",
         })
         assert resp2.status_code == 400
@@ -242,10 +337,13 @@ class TestPostInitChain:
         # Init chain once
         resp1 = trucon_client.get("/init-chain/test-chain/baseline")
         token1 = resp1.json()["init_token"]
+        reserve1 = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        assert reserve1.status_code == 200
         resp2 = trucon_client.post("/init-chain", json={
             "chain_id": "test-chain",
             "init_token": token1,
-            "signed_bundle": "{}",
+            "intent_token": reserve1.json()["intent_token"],
+            "signed_bundle": _make_baseline_bundle("test-chain"),
             "pub_key": "test-key",
         })
         assert resp2.status_code == 200
@@ -258,12 +356,16 @@ class TestPostInitChain:
         """init_token is single-use — replaying it should fail."""
         resp1 = trucon_client.get("/init-chain/test-chain/baseline")
         token = resp1.json()["init_token"]
+        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        assert reserve.status_code == 200
+        intent_token = reserve.json()["intent_token"]
 
         # First use succeeds
         resp2 = trucon_client.post("/init-chain", json={
             "chain_id": "test-chain",
             "init_token": token,
-            "signed_bundle": "{}",
+            "intent_token": intent_token,
+            "signed_bundle": _make_baseline_bundle("test-chain"),
             "pub_key": "test-key",
         })
         assert resp2.status_code == 200
@@ -272,7 +374,8 @@ class TestPostInitChain:
         resp3 = trucon_client.post("/init-chain", json={
             "chain_id": "test-chain",
             "init_token": token,
-            "signed_bundle": "{}",
+            "intent_token": intent_token,
+            "signed_bundle": _make_baseline_bundle("test-chain"),
             "pub_key": "test-key",
         })
         assert resp3.status_code == 400
@@ -282,10 +385,13 @@ class TestPostInitChain:
         # Init chain
         resp1 = trucon_client.get("/init-chain/test-chain/baseline")
         token = resp1.json()["init_token"]
+        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        assert reserve.status_code == 200
         resp2 = trucon_client.post("/init-chain", json={
             "chain_id": "test-chain",
             "init_token": token,
-            "signed_bundle": "{}",
+            "intent_token": reserve.json()["intent_token"],
+            "signed_bundle": _make_baseline_bundle("test-chain"),
             "pub_key": "test-key",
         })
         assert resp2.status_code == 200
@@ -306,11 +412,14 @@ class TestPostInitChain:
         assert resp1.status_code == 200
         assert resp1.json()["rtmr_value"] is None
         token = resp1.json()["init_token"]
+        reserve = _reserve_baseline_intent(trucon_client_no_tee, "test-chain", "init-chain-test-chain")
+        assert reserve.status_code == 200
 
         resp2 = trucon_client_no_tee.post("/init-chain", json={
             "chain_id": "test-chain",
             "init_token": token,
-            "signed_bundle": "{}",
+            "intent_token": reserve.json()["intent_token"],
+            "signed_bundle": _make_baseline_bundle("test-chain"),
             "pub_key": "test-key",
         })
         assert resp2.status_code == 200
@@ -318,22 +427,18 @@ class TestPostInitChain:
 
 
 class TestLazyWorkloadBaseline:
-    def test_first_workload_commit_auto_creates_baseline(self, trucon_client):
+    def test_first_workload_commit_requires_explicit_baseline(self, trucon_client):
         resp = trucon_client.post("/commit", json={
             "bundle": '{"payloadType":"test"}',
             "chain_id": "workload-a",
             "event_digest": "sha384:" + "ab" * 48,
         })
-        assert resp.status_code == 200
-        assert resp.json()["sequence_num"] == 2
+        assert resp.status_code == 409
 
         records = trucon_db_mod.get_chain_records("workload-a", db_path=trucon_client.app.state.test_db_path)
-        assert len(records) == 2
-        assert records[0]["event_id"] == "evt-log0-workload-a"
-        assert records[0]["sequence_num"] == 1
-        assert records[1]["sequence_num"] == 2
+        assert records == []
 
-    def test_concurrent_first_workload_commits_create_single_baseline(self, trucon_client):
+    def test_concurrent_first_workload_commits_require_explicit_baseline(self, trucon_client):
         import concurrent.futures
 
         def do_commit(event_suffix: str):
@@ -348,22 +453,19 @@ class TestLazyWorkloadBaseline:
             futures = [executor.submit(do_commit, "a"), executor.submit(do_commit, "b")]
             responses = [future.result() for future in futures]
 
-        assert {response.status_code for response in responses} == {200}
-        assert sorted(response.json()["sequence_num"] for response in responses) == [2, 3]
+        assert {response.status_code for response in responses} == {409}
 
         records = trucon_db_mod.get_chain_records("workload-race", db_path=trucon_client.app.state.test_db_path)
-        assert [record["sequence_num"] for record in records] == [1, 2, 3]
-        assert sum(1 for record in records if record["event_id"] == "evt-log0-workload-race") == 1
+        assert records == []
 
     def test_lazy_baseline_failure_rejects_first_business_event(self, trucon_client):
-        with patch.object(trucon_app_mod, "compute_ccel_digest", side_effect=RuntimeError("ccel boom")):
-            resp = trucon_client.post("/commit", json={
-                "bundle": '{"payloadType":"test"}',
-                "chain_id": "workload-fail",
-                "event_digest": "sha384:" + "ab" * 48,
-            })
+        resp = trucon_client.post("/commit", json={
+            "bundle": '{"payloadType":"test"}',
+            "chain_id": "workload-fail",
+            "event_digest": "sha384:" + "ab" * 48,
+        })
 
-        assert resp.status_code == 500
+        assert resp.status_code == 409
         records = trucon_db_mod.get_chain_records("workload-fail", db_path=trucon_client.app.state.test_db_path)
         assert records == []
 
@@ -421,3 +523,89 @@ class TestLazyWorkloadBaseline:
         data = resp.json()
         assert data["entries"][0]["error"] is None
         assert data["rekor_pending"] == 2
+
+
+class TestCommitIntentLifecycle:
+    def _init_chain(self, trucon_client, chain_id: str) -> None:
+        baseline = trucon_client.get(f"/init-chain/{chain_id}/baseline")
+        assert baseline.status_code == 200
+        reserve = _reserve_baseline_intent(trucon_client, chain_id, f"init-chain-{chain_id}")
+        assert reserve.status_code == 200
+        resp = trucon_client.post(
+            "/init-chain",
+            json={
+                "chain_id": chain_id,
+                "init_token": baseline.json()["init_token"],
+                "intent_token": reserve.json()["intent_token"],
+                "signed_bundle": _make_baseline_bundle(chain_id),
+                "pub_key": "test-key",
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_commit_rejects_bundle_predecessor_mismatch(self, trucon_client):
+        self._init_chain(trucon_client, "lifecycle-mismatch")
+        reserve = trucon_client.post(
+            "/commit-intents/reserve",
+            json={"chain_id": "lifecycle-mismatch", "idempotency_key": "commit-mismatch"},
+        )
+        assert reserve.status_code == 200
+        intent = reserve.json()
+
+        resp = trucon_client.post(
+            "/commit",
+            json={
+                "bundle": json.dumps(
+                    {
+                        "chain_id": "lifecycle-mismatch",
+                        "sequence_num": intent["sequence_num"],
+                        "prev_event_digest": "sha384:" + ("ff" * 48),
+                        "prev_lookup_hash": intent["prev_lookup_hash"],
+                        "digest": "sha384:" + ("ab" * 48),
+                    }
+                ),
+                "chain_id": "lifecycle-mismatch",
+                "event_digest": "sha384:" + ("ab" * 48),
+                "intent_token": intent["intent_token"],
+            },
+        )
+
+        assert resp.status_code == 400
+        assert "prev_event_digest mismatch" in resp.json()["detail"]
+
+    def test_commit_rejects_expired_intent(self, trucon_client):
+        self._init_chain(trucon_client, "lifecycle-expired")
+        reserve = trucon_client.post(
+            "/commit-intents/reserve",
+            json={"chain_id": "lifecycle-expired", "idempotency_key": "expired-intent"},
+        )
+        assert reserve.status_code == 200
+        intent_token = reserve.json()["intent_token"]
+
+        with patch.object(trucon_app_mod, "_intent_expired", return_value=True):
+            resp = trucon_client.post(
+                "/commit",
+                json={
+                    "bundle": json.dumps(
+                        {
+                            "chain_id": "lifecycle-expired",
+                            "sequence_num": 2,
+                            "prev_event_digest": None,
+                            "prev_lookup_hash": None,
+                            "digest": "sha384:" + ("ab" * 48),
+                        }
+                    ),
+                    "chain_id": "lifecycle-expired",
+                    "event_digest": "sha384:" + ("ab" * 48),
+                    "intent_token": intent_token,
+                },
+            )
+
+        assert resp.status_code == 400
+        assert "not active" in resp.json()["detail"]
+
+        stored_intent = trucon_db_mod.get_commit_intent_by_token(
+            intent_token,
+            db_path=trucon_client.app.state.test_db_path,
+        )
+        assert stored_intent["status"] == "EXPIRED"
