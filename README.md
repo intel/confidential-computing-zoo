@@ -31,7 +31,7 @@ python -m tests.test_runner --type manual --name health
 For the opt-in public Rekor smoke test, prefer the just-in-time helper flow so the short-lived OIDC token is fetched and consumed immediately:
 
 ```shell
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke
+python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke
 ```
 
 In the normal `--fetch` path, the helper now explicitly tries to open a browser for the OIDC login step and falls back to printing the login URL if automatic browser launch is unavailable.
@@ -39,19 +39,19 @@ In the normal `--fetch` path, the helper now explicitly tries to open a browser 
 If you already have a real OIDC token and want to enter it interactively instead of exporting it, use:
 
 ```shell
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --prompt-token --json
+python -m tc_api.oidc_preflight --prompt-token --json
 ```
 
 If you also want to enter the expected signer identity interactively, use:
 
 ```shell
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --prompt-token --prompt-expected-identity --json
+python -m tc_api.oidc_preflight --prompt-token --prompt-expected-identity --json
 ```
 
 For the combined real Rekor + real OCI mirror + real verify multi-chain smoke path, use:
 
 ```shell
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke --run-real-rekor-oci-multi-chain-smoke
+python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke --run-real-rekor-oci-multi-chain-smoke
 ```
 
 That helper flow opens a browser for Sigstore OIDC login when possible, fetches a fresh short-lived token, enables both real-Rekor and real-OCI opt-in gates, and immediately runs the end-to-end smoke before the token expires.
@@ -129,7 +129,7 @@ Use `chain_id` without `--evidence` only for transitional live fallback verifica
 For a real OCI registry smoke test, use:
 
 ```shell
-TC_API_RUN_REAL_OCI_MIRROR_TESTS=1 /home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_real_oci_mirror_integration.py -q
+TC_API_RUN_REAL_OCI_MIRROR_TESTS=1 python -m pytest tests/test_real_oci_mirror_integration.py -q
 ```
 
 That test starts a local `registry:2` container, drives `OciBundleMirror.publish_bundle()` and `resolve_bundle()` against the live Registry HTTP API, and verifies round-trip retrieval.

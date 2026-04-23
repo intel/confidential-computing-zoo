@@ -91,7 +91,7 @@ Mirror-backed verification notes:
 Recommended targeted regression for the verification plane:
 
 ```bash
-/home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_tlog_impl.py tests/test_non_tee_verification.py tests/test_verify_cli.py tests/test_oci_bundle_mirror.py -q
+python -m pytest tests/test_tlog_impl.py tests/test_non_tee_verification.py tests/test_verify_cli.py tests/test_oci_bundle_mirror.py -q
 ```
 
 ## Real OCI Mirror Smoke Test
@@ -107,7 +107,7 @@ Run:
 
 ```bash
 TC_API_RUN_REAL_OCI_MIRROR_TESTS=1 \
-/home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_real_oci_mirror_integration.py -q
+python -m pytest tests/test_real_oci_mirror_integration.py -q
 ```
 
 Optional environment variables:
@@ -126,7 +126,7 @@ An opt-in smoke test is available for validating tc_api's real Sigstore signing 
 ```bash
 TC_API_RUN_REAL_REKOR_TESTS=1 \
 TC_API_REAL_REKOR_IDENTITY_TOKEN='<oidc-jwt>' \
-/home/siyuan/tc_api/.venv/bin/python -m pytest tests/test_real_rekor_integration.py -q
+python -m pytest tests/test_real_rekor_integration.py -q
 ```
 
 Optional environment variables:
@@ -139,25 +139,25 @@ TC_API_REAL_REKOR_SIGNER_IDENTITY=alice@example.com
 Before running the public Rekor smoke test, you can preflight-check the OIDC token locally without printing the raw token:
 
 ```bash
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --json
+python -m tc_api.oidc_preflight --json
 ```
 
 If you already have a real OIDC token and prefer an interactive prompt instead of exporting an environment variable, use:
 
 ```bash
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --prompt-token --json
+python -m tc_api.oidc_preflight --prompt-token --json
 ```
 
 If you also want to enter the expected signer identity interactively, use:
 
 ```bash
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --prompt-token --prompt-expected-identity --json
+python -m tc_api.oidc_preflight --prompt-token --prompt-expected-identity --json
 ```
 
 To reduce friction from the short token lifetime, you can also let the helper fetch a fresh token on demand and immediately run the smoke test in the same process:
 
 ```bash
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke
+python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke
 ```
 
 In the normal `--fetch` flow, the helper now explicitly tries to open a browser for the OIDC login step. If automatic browser launch fails, it prints the login URL so you can open it manually and continue the same flow.
@@ -165,7 +165,7 @@ In the normal `--fetch` flow, the helper now explicitly tries to open a browser 
 For the combined real Rekor + real OCI mirror + real verify multi-chain smoke path, use:
 
 ```bash
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke --run-real-rekor-oci-multi-chain-smoke
+python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke --run-real-rekor-oci-multi-chain-smoke
 ```
 
 That helper enables both the real Rekor and real OCI mirror opt-in gates, fetches a fresh token via browser-assisted OIDC login, then runs the multi-chain smoke node that publishes mirrored bundles to a live local OCI registry and verifies each chain through the `tc-verify` troubleshooting path with `--require-mirror`.
@@ -181,19 +181,19 @@ The current real multi-chain smoke validates all of the following in one run:
 If your environment needs the out-of-band flow, use:
 
 ```bash
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --force-oob --run-real-rekor-smoke
+python -m tc_api.oidc_preflight --fetch --force-oob --run-real-rekor-smoke
 ```
 
 You can still pass extra pytest selectors through the helper when narrowing the smoke run:
 
 ```bash
-/home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke --pytest-args -q -k multi_chain
+python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke --pytest-args -q -k multi_chain
 ```
 
 Or read the token from stdin instead of an environment variable:
 
 ```bash
-printf '%s' "$TC_API_REAL_REKOR_IDENTITY_TOKEN" | /home/siyuan/tc_api/.venv/bin/python -m tc_api.oidc_preflight --stdin --json
+printf '%s' "$TC_API_REAL_REKOR_IDENTITY_TOKEN" | python -m tc_api.oidc_preflight --stdin --json
 ```
 
 The preflight check validates the basic Sigstore expectations that commonly cause failures before Fulcio issuance:
@@ -239,7 +239,7 @@ Recommended selectors when validating the new migration target explicitly:
 ```bash
 TC_API_RUN_REAL_REKOR_TESTS=1 \
 TC_API_REAL_REKOR_IDENTITY_TOKEN='<oidc-jwt>' \
-/home/siyuan/tc_api/.venv/bin/python -m pytest \
+python -m pytest \
    tests/test_real_rekor_integration.py::test_public_rekor_intoto_round_trip_materializes_attestation_payload \
    tests/test_real_rekor_integration.py::test_public_rekor_intoto_multi_entry_predecessor_proof_without_mirror -q
 ```
