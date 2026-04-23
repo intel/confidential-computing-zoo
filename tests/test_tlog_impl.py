@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 import base64
 import hashlib
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 from cryptography import x509
@@ -26,6 +27,9 @@ def test_sigstore_adapter_submit_bundle(mock_rekor):
     mock_bundle = MagicMock(spec=Bundle)
     mock_bundle.log_entry.log_index = 123
     mock_bundle.log_entry.uuid = None
+    mock_bundle.log_entry.body = base64.b64encode(
+        json.dumps({"kind": "intoto", "spec": {}}).encode("utf-8")
+    ).decode("utf-8")
 
     log_id, status, receipt = adapter.submit_bundle(mock_bundle)
 
@@ -35,8 +39,38 @@ def test_sigstore_adapter_submit_bundle(mock_rekor):
     mock_rekor.return_value.log.entries.post.assert_not_called()
 
 
+def test_sigstore_adapter_does_not_reuse_existing_dsse_entry_for_intoto_submission(mock_rekor):
+    adapter = SigstoreLogAdapter(rekor_entry_type="intoto")
+    mock_bundle = MagicMock(spec=Bundle)
+    mock_bundle.log_entry.log_index = 123
+    mock_bundle.log_entry.uuid = None
+    mock_bundle.log_entry.body = base64.b64encode(
+        json.dumps({"kind": "dsse", "spec": {}}).encode("utf-8")
+    ).decode("utf-8")
+    mock_bundle._dsse_envelope.to_json.return_value = json.dumps(
+        {
+            "payloadType": "application/vnd.in-toto+json",
+            "payload": "e30=",
+            "signatures": [{"sig": "abc", "keyid": "test-key"}],
+        }
+    )
+    mock_bundle.signing_certificate.public_bytes.return_value = b"pem-cert"
+
+    mock_entry = MagicMock()
+    mock_entry.uuid = "intoto-log-id-123"
+    mock_entry.log_index = 456
+    mock_rekor.return_value.log.entries.post.return_value = mock_entry
+
+    log_id, status, receipt = adapter.submit_bundle(mock_bundle)
+
+    assert log_id == "intoto-log-id-123"
+    assert status == "confirmed"
+    assert receipt is mock_entry
+    mock_rekor.return_value.log.entries.post.assert_called_once()
+
+
 def test_sigstore_adapter_submit_bundle_posts_dsse_when_bundle_has_no_log_reference(mock_rekor):
-    adapter = SigstoreLogAdapter()
+    adapter = SigstoreLogAdapter(rekor_entry_type="dsse")
     mock_bundle = MagicMock(spec=Bundle)
     mock_bundle.log_entry.log_index = None
     mock_bundle.log_entry.uuid = None
@@ -53,6 +87,56 @@ def test_sigstore_adapter_submit_bundle_posts_dsse_when_bundle_has_no_log_refere
     assert status == "confirmed"
     assert receipt is mock_entry
     mock_rekor.return_value.log.entries.post.assert_called_once()
+
+
+def test_sigstore_adapter_submit_bundle_posts_intoto_by_default(mock_rekor):
+    adapter = SigstoreLogAdapter()
+    mock_bundle = MagicMock(spec=Bundle)
+    mock_bundle.log_entry.log_index = None
+    mock_bundle.log_entry.uuid = None
+    mock_bundle._dsse_envelope.to_json.return_value = json.dumps(
+        {
+            "payloadType": "application/vnd.in-toto+json",
+            "payload": "e30=",
+            "signatures": [{"sig": "abc", "keyid": "test-key"}],
+        }
+    )
+    mock_bundle.signing_certificate.public_bytes.return_value = b"pem-cert"
+
+    mock_entry = MagicMock()
+    mock_entry.uuid = "log-id-456"
+    mock_rekor.return_value.log.entries.post.return_value = mock_entry
+
+    log_id, status, receipt = adapter.submit_bundle(mock_bundle)
+
+    assert log_id == "log-id-456"
+    assert status == "confirmed"
+    assert receipt is mock_entry
+
+    proposed_entry = mock_rekor.return_value.log.entries.post.call_args.args[0]
+    dumped = proposed_entry.model_dump(by_alias=True)
+    assert dumped["apiVersion"] == "0.0.2"
+    assert dumped["kind"] == "intoto"
+    assert dumped["spec"]["content"]["envelope"]["payloadType"] == "application/vnd.in-toto+json"
+    assert dumped["spec"]["content"]["envelope"]["payload"] == base64.b64encode(b"e30=").decode()
+    assert dumped["spec"]["content"]["envelope"]["signatures"][0]["sig"] == base64.b64encode(b"abc").decode()
+    assert dumped["spec"]["content"]["envelope"]["signatures"][0]["publicKey"] == base64.b64encode(b"pem-cert").decode()
+    assert dumped["spec"]["content"]["hash"] == {
+        "algorithm": "sha256",
+        "value": hashlib.sha256(mock_bundle._dsse_envelope.to_json.return_value.encode()).hexdigest(),
+    }
+
+
+def test_sigstore_adapter_reads_default_entry_type_from_environment(mock_rekor):
+    with patch.dict(os.environ, {"TC_API_REKOR_ENTRY_TYPE": "dsse"}, clear=False):
+        adapter = SigstoreLogAdapter()
+
+    assert adapter.rekor_entry_type == "dsse"
+
+
+def test_sigstore_adapter_rejects_unknown_entry_type(mock_rekor):
+    with pytest.raises(ValueError, match="Unsupported Rekor entry type"):
+        SigstoreLogAdapter(rekor_entry_type="unknown")
 
 def test_sigstore_adapter_get_entry(mock_rekor):
     adapter = SigstoreLogAdapter()
@@ -134,7 +218,7 @@ def test_sigstore_adapter_enriches_public_hash_only_entry_from_matching_cached_p
 
     entry = adapter.get_entry("123")
 
-    assert entry["_tc_replay_provenance"] == "public"
+    assert entry["_tc_replay_provenance"] == "cache-assisted"
     assert entry["body"]["spec"]["payload"]
     assert entry["body"]["spec"]["payloadHash"]["value"] == value
 
@@ -176,9 +260,165 @@ def test_sigstore_adapter_enriches_public_hash_only_entry_from_mirror_when_cache
 
     entry = adapter.get_entry("log-id-123")
 
-    assert entry["_tc_replay_provenance"] == "public"
+    assert entry["_tc_replay_provenance"] == "mirror"
     assert entry["body"]["spec"]["payload"] == cached_entry["body"]["spec"]["payload"]
     assert entry["body"]["spec"]["payloadHash"]["value"] == value
+
+
+def test_sigstore_adapter_enriches_public_hash_only_entry_from_attestation_before_fallbacks(mock_rekor):
+    adapter = SigstoreLogAdapter()
+    statement = {
+        "subject": [{"name": "trusted-log-chain_default", "digest": {"sha384": "abc"}}],
+        "predicate": {
+            "chain_id": "default",
+            "sequence_num": 1,
+            "event_id": "evt-1",
+            "event_type": "launch",
+            "digest": "sha384:evt-1",
+            "prev_event_digest": None,
+            "prev_lookup_hash": None,
+        },
+    }
+    payload_bytes = json.dumps(statement).encode("utf-8")
+    payload_hash = hashlib.sha256(payload_bytes).hexdigest()
+    mock_rekor.return_value.log.entries.get.return_value = {
+        "body": base64.b64encode(
+            json.dumps(
+                {
+                    "apiVersion": "0.0.1",
+                    "kind": "intoto",
+                    "spec": {
+                        "content": {
+                            "payloadHash": {"algorithm": "sha256", "value": payload_hash}
+                        }
+                    },
+                }
+            ).encode("utf-8")
+        ).decode("utf-8"),
+        "uuid": "log-id-123",
+        "attestation": base64.b64encode(payload_bytes).decode("utf-8"),
+    }
+
+    entry = adapter.get_entry("log-id-123")
+
+    assert entry["_tc_replay_provenance"] == "attestation-storage"
+    assert entry["body"]["spec"]["payload"] == base64.b64encode(payload_bytes).decode("utf-8")
+
+
+def test_sigstore_adapter_merges_attestation_from_raw_rekor_response(mock_rekor):
+    adapter = SigstoreLogAdapter()
+    statement = {
+        "subject": [{"name": "trusted-log-chain_default", "digest": {"sha384": "abc"}}],
+        "predicate": {
+            "chain_id": "default",
+            "sequence_num": 1,
+            "event_id": "evt-1",
+            "event_type": "launch",
+            "digest": "sha384:evt-1",
+            "prev_event_digest": None,
+            "prev_lookup_hash": None,
+        },
+    }
+    payload_bytes = json.dumps(statement).encode("utf-8")
+    payload_hash = hashlib.sha256(payload_bytes).hexdigest()
+    mock_rekor.return_value.log.entries.get.return_value = {
+        "body": base64.b64encode(
+            json.dumps(
+                {
+                    "apiVersion": "0.0.1",
+                    "kind": "intoto",
+                    "spec": {
+                        "content": {
+                            "payloadHash": {"algorithm": "sha256", "value": payload_hash}
+                        }
+                    },
+                }
+            ).encode("utf-8")
+        ).decode("utf-8"),
+        "uuid": "log-id-raw-123",
+    }
+
+    class _Response:
+        def read(self):
+            return json.dumps(
+                {
+                    "log-id-raw-123": {
+                        "body": mock_rekor.return_value.log.entries.get.return_value["body"],
+                        "attestation": {"data": base64.b64encode(payload_bytes).decode("utf-8")},
+                    }
+                }
+            ).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    with patch("tc_api.trucon.adapters.sigstore.urllib.request.urlopen", return_value=_Response()):
+        entry = adapter.get_entry("log-id-raw-123")
+
+    assert entry["attestation"]["data"] == base64.b64encode(payload_bytes).decode("utf-8")
+    assert entry["_tc_replay_provenance"] == "attestation-storage"
+    assert entry["body"]["spec"]["payload"] == base64.b64encode(payload_bytes).decode("utf-8")
+
+
+def test_sigstore_adapter_retries_raw_rekor_attestation_until_available(mock_rekor):
+    adapter = SigstoreLogAdapter()
+    statement = {
+        "subject": [{"name": "trusted-log-chain_default", "digest": {"sha384": "abc"}}],
+        "predicate": {
+            "chain_id": "default",
+            "sequence_num": 1,
+            "event_id": "evt-1",
+            "event_type": "launch",
+            "digest": "sha384:evt-1",
+            "prev_event_digest": None,
+            "prev_lookup_hash": None,
+        },
+    }
+    payload_bytes = json.dumps(statement).encode("utf-8")
+    payload_hash = hashlib.sha256(payload_bytes).hexdigest()
+    mock_rekor.return_value.log.entries.get.return_value = {
+        "body": base64.b64encode(
+            json.dumps(
+                {
+                    "apiVersion": "0.0.1",
+                    "kind": "intoto",
+                    "spec": {
+                        "content": {
+                            "payloadHash": {"algorithm": "sha256", "value": payload_hash},
+                            "envelope": {"signatures": [{"sig": "abc"}]},
+                        }
+                    },
+                }
+            ).encode("utf-8")
+        ).decode("utf-8"),
+        "uuid": "log-id-retry-123",
+    }
+
+    raw_without_attestation = {
+        "log-id-retry-123": {
+            "body": mock_rekor.return_value.log.entries.get.return_value["body"],
+        }
+    }
+    raw_with_attestation = {
+        "log-id-retry-123": {
+            "body": mock_rekor.return_value.log.entries.get.return_value["body"],
+            "attestation": {"data": base64.b64encode(payload_bytes).decode("utf-8")},
+        }
+    }
+
+    with patch.object(adapter, "_fetch_raw_rekor_entry", side_effect=[
+        SigstoreLogAdapter._normalize_raw_entry_response(raw_without_attestation),
+        SigstoreLogAdapter._normalize_raw_entry_response(raw_with_attestation),
+    ]) as fetch_raw, patch("tc_api.trucon.adapters.sigstore.time.sleep") as sleep_mock:
+        entry = adapter.get_entry("log-id-retry-123")
+
+    assert fetch_raw.call_count == 2
+    sleep_mock.assert_called_once()
+    assert entry["_tc_replay_provenance"] == "attestation-storage"
+    assert entry["body"]["spec"]["payload"] == base64.b64encode(payload_bytes).decode("utf-8")
 
 def test_sigstore_adapter_traverse(mock_rekor):
     adapter = SigstoreLogAdapter()
@@ -617,6 +857,159 @@ def test_verify_record_marks_mirror_materialization_provenance():
 
     api = TrustedLogAPI(
         immutable_log=StubImmutableLog(entries=[second_entry], candidates={lookup_hash: [first_entry]})
+    )
+
+    with patch("tc_api.tlog_client._extract_signer_identity", return_value="alice@example.com"):
+        result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
+
+    assert result.success is True
+    assert result.details["entries"][0]["history_materialization_provenance"] == "mirror"
+
+
+def test_verify_record_materializes_attestation_storage_predecessor():
+    predecessor_payload = {
+        "subject": [{"name": "trusted-log-chain_default", "digest": {"sha384": "abc"}}],
+        "predicate": {
+            "chain_id": "default",
+            "sequence_num": 1,
+            "event_id": "evt-1",
+            "event_type": "chain.init",
+            "digest": "sha384:evt-1",
+            "entries": [
+                {"key": "baseline_rtmr", "value": "11" * 48},
+                {"key": "ccel_digest", "value": "sha384:" + ("22" * 48)},
+                {"key": "pub_key", "value": "pem"},
+            ],
+            "prev_event_digest": None,
+            "prev_lookup_hash": None,
+        },
+    }
+    predecessor_bytes = json.dumps(predecessor_payload).encode("utf-8")
+    predecessor_hash = hashlib.sha256(predecessor_bytes).hexdigest()
+    predecessor_entry = {
+        "uuid": "attested-predecessor",
+        "body": {
+            "spec": {
+                "content": {
+                    "payloadHash": {"algorithm": "sha256", "value": predecessor_hash}
+                }
+            }
+        },
+        "attestation": base64.b64encode(predecessor_bytes).decode("utf-8"),
+    }
+    second_entry = _make_rekor_entry(
+        "evt-2",
+        sequence_num=2,
+        prev_event_digest="sha384:evt-1",
+        prev_lookup_hash=f"sha256:{predecessor_hash}",
+    )
+    api = TrustedLogAPI(
+        immutable_log=StubImmutableLog(entries=[second_entry], candidates={f"sha256:{predecessor_hash}": [predecessor_entry]})
+    )
+
+    with patch("tc_api.tlog_client._extract_signer_identity", return_value="alice@example.com"):
+        result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
+
+    assert result.success is True
+    assert result.details["entries"][0]["predecessor_status"] == "proven"
+    assert result.details["entries"][0]["history_materialization_provenance"] == "attestation-storage"
+
+
+def test_verify_record_rejects_invalid_attestation_material_without_fallback():
+    predecessor_payload = {
+        "subject": [{"name": "trusted-log-chain_default", "digest": {"sha384": "abc"}}],
+        "predicate": {
+            "chain_id": "default",
+            "sequence_num": 1,
+            "event_id": "evt-1",
+            "event_type": "chain.init",
+            "digest": "sha384:evt-1",
+            "entries": [
+                {"key": "baseline_rtmr", "value": "11" * 48},
+                {"key": "ccel_digest", "value": "sha384:" + ("22" * 48)},
+                {"key": "pub_key", "value": "pem"},
+            ],
+            "prev_event_digest": None,
+            "prev_lookup_hash": None,
+        },
+    }
+    predecessor_hash = hashlib.sha256(json.dumps(predecessor_payload).encode("utf-8")).hexdigest()
+    invalid_predecessor_entry = {
+        "uuid": "invalid-attested-predecessor",
+        "body": {
+            "spec": {
+                "content": {
+                    "payloadHash": {"algorithm": "sha256", "value": predecessor_hash}
+                }
+            }
+        },
+        "attestation": base64.b64encode(b'{"predicate":{"event_id":"tampered"}}').decode("utf-8"),
+    }
+    second_entry = _make_rekor_entry(
+        "evt-2",
+        sequence_num=2,
+        prev_event_digest="sha384:evt-1",
+        prev_lookup_hash=f"sha256:{predecessor_hash}",
+    )
+    api = TrustedLogAPI(
+        immutable_log=StubImmutableLog(entries=[second_entry], candidates={f"sha256:{predecessor_hash}": [invalid_predecessor_entry]})
+    )
+
+    with patch("tc_api.tlog_client._extract_signer_identity", return_value="alice@example.com"):
+        result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
+
+    assert result.success is False
+    assert result.details["entries"][0]["predecessor_status"] == "decode_failed"
+    assert "Attestation payload hash mismatch" in result.details["entries"][0]["errors"]
+
+
+def test_verify_record_falls_back_to_mirror_when_attestation_material_is_invalid():
+    predecessor_payload = {
+        "subject": [{"name": "trusted-log-chain_default", "digest": {"sha384": "abc"}}],
+        "predicate": {
+            "chain_id": "default",
+            "sequence_num": 1,
+            "event_id": "evt-1",
+            "event_type": "chain.init",
+            "digest": "sha384:evt-1",
+            "entries": [
+                {"key": "baseline_rtmr", "value": "11" * 48},
+                {"key": "ccel_digest", "value": "sha384:" + ("22" * 48)},
+                {"key": "pub_key", "value": "pem"},
+            ],
+            "prev_event_digest": None,
+            "prev_lookup_hash": None,
+        },
+    }
+    predecessor_bytes = json.dumps(predecessor_payload).encode("utf-8")
+    predecessor_hash = hashlib.sha256(predecessor_bytes).hexdigest()
+    invalid_predecessor_entry = {
+        "uuid": "invalid-attested-predecessor",
+        "body": {
+            "spec": {
+                "content": {
+                    "payloadHash": {"algorithm": "sha256", "value": predecessor_hash}
+                }
+            }
+        },
+        "attestation": base64.b64encode(b'{"predicate":{"event_id":"tampered"}}').decode("utf-8"),
+    }
+    mirror_entry = {
+        "uuid": "mirror-predecessor",
+        "body": {"spec": {"payload": base64.b64encode(predecessor_bytes).decode("utf-8")}},
+    }
+    mirror_entry["_tc_replay_provenance"] = "mirror"
+    second_entry = _make_rekor_entry(
+        "evt-2",
+        sequence_num=2,
+        prev_event_digest="sha384:evt-1",
+        prev_lookup_hash=f"sha256:{predecessor_hash}",
+    )
+    api = TrustedLogAPI(
+        immutable_log=StubImmutableLog(
+            entries=[second_entry],
+            candidates={f"sha256:{predecessor_hash}": [invalid_predecessor_entry, mirror_entry]},
+        )
     )
 
     with patch("tc_api.tlog_client._extract_signer_identity", return_value="alice@example.com"):

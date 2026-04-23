@@ -1,8 +1,4 @@
-## Purpose
-
-Define the OCI-backed mirror requirements for replayable `bundle.json` publication and retrieval.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Replayable bundles are mirrored after Rekor confirmation
 For newly written replayable chain nodes, the system SHALL publish the original `bundle.json` to an OCI-backed mirror only after the corresponding Rekor log entry is confirmed. OCI mirror SHALL remain a fallback or policy-driven compatibility path rather than the primary replay-materialization source when Rekor attestation storage can already provide the required payload material.

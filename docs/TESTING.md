@@ -215,13 +215,40 @@ Notes:
 
 - The test is skipped unless `TC_API_RUN_REAL_REKOR_TESTS=1` and `TC_API_REAL_REKOR_IDENTITY_TOKEN` are set.
 - It validates real bundle signing, public Rekor upload, retrieval, and immutable replay.
+- The default migration target now uses Rekor `intoto` uploads and expects replay materialization to come from Rekor-hosted attestation storage before any OCI mirror fallback is attempted.
 - It now includes both a direct Event Log 0 bundle smoke test and a fuller `init_chain -> submit -> verify` smoke test for the explicit `default`-chain init path, where baseline records are emitted as Sigstore Bundles.
 - It also includes a lazy non-`default` workload-chain smoke test, where the first workload commit causes TruCon to mint Event Log 0 via the same Sigstore/Rekor path before the triggering event is accepted as `sequence_num=2`.
-- It also includes an opt-in multi-entry predecessor-proof smoke test that clears the adapter's in-process cache before replay and requires the head record to prove its predecessor through public Rekor `payloadHash(sha256)` candidate discovery.
+- It now includes an opt-in `intoto` round-trip smoke that clears the adapter cache and expects replayable payload fields to be recovered from Rekor attestation storage.
+- It also includes an opt-in `intoto` multi-entry predecessor-proof smoke test that clears the adapter's in-process cache before replay and requires the head record to prove its predecessor through public Rekor plus attestation storage without OCI mirror.
+- A separate DSSE regression smoke remains in place to document the previous public replay limit on canonicalized DSSE bodies.
 - It also includes an opt-in real Rekor + real OCI mirror + real verify multi-chain smoke that requires the head record to re-materialize DSSE payload fields through the mirror after the in-process cache is cleared.
 - Immutable replay now uses signed `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`, with Rekor `payloadHash(sha256)` lookup serving as candidate discovery only.
 - Mixed-regime rollout behavior is still primarily covered by local regression tests rather than live public-Rekor integration.
-- The dedicated multi-entry predecessor-proof smoke test intentionally clears the adapter's in-process cache before replay to validate the public candidate-discovery path separately. Same-process cache may still be used as a local fallback during debugging, but cache-assisted replay no longer counts as public proof in verifier results.
+- The dedicated predecessor-proof smoke tests intentionally clear the adapter's in-process cache before replay to validate the public candidate-discovery path separately. Same-process cache may still be used as a local fallback during debugging, but cache-assisted replay no longer counts as public proof in verifier results.
+
+The recent public-Rekor `intoto` debugging cycle also established the concrete submission contract that tc_api now relies on for Rekor `intoto` v0.0.2 uploads:
+
+- the proposed entry must set top-level `apiVersion` to `0.0.2`; leaving the generated client default at `0.0.1` causes Rekor to validate against the legacy schema and surface errors such as `publicKey in body is required`;
+- `spec.content.envelope.payload` and each signature `sig` must be encoded the way Rekor v0.0.2 expects for its direct decoder path, matching the server-side `CreateFromArtifactProperties()` behavior rather than simply forwarding DSSE JSON fields verbatim; a mismatch shows up as `could not verify envelope: unable to base64 decode payload`;
+- `spec.content.hash` must be present on upload and must equal the `sha256` digest of the original DSSE envelope JSON; omitting that field can reach Rekor's type-specific unmarshal path but still fail later with `500: error generating canonicalized entry` when canonicalization requires the envelope digest.
+
+These checks are now covered by focused adapter unit tests and should be treated as a compatibility contract for future Sigstore/Rekor library updates.
+
+Recommended selectors when validating the new migration target explicitly:
+
+```bash
+TC_API_RUN_REAL_REKOR_TESTS=1 \
+TC_API_REAL_REKOR_IDENTITY_TOKEN='<oidc-jwt>' \
+/home/siyuan/tc_api/.venv/bin/python -m pytest \
+   tests/test_real_rekor_integration.py::test_public_rekor_intoto_round_trip_materializes_attestation_payload \
+   tests/test_real_rekor_integration.py::test_public_rekor_intoto_multi_entry_predecessor_proof_without_mirror -q
+```
+
+Rollback guidance if public Rekor stops returning usable attestation-storage material:
+
+- set `TC_API_REKOR_ENTRY_TYPE=dsse` for the adapter path to restore DSSE-type uploads while keeping verifier-side attestation support available for future re-enable;
+- keep the DSSE regression smoke enabled so the public replay limit remains documented rather than silently changing expectations;
+- continue using `--mirror-dir` and, where appropriate, `--require-mirror` so OCI mirror remains the explicit fallback while the public Rekor assumption is being revalidated.
 
 ## Verification Result Diagnostics
 

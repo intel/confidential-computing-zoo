@@ -98,24 +98,112 @@ def _decode_dsse_payload(body: Dict[str, Any]) -> Dict[str, Any]:
     return {}
 
 
+def _extract_committed_payload_hash(body: Dict[str, Any]) -> Optional[str]:
+    spec = body.get("spec", {}) if isinstance(body, dict) else {}
+    if not isinstance(spec, dict):
+        return None
+
+    for payload_hash in (spec.get("payloadHash"), (spec.get("content") or {}).get("payloadHash") if isinstance(spec.get("content"), dict) else None):
+        if isinstance(payload_hash, dict):
+            algorithm = payload_hash.get("algorithm")
+            value = payload_hash.get("value")
+            if isinstance(algorithm, str) and isinstance(value, str):
+                return f"{algorithm}:{value}"
+
+    encoded_payload = spec.get("payload")
+    if not isinstance(encoded_payload, str):
+        content = spec.get("content")
+        if isinstance(content, dict):
+            envelope = content.get("envelope")
+            if isinstance(envelope, dict):
+                encoded_payload = envelope.get("payload")
+    if not isinstance(encoded_payload, str):
+        return None
+    try:
+        import base64
+
+        return "sha256:" + hashlib.sha256(base64.b64decode(encoded_payload)).hexdigest()
+    except Exception:
+        return None
+
+
+def _decode_attestation_payload(entry: Dict[str, Any], expected_payload_hash: Optional[str]) -> tuple[Dict[str, Any], Optional[str]]:
+    attestation = entry.get("attestation")
+    if attestation is None:
+        return {}, None
+
+    attestation_bytes: Optional[bytes] = None
+    if isinstance(attestation, dict):
+        for key in ("payload", "data"):
+            value = attestation.get(key)
+            if isinstance(value, str):
+                try:
+                    import base64
+
+                    attestation_bytes = base64.b64decode(value)
+                except Exception:
+                    attestation_bytes = value.encode("utf-8")
+                break
+        if attestation_bytes is None:
+            envelope = attestation.get("envelope")
+            if isinstance(envelope, dict) and isinstance(envelope.get("payload"), str):
+                try:
+                    import base64
+
+                    attestation_bytes = base64.b64decode(envelope["payload"])
+                except Exception:
+                    attestation_bytes = envelope["payload"].encode("utf-8")
+        if attestation_bytes is None:
+            try:
+                attestation_bytes = canonical_json(attestation).encode("utf-8")
+            except Exception:
+                return {}, "Attestation payload could not be decoded"
+    elif isinstance(attestation, str):
+        try:
+            import base64
+
+            attestation_bytes = base64.b64decode(attestation)
+        except Exception:
+            attestation_bytes = attestation.encode("utf-8")
+    else:
+        return {}, "Attestation payload could not be decoded"
+
+    if not attestation_bytes:
+        return {}, "Attestation payload could not be decoded"
+
+    observed_hash = "sha256:" + hashlib.sha256(attestation_bytes).hexdigest()
+    if expected_payload_hash and observed_hash != expected_payload_hash:
+        return {}, "Attestation payload hash mismatch"
+
+    try:
+        return json.loads(attestation_bytes.decode("utf-8")), None
+    except Exception:
+        return {}, "Attestation payload could not be decoded"
+
+
 def _normalize_verification_entry(entry: Dict[str, Any], index: int, expected_identity: Optional[str]) -> Dict[str, Any]:
     body = _decode_rekor_body(entry)
     payload = _decode_dsse_payload(body)
+    payload_hash = _extract_committed_payload_hash(body)
+    attestation_error = None
+    replay_provenance = entry.get("_tc_replay_provenance", "public")
+    if not payload:
+        payload, attestation_error = _decode_attestation_payload(entry, payload_hash)
+        if payload and replay_provenance == "public":
+            replay_provenance = "attestation-storage"
     predicate = payload.get("predicate", {}) if isinstance(payload, dict) else {}
     subject = payload.get("subject", []) if isinstance(payload, dict) else []
     subject_names = [item.get("name") for item in subject if isinstance(item, dict) and item.get("name")]
     signer_identity = _extract_signer_identity(entry)
     signer_match = None if expected_identity is None else signer_identity == expected_identity
-    payload_hash = None
-    spec = body.get("spec", {}) if isinstance(body, dict) else {}
-    encoded_payload = spec.get("payload") if isinstance(spec, dict) else None
-    if isinstance(encoded_payload, str):
-        try:
-            import base64
 
-            payload_hash = "sha256:" + hashlib.sha256(base64.b64decode(encoded_payload)).hexdigest()
-        except Exception:
-            payload_hash = None
+    errors = []
+    if attestation_error is not None:
+        errors.append(attestation_error)
+
+    history_materialization_provenance = "public"
+    if replay_provenance in {"attestation-storage", "mirror"}:
+        history_materialization_provenance = replay_provenance
 
     return {
         "index": index,
@@ -138,12 +226,13 @@ def _normalize_verification_entry(entry: Dict[str, Any], index: int, expected_id
         "predecessor_status": None,
         "public_history_ok": None,
         "public_history_status": None,
-        "replay_provenance": entry.get("_tc_replay_provenance", "public"),
+        "replay_provenance": replay_provenance,
+        "history_materialization_provenance": history_materialization_provenance,
         "prev_log_id": predicate.get("prev_log_id") or payload.get("prev_log_id"),
         "signer_identity": signer_identity,
         "signer_identity_match": signer_match,
         "included": signer_match is not False,
-        "errors": [],
+        "errors": errors,
     }
 
 
@@ -316,7 +405,10 @@ def _annotate_predecessor_verification(entries: List[Dict[str, Any]], immutable_
 
         current["public_history_ok"] = True
         current["public_history_status"] = "public"
-        current["history_materialization_provenance"] = "public"
+        current.setdefault(
+            "history_materialization_provenance",
+            current.get("replay_provenance") if current.get("replay_provenance") in {"attestation-storage", "mirror"} else "public",
+        )
 
         if sequence_num == 1 and prev_event_digest is None and prev_lookup_hash is None:
             current["predecessor_ok"] = True
@@ -395,6 +487,14 @@ def _annotate_predecessor_verification(entries: List[Dict[str, Any]], immutable_
             current["predecessor_ok"] = False
             current["matched_candidate_count"] = 0
             current["predecessor_status"] = "decode_failed"
+            candidate_errors = [
+                error
+                for candidate in candidates
+                for error in (candidate.get("errors") or [])
+                if isinstance(error, str)
+            ]
+            if candidate_errors:
+                current.setdefault("errors", []).extend(candidate_errors)
             current.setdefault("errors", []).append(
                 "Discovered predecessor candidates could not be normalized into replayable entries"
             )
@@ -1000,6 +1100,22 @@ def _extract_signer_identity(entry: dict) -> Optional[str]:
         if isinstance(proposed_content, dict):
             verifiers = proposed_content.get("verifiers", []) or []
             cert_b64_candidates.extend(v for v in verifiers if isinstance(v, str) and v)
+
+        content = spec.get("content", {})
+        if isinstance(content, dict):
+            envelope = content.get("envelope", {})
+            if isinstance(envelope, dict):
+                signatures = envelope.get("signatures", []) or []
+                for signature in signatures:
+                    if not isinstance(signature, dict):
+                        continue
+                    public_key = signature.get("publicKey") or signature.get("public_key")
+                    if isinstance(public_key, dict):
+                        content_value = public_key.get("content")
+                        if content_value:
+                            cert_b64_candidates.append(content_value)
+                    elif public_key:
+                        cert_b64_candidates.append(public_key)
 
         for cert_b64 in cert_b64_candidates:
             if cert_b64:

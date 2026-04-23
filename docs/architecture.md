@@ -39,14 +39,18 @@ flowchart LR
   rest --> trucon[TruCon]
   docktap --> trucon
   trucon --> backends[Immutable Trust Backends]
+  backends --> attstore[Rekor Attestation Storage]
+  trucon --> mirror[OCI Bundle Mirror]
 
   operators[Operators] --> tcverify[tc-verify]
   backends --> tcverify
+  attstore --> tcverify
+  mirror --> tcverify
   trucon --> evidence[Attested Head Evidence]
   evidence --> tcverify
 ```
 
-This overview intentionally keeps only the major boundaries: tc_api is the business control plane, Docktap is the runtime interception plane, TruCon is the trust core, immutable backends provide public history, and `tc-verify` is the main external verification tool. The detailed mechanics are broken out into the diagrams below.
+This overview intentionally keeps only the major boundaries: tc_api is the business control plane, Docktap is the runtime interception plane, TruCon is the trust core, immutable backends provide public history, Rekor attestation storage is the primary replay-materialization path for verifier-critical payload facts, the OCI mirror remains a fallback materialization path, and `tc-verify` is the main external verification tool. The detailed mechanics are broken out into the diagrams below.
 
 ### 3.1 Runtime Detail
 ```mermaid
@@ -170,14 +174,16 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Continues exposing status endpoints for build/publish/launch results.
 - On startup (`lifespan()`), generates an ECDSA P-384 keypair in TEE memory and completes the reservation-backed `/init-chain` bootstrap for Event Log 0 (baseline record). The baseline payload still carries the TEE-generated public key as `pub_key`, but the `default`-chain init path now signs Event Log 0 as a Sigstore DSSE bundle with `sequence_num=1`, `prev_event_digest=null`, and `prev_lookup_hash=null` so it can follow the same immutable-backend submission path as other public records. The private key is discarded immediately after the public key is derived.
 - For Sigstore-backed public records, the current implementation uses Sigstore's real `sign_dsse()` path, which both issues the Fulcio-backed signing certificate and creates the transparency-log entry before the bundle is forwarded to TruCon. As a result, the bundle arriving at TruCon may already carry a confirmed Rekor log entry.
-- After Rekor confirmation, the current implementation can also publish bundle material into a non-authoritative OCI artifact mirror keyed by `payload_hash`. That mirror supports both local OCI-layout-style storage and registry-backed repositories, and is consumed only as replay materialization aid rather than append-only truth.
+- After Rekor confirmation, the target design is to submit replayable records as Rekor `intoto` entries so public retrieval can materialize verifier-critical payload facts from Rekor attestation storage. The OCI artifact mirror remains available as a non-authoritative fallback keyed by `payload_hash`, and is consumed only when public Rekor body plus attestation retrieval is insufficient for replay.
+- Real public-Rekor validation has now confirmed that this `intoto` path depends on the v0.0.2 write contract, not just the high-level entry kind: the adapter must submit `apiVersion=0.0.2`, must encode envelope payload/signature fields exactly as Rekor's v0.0.2 decoder expects, and must include `content.hash` for the original DSSE envelope JSON so Rekor can canonicalize the entry.
 
 ### 4.1.1 Mirror-Assisted Public Replay
 
-- `OciBundleMirror` is the current bundle mirror adapter for both filesystem-backed and registry-backed OCI repositories.
-- Mirror publication happens after Rekor confirmation, so immutable verification may briefly report `public-only` before the asynchronous mirror queue drains.
-- During replay, the verifier can now re-materialize hash-only public Rekor DSSE entries from the mirror, including the current head entry, while still keeping Rekor inclusion as the authoritative public anchor.
-- `tc-verify` surfaces this explicitly through verification tiers: `public-only`, `public+mirrored`, and `public+mirrored+attested`.
+- `OciBundleMirror` remains the fallback mirror adapter for both filesystem-backed and registry-backed OCI repositories.
+- The preferred replay-materialization path is public Rekor retrieval plus attestation storage on `intoto` entries; mirror resolution is used when public body and attestation retrieval still do not expose enough payload material for replay.
+- Mirror publication still happens after Rekor confirmation, so immutable verification may briefly report `public-only` or `public+attestation-storage` before the asynchronous mirror queue drains.
+- During replay, the verifier keeps Rekor inclusion as the authoritative public anchor and treats OCI mirror only as fallback payload materialization.
+- `tc-verify` now needs to surface this explicitly through verification tiers such as `public-only`, `public+attestation-storage`, `public+mirrored`, and `public+mirrored+attested`.
 
 ### 4.2 Docktap Service
 
@@ -259,6 +265,7 @@ For implementation details, see [trusted-log/architecture.md](trusted-log/archit
 
 - Public Rekor DSSE retrieval does not always preserve the original application-facing predicate in the same directly consumable shape used by local tests and mocked adapters.
 - To keep `tc-verify` and immutable replay behavior stable in the real public-Rekor smoke path, the Sigstore adapter now caches the bundle-derived DSSE payload and signer certificate material at submission time, keyed by the resolved log reference.
+- The same live-smoke work also hardened the submit path itself: if the adapter drifts from Rekor's concrete `intoto` v0.0.2 contract, public failures tend to cluster into three buckets that are now documented in tests and operator guidance: schema-version mismatch (`publicKey in body is required`), envelope encoding mismatch (`unable to base64 decode payload`), and missing envelope digest during canonicalization (`error generating canonicalized entry`).
 - Subsequent replay in the same process can therefore recover `event_id`, `event_type`, and `predicate_entries` from the submitted bundle even when the raw Rekor readback is reduced to transparency-log-native fields.
 - For reservation-backed chains, replay now also uses the cached DSSE payload to recover signed `sequence_num`, `prev_event_digest`, and `prev_lookup_hash` so immutable replay can verify predecessor continuity without depending on backend-assigned predecessor IDs.
 - The current implementation also supports mirror-assisted replay materialization through `OciBundleMirror`. When public Rekor readback is hash-only, the verifier can rehydrate current-head or predecessor bundle payloads from a non-authoritative OCI mirror keyed by `payload_hash`.

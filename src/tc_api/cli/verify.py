@@ -162,6 +162,8 @@ def _summarize_replay_provenance(entries: List[Dict[str, Any]]) -> tuple[str, st
         return "unsupported", "historical replay facts depended on process-local cache rather than Rekor-auditable materialization"
     if any(status in {"unmaterialized", "baseline-missing"} for status in public_history_statuses):
         return "degraded", "public Rekor materialization did not expose all verifier-critical historical facts"
+    if any(source == "attestation-storage" for source in materialization_sources):
+        return "attestation-storage", "historical continuity required Rekor-hosted attestation materialization in addition to public Rekor inclusion proof"
     if any(source == "mirror" for source in materialization_sources):
         return "mirrored", "historical continuity required mirrored bundle materialization in addition to public Rekor inclusion proof"
     return "public", "historical continuity and baseline origin were derived from publicly materialized replay data"
@@ -172,6 +174,8 @@ def _compute_verification_tier(provenance_status: str, attested_valid: bool) -> 
         return "public+mirrored+attested"
     if provenance_status == "mirrored":
         return "public+mirrored"
+    if provenance_status == "attestation-storage":
+        return "public+attestation-storage"
     return "public-only"
 
 

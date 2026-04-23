@@ -1,7 +1,11 @@
 import base64
+import hashlib
 import json
 import logging
+import os
+import time
 from typing import Any, Optional, Tuple
+from urllib.parse import urlencode
 import urllib.error
 import urllib.request
 
@@ -18,15 +22,30 @@ logger = logging.getLogger(__name__)
 
 class SigstoreLogAdapter(ImmutableLogAdapter):
     _bundle_entry_cache: dict[tuple[str, str], dict[str, Any]] = {}
+    _SUPPORTED_ENTRY_TYPES = {"dsse", "intoto"}
 
     def __init__(
         self,
         rekor_url: str = "https://rekor.sigstore.dev",
         bundle_mirror_dir: Optional[str] = None,
         bundle_mirror: Optional[OciBundleMirror] = None,
+        rekor_entry_type: Optional[str] = None,
     ):
         self.rekor_url = rekor_url
         self.bundle_mirror = bundle_mirror or (OciBundleMirror(bundle_mirror_dir) if bundle_mirror_dir else None)
+        entry_type = (rekor_entry_type or os.environ.get("TC_API_REKOR_ENTRY_TYPE", "intoto")).strip().lower()
+        if entry_type not in self._SUPPORTED_ENTRY_TYPES:
+            supported = ", ".join(sorted(self._SUPPORTED_ENTRY_TYPES))
+            raise ValueError(f"Unsupported Rekor entry type '{entry_type}'. Expected one of: {supported}")
+        self.rekor_entry_type = entry_type
+        self.raw_attestation_fetch_retries = max(
+            0,
+            int(os.environ.get("TC_API_REKOR_ATTESTATION_FETCH_RETRIES", "6")),
+        )
+        self.raw_attestation_fetch_backoff_seconds = max(
+            0.0,
+            float(os.environ.get("TC_API_REKOR_ATTESTATION_FETCH_BACKOFF_SECONDS", "0.5")),
+        )
 
     @classmethod
     def _cache_key(cls, rekor_url: str, log_id: str) -> tuple[str, str]:
@@ -55,8 +74,18 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
 
         return None, log_entry
 
+    @classmethod
+    def _log_entry_kind(cls, entry: Any) -> Optional[str]:
+        entry_candidate = entry
+        if not isinstance(entry_candidate, dict) and hasattr(entry_candidate, "body"):
+            entry_candidate = {"body": getattr(entry_candidate, "body")}
+        entry_dict = cls._entry_to_dict(entry_candidate)
+        body = cls._decode_body(entry_dict)
+        kind = body.get("kind") if isinstance(body, dict) else None
+        return kind.lower() if isinstance(kind, str) else None
+
     @staticmethod
-    def _proposed_entry_from_bundle(bundle: Bundle) -> Optional[rekor_types.Dsse]:
+    def _dsse_entry_from_bundle(bundle: Bundle) -> Optional[rekor_types.Dsse]:
         envelope = bundle._dsse_envelope
         if envelope is None:
             return None
@@ -75,11 +104,72 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
         )
 
     @staticmethod
+    def _intoto_entry_from_bundle(bundle: Bundle) -> Optional[rekor_types.Intoto]:
+        envelope = bundle._dsse_envelope
+        if envelope is None:
+            return None
+
+        try:
+            envelope_json = json.loads(envelope.to_json())
+            envelope_bytes = envelope.to_json().encode("utf-8")
+        except Exception:
+            return None
+
+        signatures = envelope_json.get("signatures")
+        if not isinstance(signatures, list) or not signatures:
+            return None
+
+        cert_pem = base64.b64encode(
+            bundle.signing_certificate.public_bytes(Encoding.PEM)
+        ).decode()
+
+        intoto_signatures = []
+        for signature in signatures:
+            if not isinstance(signature, dict):
+                return None
+            sig = signature.get("sig")
+            if not isinstance(sig, str) or not sig:
+                return None
+            intoto_signatures.append(
+                {
+                    "keyid": signature.get("keyid"),
+                    "sig": base64.b64encode(sig.encode("utf-8")).decode("utf-8"),
+                    "publicKey": cert_pem,
+                }
+            )
+
+        payload = envelope_json.get("payload")
+        if not isinstance(payload, str) or not payload:
+            return None
+
+        return rekor_types.Intoto(
+            api_version="0.0.2",
+            spec=rekor_types.intoto.IntotoV002Schema(
+                content={
+                    "envelope": {
+                        "payloadType": envelope_json.get("payloadType", "application/vnd.in-toto+json"),
+                        "payload": base64.b64encode(payload.encode("utf-8")).decode("utf-8"),
+                        "signatures": intoto_signatures,
+                    },
+                    "hash": {
+                        "algorithm": "sha256",
+                        "value": hashlib.sha256(envelope_bytes).hexdigest(),
+                    }
+                }
+            )
+        )
+
+    def _proposed_entry_from_bundle(self, bundle: Bundle) -> Optional[Any]:
+        if self.rekor_entry_type == "intoto":
+            return self._intoto_entry_from_bundle(bundle)
+        return self._dsse_entry_from_bundle(bundle)
+
+    @staticmethod
     def _entry_to_dict(entry: Any) -> Any:
         if not isinstance(entry, LogEntry):
             return entry
 
-        return {
+        result = {
             "uuid": entry.uuid,
             "entryUUID": entry.uuid,
             "log_id": entry.log_id,
@@ -99,6 +189,10 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
                 "signedEntryTimestamp": entry.inclusion_promise,
             },
         }
+        attestation = getattr(entry, "attestation", None)
+        if attestation is not None:
+            result["attestation"] = attestation
+        return result
 
     @classmethod
     def _cache_bundle_entry(
@@ -211,6 +305,52 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
         return {}
 
     @classmethod
+    def _normalize_raw_entry_response(cls, response_payload: Any) -> Optional[dict[str, Any]]:
+        if not isinstance(response_payload, dict):
+            return None
+        if "body" in response_payload:
+            return response_payload
+        if len(response_payload) != 1:
+            return None
+        entry_id, entry = next(iter(response_payload.items()))
+        if not isinstance(entry, dict):
+            return None
+        normalized = dict(entry)
+        normalized.setdefault("uuid", str(entry_id))
+        normalized.setdefault("entryUUID", str(entry_id))
+        return normalized
+
+    def _fetch_raw_rekor_entry(self, log_id: str) -> Optional[dict[str, Any]]:
+        base_url = f"{self.rekor_url.rstrip('/')}/api/v1/log/entries"
+        if log_id.isdigit():
+            request_url = f"{base_url}?{urlencode({'logIndex': int(log_id)})}"
+        else:
+            request_url = f"{base_url}/{log_id}"
+
+        request = urllib.request.Request(request_url, method="GET")
+        with urllib.request.urlopen(request, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        return self._normalize_raw_entry_response(payload)
+
+    @staticmethod
+    def _merge_raw_entry_extras(entry_dict: dict[str, Any], raw_entry: Optional[dict[str, Any]]) -> dict[str, Any]:
+        if raw_entry is None:
+            return entry_dict
+        merged_entry = dict(entry_dict)
+        for key in ("attestation", "attestationType"):
+            if key in raw_entry and (key not in merged_entry or not merged_entry.get(key)):
+                merged_entry[key] = raw_entry[key]
+        return merged_entry
+
+    @classmethod
+    def _needs_raw_attestation_retry(cls, entry_dict: dict[str, Any]) -> bool:
+        if cls._entry_has_decodable_payload(entry_dict):
+            return False
+        if cls._decoded_attestation_payload_bytes(entry_dict.get("attestation")):
+            return False
+        return cls._committed_payload_hash_from_body(cls._decode_body(entry_dict)) is not None
+
+    @classmethod
     def _public_payload_hash_from_entry(cls, entry: Any) -> Optional[str]:
         body = cls._decode_body(entry)
         spec = body.get("spec", {}) if isinstance(body, dict) else {}
@@ -236,7 +376,106 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
         proposed_content = spec.get("proposedContent")
         if isinstance(proposed_content, dict) and isinstance(proposed_content.get("envelope"), str):
             return True
+        content = spec.get("content")
+        if isinstance(content, dict):
+            envelope = content.get("envelope")
+            if isinstance(envelope, dict) and isinstance(envelope.get("payload"), str):
+                return True
         return False
+
+    @classmethod
+    def _committed_payload_hash_from_body(cls, body: dict[str, Any]) -> Optional[str]:
+        if not isinstance(body, dict):
+            return None
+        spec = body.get("spec", {})
+        if not isinstance(spec, dict):
+            return None
+
+        hash_sources = [spec.get("payloadHash")]
+        content = spec.get("content")
+        if isinstance(content, dict):
+            hash_sources.append(content.get("payloadHash"))
+
+        for payload_hash in hash_sources:
+            if isinstance(payload_hash, dict):
+                algorithm = payload_hash.get("algorithm") or payload_hash.get("algorithm")
+                value = payload_hash.get("value")
+                if isinstance(algorithm, str) and isinstance(value, str):
+                    return f"{algorithm}:{value}"
+
+        payload_b64 = spec.get("payload")
+        if not isinstance(payload_b64, str) and isinstance(content, dict):
+            envelope = content.get("envelope")
+            if isinstance(envelope, dict):
+                payload_b64 = envelope.get("payload")
+        if not isinstance(payload_b64, str):
+            return None
+        try:
+            payload_bytes = base64.b64decode(payload_b64)
+        except Exception:
+            return None
+        import hashlib
+
+        return "sha256:" + hashlib.sha256(payload_bytes).hexdigest()
+
+    @staticmethod
+    def _decoded_attestation_payload_bytes(attestation: Any) -> Optional[bytes]:
+        if attestation is None:
+            return None
+        if isinstance(attestation, dict):
+            for key in ("payload", "data"):
+                value = attestation.get(key)
+                if isinstance(value, str):
+                    try:
+                        return base64.b64decode(value)
+                    except Exception:
+                        return value.encode("utf-8")
+            envelope = attestation.get("envelope")
+            if isinstance(envelope, dict):
+                payload = envelope.get("payload")
+                if isinstance(payload, str):
+                    try:
+                        return base64.b64decode(payload)
+                    except Exception:
+                        return payload.encode("utf-8")
+            try:
+                return json.dumps(attestation, separators=(",", ":")).encode("utf-8")
+            except Exception:
+                return None
+        if isinstance(attestation, str):
+            try:
+                return base64.b64decode(attestation)
+            except Exception:
+                return attestation.encode("utf-8")
+        return None
+
+    @classmethod
+    def _merge_attestation_payload_into_public_entry(cls, public_entry: dict[str, Any]) -> dict[str, Any]:
+        if cls._entry_has_decodable_payload(public_entry):
+            return public_entry
+
+        body = cls._decode_body(public_entry)
+        committed_payload_hash = cls._committed_payload_hash_from_body(body)
+        attestation_bytes = cls._decoded_attestation_payload_bytes(public_entry.get("attestation"))
+        if not committed_payload_hash or not attestation_bytes:
+            return public_entry
+
+        import hashlib
+
+        observed_payload_hash = "sha256:" + hashlib.sha256(attestation_bytes).hexdigest()
+        if observed_payload_hash != committed_payload_hash:
+            return public_entry
+
+        merged_entry = cls._clone_cached_entry(public_entry)
+        merged_body = cls._decode_body(merged_entry)
+        merged_spec = merged_body.get("spec", {}) if isinstance(merged_body, dict) else {}
+        if not isinstance(merged_spec, dict):
+            merged_spec = {}
+        merged_spec["payload"] = base64.b64encode(attestation_bytes).decode("utf-8")
+        merged_body["spec"] = merged_spec
+        merged_entry["body"] = merged_body
+        merged_entry["_tc_replay_provenance"] = "attestation-storage"
+        return merged_entry
 
     @classmethod
     def _merge_cached_payload_into_public_entry(
@@ -270,7 +509,7 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
         for key in ("uuid", "entryUUID", "log_id", "logID", "log_index", "logIndex", "integratedTime", "verification"):
             if key in public_entry:
                 merged_entry[key] = public_entry[key]
-        merged_entry["_tc_replay_provenance"] = "public"
+        merged_entry["_tc_replay_provenance"] = "cache-assisted"
         return merged_entry
 
     def _merge_mirror_payload_into_public_entry(self, public_entry: dict[str, Any]) -> dict[str, Any]:
@@ -305,7 +544,7 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
         for key in ("uuid", "entryUUID", "log_id", "logID", "log_index", "logIndex", "integratedTime", "verification"):
             if key in public_entry:
                 merged_entry[key] = public_entry[key]
-        merged_entry["_tc_replay_provenance"] = "public"
+        merged_entry["_tc_replay_provenance"] = "mirror"
         return merged_entry
 
     @classmethod
@@ -348,7 +587,12 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
             client = RekorClient(self.rekor_url)
 
             existing_ref, log_entry = self._existing_bundle_reference(bundle)
-            if existing_ref:
+            existing_kind = self._log_entry_kind(log_entry) if log_entry is not None else None
+            reuse_existing_entry = bool(existing_ref) and (
+                existing_kind is None
+                or existing_kind == self.rekor_entry_type
+            )
+            if reuse_existing_entry:
                 entry_dict = self._entry_to_dict(log_entry)
                 alternate_ids = []
                 if getattr(log_entry, "uuid", None):
@@ -360,7 +604,9 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
 
             proposed_entry = self._proposed_entry_from_bundle(bundle)
             if proposed_entry is None:
-                raise ValueError("Bundle does not contain a DSSE envelope and cannot be submitted")
+                raise ValueError(
+                    f"Bundle does not contain a valid DSSE envelope for Rekor {self.rekor_entry_type} submission"
+                )
 
             entry = client.log.entries.post(proposed_entry)
             if getattr(entry, "uuid", None):
@@ -387,8 +633,25 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
             entry = client.log.entries.get(**self._parse_log_reference(log_id))
             entry_dict = self._entry_to_dict(entry)
             if isinstance(entry_dict, dict):
-                merged_entry = self._merge_cached_payload_into_public_entry(self.rekor_url, log_id, entry_dict)
-                return self._merge_mirror_payload_into_public_entry(merged_entry)
+                raw_entry = None
+                fetch_attempts = self.raw_attestation_fetch_retries + 1
+                for attempt in range(fetch_attempts):
+                    try:
+                        raw_entry = self._fetch_raw_rekor_entry(log_id)
+                    except Exception as raw_exc:
+                        logger.debug("Could not fetch raw Rekor entry extras for %s: %s", log_id, raw_exc)
+                        break
+
+                    entry_dict = self._merge_raw_entry_extras(entry_dict, raw_entry)
+                    if not self._needs_raw_attestation_retry(entry_dict):
+                        break
+                    if attempt + 1 < fetch_attempts and self.raw_attestation_fetch_backoff_seconds > 0:
+                        time.sleep(self.raw_attestation_fetch_backoff_seconds)
+
+                merged_entry = self._merge_attestation_payload_into_public_entry(entry_dict)
+                merged_entry = self._merge_mirror_payload_into_public_entry(merged_entry)
+                merged_entry = self._merge_cached_payload_into_public_entry(self.rekor_url, log_id, merged_entry)
+                return merged_entry
             return entry_dict
         except Exception as e:
             cached_entry = self._get_cached_entry(self.rekor_url, log_id)

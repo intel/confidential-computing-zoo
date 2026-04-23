@@ -26,7 +26,11 @@ This split ensures that RTMR extends and chain state mutations are strictly seri
 - **RTMR** proves ordering (hardware measurement register chain).
 - **Rekor** proves public auditability (transparent log).
 
-The current implementation also supports a non-authoritative OCI bundle mirror keyed by `payload_hash`. That mirror can be filesystem-backed or registry-backed, and is used only to re-materialize DSSE payload fields during replay when public Rekor readback is hash-only.
+The target migration path keeps DSSE as the internal signing and queueing format while changing the Rekor-facing upload type for replayable records to `intoto` v0.0.2. Under that design, public Rekor attestation storage becomes the primary source for replay materialization when the committed body is hash-only.
+
+Real public-Rekor validation now also fixes the concrete write-side contract for that `intoto` migration target: tc_api must submit `apiVersion=0.0.2`, must serialize the v0.0.2 envelope payload and signature fields exactly as Rekor's typed decoder expects, and must include `content.hash=sha256(<original DSSE envelope JSON>)` on upload. Those fields are not interchangeable with the older `intoto` v0.0.1 shape, and small mismatches fail against the public service long before replay or attestation-storage materialization is exercised.
+
+The current implementation also supports a non-authoritative OCI bundle mirror keyed by `payload_hash`. That mirror can be filesystem-backed or registry-backed, and remains a fallback used only when public Rekor body plus attestation retrieval still cannot expose enough payload material for replay.
 
 Two immutable backends are currently in scope: transparent log and on-chain log.
 
@@ -122,8 +126,13 @@ Defines the local measurement contract (extend/query), independent of platform-s
 - Immutable Log Adapter:
 Defines immutable-persistence operations (submit, resolve log id, chain traversal) independent of backend type. Used by the embedded submit daemon for asynchronous Rekor/on-chain submission.
 
+- Rekor Attestation Storage:
+For replayable records uploaded as `intoto` entries, the preferred verifier path is to recover payload material from the Rekor retrieval response's attestation payload after validating it against the committed payload hash.
+
+For operators debugging the live public path, three failure signatures have been especially useful: `publicKey in body is required` usually indicates that the client accidentally submitted an `intoto` body that Rekor interpreted as v0.0.1; `unable to base64 decode payload` indicates that the v0.0.2 envelope payload/signature encoding does not match Rekor's decoder expectations; and `error generating canonicalized entry` indicates that the upload reached type-specific parsing but did not provide the envelope digest Rekor needs for canonicalization.
+
 - OCI Bundle Mirror:
-The current Sigstore/Rekor path can additionally publish confirmed bundle material into `OciBundleMirror`, keyed by `payload_hash`. The verifier may consult that mirror to rehydrate current-head or predecessor DSSE payload fields during replay, but Rekor inclusion remains the authoritative public anchor.
+The current Sigstore/Rekor path can additionally publish confirmed bundle material into `OciBundleMirror`, keyed by `payload_hash`. The verifier may consult that mirror to rehydrate current-head or predecessor payload fields during replay only when public body plus Rekor attestation storage are insufficient, and Rekor inclusion remains the authoritative public anchor.
 
 For the Sigstore/Rekor implementation, "submit" now has two concrete cases:
 
@@ -149,14 +158,14 @@ This layering allows backend evolution (for example adding new on-chain or trans
 
 ### Public Rekor Replay Detail
 
-Real public-Rekor DSSE retrieval is not identical to the simplified mocked payloads used in deterministic unit tests.
+Real public-Rekor replay is not identical to the simplified mocked payloads used in deterministic unit tests.
 
-- Rekor-native readback can emphasize transparency-log-native fields such as envelope hashes, payload hashes, signatures, verifiers, and inclusion proof material.
-- The original application-facing predicate is not guaranteed to be returned in the exact shape expected by tc_api's replay normalizer.
+- Rekor-native readback can emphasize transparency-log-native fields such as payload hashes, envelope hashes, signatures, verifiers, attestation payloads, and inclusion proof material.
+- The original application-facing predicate is not guaranteed to be returned in the exact shape expected by tc_api's replay normalizer, so the verifier must normalize body-native material, Rekor attestation material, or mirror fallback material into the same replayable facts.
 
-To keep retrieval efficient, the Sigstore adapter caches bundle-derived DSSE payload and signer-certificate material at submission time, keyed by the resolved log reference. That cache is now treated as a local fetch optimization and diagnostic fallback only: verifier-critical historical facts such as Event Log 0 baseline origin and signed predecessor continuity count as publicly proven only when they can be materialized from Rekor-auditable entry data.
+To keep retrieval efficient, the Sigstore adapter caches bundle-derived payload and signer-certificate material at submission time, keyed by the resolved log reference. That cache is now treated as a local fetch optimization and diagnostic fallback only: verifier-critical historical facts such as Event Log 0 baseline origin and signed predecessor continuity count as publicly proven only when they can be materialized from Rekor-auditable entry data, including attestation storage when available.
 
-The current implementation extends this with mirror-assisted materialization through `OciBundleMirror`. When a public Rekor entry body is hash-only, the verifier can recover DSSE payload material from the mirror for either the current head or predecessor candidates, while still reporting the provenance boundary explicitly as `public+mirrored` rather than `public-only`.
+The target design extends this first through Rekor attestation-storage materialization and then through mirror-assisted materialization via `OciBundleMirror`. When a public Rekor entry body is hash-only, the verifier should first attempt to recover replayable payload material from the Rekor attestation payload and then fall back to mirror resolution for either the current head or predecessor candidates, while still reporting the provenance boundary explicitly as `public+attestation-storage` or `public+mirrored` rather than `public-only`.
 
 This is intentionally an implementation compatibility layer for replay fidelity, not a replacement for Rekor as the public append-only backend. If replay succeeds only because process-local cache supplied facts that public Rekor materialization did not expose, operator tooling reports that state as cache-assisted or unsupported rather than as fully verified public history.
 

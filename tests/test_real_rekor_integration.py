@@ -300,6 +300,67 @@ def test_public_rekor_round_trip_smoke(real_rekor_runtime, real_rekor_trucon_har
 
 
 @pytest.mark.integration
+def test_public_rekor_intoto_round_trip_materializes_attestation_payload(real_rekor_runtime, real_rekor_trucon_harness):
+    """Opt-in smoke test for the intoto upload path and attestation-backed replay materialization."""
+
+    identity_token = real_rekor_runtime["identity_token"]
+    rekor_url = real_rekor_runtime["rekor_url"]
+    signer_identity = real_rekor_runtime["signer_identity"]
+    client = real_rekor_trucon_harness
+    adapter = SigstoreLogAdapter(rekor_url=rekor_url, rekor_entry_type="intoto")
+    trucon_app_mod._immutable_log = adapter
+
+    chain_id = f"rekor-intoto-smoke-{uuid.uuid4().hex[:12]}"
+    event_id = f"evt-{uuid.uuid4().hex[:12]}"
+    captured: Dict[str, Any] = {}
+
+    tlog = TrustedLogAPI(immutable_log=adapter)
+    ctx = tlog.init_record(context={"chain_ref": chain_id})
+    tlog.add_entry(ctx.record_id, Entry(key="operation_result", value="success"))
+    tlog.add_entry(ctx.record_id, Entry(key="timestamp_hint", value=datetime.now(timezone.utc).isoformat()))
+
+    def _capture_post_to_trucon(**kwargs):
+        captured.update(kwargs)
+        return {
+            "record_id": f"local-{uuid.uuid4().hex[:8]}",
+            "sequence_num": 1,
+            "mr_value": None,
+            "prev_mr_value": None,
+        }
+
+    with patch.object(tlog, "_post_to_trucon", side_effect=_capture_post_to_trucon), \
+         patch("tc_api.tlog_client.request_json", side_effect=_request_json_via_testclient(client)):
+        commit_result = tlog.commit_record(
+            ctx.record_id,
+            event_type="launch",
+            event_id=event_id,
+            commit_options={"identity_token": identity_token},
+        )
+
+    trucon_app_mod._submit_daemon_tick()
+
+    assert commit_result.record_id.startswith("local-")
+    bundle = Bundle.from_json(captured["bundle_json"])
+    log_id, status, _receipt = adapter.submit_bundle(bundle)
+
+    assert status == "confirmed"
+    assert isinstance(log_id, str) and log_id
+
+    SigstoreLogAdapter._bundle_entry_cache.clear()
+    replay_adapter = SigstoreLogAdapter(rekor_url=rekor_url, rekor_entry_type="intoto")
+    entry = replay_adapter.get_entry(log_id)
+    normalized_entry = tlog_client_mod._normalize_verification_entry(entry, 1, signer_identity)
+
+    assert normalized_entry["chain_id"] == chain_id
+    assert normalized_entry["event_id"] == event_id
+    assert normalized_entry["digest"] == captured["event_digest"]
+    assert normalized_entry["event_type"] == "launch"
+    assert normalized_entry["replay_provenance"] == "attestation-storage"
+    if signer_identity:
+        assert normalized_entry["signer_identity_match"] is True
+
+
+@pytest.mark.integration
 def test_public_rekor_baseline_bundle_round_trip_smoke(real_rekor_runtime):
     """Opt-in smoke test for Event Log 0 bundle generation against public Rekor."""
 
@@ -464,7 +525,7 @@ def test_public_rekor_multi_entry_predecessor_proof_reports_public_replay_limit(
     signer_identity = real_rekor_runtime["signer_identity"]
     chain_id = f"rekor-predecessor-{uuid.uuid4().hex[:12]}"
     event_id = f"evt-{uuid.uuid4().hex[:12]}"
-    adapter = SigstoreLogAdapter(rekor_url=rekor_url)
+    adapter = SigstoreLogAdapter(rekor_url=rekor_url, rekor_entry_type="dsse")
     client = real_rekor_trucon_harness
     trucon_app_mod._immutable_log = adapter
 
@@ -492,7 +553,7 @@ def test_public_rekor_multi_entry_predecessor_proof_reports_public_replay_limit(
     assert isinstance(head_record["log_id"], str) and head_record["log_id"]
 
     SigstoreLogAdapter._bundle_entry_cache.clear()
-    replay_adapter = SigstoreLogAdapter(rekor_url=rekor_url)
+    replay_adapter = SigstoreLogAdapter(rekor_url=rekor_url, rekor_entry_type="dsse")
     replay_tlog = TrustedLogAPI(immutable_log=replay_adapter)
 
     verify_policy: Dict[str, Any] = {"chain_id": chain_id, "expected_entry_count": 1}
@@ -509,6 +570,63 @@ def test_public_rekor_multi_entry_predecessor_proof_reports_public_replay_limit(
     assert entry["predecessor_ok"] is False
     assert entry["predecessor_status"] == "unsupported"
     assert entry["public_history_status"] == "unmaterialized"
+
+
+@pytest.mark.integration
+def test_public_rekor_intoto_multi_entry_predecessor_proof_without_mirror(real_rekor_runtime, real_rekor_trucon_harness):
+    """Opt-in smoke test for intoto predecessor proof through public Rekor plus attestation storage alone."""
+
+    identity_token = real_rekor_runtime["identity_token"]
+    rekor_url = real_rekor_runtime["rekor_url"]
+    signer_identity = real_rekor_runtime["signer_identity"]
+    chain_id = f"rekor-intoto-predecessor-{uuid.uuid4().hex[:12]}"
+    event_id = f"evt-{uuid.uuid4().hex[:12]}"
+    adapter = SigstoreLogAdapter(rekor_url=rekor_url, rekor_entry_type="intoto")
+    client = real_rekor_trucon_harness
+    trucon_app_mod._immutable_log = adapter
+
+    tlog = TrustedLogAPI(immutable_log=adapter)
+    ctx = tlog.init_record(context={"chain_ref": chain_id})
+    tlog.add_entry(ctx.record_id, Entry(key="operation_result", value="success"))
+    tlog.add_entry(ctx.record_id, Entry(key="timestamp_hint", value=datetime.now(timezone.utc).isoformat()))
+
+    with patch("tc_api.tlog_client.request_json", side_effect=_request_json_via_testclient(client)):
+        commit_result = tlog.commit_record(
+            ctx.record_id,
+            event_type="launch",
+            event_id=event_id,
+            commit_options={"identity_token": identity_token},
+        )
+
+    assert commit_result.record_id
+    trucon_app_mod._submit_daemon_tick()
+
+    records = trucon_db_mod.get_chain_records(chain_id, db_path=client.app.state.test_db_path)
+    assert [record["sequence_num"] for record in records] == [1, 2]
+    head_record = records[1]
+    assert head_record["event_id"] == event_id
+    assert head_record["status"] == "CONFIRMED"
+    assert isinstance(head_record["log_id"], str) and head_record["log_id"]
+
+    SigstoreLogAdapter._bundle_entry_cache.clear()
+    replay_adapter = SigstoreLogAdapter(rekor_url=rekor_url, rekor_entry_type="intoto")
+    replay_tlog = TrustedLogAPI(immutable_log=replay_adapter)
+
+    verify_policy: Dict[str, Any] = {"chain_id": chain_id, "expected_entry_count": 1}
+    if signer_identity:
+        verify_policy["signer_identity"] = signer_identity
+
+    verify_result = replay_tlog.verify_record(head_record["log_id"], policy=verify_policy)
+
+    assert verify_result.success is True, verify_result.errors
+    assert verify_result.details["chain_id"] == chain_id
+    assert verify_result.details["entry_count"] == 1
+    entry = verify_result.details["entries"][0]
+    assert entry["event_id"] == event_id
+    assert entry["predecessor_ok"] is True
+    assert entry["predecessor_status"] == "proven"
+    assert entry["history_materialization_provenance"] == "attestation-storage"
+    assert entry["public_history_status"] == "public"
 
 
 @pytest.mark.integration
