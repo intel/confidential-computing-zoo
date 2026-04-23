@@ -2,6 +2,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any, Optional
+from threading import Lock
 
 from sigstore._internal.fulcio.client import FulcioClient
 from sigstore._internal.rekor.client import RekorClient
@@ -11,6 +12,10 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from sigstore.dsse import StatementBuilder, Subject
 from sigstore.oidc import IdentityToken, Issuer
 from sigstore.sign import SigningContext
+
+
+_OWNER_KEY_LOCK = Lock()
+_CHAIN_OWNER_PRIVATE_KEYS: dict[str, ec.EllipticCurvePrivateKey] = {}
 
 
 def _canonical_json(data: Any) -> str:
@@ -44,14 +49,27 @@ def _resolve_identity_token(identity_token_str: Optional[str] = None) -> Identit
     return IdentityToken(str(token))
 
 
-def generate_ephemeral_pub_key_pem() -> str:
-    private_key = ec.generate_private_key(ec.SECP384R1())
+def generate_chain_owner_pub_key_pem(chain_id: str) -> str:
+    with _OWNER_KEY_LOCK:
+        private_key = _CHAIN_OWNER_PRIVATE_KEYS.get(chain_id)
+        if private_key is None:
+            private_key = ec.generate_private_key(ec.SECP384R1())
+            _CHAIN_OWNER_PRIVATE_KEYS[chain_id] = private_key
+
     pub_key_pem = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     ).decode("utf-8")
-    del private_key
     return pub_key_pem
+
+
+def get_chain_owner_private_key(chain_id: str) -> Optional[ec.EllipticCurvePrivateKey]:
+    with _OWNER_KEY_LOCK:
+        private_key = _CHAIN_OWNER_PRIVATE_KEYS.get(chain_id)
+        if private_key is None:
+            private_key = ec.generate_private_key(ec.SECP384R1())
+            _CHAIN_OWNER_PRIVATE_KEYS[chain_id] = private_key
+        return private_key
 
 
 def build_signing_context(rekor_url: Optional[str] = None) -> SigningContext:
@@ -75,7 +93,7 @@ def build_baseline_sigstore_bundle(
     prev_event_digest: Optional[str] = None,
     prev_lookup_hash: Optional[str] = None,
 ) -> tuple[str, str, str]:
-    pub_key_pem = generate_ephemeral_pub_key_pem()
+    pub_key_pem = generate_chain_owner_pub_key_pem(chain_id)
     event_id = f"evt-log0-{chain_id}"
     event_type = "chain.init"
     created_iso = datetime.now(timezone.utc).isoformat()

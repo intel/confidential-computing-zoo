@@ -86,11 +86,65 @@ from .evidence import (
     compute_binding_expected_value,
     validate_attested_head_evidence_payload,
 )
+from .owner_attestation import (
+    OWNER_BINDING_ALGORITHM,
+    REQUIRED_OWNER_BOUND_FIELDS,
+    compute_owner_attestation_expected_value,
+    validate_chain_root_owner_attestation_payload,
+)
+from .owner_authorization import verify_owner_authorization
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger("trucon")
 
 INTENT_TTL_SECONDS = int(os.environ.get("TRUCON_INTENT_TTL_SECONDS", "300"))
+
+
+def _build_chain_owner_attestation(
+    chain_id: str,
+    sequence_num: int,
+    baseline_rtmr: Optional[str],
+    ccel_digest: Optional[str],
+    owner_pub_key: str,
+) -> Dict[str, Any]:
+    if _quote_adapter is None:
+        raise HTTPException(status_code=500, detail="Quote adapter is unavailable")
+
+    expected_value = compute_owner_attestation_expected_value(
+        chain_id=chain_id,
+        sequence_num=sequence_num,
+        baseline_rtmr=baseline_rtmr,
+        ccel_digest=ccel_digest,
+        owner_pub_key=owner_pub_key,
+    )
+
+    try:
+        quote_material = _quote_adapter.quote(expected_value)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Owner attestation quote acquisition failed: {exc}") from exc
+
+    if quote_material.report_data != expected_value:
+        raise HTTPException(status_code=500, detail="Owner attestation report data did not match the expected binding value")
+
+    return validate_chain_root_owner_attestation_payload(
+        {
+            "version": "v1",
+            "tee_type": "tdx",
+            "chain_id": chain_id,
+            "sequence_num": sequence_num,
+            "owner_pub_key": owner_pub_key,
+            "baseline_rtmr": baseline_rtmr,
+            "ccel_digest": ccel_digest,
+            "generated_at": datetime.utcnow(),
+            "quote": quote_material.quote,
+            "quote_format": quote_material.quote_format,
+            "report_data_binding": {
+                "algorithm": OWNER_BINDING_ALGORITHM,
+                "bound_fields": list(REQUIRED_OWNER_BOUND_FIELDS),
+                "expected_value": expected_value,
+            },
+        }
+    ).model_dump(mode="json")
 
 
 def _extract_bundle_payload(bundle_json: str) -> Dict[str, Any]:
@@ -198,6 +252,13 @@ def _create_workload_chain_baseline(
         raise HTTPException(status_code=500, detail=f"Baseline creation failed: {exc}") from exc
 
     record_id = str(uuid.uuid4())
+    owner_attestation = _build_chain_owner_attestation(
+        chain_id=chain_id,
+        sequence_num=1,
+        baseline_rtmr=rtmr_value,
+        ccel_digest=ccel_digest,
+        owner_pub_key=pub_key_pem,
+    )
     insert_record(
         record_id=record_id,
         event_id=f"evt-log0-{chain_id}",
@@ -205,6 +266,7 @@ def _create_workload_chain_baseline(
             "bundle": signed_bundle,
             "chain_id": chain_id,
             "pub_key": pub_key_pem,
+            "owner_attestation": owner_attestation,
             "is_baseline": True,
             "caller_service": caller_service,
             "auth_transport": auth_transport,
@@ -243,6 +305,37 @@ def _record_is_baseline(record: Any) -> bool:
             return False
     return isinstance(payload, dict) and bool(payload.get("is_baseline"))
 
+
+def _record_payload_dict(record: Any) -> Optional[Dict[str, Any]]:
+    payload = record["payload"]
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _get_chain_owner_pub_key_from_records(records: list[Any]) -> Optional[str]:
+    if not records:
+        return None
+
+    baseline = records[0]
+    if not _record_is_baseline(baseline):
+        return None
+
+    payload = _record_payload_dict(baseline)
+    if payload is None:
+        return None
+    if not isinstance(payload.get("owner_attestation"), dict):
+        return None
+    owner_pub_key = payload.get("pub_key")
+    return owner_pub_key if isinstance(owner_pub_key, str) and owner_pub_key else None
+
+
+def _get_chain_owner_pub_key(chain_id: str) -> Optional[str]:
+    return _get_chain_owner_pub_key_from_records(get_chain_records(chain_id))
+
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
@@ -256,6 +349,7 @@ class CommitRequest(BaseModel):
     idempotency_key: Optional[str] = None
     instance_id: Optional[str] = None
     identity_token: Optional[str] = None
+    owner_authorization: Optional[Dict[str, Any]] = None
 
 class CommitResponse(BaseModel):
     record_id: str
@@ -329,6 +423,8 @@ class ChainEntryResult(BaseModel):
     mr_value: Optional[str] = None
     predecessor_ok: Optional[bool] = None
     predecessor_status: Optional[str] = None
+    owner_ok: Optional[bool] = None
+    owner_status: Optional[str] = None
     prev_event_digest: Optional[str] = None
     prev_lookup_hash: Optional[str] = None
     candidate_count: Optional[int] = None
@@ -962,6 +1058,13 @@ def init_chain(req: InitChainRequest, request: Request):
 
         caller_service = getattr(request.state, "caller_service", None)
         auth_transport = getattr(request.state, "auth_transport", None)
+        owner_attestation = _build_chain_owner_attestation(
+            chain_id=req.chain_id,
+            sequence_num=sequence_num,
+            baseline_rtmr=token_data["rtmr_value"],
+            ccel_digest=token_data["ccel_digest"],
+            owner_pub_key=req.pub_key,
+        )
 
         # INSERT baseline record (Event Log 0)
         # rtmr_extended=True: RTMR value was captured (read, not extended).
@@ -974,6 +1077,7 @@ def init_chain(req: InitChainRequest, request: Request):
                 "bundle": req.signed_bundle,
                 "chain_id": req.chain_id,
                 "pub_key": req.pub_key,
+                "owner_attestation": owner_attestation,
                 "is_baseline": True,
                 "caller_service": caller_service,
                 "auth_transport": auth_transport,
@@ -1094,6 +1198,24 @@ def commit(req: CommitRequest, request: Request):
 
             event_id = req.event_id or predicate.get("event_id") or event_id
             sequence_num = intent["sequence_num"]
+            owner_pub_key = _get_chain_owner_pub_key(req.chain_id)
+            if owner_pub_key is not None:
+                if req.owner_authorization is None:
+                    raise HTTPException(status_code=400, detail="Missing owner authorization")
+                try:
+                    owner_ok = verify_owner_authorization(
+                        req.owner_authorization,
+                        owner_pub_key_pem=owner_pub_key,
+                        chain_id=req.chain_id,
+                        sequence_num=sequence_num,
+                        prev_event_digest=intent["prev_event_digest"],
+                        prev_lookup_hash=intent["prev_lookup_hash"],
+                        event_digest=req.event_digest,
+                    )
+                except Exception as exc:
+                    raise HTTPException(status_code=400, detail=f"Invalid owner authorization: {exc}") from exc
+                if not owner_ok:
+                    raise HTTPException(status_code=400, detail="Owner authorization signature mismatch")
 
             mr_value, prev_mr_value = None, None
             if _local_mr:
@@ -1109,6 +1231,7 @@ def commit(req: CommitRequest, request: Request):
                 payload={
                     "bundle": req.bundle,
                     "chain_id": req.chain_id,
+                    "owner_authorization": req.owner_authorization,
                     "caller_service": caller_service,
                     "auth_transport": auth_transport,
                 },
@@ -1381,6 +1504,7 @@ def verify_chain(chain_id: str):
     baseline_error: Optional[str] = None
     # Determine if RTMR is available: at least one non-NULL mr_value
     rtmr_available = any(r['mr_value'] is not None for r in records)
+    owner_pub_key = _get_chain_owner_pub_key_from_records(records)
 
     if chain_id != 'default' and not _record_is_baseline(records[0]):
         baseline_error = f"non-default chain '{chain_id}' does not begin with Event Log 0"
@@ -1399,12 +1523,15 @@ def verify_chain(chain_id: str):
         mr_ok: Optional[bool] = None
         predecessor_ok: Optional[bool] = None
         predecessor_status: Optional[str] = None
+        owner_ok: Optional[bool] = None
+        owner_status: Optional[str] = None
         prev_event_digest = r['prev_event_digest'] if 'prev_event_digest' in r.keys() else None
         prev_lookup_hash = r['prev_lookup_hash'] if 'prev_lookup_hash' in r.keys() else None
         candidate_count: Optional[int] = None
         materialized_candidate_count: Optional[int] = None
         matched_candidate_count: Optional[int] = None
         boundary_status: Optional[str] = None
+        payload = _record_payload_dict(r)
 
         if baseline_error and seq == records[0]['sequence_num']:
             error = baseline_error
@@ -1510,6 +1637,47 @@ def verify_chain(chain_id: str):
                         valid = False
                         first_error_at = seq
 
+        if owner_pub_key is not None:
+            if _record_is_baseline(r):
+                owner_ok = True
+                owner_status = "origin"
+            elif not is_confirmed:
+                owner_ok = None
+                owner_status = "unverifiable"
+            else:
+                owner_authorization = payload.get("owner_authorization") if payload is not None else None
+                if owner_authorization is None:
+                    owner_ok = False
+                    owner_status = "missing"
+                    owner_error = "owner authorization missing for confirmed record"
+                else:
+                    try:
+                        owner_ok = verify_owner_authorization(
+                            owner_authorization,
+                            owner_pub_key_pem=owner_pub_key,
+                            chain_id=chain_id,
+                            sequence_num=seq,
+                            prev_event_digest=prev_event_digest,
+                            prev_lookup_hash=prev_lookup_hash,
+                            event_digest=event_digest,
+                        )
+                    except Exception as exc:
+                        owner_ok = False
+                        owner_status = "invalid"
+                        owner_error = f"owner authorization invalid: {exc}"
+                    else:
+                        if owner_ok:
+                            owner_status = "proven"
+                        else:
+                            owner_status = "invalid"
+                            owner_error = "owner authorization signature mismatch"
+
+                if owner_ok is False:
+                    error = f"{error}; {owner_error}" if error else owner_error
+                    if valid:
+                        valid = False
+                        first_error_at = seq
+
         entries.append(ChainEntryResult(
             seq=seq,
             record_id=record_id,
@@ -1520,6 +1688,8 @@ def verify_chain(chain_id: str):
             mr_value=mr_value,
             predecessor_ok=predecessor_ok,
             predecessor_status=predecessor_status,
+            owner_ok=owner_ok,
+            owner_status=owner_status,
             prev_event_digest=prev_event_digest,
             prev_lookup_hash=prev_lookup_hash,
             candidate_count=candidate_count,

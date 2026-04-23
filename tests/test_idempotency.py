@@ -322,7 +322,7 @@ class TestClientIdempotencyKeyGeneration:
                 "committed": False,
             }
 
-        def mock_post(self_inner, bundle_json, chain_id, event_digest, event_id, intent_token=None, idempotency_key=None, instance_id=None, identity_token=None):
+        def mock_post(self_inner, bundle_json, chain_id, event_digest, event_id, intent_token=None, idempotency_key=None, instance_id=None, identity_token=None, owner_authorization=None):
             captured_payload["idempotency_key"] = idempotency_key
             return {"record_id": "rec-mock", "sequence_num": 1, "mr_value": None, "prev_mr_value": None}
 
@@ -372,7 +372,7 @@ class TestClientIdempotencyKeyGeneration:
                 "committed": False,
             }
 
-        def mock_post(self_inner, bundle_json, chain_id, event_digest, event_id, intent_token=None, idempotency_key=None, instance_id=None, identity_token=None):
+        def mock_post(self_inner, bundle_json, chain_id, event_digest, event_id, intent_token=None, idempotency_key=None, instance_id=None, identity_token=None, owner_authorization=None):
             captured_payload["idempotency_key"] = idempotency_key
             return {"record_id": "rec-mock", "sequence_num": 1, "mr_value": None, "prev_mr_value": None}
 

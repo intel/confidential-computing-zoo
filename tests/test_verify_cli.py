@@ -481,6 +481,147 @@ def test_verify_cli_text_reports_invalid_rollout_guidance(capsys):
     assert "first_entry_issue=" in output
 
 
+def test_verify_cli_json_reports_owner_failure_diagnostics(capsys):
+    chain_state = {"chain_id": "default", "head_log_id": "log-tail"}
+    trucon_verify = {
+        "valid": False,
+        "chain_id": "default",
+        "total_entries": 2,
+        "mr_verified": 0,
+        "rekor_confirmed": 2,
+        "rekor_pending": 0,
+        "rtmr_available": False,
+        "head_mr_value": None,
+        "first_error_at": 2,
+        "entries": [
+            {
+                "seq": 1,
+                "record_id": "rec-1",
+                "event_id": "evt-1",
+                "mr_ok": None,
+                "rekor_ok": True,
+                "rtmr_extended": True,
+                "mr_value": None,
+                "predecessor_ok": True,
+                "predecessor_status": "origin",
+                "owner_ok": True,
+                "owner_status": "origin",
+                "error": None,
+            },
+            {
+                "seq": 2,
+                "record_id": "rec-2",
+                "event_id": "evt-2",
+                "mr_ok": None,
+                "rekor_ok": True,
+                "rtmr_extended": True,
+                "mr_value": None,
+                "predecessor_ok": True,
+                "predecessor_status": "proven",
+                "owner_ok": False,
+                "owner_status": "invalid",
+                "error": "owner authorization signature mismatch",
+            },
+        ],
+    }
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "entry_count": 2,
+                "entries": [
+                    _immutable_entry("evt-2", "launch", "sha384:evt-2", 2),
+                    _immutable_entry("evt-1", "chain.init", "sha384:evt-1", 1),
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
+        with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+            MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+            exit_code = main(["default", "--troubleshoot-live", "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["diagnostics"]["fallback"]["owner_status_counts"]["invalid"] == 1
+    assert captured["diagnostics"]["fallback"]["first_entry_issue"]["owner_status"] == "invalid"
+
+
+def test_verify_cli_text_reports_owner_failure_detail(capsys):
+    chain_state = {"chain_id": "default", "head_log_id": "log-tail"}
+    trucon_verify = {
+        "valid": False,
+        "chain_id": "default",
+        "total_entries": 2,
+        "mr_verified": 0,
+        "rekor_confirmed": 2,
+        "rekor_pending": 0,
+        "rtmr_available": False,
+        "head_mr_value": None,
+        "first_error_at": 2,
+        "entries": [
+            {
+                "seq": 1,
+                "record_id": "rec-1",
+                "event_id": "evt-1",
+                "mr_ok": None,
+                "rekor_ok": True,
+                "rtmr_extended": True,
+                "mr_value": None,
+                "predecessor_ok": True,
+                "predecessor_status": "origin",
+                "owner_ok": True,
+                "owner_status": "origin",
+                "error": None,
+            },
+            {
+                "seq": 2,
+                "record_id": "rec-2",
+                "event_id": "evt-2",
+                "mr_ok": None,
+                "rekor_ok": True,
+                "rtmr_extended": True,
+                "mr_value": None,
+                "predecessor_ok": True,
+                "predecessor_status": "proven",
+                "owner_ok": False,
+                "owner_status": "invalid",
+                "error": "owner authorization signature mismatch",
+            },
+        ],
+    }
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "entry_count": 2,
+                "entries": [
+                    _immutable_entry("evt-2", "launch", "sha384:evt-2", 2),
+                    _immutable_entry("evt-1", "chain.init", "sha384:evt-1", 1),
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
+        with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+            MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+            exit_code = main(["default", "--troubleshoot-live"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "fallback_first_entry_issue=" in output
+    assert "owner_status=invalid" in output
+    assert "Fallback per-record detail:" in output
+
+
 def test_verify_cli_evidence_mode_success(tmp_path, capsys):
     baseline_rtmr = "11" * 48
     head_digest = "sha384:" + ("22" * 48)

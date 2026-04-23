@@ -63,10 +63,12 @@ def _normalize_replay_entries(immutable_entries: List[Dict[str, Any]]) -> List[D
             "prev_event_digest": entry.get("prev_event_digest"),
             "prev_lookup_hash": entry.get("prev_lookup_hash"),
             "predecessor_ok": entry.get("predecessor_ok"),
+            "owner_ok": entry.get("owner_ok"),
             "candidate_count": entry.get("candidate_count"),
             "materialized_candidate_count": entry.get("materialized_candidate_count"),
             "matched_candidate_count": entry.get("matched_candidate_count"),
             "predecessor_status": entry.get("predecessor_status"),
+            "owner_status": entry.get("owner_status"),
             "boundary_status": entry.get("boundary_status"),
             "public_history_ok": entry.get("public_history_ok"),
             "public_history_status": entry.get("public_history_status"),
@@ -86,6 +88,7 @@ def _build_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
     fallback = result.get("fallback") or {}
     attested_head = result.get("attested_head") or {}
     replay_entries = replay.get("entries") or []
+    fallback_entries = fallback.get("entries") or []
 
     entry_status_counts: Dict[str, int] = {}
     first_entry_issue = None
@@ -109,6 +112,25 @@ def _build_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
                 "errors": entry.get("errors", []),
             }
 
+    fallback_owner_status_counts: Dict[str, int] = {}
+    fallback_first_entry_issue = None
+    for entry in fallback_entries:
+        owner_status = entry.get("owner_status") or "unknown"
+        fallback_owner_status_counts[owner_status] = fallback_owner_status_counts.get(owner_status, 0) + 1
+        if fallback_first_entry_issue is None and (
+            entry.get("owner_ok") is False
+            or owner_status not in {"unknown", "origin", "proven", None}
+            or entry.get("error")
+        ):
+            fallback_first_entry_issue = {
+                "seq": entry.get("seq"),
+                "event_id": entry.get("event_id"),
+                "owner_ok": entry.get("owner_ok"),
+                "owner_status": entry.get("owner_status"),
+                "predecessor_status": entry.get("predecessor_status"),
+                "error": entry.get("error"),
+            }
+
     return {
         "replay": {
             "reachable": replay.get("reachable"),
@@ -127,6 +149,8 @@ def _build_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
             "reachable": fallback.get("reachable"),
             "valid": fallback.get("valid"),
             "rtmr_available": fallback.get("rtmr_available"),
+            "owner_status_counts": fallback_owner_status_counts,
+            "first_entry_issue": fallback_first_entry_issue,
         },
         "first_error": (result.get("errors") or [None])[0],
     }
@@ -650,6 +674,14 @@ def _render_text(result: Dict[str, Any]) -> str:
                 f"event_id={first_entry_issue.get('event_id')} predecessor_status={first_entry_issue.get('predecessor_status')} "
                 f"public_history_status={first_entry_issue.get('public_history_status')} boundary_status={first_entry_issue.get('boundary_status')}"
             )
+        fallback_issue = (diagnostics.get("fallback") or {}).get("first_entry_issue")
+        if fallback_issue is not None:
+            lines.append(
+                "  "
+                f"fallback_first_entry_issue=seq={fallback_issue.get('seq')} event_id={fallback_issue.get('event_id')} "
+                f"owner_ok={fallback_issue.get('owner_ok')} owner_status={fallback_issue.get('owner_status')} "
+                f"predecessor_status={fallback_issue.get('predecessor_status')}"
+            )
 
     lines.append("Per-record replay detail:")
 
@@ -677,6 +709,20 @@ def _render_text(result: Dict[str, Any]) -> str:
             f"event_type={entry.get('event_type')} digest={entry.get('digest')} "
             + " ".join(diagnostic_bits)
         )
+
+    if result["mode"].get("fallback_used") and fallback.get("entries"):
+        lines.append("Fallback per-record detail:")
+        for entry in fallback.get("entries", []):
+            diagnostic_bits = [
+                f"predecessor_status={entry.get('predecessor_status')}",
+                f"owner_ok={entry.get('owner_ok')}",
+                f"owner_status={entry.get('owner_status')}",
+            ]
+            lines.append(
+                "  - "
+                f"seq={entry.get('seq')} event_id={entry.get('event_id')} record_id={entry.get('record_id')} "
+                + " ".join(diagnostic_bits)
+            )
 
     profiles = result.get("profiles") or {}
     if profiles:

@@ -158,6 +158,16 @@ flowchart TB
 
 At startup, tc_api initializes the `default` trust chain through the reservation-backed baseline flow: it reads baseline material from `GET /init-chain/{chain_id}/baseline`, reserves a baseline intent, signs Event Log 0 with `sequence_num=1` plus null predecessor fields, and then calls `POST /init-chain`. This captures the current RTMR[2] snapshot and CCEL digest without performing an RTMR extend, anchoring the chain to the platform's boot-time measurement state.
 
+In practice, this means the chain split can be read as follows:
+
+- The `default` chain is the control-plane chain. Build, publish, and unlabeled Docker operations are recorded here.
+- A workload chain is a workload-scoped runtime chain. Launch events and subsequent container lifecycle events (`create`, `start`, `stop`, `rm`) are recorded here when Docktap can resolve a non-`default` `workload_id`.
+- The routing key for a workload chain is `workload_id`, not `container_id`. Docktap resolves `chain_id` from the `io.trucon.workload-id` label on `create`, then reuses the persisted container-to-workload mapping for later `start`/`stop`/`rm` events.
+- Because of that, multiple containers do not automatically create multiple workload chains. Multiple containers with the same `workload_id` belong to the same workload chain, while different `workload_id` values create different workload chains.
+- A container without `io.trucon.workload-id` falls back to the `default` chain, so `default` is both the control-plane chain and the fallback runtime chain for unlabeled workloads.
+
+So the short answer is: build-time events normally land on `default`, runtime events normally land on a workload chain, and the number of workload chains is determined by distinct `workload_id` values rather than by the raw number of containers.
+
 For TruCon internal architecture details (lock model, SQLite schema, crash recovery, verification), see [trusted-log/architecture.md](trusted-log/architecture.md).
 
 ## 4. Responsibilities by Component
@@ -172,7 +182,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Publish commits now carry `pushed_subject_digest`, `target_ref`, and `publish_status`.
 - Launch commits now carry workload-scoped launch identity (`workload_id`, `launch_id`), launch outcome, `launch_config_digest`, and explicit security projection fields (`privileged`, `network_mode`, `mounts`, `devices`, `capabilities`).
 - Continues exposing status endpoints for build/publish/launch results.
-- On startup (`lifespan()`), generates an ECDSA P-384 keypair in TEE memory and completes the reservation-backed `/init-chain` bootstrap for Event Log 0 (baseline record). The baseline payload still carries the TEE-generated public key as `pub_key`, but the `default`-chain init path now signs Event Log 0 as a Sigstore DSSE bundle with `sequence_num=1`, `prev_event_digest=null`, and `prev_lookup_hash=null` so it can follow the same immutable-backend submission path as other public records. The private key is discarded immediately after the public key is derived.
+- On startup (`lifespan()`), generates or reuses a chain-owner ECDSA P-384 keypair in the TEE-backed initialization flow and completes the reservation-backed `/init-chain` bootstrap for Event Log 0 (baseline record). The baseline payload carries the corresponding public key as `pub_key`, and that key is now modeled as the chain's single long-term owner key rather than as a bootstrap-only artifact. The `default`-chain init path signs Event Log 0 as a Sigstore DSSE bundle with `sequence_num=1`, `prev_event_digest=null`, and `prev_lookup_hash=null` so it can follow the same immutable-backend submission path as other public records; later replayable writes are authorized by signatures from the same owner key.
 - For Sigstore-backed public records, the current implementation uses Sigstore's real `sign_dsse()` path, which both issues the Fulcio-backed signing certificate and creates the transparency-log entry before the bundle is forwarded to TruCon. As a result, the bundle arriving at TruCon may already carry a confirmed Rekor log entry.
 - After Rekor confirmation, the target design is to submit replayable records as Rekor `intoto` entries so public retrieval can materialize verifier-critical payload facts from Rekor attestation storage. The OCI artifact mirror remains available as a non-authoritative fallback keyed by `payload_hash`, and is consumed only when public Rekor body plus attestation retrieval is insufficient for replay.
 - Real public-Rekor validation has now confirmed that this `intoto` path depends on the v0.0.2 write contract, not just the high-level entry kind: the adapter must submit `apiVersion=0.0.2`, must encode envelope payload/signature fields exactly as Rekor's v0.0.2 decoder expects, and must include `content.hash` for the original DSSE envelope JSON so Rekor can canonicalize the entry.
@@ -217,6 +227,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Performs crash recovery on startup based on RTMR extension flags.
 - Only TDX RTMR[2] is supported for measurement extensions (RTMR[0]/[1] are firmware/boot-locked; AMD SEV-SNP is out of scope).
 - Exports a strict v1 attested-head evidence package only for the latest confirmed public head of a chain; pending-only local state is not eligible for external evidence export.
+- Keeps current-head attested evidence separate from baseline owner bootstrap: the exported evidence package proves the latest confirmed public head and its current quote-backed binding, while Event Log 0 carries the owner key declaration and baseline owner-attestation material that establish who is authorized to write the chain.
 
 **Chain initialization (`/init-chain`):**
 - Reservation-backed two-phase protocol: `GET /init-chain/{chain_id}/baseline` returns current RTMR[2] value and CCEL digest (no extend); callers then reserve a baseline intent, sign Event Log 0 with `sequence_num=1`, `prev_event_digest=null`, and `prev_lookup_hash=null`, and finally `POST /init-chain` with both `init_token` and `intent_token`.
@@ -225,24 +236,40 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - If baseline submission fails terminally, the chain is considered dead (no trust anchor).
 - The same `/init-chain` bootstrap is now used for both the startup `default` chain and previously unseen non-`default` workload chains. The tc_api-side trusted-log client performs this bootstrap automatically before the first business/runtime commit on a new workload chain.
 
-Event Log 0 is best understood as a baseline record composition rather than a runtime sequence diagram. It combines platform-measured baseline material from TruCon with an ephemeral public key generated by `tc_api` during initialization, then wraps the result as a Sigstore DSSE bundle for chain anchoring.
+**Single-owner trust model:**
+- Event Log 0 declares exactly one chain owner public key in `pub_key`. That key is the chain-local writer authority for later replayable records until a future change introduces rotation or delegation.
+- Event Log 0 also persists baseline owner-attestation material. That attestation binds `chain_id`, `sequence_num=1`, baseline platform measurements, and the declared owner key into a dedicated quote-backed bootstrap contract.
+- Later replayable commits still need signed predecessor continuity, but they now also carry owner authorization signed by the corresponding owner private key. Predecessor continuity proves adjacency; owner authorization proves chain-local authority.
+- Current-head attested evidence is intentionally a different contract. It proves the latest confirmed public head and current quote-backed head binding; it does not replace Event Log 0 as the source of truth for owner bootstrap.
+
+**Rollout and backward-compatibility constraints:**
+- The compatibility boundary is at the reservation-backed producer contract. Any producer that calls `POST /commit-intents/reserve` and then `POST /commit` for replayable records on a chain initialized under the single-owner model must now include `owner_authorization` in addition to the signed predecessor fields.
+- Updated built-in producers already satisfy that requirement: the tc_api-side trusted-log client and workload-chain bootstrap path generate owner authorization automatically from the chain owner key declared at Event Log 0.
+- Older custom or out-of-tree producers that only submit predecessor-backed replayable commits are not forward-compatible with newly initialized single-owner chains. On those chains, TruCon rejects reservation-backed `/commit` requests that omit owner authorization instead of silently accepting predecessor-only writes.
+- Existing historical chains that do not carry the new Event Log 0 owner bootstrap contract are not retroactively reinterpreted as single-owner chains. Verification and admission only enforce owner-key continuity when the baseline record actually declares the owner key and owner-attestation material.
+- Rollout therefore needs producer upgrades before enabling the new chain-local authorization path for their traffic. If an environment cannot upgrade all replayable producers at once, the safe transition is to preserve the recorded owner-bootstrap data but delay strict owner-authorization enforcement for those producer paths until they can sign the new envelope.
+- Operator expectation during mixed rollout is straightforward: predecessor continuity remains necessary everywhere, but owner authorization becomes mandatory only for chains and producer paths that have moved onto the single-owner bootstrap contract. A `400 Missing owner authorization` response on reservation-backed `/commit` is therefore an upgrade signal for an outdated producer, not a verifier-side replay bug.
+
+Event Log 0 is best understood as a baseline trust-anchor composition rather than a runtime sequence diagram. It combines platform-measured baseline material from TruCon with the declared long-term chain owner public key and a dedicated baseline owner attestation, then wraps the result as a Sigstore DSSE bundle for chain anchoring.
 
 ```mermaid
 flowchart LR
   A[TruCon baseline read] --> B[baseline_rtmr<br/>RTMR2 snapshot]
   A --> C[ccel_digest<br/>CCEL digest]
-  D[tc_api initialization] --> E[Ephemeral ECDSA P-384 keypair]
-  E --> F[pub_key]
-  D --> G[Sigstore DSSE signature]
+  D[tc_api initialization] --> E[Chain owner ECDSA P-384 keypair]
+  E --> F[pub_key<br/>single long-term owner key]
+  D --> G[baseline owner attestation]
+  D --> K[Sigstore DSSE signature]
   B --> H[Event Log 0 payload]
   C --> H
   F --> H
+  G --> H
   H --> I[DSSE envelope]
-  G --> I
+  K --> I
   I --> J[Event Log 0 baseline record]
 ```
 
-In this model, `baseline_rtmr` and `ccel_digest` are acquired from TruCon's baseline read path, while `pub_key` is produced from a short-lived ECDSA P-384 keypair created inside the TEE-backed initialization flow. The explicit `default`-chain init path then signs the Event Log 0 predicate as a Sigstore bundle for immutable-backend compatibility, and the ephemeral private key is discarded immediately after the public key is derived.
+In this model, `baseline_rtmr` and `ccel_digest` are acquired from TruCon's baseline read path, while `pub_key` is the declared chain owner key produced inside the TEE-backed initialization flow. The baseline owner attestation binds that key to the Event Log 0 bootstrap context, and the explicit `default`-chain init path then signs the Event Log 0 predicate as a Sigstore bundle for immutable-backend compatibility. That bootstrap contract is distinct from the later attested-head evidence export: Event Log 0 establishes who owns the chain, while attested-head evidence proves which confirmed public head is currently bound to the platform.
 
 For non-`default` workload chains, the same bootstrap contract applies before the first business or runtime commit is accepted. The tc_api-side trusted-log client performs that baseline bootstrap automatically; direct commits to an uninitialized workload chain are rejected instead of creating an implicit unsigned baseline.
 

@@ -15,6 +15,8 @@ import sqlite3
 from unittest.mock import patch
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from tc_api.trucon.app import _compute_record_lookup_hash
 from tc_api.trucon.database import (
@@ -23,6 +25,7 @@ from tc_api.trucon.database import (
     insert_record,
     update_record_confirmed,
 )
+from tc_api.trucon.owner_authorization import sign_owner_authorization
 
 
 @pytest.fixture
@@ -33,12 +36,12 @@ def db(tmp_path):
     return db_path
 
 
-def _insert_confirmed_record(db, record_id, seq, chain_id, prev_event_digest, prev_lookup_hash, log_id):
+def _insert_confirmed_record(db, record_id, seq, chain_id, prev_event_digest, prev_lookup_hash, log_id, payload=None, event_digest=None):
     """Insert a record and confirm it with the given log_id."""
     insert_record(
         record_id=record_id,
         event_id=f"evt-{seq}",
-        payload={"bundle": "test"},
+        payload=payload or {"bundle": "test"},
         status="PENDING",
         chain_id=chain_id,
         rtmr_extended=True,
@@ -46,10 +49,28 @@ def _insert_confirmed_record(db, record_id, seq, chain_id, prev_event_digest, pr
         prev_lookup_hash=prev_lookup_hash,
         mr_value=None,  # non-TEE: no mr_value
         sequence_num=seq,
-        event_digest=f"sha384:{seq:096x}",
+        event_digest=event_digest or f"sha384:{seq:096x}",
         db_path=db,
     )
     update_record_confirmed(record_id, log_id, db_path=db)
+
+
+def _generate_owner_keypair():
+    private_key = ec.generate_private_key(ec.SECP384R1())
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    return private_key, public_key
+
+
+def _owner_baseline_payload(pub_key: str) -> dict:
+    return {
+        "bundle": "test",
+        "is_baseline": True,
+        "pub_key": pub_key,
+        "owner_attestation": {"owner_pub_key": pub_key},
+    }
 
 
 class TestPredecessorVerification:
@@ -351,3 +372,140 @@ class TestStartupWarning:
 
         warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("NON-TEE MODE" in r.message for r in warning_records)
+
+
+class TestOwnerAuthorizationVerification:
+    def test_confirmed_record_reports_owner_proven(self, db):
+        owner_private_key, owner_pub_key = _generate_owner_keypair()
+        _insert_confirmed_record(
+            db,
+            "rec-log0",
+            1,
+            "workload-owner-ok",
+            None,
+            None,
+            "log-log0",
+            payload=_owner_baseline_payload(owner_pub_key),
+        )
+        first_record = get_chain_records("workload-owner-ok", db)[0]
+        event_digest = "sha384:" + ("22" * 48)
+        owner_authorization = sign_owner_authorization(
+            owner_private_key,
+            "workload-owner-ok",
+            2,
+            first_record["event_digest"],
+            _compute_record_lookup_hash(first_record),
+            event_digest,
+        )
+        _insert_confirmed_record(
+            db,
+            "rec-2",
+            2,
+            "workload-owner-ok",
+            first_record["event_digest"],
+            _compute_record_lookup_hash(first_record),
+            "log-2",
+            payload={"bundle": "test", "owner_authorization": owner_authorization},
+            event_digest=event_digest,
+        )
+
+        records = get_chain_records("workload-owner-ok", db)
+        from tc_api.trucon.app import verify_chain
+        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+            resp = verify_chain("workload-owner-ok")
+
+        assert resp.valid is True
+        assert resp.entries[0].owner_ok is True
+        assert resp.entries[0].owner_status == "origin"
+        assert resp.entries[1].owner_ok is True
+        assert resp.entries[1].owner_status == "proven"
+
+    def test_confirmed_record_reports_owner_failure(self, db):
+        _, owner_pub_key = _generate_owner_keypair()
+        wrong_private_key, _ = _generate_owner_keypair()
+        _insert_confirmed_record(
+            db,
+            "rec-log0",
+            1,
+            "workload-owner-bad",
+            None,
+            None,
+            "log-log0",
+            payload=_owner_baseline_payload(owner_pub_key),
+        )
+        first_record = get_chain_records("workload-owner-bad", db)[0]
+        event_digest = "sha384:" + ("22" * 48)
+        owner_authorization = sign_owner_authorization(
+            wrong_private_key,
+            "workload-owner-bad",
+            2,
+            first_record["event_digest"],
+            _compute_record_lookup_hash(first_record),
+            event_digest,
+        )
+        _insert_confirmed_record(
+            db,
+            "rec-2",
+            2,
+            "workload-owner-bad",
+            first_record["event_digest"],
+            _compute_record_lookup_hash(first_record),
+            "log-2",
+            payload={"bundle": "test", "owner_authorization": owner_authorization},
+            event_digest=event_digest,
+        )
+
+        records = get_chain_records("workload-owner-bad", db)
+        from tc_api.trucon.app import verify_chain
+        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+            resp = verify_chain("workload-owner-bad")
+
+        assert resp.valid is False
+        assert resp.entries[1].owner_ok is False
+        assert resp.entries[1].owner_status == "invalid"
+        assert "owner authorization signature mismatch" in resp.entries[1].error
+
+    def test_pending_record_reports_owner_unverifiable(self, db):
+        owner_private_key, owner_pub_key = _generate_owner_keypair()
+        _insert_confirmed_record(
+            db,
+            "rec-log0",
+            1,
+            "workload-owner-pending",
+            None,
+            None,
+            "log-log0",
+            payload=_owner_baseline_payload(owner_pub_key),
+        )
+        first_record = get_chain_records("workload-owner-pending", db)[0]
+        event_digest = "sha384:" + ("22" * 48)
+        owner_authorization = sign_owner_authorization(
+            owner_private_key,
+            "workload-owner-pending",
+            2,
+            first_record["event_digest"],
+            _compute_record_lookup_hash(first_record),
+            event_digest,
+        )
+        insert_record(
+            record_id="rec-2",
+            event_id="evt-2",
+            payload={"bundle": "test", "owner_authorization": owner_authorization},
+            status="PENDING",
+            chain_id="workload-owner-pending",
+            rtmr_extended=True,
+            prev_event_digest=first_record["event_digest"],
+            prev_lookup_hash=_compute_record_lookup_hash(first_record),
+            mr_value=None,
+            sequence_num=2,
+            event_digest=event_digest,
+            db_path=db,
+        )
+
+        records = get_chain_records("workload-owner-pending", db)
+        from tc_api.trucon.app import verify_chain
+        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+            resp = verify_chain("workload-owner-pending")
+
+        assert resp.entries[1].owner_ok is None
+        assert resp.entries[1].owner_status == "unverifiable"

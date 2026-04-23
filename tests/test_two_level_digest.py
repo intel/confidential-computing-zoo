@@ -163,8 +163,8 @@ class TestCommitRecordPredicate:
     """Test that commit_record() builds the predicate with two-level digest."""
 
     @patch("tc_api.tlog_client.IdentityToken")
-    @patch("tc_api.tlog_client.SigningContext")
-    def test_predicate_contains_entries_and_entry_digests(self, mock_signing_ctx, mock_identity_token):
+    @patch("tc_api.tlog_client.build_signing_context")
+    def test_predicate_contains_entries_and_entry_digests(self, mock_build_signing_context, mock_identity_token):
         """commit_record() predicate has entries, entry_digests, and digest keys."""
         # Capture the predicate passed to StatementBuilder
         captured_predicate = {}
@@ -180,14 +180,25 @@ class TestCommitRecordPredicate:
         mock_signer.__exit__ = MagicMock(return_value=False)
         mock_ctx = MagicMock()
         mock_ctx.signer.return_value = mock_signer
-        mock_signing_ctx.production.return_value = mock_ctx
+        mock_build_signing_context.return_value = mock_ctx
 
         api = TrustedLogAPI(trucon_url="http://localhost:9999")
+
+        def fake_reserve(chain_id, idempotency_key=None, is_baseline=False):
+            return {
+                "intent_token": "intent-1",
+                "chain_id": chain_id,
+                "sequence_num": 1,
+                "prev_event_digest": None,
+                "prev_lookup_hash": None,
+                "committed": False,
+            }
 
         # Patch _post_to_trucon to capture and return mock
         def fake_post(**kwargs):
             return {"record_id": "r-1", "mr_value": "aa" * 48, "prev_mr_value": None}
         api._post_to_trucon = MagicMock(side_effect=fake_post)
+        api._reserve_commit_intent = MagicMock(side_effect=fake_reserve)
 
         # Patch StatementBuilder to capture predicate
         original_builder = __import__("sigstore.dsse", fromlist=["StatementBuilder"]).StatementBuilder

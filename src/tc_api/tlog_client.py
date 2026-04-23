@@ -18,6 +18,8 @@ from sigstore.dsse import StatementBuilder, Subject
 from sigstore.models import Bundle
 
 from .sigstore_baseline import build_baseline_sigstore_bundle, build_signing_context
+from .sigstore_baseline import get_chain_owner_private_key
+from tc_api.trucon.owner_authorization import sign_owner_authorization
 from .tlog.types import (
     RecordContext, Entry, Record, EventLog, CommitResult,
     CommitQueueStatus, LatestState, VerificationResult, SubmitStatus
@@ -706,6 +708,17 @@ class TrustedLogAPI:
             raise
 
         bundle_json = bundle.to_json()
+        owner_private_key = get_chain_owner_private_key(chain_id)
+        owner_authorization = None
+        if owner_private_key is not None:
+            owner_authorization = sign_owner_authorization(
+                private_key=owner_private_key,
+                chain_id=chain_id,
+                sequence_num=reservation["sequence_num"],
+                prev_event_digest=reservation.get("prev_event_digest"),
+                prev_lookup_hash=reservation.get("prev_lookup_hash"),
+                event_digest=event_digest,
+            )
         
         # POST signed bundle to TruCon for sequencing
         trucon_response = self._post_to_trucon(
@@ -717,6 +730,7 @@ class TrustedLogAPI:
             idempotency_key=idempotency_key,
             instance_id=instance_id,
             identity_token=identity_token_str,
+            owner_authorization=owner_authorization,
         )
 
         # Clean up per-request scratch
@@ -858,7 +872,8 @@ class TrustedLogAPI:
                             intent_token: Optional[str] = None,
                             idempotency_key: Optional[str] = None,
                             instance_id: Optional[str] = None,
-                            identity_token: Optional[str] = None) -> Dict[str, Any]:
+                            identity_token: Optional[str] = None,
+                            owner_authorization: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """POST the signed bundle to TruCon /commit endpoint."""
         payload = {
             "bundle": bundle_json,
@@ -869,6 +884,7 @@ class TrustedLogAPI:
             "idempotency_key": idempotency_key,
             "instance_id": instance_id,
             "identity_token": identity_token,
+            "owner_authorization": owner_authorization,
         }
         try:
             return request_json(

@@ -9,10 +9,13 @@ from contextlib import ExitStack
 import pytest
 from unittest.mock import patch, MagicMock
 from typing import Tuple
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
 
 from fastapi.testclient import TestClient
 from tc_api.tlog.local_mr import LocalMRAdapter
 from tc_api.trucon.database import init_db
+from tc_api.trucon.owner_authorization import sign_owner_authorization
 
 trucon_app_mod = importlib.import_module("tc_api.trucon.app")
 trucon_db_mod = importlib.import_module("tc_api.trucon.database")
@@ -26,6 +29,21 @@ class MockMRAdapter(LocalMRAdapter):
 
     def extend(self, index: int, digest: str) -> Tuple[str, str]:
         return "cc" * 48, "bb" * 48
+
+
+class MockQuoteAdapter:
+    """Mock quote adapter that returns deterministic owner-attestation material."""
+
+    def quote(self, expected_value: str):
+        return type(
+            "QuoteMaterial",
+            (),
+            {
+                "quote": "mock-owner-quote",
+                "report_data": expected_value,
+                "quote_format": "mock-quote-format",
+            },
+        )()
 
 
 def _make_db_patches(db_path: str):
@@ -119,6 +137,15 @@ def _make_baseline_bundle(chain_id: str) -> str:
     )
 
 
+def _generate_owner_keypair() -> Tuple[ec.EllipticCurvePrivateKey, str]:
+    private_key = ec.generate_private_key(ec.SECP384R1())
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    return private_key, public_key
+
+
 def _reserve_baseline_intent(client: TestClient, chain_id: str, idempotency_key: str | None = None):
     payload = {"chain_id": chain_id, "is_baseline": True}
     if idempotency_key is not None:
@@ -135,11 +162,13 @@ def trucon_client(tmp_path):
     patches = _make_db_patches(db_path)
 
     old_mr = trucon_app_mod._local_mr
+    old_quote_adapter = trucon_app_mod._quote_adapter
     old_auth = trucon_app_mod._AUTH_DISABLED
     old_tokens = trucon_app_mod._pending_init_tokens.copy()
 
     try:
         trucon_app_mod._local_mr = MockMRAdapter()
+        trucon_app_mod._quote_adapter = MockQuoteAdapter()
         trucon_app_mod._AUTH_DISABLED = True
         trucon_app_mod._pending_init_tokens.clear()
         trucon_app_mod.app.state.test_db_path = db_path
@@ -169,6 +198,7 @@ def trucon_client(tmp_path):
             yield client
     finally:
         trucon_app_mod._local_mr = old_mr
+        trucon_app_mod._quote_adapter = old_quote_adapter
         trucon_app_mod._AUTH_DISABLED = old_auth
         trucon_app_mod._pending_init_tokens.clear()
         trucon_app_mod._pending_init_tokens.update(old_tokens)
@@ -183,11 +213,13 @@ def trucon_client_no_tee(tmp_path):
     patches = _make_db_patches(db_path)
 
     old_mr = trucon_app_mod._local_mr
+    old_quote_adapter = trucon_app_mod._quote_adapter
     old_auth = trucon_app_mod._AUTH_DISABLED
     old_tokens = trucon_app_mod._pending_init_tokens.copy()
 
     try:
         trucon_app_mod._local_mr = None
+        trucon_app_mod._quote_adapter = MockQuoteAdapter()
         trucon_app_mod._AUTH_DISABLED = True
         trucon_app_mod._pending_init_tokens.clear()
         trucon_app_mod.app.state.test_db_path = db_path
@@ -217,9 +249,16 @@ def trucon_client_no_tee(tmp_path):
             yield client
     finally:
         trucon_app_mod._local_mr = old_mr
+        trucon_app_mod._quote_adapter = old_quote_adapter
         trucon_app_mod._AUTH_DISABLED = old_auth
         trucon_app_mod._pending_init_tokens.clear()
         trucon_app_mod._pending_init_tokens.update(old_tokens)
+
+
+def _get_record_payload(record_id: str, db_path: str) -> dict:
+    row = trucon_db_mod.get_record_by_id(record_id, db_path=db_path)
+    assert row is not None
+    return json.loads(row["payload"])
 
 
 class TestGetBaseline:
@@ -301,6 +340,18 @@ class TestPostInitChain:
         data = resp2.json()
         assert data["record_id"]
         assert data["sequence_num"] == 1
+        payload = _get_record_payload(data["record_id"], trucon_app_mod.app.state.test_db_path)
+        assert payload["pub_key"] == "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----"
+        assert payload["owner_attestation"]["chain_id"] == "test-chain"
+        assert payload["owner_attestation"]["sequence_num"] == 1
+        assert payload["owner_attestation"]["owner_pub_key"] == payload["pub_key"]
+        assert payload["owner_attestation"]["report_data_binding"]["bound_fields"] == [
+            "chain_id",
+            "sequence_num",
+            "baseline_rtmr",
+            "ccel_digest",
+            "owner_pub_key",
+        ]
 
     def test_init_chain_invalid_token_400(self, trucon_client):
         reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
@@ -423,7 +474,27 @@ class TestPostInitChain:
             "pub_key": "test-key",
         })
         assert resp2.status_code == 200
-        assert resp2.json()["sequence_num"] == 1
+        payload = _get_record_payload(resp2.json()["record_id"], trucon_app_mod.app.state.test_db_path)
+        assert payload["owner_attestation"]["baseline_rtmr"] is None
+
+    def test_init_chain_missing_owner_attestation_rejected(self, trucon_client):
+        resp1 = trucon_client.get("/init-chain/test-chain/baseline")
+        assert resp1.status_code == 200
+        token = resp1.json()["init_token"]
+        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        assert reserve.status_code == 200
+
+        with patch.object(trucon_app_mod, "_quote_adapter", None):
+            resp2 = trucon_client.post("/init-chain", json={
+                "chain_id": "test-chain",
+                "init_token": token,
+                "intent_token": reserve.json()["intent_token"],
+                "signed_bundle": _make_baseline_bundle("test-chain"),
+                "pub_key": "test-key",
+            })
+
+        assert resp2.status_code == 500
+        assert "Quote adapter is unavailable" in resp2.json()["detail"]
 
 
 class TestLazyWorkloadBaseline:
@@ -526,7 +597,7 @@ class TestLazyWorkloadBaseline:
 
 
 class TestCommitIntentLifecycle:
-    def _init_chain(self, trucon_client, chain_id: str) -> None:
+    def _init_chain(self, trucon_client, chain_id: str, pub_key: str = "test-key") -> None:
         baseline = trucon_client.get(f"/init-chain/{chain_id}/baseline")
         assert baseline.status_code == 200
         reserve = _reserve_baseline_intent(trucon_client, chain_id, f"init-chain-{chain_id}")
@@ -538,10 +609,126 @@ class TestCommitIntentLifecycle:
                 "init_token": baseline.json()["init_token"],
                 "intent_token": reserve.json()["intent_token"],
                 "signed_bundle": _make_baseline_bundle(chain_id),
-                "pub_key": "test-key",
+                "pub_key": pub_key,
             },
         )
         assert resp.status_code == 200
+
+    def test_commit_accepts_matching_owner_authorization(self, trucon_client):
+        owner_private_key, owner_pub_key = _generate_owner_keypair()
+        self._init_chain(trucon_client, "lifecycle-owner-ok", pub_key=owner_pub_key)
+        reserve = trucon_client.post(
+            "/commit-intents/reserve",
+            json={"chain_id": "lifecycle-owner-ok", "idempotency_key": "commit-owner-ok"},
+        )
+        assert reserve.status_code == 200
+        intent = reserve.json()
+        event_digest = "sha384:" + ("ab" * 48)
+        owner_authorization = sign_owner_authorization(
+            private_key=owner_private_key,
+            chain_id="lifecycle-owner-ok",
+            sequence_num=intent["sequence_num"],
+            prev_event_digest=intent["prev_event_digest"],
+            prev_lookup_hash=intent["prev_lookup_hash"],
+            event_digest=event_digest,
+        )
+
+        resp = trucon_client.post(
+            "/commit",
+            json={
+                "bundle": json.dumps(
+                    {
+                        "chain_id": "lifecycle-owner-ok",
+                        "sequence_num": intent["sequence_num"],
+                        "prev_event_digest": intent["prev_event_digest"],
+                        "prev_lookup_hash": intent["prev_lookup_hash"],
+                        "digest": event_digest,
+                    }
+                ),
+                "chain_id": "lifecycle-owner-ok",
+                "event_digest": event_digest,
+                "intent_token": intent["intent_token"],
+                "owner_authorization": owner_authorization,
+            },
+        )
+
+        assert resp.status_code == 200
+        payload = _get_record_payload(resp.json()["record_id"], trucon_client.app.state.test_db_path)
+        assert payload["owner_authorization"]["algorithm"] == "ecdsa-p384-sha384"
+
+    def test_commit_rejects_missing_owner_authorization(self, trucon_client):
+        owner_private_key, owner_pub_key = _generate_owner_keypair()
+        self._init_chain(trucon_client, "lifecycle-owner-missing", pub_key=owner_pub_key)
+        reserve = trucon_client.post(
+            "/commit-intents/reserve",
+            json={"chain_id": "lifecycle-owner-missing", "idempotency_key": "commit-owner-missing"},
+        )
+        assert reserve.status_code == 200
+        intent = reserve.json()
+        event_digest = "sha384:" + ("ab" * 48)
+
+        resp = trucon_client.post(
+            "/commit",
+            json={
+                "bundle": json.dumps(
+                    {
+                        "chain_id": "lifecycle-owner-missing",
+                        "sequence_num": intent["sequence_num"],
+                        "prev_event_digest": intent["prev_event_digest"],
+                        "prev_lookup_hash": intent["prev_lookup_hash"],
+                        "digest": event_digest,
+                    }
+                ),
+                "chain_id": "lifecycle-owner-missing",
+                "event_digest": event_digest,
+                "intent_token": intent["intent_token"],
+            },
+        )
+
+        assert resp.status_code == 400
+        assert "Missing owner authorization" in resp.json()["detail"]
+
+    def test_commit_reuses_consumed_intent_result_with_owner_authorization(self, trucon_client):
+        owner_private_key, owner_pub_key = _generate_owner_keypair()
+        self._init_chain(trucon_client, "lifecycle-owner-reuse", pub_key=owner_pub_key)
+        reserve = trucon_client.post(
+            "/commit-intents/reserve",
+            json={"chain_id": "lifecycle-owner-reuse", "idempotency_key": "commit-owner-reuse"},
+        )
+        assert reserve.status_code == 200
+        intent = reserve.json()
+        event_digest = "sha384:" + ("ab" * 48)
+        owner_authorization = sign_owner_authorization(
+            private_key=owner_private_key,
+            chain_id="lifecycle-owner-reuse",
+            sequence_num=intent["sequence_num"],
+            prev_event_digest=intent["prev_event_digest"],
+            prev_lookup_hash=intent["prev_lookup_hash"],
+            event_digest=event_digest,
+        )
+
+        payload = {
+            "bundle": json.dumps(
+                {
+                    "chain_id": "lifecycle-owner-reuse",
+                    "sequence_num": intent["sequence_num"],
+                    "prev_event_digest": intent["prev_event_digest"],
+                    "prev_lookup_hash": intent["prev_lookup_hash"],
+                    "digest": event_digest,
+                }
+            ),
+            "chain_id": "lifecycle-owner-reuse",
+            "event_digest": event_digest,
+            "intent_token": intent["intent_token"],
+            "owner_authorization": owner_authorization,
+        }
+
+        first = trucon_client.post("/commit", json=payload)
+        second = trucon_client.post("/commit", json=payload)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["record_id"] == first.json()["record_id"]
 
     def test_commit_rejects_bundle_predecessor_mismatch(self, trucon_client):
         self._init_chain(trucon_client, "lifecycle-mismatch")
