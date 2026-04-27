@@ -117,6 +117,68 @@ def test_launch_profile_does_not_require_instance_id_before_create():
     assert not any("instance_id" in error for error in profiles["launch"]["errors"])
 
 
+def test_runtime_profile_verifies_docker_baseline_with_runtime_engine():
+    entries = [
+        _immutable_entry(
+            "evt-runtime",
+            "docker_start",
+            [
+                _entry("runtime_engine", "docker"),
+                _entry("operation_type", "start"),
+                _entry("operation_result", "success"),
+                _entry("workload_id", "svc-a"),
+                _entry("instance_id", "container-1"),
+            ],
+        )
+    ]
+
+    profiles = evaluate_profiles(entries)
+
+    assert profiles["docktap-runtime"]["status"] == "verified"
+
+
+def test_runtime_profile_missing_runtime_engine_fails():
+    entries = [
+        _immutable_entry(
+            "evt-runtime-missing-engine",
+            "docker_start",
+            [
+                _entry("operation_type", "start"),
+                _entry("operation_result", "success"),
+                _entry("workload_id", "svc-a"),
+                _entry("instance_id", "container-1"),
+            ],
+        )
+    ]
+
+    profiles = evaluate_profiles(entries)
+
+    assert profiles["docktap-runtime"]["status"] == "failed"
+    assert any("runtime_engine" in error for error in profiles["docktap-runtime"]["errors"])
+
+
+def test_runtime_profile_unknown_runtime_engine_is_incomplete():
+    entries = [
+        _immutable_entry(
+            "evt-runtime-unknown-engine",
+            "rocket_start",
+            [
+                _entry("runtime_engine", "rocket"),
+                _entry("operation_type", "start"),
+                _entry("operation_result", "success"),
+                _entry("workload_id", "svc-a"),
+                _entry("instance_id", "container-1"),
+            ],
+        )
+    ]
+
+    profiles = evaluate_profiles(entries)
+
+    assert profiles["docktap-runtime"]["status"] == "incomplete"
+    assert profiles["docktap-runtime"]["details"]["unsupported_runtime_engines"] == ["rocket"]
+    assert any("Unsupported runtime_engine" in warning for warning in profiles["docktap-runtime"]["warnings"])
+
+
 def test_build_image_emits_profile_fields(tmp_path):
     tlog = _RecordingTlog()
     service = DockerService()

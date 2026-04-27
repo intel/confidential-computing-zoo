@@ -43,12 +43,13 @@ class TestEntryMapping:
         )
         entries = _build_entries(rec, "pull")
         keys = [e.key for e in entries]
-        assert keys == ["operation_type", "operation_result", "image_name", "image_tag", "image_digest"]
+        assert keys == ["operation_type", "operation_result", "runtime_engine", "image_name", "image_tag", "image_digest"]
         assert entries[0] == Entry(key="operation_type", value="pull")
         assert entries[1] == Entry(key="operation_result", value="success")
-        assert entries[2] == Entry(key="image_name", value="nginx")
-        assert entries[3] == Entry(key="image_tag", value="latest")
-        assert entries[4] == Entry(key="image_digest", value="sha256:abc123")
+        assert entries[2] == Entry(key="runtime_engine", value="docker")
+        assert entries[3] == Entry(key="image_name", value="nginx")
+        assert entries[4] == Entry(key="image_tag", value="latest")
+        assert entries[5] == Entry(key="image_digest", value="sha256:abc123")
 
     def test_pull_missing_digest(self):
         rec = _make_record(
@@ -58,7 +59,7 @@ class TestEntryMapping:
         entries = _build_entries(rec, "pull")
         keys = [e.key for e in entries]
         assert "image_digest" not in keys
-        assert len(entries) == 4  # operation_type, operation_result, image_name, image_tag
+        assert len(entries) == 5  # operation_type, operation_result, runtime_engine, image_name, image_tag
 
     def test_create_entries(self):
         rec = _make_record(
@@ -68,7 +69,7 @@ class TestEntryMapping:
         )
         entries = _build_entries(rec, "create")
         keys = [e.key for e in entries]
-        assert keys == ["operation_type", "operation_result", "image_name", "container_name", "container_id"]
+        assert keys == ["operation_type", "operation_result", "runtime_engine", "image_name", "container_name", "container_id"]
 
     def test_start_entries(self):
         rec = _make_record(
@@ -76,10 +77,11 @@ class TestEntryMapping:
             container={"id": "abc123def"},
         )
         entries = _build_entries(rec, "start")
-        assert len(entries) == 3
+        assert len(entries) == 4
         assert entries[0] == Entry(key="operation_type", value="start")
         assert entries[1] == Entry(key="operation_result", value="success")
-        assert entries[2] == Entry(key="container_id", value="abc123def")
+        assert entries[2] == Entry(key="runtime_engine", value="docker")
+        assert entries[3] == Entry(key="container_id", value="abc123def")
 
     def test_stop_entries(self):
         rec = _make_record(
@@ -89,7 +91,8 @@ class TestEntryMapping:
         entries = _build_entries(rec, "stop")
         assert entries[0] == Entry(key="operation_type", value="stop")
         assert entries[1] == Entry(key="operation_result", value="success")
-        assert entries[2] == Entry(key="container_id", value="xyz789")
+        assert entries[2] == Entry(key="runtime_engine", value="docker")
+        assert entries[3] == Entry(key="container_id", value="xyz789")
 
     def test_rm_entries(self):
         rec = _make_record(
@@ -99,12 +102,13 @@ class TestEntryMapping:
         entries = _build_entries(rec, "rm")
         assert entries[0] == Entry(key="operation_type", value="rm")
         assert entries[1] == Entry(key="operation_result", value="success")
-        assert entries[2] == Entry(key="container_id", value="del456")
+        assert entries[2] == Entry(key="runtime_engine", value="docker")
+        assert entries[3] == Entry(key="container_id", value="del456")
 
     def test_missing_container_id_omitted(self):
         rec = _make_record(operation={"type": "start"}, container={})
         entries = _build_entries(rec, "start")
-        assert len(entries) == 2  # operation_type, operation_result
+        assert len(entries) == 3  # operation_type, operation_result, runtime_engine
 
     def test_container_scoped_entries_include_profile_identity_fields(self):
         rec = _make_record(
@@ -119,7 +123,16 @@ class TestEntryMapping:
             instance_id="abc123def",
         )
         keys = [e.key for e in entries]
-        assert keys[:5] == ["operation_type", "operation_result", "workload_id", "launch_id", "instance_id"]
+        assert keys[:6] == ["operation_type", "operation_result", "runtime_engine", "workload_id", "launch_id", "instance_id"]
+
+    def test_runtime_engine_comes_from_operation_record(self):
+        rec = _make_record(
+            runtime_engine="podman",
+            operation={"type": "start"},
+            container={"id": "abc123def"},
+        )
+        entries = _build_entries(rec, "start")
+        assert entries[2] == Entry(key="runtime_engine", value="podman")
 
 
 # ---------------------------------------------------------------------------

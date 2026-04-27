@@ -17,6 +17,7 @@ class OperationRecord:
     session_id: Optional[str] = None
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     last_accessed: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
+    runtime_engine: str = "docker"
     
     operation: Dict[str, str] = field(default_factory=dict)
     image: Dict[str, Any] = field(default_factory=dict)
@@ -368,7 +369,8 @@ def get_operation_type(method: str, path: str) -> str:
 def parse_operation_metadata(
     request_bytes: bytes,
     session_id: Optional[str] = None,
-    parent_id: Optional[str] = None
+    parent_id: Optional[str] = None,
+    runtime_engine: str = "docker",
 ) -> OperationRecord:
     """Parse HTTP request to extract operation and relationships"""
     
@@ -380,9 +382,10 @@ def parse_operation_metadata(
     op = OperationRecord(
         session_id=session_id,
         parent_id=parent_id,
+        runtime_engine=runtime_engine,
         operation={
             "type": operation_type,
-            "action": f"docker {operation_type}" if operation_type != "unknown" else "docker unknown",
+            "action": f"{runtime_engine} {operation_type}" if operation_type != "unknown" else f"{runtime_engine} unknown",
             "api_path": path,
             "method": method
         },

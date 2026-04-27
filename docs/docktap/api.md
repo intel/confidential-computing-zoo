@@ -5,7 +5,7 @@
 This document defines the Docktap Python-side API and the runtime surfaces that the sidecar owns.
 It is intended for maintainers, launcher code, integration tests, and adjacent modules that embed or configure Docktap components in-process.
 
-This document does not redefine the Docker Engine API itself. Docktap primarily proxies that API over a Unix socket and adds trusted-event emission, workload routing, retry bookkeeping, and health reporting around it.
+This document does not redefine the runtime engine API itself. Docktap primarily proxies the current Docker-compatible API over a Unix socket and adds trusted-event emission, workload routing, retry bookkeeping, and health reporting around it.
 
 ## Module Layout
 
@@ -13,6 +13,7 @@ Recommended Docktap module boundaries:
 
 - `docktap.main`: sidecar bootstrap, retention config, health server, process lifecycle.
 - `docktap.proxy.docker_proxy`: Unix socket proxy server and Docker request forwarding.
+- `docktap.proxy.runtime_adapter`: runtime-engine normalization boundary and engine identifier helpers.
 - `docktap.proxy.operation_log`: operation datamodel, parsing helpers, relationship tracking, JSON logging.
 - `docktap.trucon_client`: TruCon commit client, DSSE construction, retry bookkeeping, workload-chain resolution.
 - `docktap.workload_store`: persisted `container_id -> workload_id` mapping store.
@@ -34,6 +35,7 @@ class OperationRecord:
     session_id: Optional[str] = None
     timestamp: str = ""
     last_accessed: str = ""
+    runtime_engine: str = "docker"
     operation: Dict[str, str] = field(default_factory=dict)
     image: Dict[str, Any] = field(default_factory=dict)
     container: Dict[str, Any] = field(default_factory=dict)
@@ -76,9 +78,63 @@ WORKLOAD_LABEL = "io.trucon.workload-id"
 LAUNCH_LABEL = "io.trucon.launch-id"
 
 SUBMITTABLE_OPERATIONS = {"pull", "create", "start", "stop", "rm"}
+DEFAULT_RUNTIME_ENGINE = "docker"
+SUPPORTED_RUNTIME_ENGINES = {"docker", "podman"}
 ```
 
 `WORKLOAD_LABEL` and `LAUNCH_LABEL` define the container-label contract used to route runtime events into workload-scoped chains and correlate them with REST-originated launch attempts.
+
+Canonical v1 runtime-engine identifiers are:
+
+- `docker`
+- `podman`
+
+Normalization helpers currently map these aliases onto the canonical identifiers:
+
+- `docker-engine` -> `docker`
+- `moby` -> `docker`
+- `libpod` -> `podman`
+
+All auditable runtime events SHALL carry `runtime_engine`, even for the current Docker-backed path.
+
+## Runtime Adapter API
+
+`proxy/runtime_adapter.py` owns runtime-engine normalization and the handoff from engine-specific request shapes to Docktap's canonical lifecycle model.
+
+```python
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+
+
+@dataclass(frozen=True)
+class ParsedRuntimeRequest:
+    operation_type: Optional[str]
+    path_only: Optional[str]
+    params: Dict[str, Any]
+
+
+class RuntimeAdapter:
+    runtime_engine: str
+
+    def parse_request(self, data: bytes) -> ParsedRuntimeRequest:
+        ...
+
+    def map_operation(self, path: str, method: str) -> Optional[str]:
+        ...
+
+    def parse_operation_metadata(self, request_bytes: bytes, session_id: Optional[str] = None, parent_id: Optional[str] = None):
+        ...
+
+
+class DockerRuntimeAdapter(RuntimeAdapter):
+    ...
+```
+
+Behavioral requirements:
+
+- Runtime adapters own engine-specific request parsing and normalization.
+- Downstream tracking, TruCon commit construction, and verification consume canonical lifecycle metadata rather than engine-specific request shapes.
+- Docker remains the v1 default adapter and compatibility target.
 
 ## Operation Log API
 
@@ -182,7 +238,7 @@ def parse_operation_metadata(
 
 ### Operation Classification Contract
 
-`get_operation_type(method, path)` maps Docker Engine API calls into Docktap operation classes:
+`get_operation_type(method, path)` maps runtime API calls into Docktap canonical operation classes:
 
 - `/_ping` -> `preflight_ping`
 - `/info` -> `preflight_info`
@@ -197,7 +253,7 @@ def parse_operation_metadata(
 - `DELETE /images/*` -> `rmi`
 - fallback -> `unknown`
 
-Only `pull`, `create`, `start`, `stop`, and `rm` are eligible for TruCon trusted-event submission.
+Only `pull`, `create`, `start`, `stop`, and `rm` are eligible for TruCon trusted-event submission, regardless of the underlying runtime engine.
 
 ## Docker Proxy API
 
@@ -213,6 +269,7 @@ class DockerProxyServer:
         listen_socket_path: str = "/tmp/docker-proxy.sock",
         docker_socket_path: str = "/var/run/docker.sock",
         trucon_committer = None,
+        runtime_engine: str = "docker",
     ) -> None:
         ...
 
@@ -245,6 +302,7 @@ class DockerProxyServer:
 - `start()` binds the proxy socket, listens, and processes each accepted client in a dedicated thread.
 - `handle_client()` must forward the original Docker API request to the real daemon socket and return the response to the caller before any best-effort TruCon submission can block the client.
 - `handle_client()` records operation metadata, parent-child linkage, response enrichment, and JSON logging for every handled request.
+- `handle_client()` uses the configured runtime adapter to normalize request parsing and operation metadata before downstream logging and TruCon submission.
 - If `trucon_committer` is configured, `handle_client()` submits trusted events only for `SUBMITTABLE_OPERATIONS`.
 - `create` requests may carry workload and launch routing hints through `WORKLOAD_LABEL` and `LAUNCH_LABEL` embedded in the Docker create request body.
 - Docktap does not alter Docker Engine API semantics beyond proxying, logging, and post-response trusted-event submission.
@@ -362,6 +420,7 @@ For `SUBMITTABLE_OPERATIONS`, Docktap emits DSSE predicates with the following m
 
 - `operation_type`
 - `operation_result`
+- `runtime_engine`
 - `workload_id`
 - `launch_id`
 - `instance_id`
@@ -436,7 +495,7 @@ Clients use it by setting:
 export DOCKER_HOST=unix:///var/run/docktap/docker.sock
 ```
 
-This surface proxies Docker Engine API traffic. Docktap does not define a new Docker protocol; it intercepts, forwards, logs, and post-processes the proxied requests.
+This surface proxies the current Docker-compatible engine API traffic. Docktap does not define a new runtime protocol; it intercepts, forwards, normalizes, logs, and post-processes the proxied requests.
 
 ### 2. Health Endpoint
 
@@ -507,6 +566,7 @@ Behavioral expectations:
 ## Compatibility Rules
 
 - Docktap's primary external compatibility target is the Docker Engine API over a Unix socket proxy.
+- Docktap's internal runtime contract is engine-aware through `runtime_engine`, but its auditable lifecycle model remains canonical across supported engines.
 - Docktap does not expose a stable REST control plane beyond `/healthz`.
 - `OperationRecord`, `OperationTracker`, `WorkloadStore`, `TruConCommitter`, and `SockBridge` are the main Python-side integration surfaces.
 - Workload routing depends on stable interpretation of `io.trucon.workload-id` and `io.trucon.launch-id` labels.

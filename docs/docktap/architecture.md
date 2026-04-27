@@ -4,14 +4,15 @@ This document is the design reference for the docktap sidecar.
 
 ## Overview
 
-Docktap is a Unix socket proxy for Docker API traffic that:
+Docktap is a Unix socket proxy for container-runtime API traffic that:
 
 - accepts Docker CLI requests through a proxy socket
 - forwards requests to the real Docker daemon socket
 - captures operation metadata and response status
+- normalizes engine-specific request handling through a runtime adapter boundary
 - tracks operation relationships for pull/create/start/stop/rm flows
 - submits signed DSSE bundles to TruCon for trusted event recording
-- emits the runtime identity and outcome fields required by the `docktap-runtime` verification profile
+- emits the runtime identity, runtime engine, and outcome fields required by the `docktap-runtime` verification profile
 - propagates `launch_id` for runtime events that belong to a REST-originated launch flow
 - maintains bounded local routing, mapping, and retry state via periodic garbage collection
 - emits structured JSON logs for audit and troubleshooting
@@ -34,6 +35,16 @@ Current internal TruCon communication prefers the shared Unix domain socket tran
 
 Users route Docker CLI through the proxy by setting `DOCKER_HOST=unix:///var/run/docktap/docker.sock`.
 
+The v1 runtime adapter contract uses canonical engine identifiers:
+
+- `docker`
+- `podman`
+
+Normalization rules for future onboarding:
+
+- `docker-engine` and `moby` normalize to `docker`
+- `libpod` normalizes to `podman`
+
 Docktap failure model: if Docktap goes down, Docker CLI traffic is blocked (by design — all operations must be recorded). Automatic restart ensures minimal downtime.
 
 ## High-Level Architecture
@@ -47,7 +58,7 @@ Docker CLI (DOCKER_HOST=unix:///tmp/test-stream.sock)
             v
   DockerProxyServer.handle_client
     - accepts client socket
-    - parses request metadata
+    - delegates request normalization to runtime adapter
     - links operation parent_id
     - forwards to /var/run/docker.sock
     - enriches operation with response
@@ -63,6 +74,10 @@ Docker CLI (DOCKER_HOST=unix:///tmp/test-stream.sock)
   - reusable Unix socket proxy server abstraction used by `main.py`
   - thread-per-connection concurrency in `start()`
   - full request lifecycle in `handle_client()`
+- `proxy/runtime_adapter.py`
+  - runtime-engine normalization boundary
+  - canonical engine identifiers and alias normalization
+  - adapter-backed request parsing and metadata construction
 - `proxy/operation_log.py`
   - operation model (`OperationRecord`)
   - in-memory operation index (`OperationTracker`)
@@ -86,8 +101,9 @@ Docker CLI (DOCKER_HOST=unix:///tmp/test-stream.sock)
 1. Client connects to proxy Unix socket.
 2. Proxy reads request bytes until header boundary (`\r\n\r\n`).
 3. Metadata is extracted:
-   - HTTP method and Docker API path
-   - operation type via `get_operation_type`
+  - runtime engine via the configured runtime adapter
+  - HTTP method and runtime API path
+  - canonical operation type via `get_operation_type`
    - image/container hints from query/body/path
 4. Parent operation is resolved from tracker:
    - `create` links to most recent matching `pull`
@@ -101,6 +117,7 @@ Docker CLI (DOCKER_HOST=unix:///tmp/test-stream.sock)
    - wait status code (if present)
 8. Final operation record is added to tracker and logged as JSON.
 9. For auditable lifecycle operations, Docktap emits a TruCon commit containing operation outcome, workload/instance/image identity, and `launch_id` when the event belongs to an active REST launch flow.
+10. Each auditable runtime event carries explicit `runtime_engine` metadata so the verifier can run one mixed-engine runtime profile while dispatching engine-specific checks internally.
 
 ## Concurrency Model
 
@@ -150,12 +167,13 @@ For the lifecycle operations that Docktap submits to TruCon (`pull`, `create`, `
 
 - `operation_type`
 - `operation_result`
+- `runtime_engine`
 - `workload_id` for workload-scoped operations
 - `instance_id` for container-scoped operations
 - `image_digest` or equivalent stable image identity when the operation meaning depends on an image target
 - `launch_id` when the runtime event is attributable to a REST-originated launch flow
 
-This contract lets `tc-verify` distinguish successful versus failed runtime actions and correlate REST launch intent with observed container creation/start evidence.
+This contract lets `tc-verify` distinguish successful versus failed runtime actions, keep one `docktap-runtime` profile across engines, and correlate REST launch intent with observed container creation/start evidence.
 
 ## Docker Operation Mapping & Lifecycle
 
@@ -226,6 +244,7 @@ The proxy emits JSON events with stable keys suitable for downstream audit proce
 - `parent_id`
 - `session_id`
 - `timestamp`
+- `runtime_engine`
 - `operation`
 - `image`
 - `container`
@@ -271,6 +290,7 @@ Representative modes:
 
 - For test automation and current proxy behavior validation, use `stream_test.py` indirectly via `test_suite.py`.
 - Keep tracker and parsing logic in `proxy/operation_log.py` to avoid duplicate behavior across runtimes.
+- Keep engine-specific request normalization in `proxy/runtime_adapter.py` so TruCon commit logic and verifier-facing event semantics remain canonical.
 - `stream_test.py` and `main.py` now share behavior through `DockerProxyServer.handle_client`.
 - Docktap local state is operational cache and short-lived diagnostics only. Replay correctness comes from TruCon and immutable backends, not from Docktap-local retention.
 - A background sweeper periodically removes expired operation records, removed-container mappings, and resolved retry records while preserving retryable items until they are acknowledged or terminally exhausted.

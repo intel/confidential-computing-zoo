@@ -92,7 +92,7 @@ Docktap commits SHALL emit explicit operation outcomes for auditable runtime eve
 - **THEN** the emitted entries SHALL include an explicit non-success `operation_result` value suitable for runtime-profile evaluation
 
 ### Requirement: Docktap runtime commits emit profile-required identity fields
-Docktap commits SHALL emit the minimum identity fields required by the runtime verification profile.
+Docktap commits SHALL emit the minimum identity fields required by the runtime verification profile, including explicit engine identity for every auditable runtime event.
 
 #### Scenario: Workload and instance identity emitted for container-scoped operation
 - **WHEN** Docktap submits a container-scoped `create`, `start`, `stop`, or `rm` event
@@ -101,6 +101,10 @@ Docktap commits SHALL emit the minimum identity fields required by the runtime v
 #### Scenario: Image identity emitted for image-targeted runtime operation
 - **WHEN** Docktap submits a `pull` or `create` operation whose audit meaning depends on the image target
 - **THEN** the emitted entries SHALL include either `image_digest` or another stable image reference field suitable for runtime-profile evaluation
+
+#### Scenario: Every auditable runtime commit carries engine identity
+- **WHEN** Docktap submits an auditable `pull`, `create`, `start`, `stop`, or `rm` event
+- **THEN** the emitted entries SHALL include `runtime_engine` with the canonical identifier for the engine that produced the event
 
 ### Requirement: Docktap can attribute launch-related runtime events to the current launch boundary
 When Docktap intercepts runtime events that belong to a REST-originated launch flow, it SHALL propagate the current `launch_id` so those runtime events can be grouped into the same launch verification set.

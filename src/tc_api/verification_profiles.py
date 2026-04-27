@@ -9,6 +9,9 @@ PROFILE_WARNING = "warning"
 PROFILE_INCOMPLETE = "incomplete"
 PROFILE_FAILED = "failed"
 
+RUNTIME_OPERATION_TYPES = {"pull", "create", "start", "stop", "rm"}
+KNOWN_RUNTIME_ENGINES = {"docker", "podman"}
+
 
 @dataclass(slots=True)
 class ProfileEvaluation:
@@ -105,7 +108,28 @@ def select_latest_launch_event_set(entries: List[Dict[str, Any]]) -> List[Dict[s
 
 def _runtime_event_set(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     oldest = _entries_oldest_first(entries)
-    return [entry for entry in oldest if str(entry.get("event_type") or "").startswith("docker_")]
+    runtime_events: List[Dict[str, Any]] = []
+    for entry in oldest:
+        operation_type = _latest_value(entry.get("predicate_entries") or [], "operation_type")
+        if operation_type in RUNTIME_OPERATION_TYPES:
+            runtime_events.append(entry)
+    return runtime_events
+
+
+def _evaluate_runtime_engine_specific(
+    runtime_engine: str,
+    event_id: str,
+    warnings: List[str],
+) -> bool:
+    if runtime_engine == "docker":
+        return True
+    if runtime_engine == "podman":
+        return True
+
+    warnings.append(
+        f"{event_id}: Unsupported runtime_engine for engine-specific evaluation: {runtime_engine}"
+    )
+    return False
 
 
 def evaluate_build_profile(entries: List[Dict[str, Any]]) -> ProfileEvaluation:
@@ -226,12 +250,16 @@ def evaluate_runtime_profile(entries: List[Dict[str, Any]]) -> ProfileEvaluation
 
     errors = []
     warnings = []
+    unsupported_runtime_engines = []
     for event in event_set:
         fields = _flatten_event_fields([event])
         event_id = event.get("event_id") or "<unknown>"
         operation_type = fields.get("operation_type")
+        runtime_engine = fields.get("runtime_engine")
         if fields.get("operation_result") in (None, ""):
             errors.append(f"{event_id}: Missing required field: operation_result")
+        if runtime_engine in (None, ""):
+            errors.append(f"{event_id}: Missing required field: runtime_engine")
         if operation_type in {"create", "start", "stop", "rm"}:
             if fields.get("workload_id") in (None, ""):
                 errors.append(f"{event_id}: Missing required field: workload_id")
@@ -241,15 +269,28 @@ def evaluate_runtime_profile(entries: List[Dict[str, Any]]) -> ProfileEvaluation
             errors.append(f"{event_id}: Missing required image identity")
         if operation_type in {"stop", "rm"} and fields.get("launch_id") in (None, ""):
             warnings.append(f"{event_id}: Missing optional launch_id for post-launch runtime event")
+        if runtime_engine not in (None, ""):
+            if not _evaluate_runtime_engine_specific(str(runtime_engine), event_id, warnings):
+                unsupported_runtime_engines.append(str(runtime_engine))
 
-    status = PROFILE_FAILED if errors else (PROFILE_WARNING if warnings else PROFILE_VERIFIED)
+    if errors:
+        status = PROFILE_FAILED
+    elif unsupported_runtime_engines:
+        status = PROFILE_INCOMPLETE
+    elif warnings:
+        status = PROFILE_WARNING
+    else:
+        status = PROFILE_VERIFIED
     return ProfileEvaluation(
         profile="docktap-runtime",
         status=status,
         matched_event_ids=[entry.get("event_id") for entry in event_set if entry.get("event_id")],
         errors=errors,
         warnings=warnings,
-        details={"event_count": len(event_set)},
+        details={
+            "event_count": len(event_set),
+            "unsupported_runtime_engines": unsupported_runtime_engines,
+        },
     )
 
 

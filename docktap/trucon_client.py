@@ -36,6 +36,11 @@ logger = logging.getLogger(__name__)
 SUBMITTABLE_OPERATIONS = {"pull", "create", "start", "stop", "rm"}
 
 
+def _resolve_runtime_engine(op_record) -> str:
+    runtime_engine = getattr(op_record, "runtime_engine", "")
+    return runtime_engine or "docker"
+
+
 @dataclass
 class PendingSubmission:
     operation_type: str
@@ -82,6 +87,7 @@ def _build_entries(
     entries: List[Entry] = []
     entries.append(Entry(key="operation_type", value=operation_type))
     entries.append(Entry(key="operation_result", value=operation_result or _infer_operation_result(op_record)))
+    entries.append(Entry(key="runtime_engine", value=_resolve_runtime_engine(op_record)))
     if workload_id:
         entries.append(Entry(key="workload_id", value=workload_id))
     if launch_id:
@@ -398,7 +404,8 @@ class TruConCommitter:
         # 2. Compute digests (two-level algorithm)
         entry_digests = [compute_entry_digest(e.key, e.value) for e in entry_list]
         event_id = f"evt-{uuid.uuid4().hex[:8]}"
-        event_type = f"docker_{operation_type}"
+        runtime_engine = _resolve_runtime_engine(op_record)
+        event_type = f"{runtime_engine}_{operation_type}"
         created_iso = datetime.utcnow().isoformat()
         event_digest = compute_event_digest(event_id, event_type, created_iso, entry_digests)
 

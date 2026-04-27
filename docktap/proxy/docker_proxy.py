@@ -11,12 +11,12 @@ from urllib.parse import parse_qs, urlparse
 
 from .operation_log import (
     OperationTracker,
-    get_operation_type,
     parse_operation_metadata,
     enrich_from_response,
     log_operation_json,
     is_streaming_endpoint,
 )
+from .runtime_adapter import DEFAULT_RUNTIME_ENGINE, DockerRuntimeAdapter
 
 WORKLOAD_LABEL = "io.trucon.workload-id"
 LAUNCH_LABEL = "io.trucon.launch-id"
@@ -33,6 +33,7 @@ class DockerProxyServer:
         listen_socket_path: str = "/tmp/docker-proxy.sock",
         docker_socket_path: str = "/var/run/docker.sock",
         trucon_committer=None,
+        runtime_engine: str = DEFAULT_RUNTIME_ENGINE,
     ):
         self.listen_socket_path = listen_socket_path
         self.docker_socket_path = docker_socket_path
@@ -42,6 +43,7 @@ class DockerProxyServer:
         self._log_callback = None
         self.tracker = OperationTracker()
         self._trucon_committer = trucon_committer
+        self._runtime_adapter = DockerRuntimeAdapter(runtime_engine=runtime_engine)
 
     def set_log_callback(self, callback):
         """Set callback function for logging operations"""
@@ -49,50 +51,12 @@ class DockerProxyServer:
 
     def _parse_http_request(self, data: bytes) -> Tuple[Optional[str], Optional[str], Dict[str, Any]]:
         """Parse HTTP request to extract operation and parameters"""
-        try:
-            request_str = data.decode('utf-8', errors='ignore')
-            lines = request_str.split('\r\n')
-            
-            if not lines:
-                return None, None, {}
-
-            request_line = lines[0]
-            parts = request_line.split(' ')
-            
-            if len(parts) < 2:
-                return None, None, {}
-
-            method = parts[0]
-            path = parts[1]
-
-            parsed = urlparse(path)
-            path_only = parsed.path
-            query_params = parse_qs(parsed.query)
-
-            operation = get_operation_type(method, path)
-
-            params = {}
-            if query_params:
-                params.update(query_params)
-
-            body_start = request_str.find('\r\n\r\n')
-            if body_start != -1:
-                body = request_str[body_start + 4:]
-                if body:
-                    params['body'] = body
-
-            params['method'] = method
-            params['path'] = path_only
-
-            return operation, path_only, params
-
-        except Exception as e:
-            logger.error(f"Error parsing HTTP request: {e}")
-            return None, None, {}
+        parsed_request = self._runtime_adapter.parse_request(data)
+        return parsed_request.operation_type, parsed_request.path_only, parsed_request.params
 
     def _map_path_to_operation(self, path: str, method: str) -> Optional[str]:
         """Backward-compatible wrapper around canonical operation mapping."""
-        return get_operation_type(method, path)
+        return self._runtime_adapter.map_operation(path, method)
 
     def _read_client_request(
         self,
@@ -397,7 +361,7 @@ class DockerProxyServer:
                 if pull_op:
                     last_image_op_id = pull_op.operation_id
 
-            op_record = parse_operation_metadata(request_data, session_id)
+            op_record = self._runtime_adapter.parse_operation_metadata(request_data, session_id)
             if op_record.operation.get("type") == "create":
                 op_record.parent_id = last_image_op_id
             elif op_record.operation.get("type") in ("start", "stop", "rm"):
@@ -409,7 +373,8 @@ class DockerProxyServer:
                     'operation': operation,
                     'path': path_only,
                     'method': params.get('method'),
-                    'timestamp': datetime.now().isoformat() + 'Z'
+                    'timestamp': datetime.now().isoformat() + 'Z',
+                    'runtime_engine': self._runtime_adapter.runtime_engine,
                 }
                 image_for_callback = self._extract_image_name(params)
                 if image_for_callback:

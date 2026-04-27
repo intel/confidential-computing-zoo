@@ -410,6 +410,7 @@ Required fields for container-scoped operations:
 
 - `operation_type`
 - `operation_result`
+- `runtime_engine`
 - `workload_id`
 - `instance_id`
 
@@ -421,16 +422,27 @@ Optional correlation field:
 
 - `launch_id` when the runtime event belongs to a REST-originated launch flow
 
+Mixed-engine rule:
+
+- `docktap-runtime` remains one public profile across supported engines
+- the verifier runs shared runtime checks first and engine-specific checks second based on `runtime_engine`
+- supported v1 engine identifiers are `docker` and `podman`
+
 Hard fail:
 
 - missing workload identity for a workload-scoped runtime operation
 - missing container identity for a container-scoped runtime operation
 - successful runtime operation missing the audited target identity needed to understand what was acted on
 - missing explicit `operation_result`
+- missing `runtime_engine`
 
 Warning:
 
 - missing auxiliary metadata that does not change the audit meaning of the runtime action
+
+Incomplete:
+
+- `runtime_engine` is present but not recognized by the verifier, so shared checks can run but engine-specific evaluation cannot be completed
 
 ## Signer Policy
 
