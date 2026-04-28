@@ -5,7 +5,7 @@ import time
 import pytest
 
 from proxy.docker_proxy import DockerProxyServer
-from proxy.operation_log import get_operation_type, is_streaming_endpoint, parse_operation_metadata
+from proxy.operation_log import enrich_from_response, get_operation_type, is_streaming_endpoint, parse_operation_metadata
 
 
 def _send_fragments(sock: socket.socket, fragments, delay: float = 0.03) -> None:
@@ -93,10 +93,138 @@ def test_callback_and_structured_mapping_are_consistent() -> None:
         ("GET", "/_ping", "preflight_ping"),
         ("GET", "/v1.41/info", "preflight_info"),
         ("GET", "/v1.41/images/busybox/json", "image_inspect"),
+        ("GET", "/v1.41/networks/bridge", "network_inspect"),
+        ("GET", "/v1.41/volumes/data-cache", "volume_inspect"),
+        ("GET", "/v1.41/plugins/example/json", "plugin_inspect"),
+        ("GET", "/containers/json", "container_list"),
+        ("GET", "/v1.41/containers/json", "container_list"),
+        ("GET", "/v1.41/containers/abc123/logs", "container_logs"),
+        ("GET", "/containers/abc123/logs?stdout=1", "container_logs"),
+        ("POST", "/v1.41/containers/abc123/exec", "exec_create"),
+        ("POST", "/v1.41/exec/exec123/start", "exec_start"),
     ],
 )
 def test_preflight_and_image_inspect_have_deterministic_labels(method: str, path: str, expected: str) -> None:
     assert get_operation_type(method, path) == expected
+
+
+def test_container_list_preserves_query_params_in_metadata() -> None:
+    request_data = (
+        b"GET /v1.41/containers/json?all=1&limit=5 HTTP/1.1\r\n"
+        b"Host: localhost\r\n\r\n"
+    )
+
+    op_record = parse_operation_metadata(request_data, session_id="s")
+
+    assert op_record.operation["type"] == "container_list"
+    assert op_record.params == {"all": "1", "limit": "5"}
+
+
+def test_container_detail_inspect_boundary_is_unchanged() -> None:
+    assert get_operation_type("GET", "/v1.41/containers/abc123/json") == "inspect"
+
+
+def test_resource_probe_paths_do_not_change_existing_container_or_image_boundaries() -> None:
+    assert get_operation_type("GET", "/v1.41/images/busybox/json") == "image_inspect"
+    assert get_operation_type("GET", "/v1.41/containers/abc123/json") == "inspect"
+    assert get_operation_type("GET", "/v1.41/containers/abc123/logs?stdout=1") == "container_logs"
+    assert get_operation_type("POST", "/v1.41/networks/bridge/connect") == "unknown"
+
+
+def test_exec_create_preserves_target_container_identity() -> None:
+    request_data = (
+        b"POST /v1.41/containers/abc123/exec HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length: 17\r\n\r\n"
+        b'{"Cmd":["/bin/sh"]}'
+    )
+
+    op_record = parse_operation_metadata(request_data, session_id="s")
+
+    assert op_record.operation["type"] == "exec_create"
+    assert op_record.container["id"] == "abc123"
+
+
+def test_exec_start_preserves_exec_identity() -> None:
+    request_data = (
+        b"POST /v1.41/exec/exec123/start HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length: 14\r\n\r\n"
+        b'{"Detach":false}'
+    )
+
+    op_record = parse_operation_metadata(request_data, session_id="s")
+
+    assert op_record.operation["type"] == "exec_start"
+    assert op_record.exec == {"id": "exec123"}
+
+
+@pytest.mark.parametrize(
+    "path,response,expected_outcome",
+    [
+        ("/v1.41/images/busybox/json", b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}", "ok"),
+        (
+            "/v1.41/networks/bridge",
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 2\r\n\r\n{}",
+            "miss",
+        ),
+        (
+            "/v1.41/volumes/data-cache",
+            b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 2\r\n\r\n{}",
+            "error",
+        ),
+        (
+            "/v1.41/plugins/example/json",
+            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 2\r\n\r\n{}",
+            "error",
+        ),
+    ],
+)
+def test_selected_probe_observations_record_response_outcomes(
+    path: str,
+    response: bytes,
+    expected_outcome: str,
+) -> None:
+    request_data = f"GET {path} HTTP/1.1\r\nHost: localhost\r\n\r\n".encode("utf-8")
+
+    op_record = parse_operation_metadata(request_data, session_id="s")
+    enrich_from_response(op_record, response)
+
+    assert op_record.response["outcome"] == expected_outcome
+
+
+def test_container_detail_inspect_404_outcome_remains_deferred() -> None:
+    request_data = (
+        b"GET /v1.41/containers/abc123/json HTTP/1.1\r\n"
+        b"Host: localhost\r\n\r\n"
+    )
+
+    op_record = parse_operation_metadata(request_data, session_id="s")
+    enrich_from_response(
+        op_record,
+        b"HTTP/1.1 404 Not Found\r\nContent-Length: 2\r\n\r\n{}",
+    )
+
+    assert op_record.operation["type"] == "inspect"
+    assert op_record.response["status"] == 404
+    assert "outcome" not in op_record.response
+
+
+def test_proxy_synthesized_probe_error_is_distinct_from_daemon_miss() -> None:
+    proxy = DockerProxyServer()
+    request_data = (
+        b"GET /v1.41/images/busybox/json HTTP/1.1\r\n"
+        b"Host: localhost\r\n\r\n"
+    )
+
+    op_record = parse_operation_metadata(request_data, session_id="s")
+    enrich_from_response(op_record, proxy._create_error_response("Docker daemon not available"))
+
+    assert op_record.operation["type"] == "image_inspect"
+    assert op_record.response["status"] == 503
+    assert op_record.response["outcome"] == "error"
 
 
 @pytest.mark.parametrize(

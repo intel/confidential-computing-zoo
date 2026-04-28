@@ -8,6 +8,14 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field, asdict
 
 
+OBSERVATION_OUTCOME_OPERATIONS = {
+    "image_inspect",
+    "network_inspect",
+    "volume_inspect",
+    "plugin_inspect",
+}
+
+
 @dataclass
 class OperationRecord:
     """Record of a single Docker operation"""
@@ -22,6 +30,7 @@ class OperationRecord:
     operation: Dict[str, str] = field(default_factory=dict)
     image: Dict[str, Any] = field(default_factory=dict)
     container: Dict[str, Any] = field(default_factory=dict)
+    exec: Dict[str, Any] = field(default_factory=dict)
     params: Dict[str, str] = field(default_factory=dict)
     response: Dict[str, Any] = field(default_factory=dict)
     user: Dict[str, str] = field(default_factory=dict)
@@ -301,6 +310,15 @@ def extract_container_id(path: str) -> Optional[str]:
     return None
 
 
+def extract_exec_id(path: str) -> Optional[str]:
+    """Extract exec ID from API path like /v1.45/exec/{id}/start"""
+    path_only = path.split("?", 1)[0]
+    match = re.match(r'^/(?:v\d+\.\d+/)?exec/([^/]+)', path_only)
+    if match:
+        return match.group(1)
+    return None
+
+
 def extract_digest_from_pull_response(body: bytes) -> Optional[str]:
     """Extract image digest from pull response (NDJSON)"""
     if not body:
@@ -346,6 +364,20 @@ def get_operation_type(method: str, path: str) -> str:
         return "preflight_info"
     elif method == "GET" and re.match(r'^/images/[^/]+/json$', normalized):
         return "image_inspect"
+    elif method == "GET" and re.match(r'^/networks/[^/]+$', normalized):
+        return "network_inspect"
+    elif method == "GET" and re.match(r'^/volumes/[^/]+$', normalized):
+        return "volume_inspect"
+    elif method == "GET" and re.match(r'^/plugins/[^/]+/json$', normalized):
+        return "plugin_inspect"
+    elif method == "GET" and normalized == "/containers/json":
+        return "container_list"
+    elif method == "GET" and re.match(r'^/containers/[^/]+/logs$', normalized):
+        return "container_logs"
+    elif method == "POST" and re.match(r'^/containers/[^/]+/exec$', normalized):
+        return "exec_create"
+    elif method == "POST" and re.match(r'^/exec/[^/]+/start$', normalized):
+        return "exec_start"
     elif normalized == "/images/create":
         return "pull"
     elif normalized == "/containers/create":
@@ -419,6 +451,14 @@ def parse_operation_metadata(
         if body_json.get("Cmd"):
             op.container["command"] = body_json.get("Cmd")
     
+    elif re.search(r'/(?:v\d+\.\d+/)?containers/[^/]+/exec(?:\?|$)', path):
+        container_id = extract_container_id(path)
+        if container_id:
+            op.container = {
+                "id": container_id,
+                "name": body_json.get("name")
+            }
+
     elif "/containers/" in path:
         container_id = extract_container_id(path)
         if container_id:
@@ -426,6 +466,11 @@ def parse_operation_metadata(
                 "id": container_id,
                 "name": body_json.get("name")
             }
+
+    if "/exec/" in path:
+        exec_id = extract_exec_id(path)
+        if exec_id:
+            op.exec = {"id": exec_id}
     
     return op
 
@@ -436,6 +481,14 @@ def enrich_from_response(op: OperationRecord, response_bytes: bytes) -> Operatio
     status, headers, body = parse_http_response(response_bytes)
     body_json = parse_json_body(body)
     op.response = {"status": status}
+
+    if op.operation.get("type") in OBSERVATION_OUTCOME_OPERATIONS:
+        if 200 <= status < 400:
+            op.response["outcome"] = "ok"
+        elif status == 404:
+            op.response["outcome"] = "miss"
+        else:
+            op.response["outcome"] = "error"
     
     if op.operation["type"] == "pull":
         # Even if body is empty, record the pull attempt
@@ -459,6 +512,11 @@ def enrich_from_response(op: OperationRecord, response_bytes: bytes) -> Operatio
         exit_code = body_json.get("StatusCode")
         if exit_code is not None:
             op.response["container_exit_code"] = exit_code
+
+    elif op.operation["type"] == "exec_create":
+        exec_id = body_json.get("Id")
+        if exec_id:
+            op.exec["id"] = exec_id
     
     return op
 

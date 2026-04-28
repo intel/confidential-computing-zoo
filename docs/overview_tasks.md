@@ -1,7 +1,7 @@
 # Architecture Gap & Inconsistency Task Overview
 
 > Generated: 2026-04-16
-> Last Updated: 2026-04-21
+> Last Updated: 2026-04-28
 > Source: `docs/architecture.md`, `docs/trusted-log/architecture.md`
 > Purpose: Structured task list for closing gaps between architecture docs and implementation.
 
@@ -604,6 +604,174 @@ Each task has:
 
 ---
 
+### GAP-21: Runtime Observation Classification Expansion for Docktap
+
+- **Priority**: MEDIUM
+- **Scope**: `docktap/proxy/operation_log.py`, `docktap/proxy/docker_proxy.py`, `docktap/tests/`, `docs/docktap/architecture.md`, `docs/docktap/api.md`
+- **References**: `docs/docktap/architecture.md` canonical request sequence and endpoint mapping sections; `docs/docktap/api.md` DockerProxyServer behavioral requirements; `openclaw-docker-analysis.md` Phase 1 / 8 / 10 analysis
+- **Dependencies**: GAP-01 ✅, GAP-11 ✅, GAP-15 ✅
+- **Current State**:
+  - Docktap's canonical classifier explicitly recognizes `preflight_ping`, `preflight_info`, `image_inspect`, `pull`, `create`, `start`, `stop`, `wait`, `rm`, `rmi`, `inspect`, and `unknown`.
+  - TruCon submission is intentionally restricted to `pull` / `create` / `start` / `stop` / `rm`; this task does **not** require expanding the trusted-event submission surface.
+  - Several operationally meaningful Docker Engine API paths still collapse into `inspect` or `unknown`, which makes daemon/control-plane traces like the OpenClaw analysis harder to interpret.
+- **Goal**: Expand the read-only observation model so normal Docker control-plane activity is classifiable and queryable without changing Docker API semantics or broadening TruCon commit scope.
+- **Acceptance Criteria**:
+  1. Docktap can distinguish runtime observation calls from core lifecycle commits rather than collapsing them into generic `inspect` / `unknown` buckets.
+  2. Benign cache-miss / probe responses (especially `404`) can be represented as normal observation outcomes instead of looking like errors.
+  3. New observation classes remain best-effort logging metadata only unless a later design explicitly promotes them into TruCon-submittable events.
+  4. Docktap architecture/API docs and focused classifier tests stay aligned with the expanded observation taxonomy.
+
+#### Task 21.1: Add explicit container-list observation classification
+
+- **Priority**: HIGH
+- **Scope**: `docktap/proxy/operation_log.py`, `docktap/tests/test_lifecycle_classification.py`, `docktap/tests/test_proxy.py`, docs mapping tables
+- **Dependencies**: None
+- **Completed**: 2026-04-28 | Archive: `openspec/changes/archive/2026-04-28-docktap-container-list-observation/`
+- **Goal**: Classify `GET /v*/containers/json` requests as first-class observation events instead of leaving them implicit.
+- **Acceptance Criteria**:
+  1. `GET /v*/containers/json` is classified as a dedicated observation type such as `container_list`.
+  2. Query parameters like `all=1` remain available in logged metadata for differentiating `docker ps` vs `docker ps -a` style scans.
+  3. Existing lifecycle-parent linking rules remain unchanged for `create` / `start` / `stop` / `rm`.
+  4. Focused classifier tests cover versioned and unversioned `/containers/json` paths.
+
+#### Task 21.2: Add exec-path observation coverage
+
+- **Priority**: HIGH
+- **Scope**: `docktap/proxy/operation_log.py`, `docktap/proxy/docker_proxy.py`, `docktap/tests/`, docs mapping tables
+- **Dependencies**: Task 21.1
+- **Completed**: 2026-04-28 | Archive: `openspec/changes/archive/2026-04-28-docktap-exec-path-observation/`
+- **Goal**: Represent command execution inside running containers as explicit observation events.
+- **Acceptance Criteria**:
+  1. `POST /v*/containers/{id}/exec` is classified separately from generic container inspect traffic.
+  2. `POST /v*/exec/{id}/start` is classified separately from generic unknown traffic.
+  3. Optional follow-up exec inspection paths are either explicitly classified or documented as intentionally deferred.
+  4. Tests cover the minimal healthcheck-style flow: exec-create followed by exec-start.
+
+#### Task 21.3: Split multi-resource probe traffic out of generic inspect/unknown buckets
+
+- **Priority**: HIGH
+- **Scope**: `docktap/proxy/operation_log.py`, response enrichment helpers, classifier tests, docs mapping tables
+- **Dependencies**: Task 21.1
+- **Completed**: 2026-04-28 | Archive: `openspec/changes/archive/2026-04-28-docktap-resource-probe-observation/`
+- **Goal**: Make Docker's name/probe traffic readable in logs by distinguishing resource-specific lookup classes.
+- **Acceptance Criteria**:
+  1. Probe/inspect calls for at least container, network, volume, and plugin resources no longer collapse into the same generic fallback bucket.
+  2. The logged metadata exposes which resource family was probed, either through distinct operation types or a stable `resource.kind` style field.
+  3. Existing `image_inspect` behavior remains backward compatible.
+  4. Tests cover common miss cases that mirror Docker's multi-resource name resolution pattern.
+
+#### Task 21.4: Record benign observation outcomes for normal `404` misses
+
+- **Priority**: MEDIUM
+- **Scope**: `docktap/proxy/operation_log.py`, response enrichment helpers, tests, docs
+- **Dependencies**: Task 21.2, Task 21.3
+- **Completed**: 2026-04-28 | Archive: `openspec/changes/archive/2026-04-28-docktap-observation-miss-outcomes/`
+- **Goal**: Distinguish expected probe misses from true proxy/runtime failures.
+- **Acceptance Criteria**:
+  1. Observation responses can encode at least `ok` / `miss` / `error` style outcomes or an equivalent stable scheme.
+  2. Resource probes and image-inspect cache misses that return `404` are represented as normal misses rather than generic failures.
+  3. Docker socket / timeout / malformed-request failures remain distinguishable from daemon-level `404` misses.
+  4. Response-enrichment tests cover the normal-miss path explicitly.
+
+#### Task 21.5: Reduce `unknown` noise for common runtime observation endpoints
+
+- **Priority**: MEDIUM
+- **Scope**: `docktap/proxy/operation_log.py`, `docktap/tests/`, `docs/docktap/architecture.md`, `docs/docktap/api.md`
+- **Dependencies**: Task 21.2, Task 21.3
+- **Completed**: 2026-04-28 | Archive: `openspec/changes/archive/2026-04-28-docktap-observation-unknown-reduction/`
+- **Goal**: Capture remaining high-frequency read-only paths that are operationally useful but not part of the trusted lifecycle chain.
+- **Acceptance Criteria**:
+  1. At least `GET /v*/containers/{id}/logs` is promoted from `unknown` to an explicit observation class.
+  2. Any intentionally deferred endpoints still left in `unknown` are called out in docs so the bucket becomes a conscious boundary rather than accidental overflow.
+  3. `SUBMITTABLE_OPERATIONS` remains unchanged unless a separate future proposal decides otherwise.
+  4. Documentation clearly separates lifecycle commit types from read-only observation types.
+
+---
+
+### GAP-22: Daemon-Internal Runtime Phase Observation for Docktap
+
+- **Priority**: MEDIUM
+- **Scope**: `docktap/`, `docs/docktap/architecture.md`, `docs/docktap/api.md`, runtime observability docs/runbooks
+- **References**: `docker_daemon.log`; `openclaw-docker-analysis.md` Phase 4 / 6 / 7 / 8 / 9 analysis; Docktap architecture logging and proxy requirements
+- **Dependencies**: GAP-21.2, GAP-21.3, GAP-21.4
+- **Current State**:
+  - Docktap's observation model is built around Docker Engine API requests and responses seen by the Unix-socket proxy.
+  - Daemon-internal stages such as overlay mounts, OCI bundle creation, containerd task transitions, attach lifecycle, and healthcheck-internal execution are not represented as first-class observation artifacts.
+  - Mixed traces like `docker_daemon.log` therefore contain two disconnected planes: API-path observations and daemon/runtime-internal phases.
+- **Goal**: Define and incrementally add a second observation layer for daemon/runtime-internal phases so mixed Docker traces can be interpreted as one coherent timeline.
+- **Acceptance Criteria**:
+  1. The docs define a stable taxonomy for daemon/runtime-internal phases distinct from HTTP API request classes.
+  2. Internal phase events can be correlated with the API request or container/exec object they belong to.
+  3. Healthcheck and exec-related daemon activity can be interpreted without confusing it with primary workload lifecycle traffic.
+  4. The new internal-phase layer remains observational/runbook-focused unless a later design adds a concrete event source and ingestion path.
+
+#### Task 22.1: Define a daemon-internal phase taxonomy
+
+- **Priority**: HIGH
+- **Scope**: `docs/docktap/architecture.md`, `docs/docktap/api.md`, `docs/overview_tasks.md`
+- **Dependencies**: None
+- **Completed**: 2026-04-28 | Archive: `openspec/changes/archive/2026-04-28-docktap-daemon-phase-taxonomy/`
+- **Goal**: Separate Docker Engine API observations from daemon/runtime-internal phases in the documentation model.
+- **Acceptance Criteria**:
+  1. The docs define a stable internal taxonomy for at least storage/mount, runtime-spec/bundle, task lifecycle, attach/stream, and housekeeping phases.
+  2. The taxonomy explicitly states that these are not inferred from the current HTTP proxy path classifier alone.
+  3. Internal phases are described as complementary to, not replacements for, API request observations.
+  4. Example mappings from `docker_daemon.log` illustrate the taxonomy with real phase names.
+
+#### Task 22.2: Normalize containerd task events into an observation model
+
+- **Priority**: HIGH
+- **Scope**: runtime observation docs, potential future parser/adapter contracts, tests for normalization rules if an ingestion surface is introduced
+- **Dependencies**: Task 22.1
+- **Completed**: 2026-04-28 | Archive: `openspec/changes/archive/2026-04-28-docktap-containerd-task-normalization/`
+- **Goal**: Define a documentation-first normalized task-transition contract so containerd task activity is treated as structured daemon/internal observations rather than unstructured free-text debug lines.
+- **Acceptance Criteria**:
+  1. The model distinguishes at least `tasks/create`, `tasks/start`, `tasks/exec-added`, `tasks/exec-started`, and `tasks/exit`.
+  2. The docs define the minimum canonical daemon/internal facts for those transitions, including topic, timestamp, source namespace, container identity, and exec identity when available.
+  3. Task transitions are explicitly separated from higher-level Docker API operations such as `create`, `start`, and exec API calls, while container-task and exec-task transitions remain distinguishable inside the same `task lifecycle` family.
+  4. The normalization rules call out which transitions are required for cold-start analysis versus which remain supplemental for richer runtime interpretation.
+  5. The docs state explicitly that API/internal correlation, healthcheck interpretation, attach-stream semantics, and parser or ingestion implementation remain out of scope for this task.
+
+#### Task 22.3: Correlate API-path events with daemon-internal phases
+
+- **Priority**: HIGH
+- **Scope**: observation model docs, future parser contract notes, runbook examples
+- **Dependencies**: Task 22.2
+- **Completed**: 2026-04-28 | Archive: `openspec/changes/archive/2026-04-28-docktap-api-internal-correlation/`
+- **Goal**: Define a documentation-first correlation contract so API-path observations and normalized daemon/internal transitions can be read as one mixed-trace timeline without collapsing parser design, healthcheck interpretation, or attach semantics into the same task.
+- **Acceptance Criteria**:
+  1. The docs specify the primary correlation shapes for `POST /containers/create`, `POST /containers/{id}/start`, and exec-path API observations against normalized daemon/internal transitions.
+  2. The docs distinguish stronger identifiers from contextual evidence and fallback heuristics when describing cross-plane joins.
+  3. The docs allow one-to-many, many-to-one, inferred, and unresolved correlation outcomes when trace evidence is incomplete.
+  4. The docs state explicitly that parser implementation, healthcheck intent, attach-stream semantics, and housekeeping guidance remain out of scope for this task.
+
+#### Task 22.4: Model healthcheck and attach flows as secondary runtime activity
+
+- **Priority**: MEDIUM
+- **Scope**: observation docs/runbooks, future parser contract notes
+- **Dependencies**: Task 22.2, Task 22.3
+- **Completed**: 2026-04-28 | Archive: `openspec/changes/archive/2026-04-28-docktap-healthcheck-attach-interpretation/`
+- **Goal**: Define a documentation-first interpretation contract so healthcheck-like exec flows and attach activity can be read as secondary runtime activity without collapsing parser design or housekeeping guidance into the same task.
+- **Acceptance Criteria**:
+  1. The docs define secondary runtime activity for healthcheck-like exec flows using the normalized exec-task spine and allow conservative interpretation when evidence is incomplete.
+  2. Attach lifecycle lines (`stdout/stderr begin/end`, `attach done`) are described as stream/transport context around exec flows, not workload lifecycle events.
+  3. The docs define a first-wave healthy healthcheck-like sequence with required exec-task evidence and separate contextual evidence.
+  4. The docs define only the minimal anomalous secondary-runtime patterns worth surfacing later, such as repeated exec failures or missing exit/attach completion cues, while keeping housekeeping guidance out of scope.
+
+#### Task 22.5: Add housekeeping/internal-maintenance phase coverage
+
+- **Priority**: MEDIUM
+- **Scope**: observation docs/runbooks, future parser contract notes
+- **Dependencies**: Task 22.1, Task 22.3
+- **Goal**: Define a documentation-first first-wave housekeeping interpretation contract so daemon/internal maintenance lines can be read as post-runtime context without collapsing them into secondary runtime activity or Docktap-local retention/GC behavior.
+- **Acceptance Criteria**:
+  1. First-wave housekeeping lines such as exec cleanup are modeled separately from primary lifecycle activity, secondary runtime activity, and Docktap-local retention/GC concerns.
+  2. The docs describe the minimal first-wave boundary between expected maintenance noise and investigation-worthy housekeeping patterns.
+  3. The first-wave model stays centered on exec-cleanup-style evidence while leaving room for later additions like image GC, background scanning, or retry/reconcile loops without redefining the taxonomy.
+  4. Mixed-trace examples show where housekeeping phases sit relative to nearby primary runtime and secondary runtime events.
+
+---
+
 ### ~~FIX-05: `SubmitStatus.OPEN` Enum Value Dead Code~~ ✅ COMPLETED
 
 - **Priority**: LOW
@@ -670,6 +838,18 @@ GAP-19 (Verification Profiles) ✅ ── umbrella complete
   ├──▶ GAP-19B (Producer Payload Alignment) ✅ ◀── GAP-19A ✅
   └──▶ GAP-19C (tc-verify Profile Enforcement) ✅ ◀── GAP-19A ✅, GAP-19B ✅
 GAP-20 (Workload-chain Event Log 0 baseline) ✅ ◀── GAP-05 ✅, GAP-11 ✅, GAP-17 ✅
+GAP-21 (Docktap observation classification expansion)
+  ├──▶ GAP-21.1 (container list classification) ✅
+  ├──▶ GAP-21.2 (exec path coverage) ✅ ◀── GAP-21.1 ✅
+  ├──▶ GAP-21.3 (resource probe split) ✅ ◀── GAP-21.1 ✅
+  ├──▶ GAP-21.4 (benign 404 outcome semantics) ✅ ◀── GAP-21.2 ✅, GAP-21.3 ✅
+  └──▶ GAP-21.5 (unknown-bucket noise reduction) ✅ ◀── GAP-21.2 ✅, GAP-21.3 ✅
+GAP-22 (daemon-internal runtime phase observation)
+  ├──▶ GAP-22.1 (phase taxonomy) ✅
+  ├──▶ GAP-22.2 (containerd task normalization) ✅ ◀── GAP-22.1 ✅
+  ├──▶ GAP-22.3 (API/internal correlation rules) ✅ ◀── GAP-22.2 ✅
+  ├──▶ GAP-22.4 (healthcheck and attach modeling) ✅ ◀── GAP-22.2 ✅, GAP-22.3 ✅
+  └──▶ GAP-22.5 (housekeeping phase coverage) ✅ ◀── GAP-22.1 ✅, GAP-22.3 ✅
 GAP-16 (Doc Sync) ✅ ── standalone complete
 
 FIX-03 (SubmitResult) ✅ ── completed with GAP-12
@@ -728,6 +908,20 @@ FIX-05 (OPEN Dead Code) ✅ ── completed with GAP-12
 29. ~~`GAP-12`~~ ✅ completed 2026-04-19 — Service auth Phase B (Unix socket peer credentials / caller identity)
 30. ~~`GAP-20`~~ ✅ completed 2026-04-20 — Add explicit Event Log 0 baseline for workload chains created from new `workload_id`s
 
+**Phase 8 — Runtime Observation Model Closure**:
+31. ~~`GAP-21.1`~~ ✅ completed 2026-04-28 — Explicit container-list observation classification
+32. ~~`GAP-21.2`~~ ✅ completed 2026-04-28 — Exec-path observation coverage
+33. ~~`GAP-21.3`~~ ✅ completed 2026-04-28 — Multi-resource probe classification split
+34. ~~`GAP-21.4`~~ ✅ completed 2026-04-28 — Benign `404` observation outcome semantics
+35. ~~`GAP-21.5`~~ ✅ completed 2026-04-28 — Unknown-bucket reduction for common observation endpoints
+
+**Phase 9 — Daemon/Internal Trace Model Closure**:
+36. ~~`GAP-22.1`~~ ✅ completed 2026-04-28 — Daemon-internal phase taxonomy
+37. ~~`GAP-22.2`~~ ✅ completed 2026-04-28 — Containerd task-event normalization
+38. ~~`GAP-22.3`~~ ✅ completed 2026-04-28 — API-path to internal-phase correlation rules
+39. ~~`GAP-22.4`~~ ✅ completed 2026-04-28 — Healthcheck and attach-flow modeling
+40. ~~`GAP-22.5`~~ ✅ completed 2026-04-28 — Housekeeping/internal-maintenance phase coverage
+
 ---
 
 ## Part E: Current Remaining Work Snapshot
@@ -735,5 +929,29 @@ FIX-05 (OPEN Dead Code) ✅ ── completed with GAP-12
 The items below are the primary tasks that remain genuinely open after reconciling this table with the live code and archived changes:
 
 Update (2026-04-20): `GAP-20` is now complete in addition to `GAP-12`, `FIX-03`, `FIX-05`, `GAP-17`, `GAP-18`, and `GAP-19`. Workload chains now share the same explicit Event Log 0 origin semantics as the startup-initialized `default` chain.
+
+Update (2026-04-28): Added `GAP-21` as a documentation-first breakdown for expanding Docktap's read-only runtime observation taxonomy without widening TruCon submission scope. The five sub-tasks are intended to map cleanly onto future OpenSpec propose/apply changes.
+
+Update (2026-04-28): `GAP-21.1` is now complete and archived as `openspec/changes/archive/2026-04-28-docktap-container-list-observation/`. Docktap now classifies `GET /containers/json` as `container_list` while keeping query metadata and lifecycle submission boundaries unchanged.
+
+Update (2026-04-28): `GAP-21.2` is now complete and archived as `openspec/changes/archive/2026-04-28-docktap-exec-path-observation/`. Docktap now classifies `POST /containers/{id}/exec` as `exec_create` and `POST /exec/{id}/start` as `exec_start`, retains minimal exec-path identifiers, and keeps exec traffic outside lifecycle submission and parent-linking.
+
+Update (2026-04-28): `GAP-21.3` is now complete and archived as `openspec/changes/archive/2026-04-28-docktap-resource-probe-observation/`. Docktap now classifies network, volume, and plugin read-only probe paths as `network_inspect`, `volume_inspect`, and `plugin_inspect`, while preserving `image_inspect` and container-detail `inspect` behavior and deferring benign `404` miss semantics to `GAP-21.4`.
+
+Update (2026-04-28): `GAP-21.4` is now complete and archived as `openspec/changes/archive/2026-04-28-docktap-observation-miss-outcomes/`. Docktap now records stable local `response.outcome` values for selected probe-style observations, treats daemon `404` misses as benign `miss` cases for the explicit probe classes, and keeps TruCon lifecycle result semantics unchanged.
+
+Update (2026-04-28): `GAP-21.5` is now complete and archived as `openspec/changes/archive/2026-04-28-docktap-observation-unknown-reduction/`. Docktap now classifies `GET /containers/{id}/logs` as `container_logs` and documents the remaining `unknown` bucket as an intentional deferred boundary for unmapped read-only endpoints.
+
+Update (2026-04-28): Added `GAP-22` as the companion breakdown for daemon/containerd/internal-phase observability that sits above raw Docker Engine API path classification. These tasks are intended for mixed-trace analysis like `docker_daemon.log`, not just proxy-path enrichment.
+
+Update (2026-04-28): `GAP-22.1` is now complete and archived as `openspec/changes/archive/2026-04-28-docktap-daemon-phase-taxonomy/`. Docktap now documents a second daemon/internal observation plane with five stable top-level phase families and explicit defer boundaries for later normalization, correlation, healthcheck, and housekeeping work.
+
+Update (2026-04-28): `GAP-22.2` is now complete and archived as `openspec/changes/archive/2026-04-28-docktap-containerd-task-normalization/`. Docktap now documents a normalized containerd task-transition contract with first-wave transition coverage, minimum canonical daemon/internal facts, and a narrow defer boundary that keeps API/internal correlation and healthcheck interpretation in later GAP-22 tasks.
+
+Update (2026-04-28): `GAP-22.3` is now complete and archived as `openspec/changes/archive/2026-04-28-docktap-api-internal-correlation/`. Docktap now documents a first-wave API/internal correlation contract with separate create/start and exec-path join shapes, tiered evidence rules, and explicit defer boundaries that keep healthcheck intent, attach semantics, and housekeeping guidance for later GAP-22 work.
+
+Update (2026-04-28): `GAP-22.4` is now complete and archived as `openspec/changes/archive/2026-04-28-docktap-healthcheck-attach-interpretation/`. Docktap now documents a first-wave secondary-runtime interpretation contract for healthcheck-like exec flows and attach activity, keeps the normalized exec-task spine as the required runtime sequence, and defers housekeeping cleanup guidance to `GAP-22.5`.
+
+Update (2026-04-28): `GAP-22.5` is now complete and archived as `openspec/changes/archive/2026-04-28-docktap-housekeeping-maintenance-coverage/`. Docktap now documents a first-wave housekeeping interpretation contract for post-runtime maintenance context, keeps the first wave anchored on exec-cleanup-style evidence, distinguishes daemon housekeeping from Docktap-local retention/GC behavior, and leaves broader maintenance families as future extension room.
 
 - `GAP-07` — on-chain backend adapter, still blocked by target chain selection

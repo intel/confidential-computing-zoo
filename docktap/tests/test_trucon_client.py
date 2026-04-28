@@ -148,7 +148,7 @@ class TestOperationFiltering:
         assert op in SUBMITTABLE_OPERATIONS
 
     @pytest.mark.parametrize("op", [
-        "wait", "rmi", "image_inspect", "inspect",
+        "wait", "rmi", "image_inspect", "network_inspect", "volume_inspect", "plugin_inspect", "inspect",
         "preflight_ping", "preflight_info", "unknown",
     ])
     def test_non_lifecycle_ops_blocked(self, op):

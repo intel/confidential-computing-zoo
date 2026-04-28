@@ -99,6 +99,12 @@ def test_operation_mapping():
     test_cases = [
         ("/v1.41/images/create", "POST", "pull"),
         ("/v1.41/containers/create", "POST", "create"),
+        ("/v1.41/networks/bridge", "GET", "network_inspect"),
+        ("/v1.41/volumes/data-cache", "GET", "volume_inspect"),
+        ("/v1.41/plugins/example/json", "GET", "plugin_inspect"),
+        ("/v1.41/containers/abc/logs?stdout=1", "GET", "container_logs"),
+        ("/v1.41/containers/abc/exec", "POST", "exec_create"),
+        ("/v1.41/exec/exec123/start", "POST", "exec_start"),
         ("/v1.41/containers/abc/start", "POST", "start"),
         ("/v1.41/containers/abc/stop", "POST", "stop"),
         ("/v1.41/containers/abc/restart", "POST", "inspect"),
