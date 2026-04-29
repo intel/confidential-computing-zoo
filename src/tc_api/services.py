@@ -47,6 +47,26 @@ class DockerService:
         """
         return f"{prefix}-{uuid.uuid4().hex[:7]}"
 
+    def _syft_environment(self) -> Dict[str, str]:
+        env = os.environ.copy()
+        if env.get("DOCKER_API_VERSION"):
+            return env
+
+        try:
+            result = subprocess.run(
+                [DOCKER_CMD, "version", "--format", "{{.Server.MinAPIVersion}}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                min_api_version = result.stdout.strip()
+                if min_api_version:
+                    env["DOCKER_API_VERSION"] = min_api_version
+        except Exception:
+            pass
+        return env
+
     def normalize_workload_id(self, user_id: str, image_id: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         metadata = metadata or {}
         workload_id = metadata.get("workload_id")
@@ -223,7 +243,13 @@ class DockerService:
             logger.info(f"Generating SBOM for image: {image_name}")
             logger.debug(f"SBOM command: {' '.join(cmd)}")
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=self._syft_environment(),
+            )
             
             if result.returncode == 0:
                 # Validate SBOM content before saving
@@ -317,6 +343,9 @@ class DockerService:
     
     def encrypt_image(self, image_name: str, build_id: str, public_key_path: str, tlog: TrustedLogAPI, record_id: str) -> Optional[str]:
         """Encrypt image using skopeo with optimized workflow"""
+        archive_path = None
+        docker_save_cmd = None
+        cmd = None
         try:
             # Setup paths for encrypted image
             build_path = os.path.join(BUILD_DIR, build_id)
@@ -341,22 +370,56 @@ class DockerService:
                 return None
             
             logger.info(f"Starting encryption process for image: {image_name}")
+            archive_path = os.path.join(build_path, f"{build_id}-image.tar")
+
+            docker_save_cmd = [DOCKER_CMD, "save", "-o", archive_path, image_name]
+            logger.debug(f"Executing docker save command: {' '.join(docker_save_cmd)}")
+            docker_save_result = subprocess.run(
+                docker_save_cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if docker_save_result.returncode != 0:
+                logger.error(f"Docker save failed before encryption: {docker_save_result.stderr}")
+
+                encryption_log = {
+                    "docker_save_command": " ".join(docker_save_cmd),
+                    "docker_save_exit_code": docker_save_result.returncode,
+                    "docker_save_stdout": docker_save_result.stdout,
+                    "docker_save_stderr": docker_save_result.stderr,
+                    "status": "failed",
+                    "error": {
+                        "type": "subprocess.CalledProcessError",
+                        "message": docker_save_result.stderr,
+                    },
+                }
+                tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
+                return None
             
-            # Use OCI format for encrypted image storage in build directory with user_id
+            # Current skopeo docker-daemon transport negotiates an API version that is too old
+            # for this daemon, so encrypt from a docker-archive produced by docker save instead.
             cmd = [
                 SKOPEO_CMD, "copy",
                 "--encryption-key", f"jwe:{public_key_path}",
-                f"docker-daemon:{image_name}",  # image_name already contains :latest
+                f"docker-archive:{archive_path}",
                 f"oci:{encrypted_path}:latest-encrypted"
             ]
             
             logger.debug(f"Executing encryption command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=self._syft_environment(),
+            )
             
             if result.returncode == 0:
                 logger.info(f"Successfully encrypted image {image_name} to {encrypted_path}")
 
                 encryption_log = {
+                    "docker_save_command": " ".join(docker_save_cmd),
                     "command": " ".join(cmd),
                     "exit_code": result.returncode,
                     "stdout": result.stdout,
@@ -373,6 +436,7 @@ class DockerService:
                 logger.debug(f"Encryption stdout: {result.stdout}")
 
                 encryption_log = {
+                    "docker_save_command": " ".join(docker_save_cmd),
                     "command": " ".join(cmd),
                     "exit_code": result.returncode,
                     "stdout": result.stdout,
@@ -386,7 +450,7 @@ class DockerService:
                 tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
 
                 return None
-                
+        
         except subprocess.TimeoutExpired:
             logger.error(f"Image encryption timed out for: {image_name}")
             
@@ -419,6 +483,12 @@ class DockerService:
         except Exception as e:
             logger.error(f"Unexpected error during image encryption: {str(e)}")
             return None
+        finally:
+            if archive_path and os.path.exists(archive_path):
+                try:
+                    os.remove(archive_path)
+                except OSError:
+                    logger.debug("Failed to remove temporary archive %s", archive_path)
     
     def sign_image(self, image_name: str, private_key_path: str, tlog: TrustedLogAPI, record_id: str) -> Tuple[bool, Optional[str]]:
         """
@@ -741,6 +811,8 @@ class DockerService:
             registry = dest_ref.split('/')[2]  # Get registry name
             image_name = extract_image_name(source_ref)
             dest_ref = f"docker://{registry}/{image_name}"
+
+        insecure_local_registry = dest_ref.startswith("docker://localhost:") or dest_ref.startswith("docker://127.0.0.1:")
         attempt = 0
         while attempt < max_retries:
             try:
@@ -748,6 +820,8 @@ class DockerService:
                 logger.info(f"Pushing image (attempt {attempt}/{max_retries}): {source_ref} -> {dest_ref}")
                 
                 cmd = [SKOPEO_CMD, "copy", source_ref, dest_ref]
+                if insecure_local_registry:
+                    cmd.insert(2, "--dest-tls-verify=false")
                 logger.debug(f"Push command: {' '.join(cmd)}")
 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)

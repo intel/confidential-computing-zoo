@@ -25,6 +25,7 @@ from .tlog.types import (
     CommitQueueStatus, LatestState, VerificationResult, SubmitStatus
 )
 from .tlog.errors import RecordNotFoundError, BackendSubmitError, VerificationError
+from .trucon.database import get_chain_state
 from .trucon.internal_transport import request_json
 
 logger = logging.getLogger(__name__)
@@ -627,7 +628,7 @@ class TrustedLogAPI:
         # Generate idempotency key for retry safety
         idempotency_key = (commit_options or {}).get("idempotency_key") or f"idk-{uuid.uuid4().hex[:12]}"
 
-        if chain_id != "default":
+        if get_chain_state(chain_id) is None:
             self.init_chain(chain_id)
 
         reservation = self._reserve_commit_intent(chain_id=chain_id, idempotency_key=idempotency_key)

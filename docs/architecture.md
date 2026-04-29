@@ -183,7 +183,9 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Launch commits now carry workload-scoped launch identity (`workload_id`, `launch_id`), launch outcome, `launch_config_digest`, and explicit security projection fields (`privileged`, `network_mode`, `mounts`, `devices`, `capabilities`).
 - Continues exposing status endpoints for build/publish/launch results.
 - On startup (`lifespan()`), generates or reuses a chain-owner ECDSA P-384 keypair in the TEE-backed initialization flow and completes the reservation-backed `/init-chain` bootstrap for Event Log 0 (baseline record). The baseline payload carries the corresponding public key as `pub_key`, and that key is now modeled as the chain's single long-term owner key rather than as a bootstrap-only artifact. The `default`-chain init path signs Event Log 0 as a Sigstore DSSE bundle with `sequence_num=1`, `prev_event_digest=null`, and `prev_lookup_hash=null` so it can follow the same immutable-backend submission path as other public records; later replayable writes are authorized by signatures from the same owner key.
+- Startup-time default-chain initialization is now explicitly optional. In environments where Sigstore identity acquisition would require an interactive browser login, `INIT_DEFAULT_CHAIN_ON_STARTUP=false` keeps tc_api startup non-blocking so health checks and business APIs can come up even when the trust baseline must be deferred.
 - For Sigstore-backed public records, the current implementation uses Sigstore's real `sign_dsse()` path, which both issues the Fulcio-backed signing certificate and creates the transparency-log entry before the bundle is forwarded to TruCon. As a result, the bundle arriving at TruCon may already carry a confirmed Rekor log entry.
+- Service-side Sigstore identity handling now prefers reuse over reacquisition. tc_api first checks an explicit environment token, then process / disk cache, evaluates the token's JWT `exp` against a configurable minimum TTL, and only falls back to interactive acquisition when no reusable token exists and interactive refresh is explicitly enabled. This is particularly important for the default Sigstore Dex federation issuer, whose tokens are short-lived and otherwise lead to repeated browser logins during multi-step flows.
 - After Rekor confirmation, the target design is to submit replayable records as Rekor `intoto` entries so public retrieval can materialize verifier-critical payload facts from Rekor attestation storage. The OCI artifact mirror remains available as a non-authoritative fallback keyed by `payload_hash`, and is consumed only when public Rekor body plus attestation retrieval is insufficient for replay.
 - Real public-Rekor validation has now confirmed that this `intoto` path depends on the v0.0.2 write contract, not just the high-level entry kind: the adapter must submit `apiVersion=0.0.2`, must encode envelope payload/signature fields exactly as Rekor's v0.0.2 decoder expects, and must include `content.hash` for the original DSSE envelope JSON so Rekor can canonicalize the entry.
 
@@ -235,6 +237,32 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Initialization is a logical state: subsequent `/commit` calls can proceed while Event Log 0 is still pending Rekor confirmation. Ordered submission guarantees baseline is published first.
 - If baseline submission fails terminally, the chain is considered dead (no trust anchor).
 - The same `/init-chain` bootstrap is now used for both the startup `default` chain and previously unseen non-`default` workload chains. The tc_api-side trusted-log client performs this bootstrap automatically before the first business/runtime commit on a new workload chain.
+
+### 4.3.1 Operational Notes for Short-Lived OIDC Tokens
+
+The default public keyless issuer used by Sigstore (`https://oauth2.sigstore.dev/auth`) is a Dex-style federated issuer. In practice it often brokers GitHub, Google, or Microsoft login and returns very short-lived identity tokens.
+
+That lifetime is not something tc_api can extend client-side. The practical mitigation is to minimize unnecessary fresh login flows:
+
+- cache the fetched token in memory and on disk;
+- decode and check `exp` before each signing attempt;
+- reuse the token while its remaining lifetime stays above a safety margin;
+- prefer non-interactive reuse during build / publish / launch rather than forcing each step to call `Issuer.production().identity_token()` independently.
+
+For remote SSH sessions, the preferred human login path is the out-of-band helper flow (`tc_api.oidc_preflight --fetch --force-oob`) rather than relying on a remote-machine `localhost:<port>` callback.
+
+This does not change the issuer's short token lifetime. It does change tc_api's operational behavior from "login per signing site" to "fetch once, reuse until near expiry, refresh only when necessary".
+
+### 4.3.2 Local Smoke Registry Behavior
+
+For local smoke validation, tc_api now supports publishing to a local insecure registry such as `localhost:5000` backed by `registry:2`.
+
+This is implemented as a local-test-only transport adjustment in the publish path:
+
+- if the destination registry host is `localhost` or `127.0.0.1`, `skopeo copy` is invoked with destination TLS verification disabled;
+- this is intended only for local acceptance and smoke tests, not for general remote registry publication.
+
+The same testing cycle also established that the local image-encryption path cannot rely on `skopeo`'s `docker-daemon:` transport against the current Docker daemon API floor. The current build path therefore exports the image with `docker save` and encrypts from `docker-archive:` instead, which preserves the intended encryption behavior while avoiding Docker API negotiation failures in the local environment.
 
 **Single-owner trust model:**
 - Event Log 0 declares exactly one chain owner public key in `pub_key`. That key is the chain-local writer authority for later replayable records until a future change introduces rotation or delegation.

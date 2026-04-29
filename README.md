@@ -444,6 +444,40 @@ python -m tc_api.main
 
 The service will start at http://localhost:8000.
 
+### TD VM Acceptance Steps
+
+Use this sequence as the standard acceptance path on a real TD VM.
+
+1. Install `pytest` if the VM does not already provide it:
+
+```bash
+sudo apt-get update && sudo apt-get install -y python3-pytest
+```
+
+2. Verify the repository's current TDX quote adapter can obtain a real quote on this VM:
+
+```bash
+PYTHONPATH=/home/siyuan/tc_api/src python3 tests/check_real_tdx_quote.py
+```
+
+Expected result:
+- `repo_adapter.ok` is `true`
+- `libtdx_probe.ok` is `true`
+
+3. Run the TD VM smoke test. The smoke runner now executes the quote check automatically unless `--skip-quote-check` is passed:
+
+```bash
+PYTHONPATH=/home/siyuan/tc_api/src python3 tdvm_smoke_test.py --summary-file /tmp/tdvm-smoke-summary.json
+```
+
+If you only want to validate quote acquisition without starting the service, run the dedicated checker from step 2. The smoke runner still expects the TC API service to be reachable because it continues into health, build, and later stages after the quote check succeeds.
+
+If you want a shorter service-backed smoke run after the quote check, you can stop after build with:
+
+```bash
+PYTHONPATH=/home/siyuan/tc_api/src python3 tdvm_smoke_test.py --skip-publish --summary-file /tmp/tdvm-build-summary.json
+```
+
 ### Deploy with Docker
 
 ### Build image & start service in container

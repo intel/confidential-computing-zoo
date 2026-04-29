@@ -3,6 +3,7 @@ import sqlite3
 import threading
 import json
 import time
+import ctypes
 from tc_api.trucon.database import init_db, insert_record, get_pending_records, delete_record
 from tc_api.tlog_client import TrustedLogAPI
 from tc_api.tlog.local_mr import LocalMRAdapter
@@ -83,3 +84,94 @@ def test_tdx_mr_adapter(tmp_path):
     # Ensure binary content was written
     written_bytes = path.read_bytes()
     assert written_bytes == bytes.fromhex(new_hash)
+
+def test_tdx_mr_adapter_reads_rtmr_from_tdreport_when_sysfs_missing(monkeypatch):
+    adapter = TdxMRAdapter(sysfs_base_path="/nonexistent/rtmr")
+    report = bytearray(1024)
+    expected_rtmr = bytes.fromhex("22" * 48)
+    report[288:336] = expected_rtmr
+
+    class FakeGetReport:
+        argtypes = None
+        restype = None
+
+        def __call__(self, report_data_ptr, report_ptr):
+            typed_report_ptr = ctypes.cast(report_ptr, ctypes.POINTER(__import__("tc_api.trucon.adapters.tdx_mr", fromlist=["_TdxReport"])._TdxReport))
+            typed_report_ptr.contents.d[:] = report
+            return 0
+
+    class FakeLibrary:
+        def __init__(self):
+            self.tdx_att_get_report = FakeGetReport()
+
+    monkeypatch.setattr(adapter, "_load_attest_library", lambda: FakeLibrary())
+
+    assert adapter.read(2) == expected_rtmr.hex()
+
+
+def test_tdx_mr_adapter_extends_via_libtdx_attest_when_sysfs_missing(monkeypatch):
+    adapter = TdxMRAdapter(sysfs_base_path="/nonexistent/rtmr")
+    values = iter(["00" * 48, "33" * 48])
+
+    class FakeExtend:
+        argtypes = None
+        restype = None
+
+        def __call__(self, event_ptr):
+            event_type = __import__("tc_api.trucon.adapters.tdx_mr", fromlist=["_TdxRtmrEvent"])._TdxRtmrEvent
+            typed_ptr = ctypes.cast(event_ptr, ctypes.POINTER(event_type))
+            event = typed_ptr.contents
+            assert event.version == 1
+            assert event.rtmr_index == 2
+            assert bytes(event.extend_data) == bytes.fromhex("11" * 48)
+            assert event.event_data_size == 0
+            return 0
+
+    class FakeGetReport:
+        argtypes = None
+        restype = None
+
+        def __call__(self, report_data_ptr, report_ptr):
+            return 0
+
+    class FakeLibrary:
+        def __init__(self):
+            self.tdx_att_get_report = FakeGetReport()
+            self.tdx_att_extend = FakeExtend()
+
+    monkeypatch.setattr(adapter, "_load_attest_library", lambda: FakeLibrary())
+    monkeypatch.setattr(adapter, "read", lambda index: next(values))
+
+    new_val, prev_val = adapter.extend(2, "11" * 48)
+
+    assert prev_val == "00" * 48
+    assert new_val == "33" * 48
+
+
+def test_tdx_mr_adapter_reports_libtdx_attest_extend_errors(monkeypatch):
+    adapter = TdxMRAdapter(sysfs_base_path="/nonexistent/rtmr")
+
+    class FakeExtend:
+        argtypes = None
+        restype = None
+
+        def __call__(self, event_ptr):
+            return 0x0006
+
+    class FakeGetReport:
+        argtypes = None
+        restype = None
+
+        def __call__(self, report_data_ptr, report_ptr):
+            return 0
+
+    class FakeLibrary:
+        def __init__(self):
+            self.tdx_att_get_report = FakeGetReport()
+            self.tdx_att_extend = FakeExtend()
+
+    monkeypatch.setattr(adapter, "_load_attest_library", lambda: FakeLibrary())
+    monkeypatch.setattr(adapter, "read", lambda index: "00" * 48)
+
+    with pytest.raises(RuntimeError, match="TDX_ATTEST_ERROR_EXTEND_FAILURE"):
+        adapter.extend(2, "11" * 48)

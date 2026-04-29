@@ -775,6 +775,11 @@ async def lifespan(app: FastAPI):
         if TdxMRAdapter.is_available(RTMR_INDEX):
             _local_mr = TdxMRAdapter()
             logger.info("TDX RTMR adapter initialized")
+        elif TdxMRAdapter.is_report_read_available(RTMR_INDEX):
+            logger.warning(
+                "NON-TEE MODE: TDX RTMR sysfs not found, but TDREPORT-backed RTMR reads are available; "
+                "running without hardware measurement extensions because no extend interface is available on this platform"
+            )
         else:
             logger.warning("NON-TEE MODE: TDX RTMR sysfs not found — running without hardware measurement extensions (development/testing only)")
     except Exception as e:

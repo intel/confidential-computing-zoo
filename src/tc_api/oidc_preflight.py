@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 import jwt
 from sigstore.oidc import IdentityToken, Issuer
 import sigstore.oidc as sigstore_oidc
+from .sigstore_identity import cache_sigstore_identity_token, token_seconds_remaining
 
 
 DEFAULT_TOKEN_ENV = "TC_API_REAL_REKOR_IDENTITY_TOKEN"
@@ -41,6 +42,7 @@ def _load_token(args: argparse.Namespace) -> str:
         raise ValueError(
             f"No token supplied. Set {args.env_var}, pass --stdin, or use --prompt-token for interactive entry."
         )
+    cache_sigstore_identity_token(token)
     return token
 
 
@@ -101,8 +103,11 @@ def _fetch_token(args: argparse.Namespace) -> str:
         if hasattr(sigstore_oidc.webbrowser, "_oidc_preflight_original_open"):
             delattr(sigstore_oidc.webbrowser, "_oidc_preflight_original_open")
     if isinstance(token, IdentityToken):
-        return str(token)
-    return str(token).strip()
+        raw_token = str(token)
+    else:
+        raw_token = str(token).strip()
+    cache_sigstore_identity_token(raw_token)
+    return raw_token
 
 
 def _utc_now_epoch() -> int:

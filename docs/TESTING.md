@@ -64,6 +64,116 @@ Backward-compatible wrappers still work:
 bash run_tests.sh --type all
 ```
 
+## TD VM Acceptance
+
+For a real Intel TDX TD VM, treat quote acquisition and end-to-end smoke as separate acceptance gates.
+
+Recommended order:
+
+```bash
+python -m pytest tests/test_tdx_quote_adapter.py -q
+python tests/check_real_tdx_quote.py
+bash start.sh
+PYTHONPATH=$PWD/src python tdvm_smoke_test.py --summary-file /tmp/tdvm-smoke-summary.json
+```
+
+What each step validates:
+
+- `tests/test_tdx_quote_adapter.py` keeps adapter-level fallback behavior deterministic.
+- `tests/check_real_tdx_quote.py` validates real quote acquisition on the current VM and compares the repository adapter against a direct `libtdx_attest` probe.
+- `tdvm_smoke_test.py` validates service readiness, build, SBOM, encryption, and optionally publish / deploy.
+
+### Real TDX Quote Path on Current TD VM
+
+The current repository implementation supports two quote paths:
+
+- configfs / TSM path via `/sys/kernel/config/tsm/report/reportdata` and `/sys/kernel/config/tsm/report/outblob`;
+- `libtdx_attest` fallback for TD VMs where configfs quote interfaces are absent.
+
+On the current real TD VM, the observed working path is the `libtdx_attest` flow rather than configfs. Practical indicators were:
+
+- `/sys/kernel/config/tsm/report/reportdata` and `/sys/kernel/config/tsm/report/outblob` do not exist;
+- `/dev/tdx_guest` and `/etc/tdx-attest.conf` are present;
+- direct probing through `libtdx_attest.so` succeeds and matches the repository adapter output.
+
+This is why `src/tc_api/trucon/adapters/tdx_quote.py` now falls back to `libtdx_attest` when configfs quote files are unavailable.
+
+### TD VM Smoke Behavior
+
+`tdvm_smoke_test.py` is the standard smoke entrypoint for a real TD VM.
+
+Important current behavior:
+
+- it can run the repository-backed real quote check before touching the API service;
+- it uses stdlib HTTP only, so it does not depend on `requests` being installed;
+- it auto-skips `publish` and `deploy` when `DOCKER_REPOSITORY` is unset or still contains the placeholder value;
+- it writes a machine-readable summary file when `--summary-file` is provided.
+
+For build-only validation on a TD VM without registry setup:
+
+```bash
+PYTHONPATH=$PWD/src python tdvm_smoke_test.py --skip-deploy --summary-file /tmp/tdvm-smoke-summary.json
+```
+
+### Local Registry Publish Smoke
+
+When validating publish without relying on an external registry, a local `registry:2` container is enough:
+
+```bash
+docker rm -f tc-api-local-registry >/dev/null 2>&1 || true
+docker run -d --name tc-api-local-registry -p 5000:5000 registry:2
+export DOCKER_REPOSITORY=localhost:5000/tcapi
+```
+
+The current service implementation treats `localhost` / `127.0.0.1` registry targets as insecure local registries and uses `skopeo copy --dest-tls-verify=false` for that path. This is only intended for local smoke validation.
+
+## Sigstore OIDC in Remote / SSH Environments
+
+Short-lived Sigstore OIDC tokens from `https://oauth2.sigstore.dev/auth` typically expire in about 60 seconds. The current implementation reduces repeated browser logins by caching and reusing still-valid tokens.
+
+Relevant environment variables:
+
+```bash
+TC_API_REAL_REKOR_IDENTITY_TOKEN
+TC_API_REAL_REKOR_IDENTITY_TOKEN_CACHE
+TC_API_REAL_REKOR_IDENTITY_TOKEN_MIN_TTL
+TC_API_SIGSTORE_INTERACTIVE_LOGIN
+```
+
+Current behavior:
+
+- the service first checks `TC_API_REAL_REKOR_IDENTITY_TOKEN`;
+- then it checks in-process memory and the on-disk cache, defaulting to `/dev/shm/tc_api_sigstore_identity_token.json`;
+- it parses the JWT `exp` claim and only reuses tokens whose remaining lifetime is above the configured minimum TTL;
+- only when no reusable token exists does it fall back to interactive acquisition, and only if `TC_API_SIGSTORE_INTERACTIVE_LOGIN=true`.
+
+For SSH or other remote environments, prefer the out-of-band login path instead of the local callback flow:
+
+```bash
+PYTHONPATH=$PWD/src python -m tc_api.oidc_preflight --fetch --force-oob
+```
+
+That flow prints a browser URL and a one-time verification-code prompt, which avoids the common problem where remote `localhost:<port>` callback URLs cannot be opened reliably from the user's local browser.
+
+### One-Login Build / Publish Validation
+
+The following sequence was validated successfully on the current environment:
+
+```bash
+docker rm -f tc-api-local-registry >/dev/null 2>&1 || true
+docker run -d --name tc-api-local-registry -p 5000:5000 registry:2
+
+export DOCKER_REPOSITORY=localhost:5000/tcapi
+export TC_API_SIGSTORE_INTERACTIVE_LOGIN=false
+export TC_API_REAL_REKOR_IDENTITY_TOKEN_MIN_TTL=0
+
+bash start.sh
+PYTHONPATH=$PWD/src python -m tc_api.oidc_preflight --fetch --force-oob
+PYTHONPATH=$PWD/src python tdvm_smoke_test.py --skip-preflight --skip-quote-check --skip-deploy --summary-file /tmp/tdvm-token-reuse-smoke.json
+```
+
+This verified the intended operational property: one OIDC login was sufficient for the subsequent build and publish flow, with no second browser login prompt during the service-side Sigstore operations.
+
 ## Verification CLI Checks
 
 The operator-facing chain verification CLI can be exercised directly:

@@ -33,6 +33,7 @@ GIT_EMAIL = config("GIT_EMAIL", default="####@i###.com")
 
 # Runtime feature flags
 ENABLE_TDX = config("ENABLE_TDX", default=False, cast=bool)
+INIT_DEFAULT_CHAIN_ON_STARTUP = config("INIT_DEFAULT_CHAIN_ON_STARTUP", default=True, cast=bool)
 
 # Trust API Configuration
 TRUCON_URL = config("TRUCON_URL", default="http://127.0.0.1:8001")

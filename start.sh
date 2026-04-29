@@ -42,9 +42,12 @@ mkdir -p uploads builds logs /dev/shm
 export HOST=${HOST:-0.0.0.0}
 export PORT=${PORT:-8000}
 export TRUCON_PORT=${TRUCON_PORT:-8001}
+export TC_API_WORKERS=${TC_API_WORKERS:-1}
 export DOCKTAP_SOCKET=${DOCKTAP_SOCKET:-/var/run/docktap/docker.sock}
 export TRUCON_UDS_PATH=${TRUCON_UDS_PATH:-/var/run/trucon/trucon.sock}
 export DEBUG=${DEBUG:-false}
+export INIT_DEFAULT_CHAIN_ON_STARTUP=${INIT_DEFAULT_CHAIN_ON_STARTUP:-false}
+export PYTHON_BIN=${PYTHON_BIN:-python3}
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
 # Create Docktap proxy socket directory
@@ -75,7 +78,7 @@ fi
 export TRUCON_URL="http://127.0.0.1:${TRUCON_PORT}"
 
 echo "Starting Docktap (Docker proxy sidecar) on $DOCKTAP_SOCKET..."
-python -m docktap.main --socket-path "$DOCKTAP_SOCKET" --docker-socket-path /var/run/docker.sock &
+"$PYTHON_BIN" -m docktap.main --socket-path "$DOCKTAP_SOCKET" --docker-socket-path /var/run/docker.sock &
 DOCKTAP_PID=$!
 
 # Wait briefly for Docktap to be ready
@@ -110,5 +113,5 @@ if [ "$1" = "dev" ]; then
     uvicorn tc_api.main:app --host $HOST --port $PORT --reload
 else
     echo "Starting in production mode..."
-    uvicorn tc_api.main:app --host $HOST --port $PORT --workers 4
+    uvicorn tc_api.main:app --host $HOST --port $PORT --workers "$TC_API_WORKERS"
 fi

@@ -12,15 +12,16 @@ import shutil
 import logging
 import hashlib
 import pickle
-from sigstore.oidc import Issuer
 from .tlog_client import TrustedLogAPI
 from .tlog.types import Entry
 from .models import *
 from .services import DockerService
 from .kbs_service import KBSService
+from .sigstore_identity import resolve_sigstore_identity_token
 from .config import (
     HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR,
-    DOCKER_REGISTRY, DOCKER_REPOSITORY, ENABLE_TDX, TRUCON_URL
+    DOCKER_REGISTRY, DOCKER_REPOSITORY, ENABLE_TDX, TRUCON_URL,
+    INIT_DEFAULT_CHAIN_ON_STARTUP,
 )
 
 # Setup logging
@@ -58,11 +59,14 @@ async def lifespan(app: FastAPI):
         trucon_url=TRUCON_URL,
     )
 
-    # Initialize the default chain (Event Log 0 baseline)
-    try:
-        app.state.trusted_log.init_chain("default")
-    except Exception as e:
-        logger.warning("init-chain for 'default' failed (non-fatal): %s", e)
+    # Optionally initialize the default chain (Event Log 0 baseline).
+    if INIT_DEFAULT_CHAIN_ON_STARTUP:
+        try:
+            app.state.trusted_log.init_chain("default")
+        except Exception as e:
+            logger.warning("init-chain for 'default' failed (non-fatal): %s", e)
+    else:
+        logger.info("Skipping default chain initialization during startup")
     
     yield
     
@@ -308,20 +312,21 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
         logger.info("Committing build transparency log")
         log_proxy_configuration("Build transparency log")
 
-        from sigstore.oidc import Issuer
-        issuer = Issuer.production()
-        identity_token = issuer.identity_token()
+        identity_token = resolve_sigstore_identity_token("build", logger=logger, min_ttl_seconds=0)
+        tlog_id = None
+        if identity_token:
+            tlog_status, tlog_id = docker_service.commit_and_save_receipt("build", build_id, tlog, record_id, identity_token)
+            docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", build_id)
+            if tlog_status:
+                logger.info("Save build transparency success.")
+            else:
+                logger.info("Save build transparency failed.")
 
-        tlog_status, tlog_id = docker_service.commit_and_save_receipt("build", build_id, tlog, record_id, str(identity_token))
-        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", build_id)
-        if tlog_status:
-            logger.info(f"Save build transparency success.")
+            # Verify chain state via TruCon
+            logger.info("Verify chain state")
+            verify_tlog_status = docker_service.verify_chain_state("build", tlog)
         else:
-            logger.info(f"Save build transparency failed.")
-
-        # Verify chain state via TruCon
-        logger.info("Verify chain state")
-        verify_tlog_status = docker_service.verify_chain_state("build", tlog)
+            verify_tlog_status = "skipped"
 
         # Update build status with success
         logger.info(f"Build completed successfully for build ID: {build_id}")
@@ -390,7 +395,7 @@ async def publish_package(request: PublishPackageRequest):
             logger.error(f"Image push failed for build ID {request.build_id}: {str(e)}")
             tlog.add_entry(record_id, Entry(key="publish_status", value={"publish_status": "failed",
                                 "error": str(e)}))
-            docker_service.update_build_status(
+            docker_service.update_publish_status(
                 request.user_id,
                 request.build_id,
                 "failed",
@@ -398,7 +403,7 @@ async def publish_package(request: PublishPackageRequest):
                 step="Image push failed",
                 error_message=f"Image push failed: {str(e)}"
             )
-            return
+            raise HTTPException(status_code=400, detail=f"Image push failed: {str(e)}")
         
         # Push SBOM
         logger.info(f"Starting get key from KBS")
@@ -449,23 +454,24 @@ async def publish_package(request: PublishPackageRequest):
                     #image_url=request.image_url,
                     error_message=f"Image signing or SBOM attestation failed: {str(e)}"
                 )
-                return
+                raise HTTPException(status_code=500, detail=f"Image signing or SBOM attestation failed: {str(e)}")
 
-        from sigstore.oidc import Issuer
-        issuer = Issuer.production()
-        identity_token = issuer.identity_token()
-
+        identity_token = resolve_sigstore_identity_token("publish", logger=logger, min_ttl_seconds=0)
+        tlog_id = None
+        if identity_token:
 		# Sign and submit to transparency log
-        tlog_status, tlog_id = docker_service.commit_and_save_receipt("publish", request.build_id, tlog, record_id, str(identity_token))
-        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", request.build_id)
-        if tlog_status:
-            logger.info(f"Save publish transparency success.")
-        else:
-            logger.info(f"Save publish transparency failed.")
+            tlog_status, tlog_id = docker_service.commit_and_save_receipt("publish", request.build_id, tlog, record_id, identity_token)
+            docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", request.build_id)
+            if tlog_status:
+                logger.info(f"Save publish transparency success.")
+            else:
+                logger.info(f"Save publish transparency failed.")
 
 		# Verify transparencyLog
-        logger.info("Verify transparencyLog")
-        verify_tlog_status = docker_service.verify_chain_state("build", tlog)
+            logger.info("Verify transparencyLog")
+            verify_tlog_status = docker_service.verify_chain_state("build", tlog)
+        else:
+            verify_tlog_status = "skipped"
 
         docker_service.update_publish_status(request.user_id, request.build_id, "success", publish_id,
                                              step="complete publish verify",
@@ -739,19 +745,21 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, workloa
             "instance_ids": instance_ids
         }
 
-        from sigstore.oidc import Issuer
-        issuer = Issuer.production()
-        identity_token = issuer.identity_token()
-        tlog_status, log_id = docker_service.commit_and_save_receipt("launch", launch_id, tlog, record_id, str(identity_token))
-        docker_service.update_transparencylog_status(request.user_id, str(log_id), "added", launch_id)
-        if tlog_status:
-            logger.info(f"Save build transparency success.")
-        else:
-            logger.info(f"Save build transparency failed.")
+        identity_token = resolve_sigstore_identity_token("launch", logger=logger, min_ttl_seconds=0)
+        log_id = None
+        if identity_token:
+            tlog_status, log_id = docker_service.commit_and_save_receipt("launch", launch_id, tlog, record_id, identity_token)
+            docker_service.update_transparencylog_status(request.user_id, str(log_id), "added", launch_id)
+            if tlog_status:
+                logger.info(f"Save build transparency success.")
+            else:
+                logger.info(f"Save build transparency failed.")
 
-        # Verify transparencyLog
-        logger.info("Verify transparencyLog")
-        verify_tlog_status = docker_service.verify_chain_state("launch", tlog)
+            # Verify transparencyLog
+            logger.info("Verify transparencyLog")
+            verify_tlog_status = docker_service.verify_chain_state("launch", tlog)
+        else:
+            verify_tlog_status = "skipped"
 
         # Update launch status to success
         docker_service.update_launch_status(
@@ -845,19 +853,21 @@ async def create_lunks(request: CreateLunksRequest):
         else:
             print("Proxy is unsetted.")
 
-        from sigstore.oidc import Issuer
-        issuer = Issuer.production()
-        identity_token = issuer.identity_token()
-        tlog_status, tlog_id = docker_service.commit_and_save_receipt("create_lunks", '', tlog, record_id, str(identity_token))
-        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "creating lunks block", '')
-        if tlog_status:
-            logger.info(f"Save create_lunks transparency success.")
-        else:
-            logger.info(f"Save create_lunks transparency failed.")
+        identity_token = resolve_sigstore_identity_token("create_lunks", logger=logger, allow_interactive=True)
+        tlog_id = None
+        if identity_token:
+            tlog_status, tlog_id = docker_service.commit_and_save_receipt("create_lunks", '', tlog, record_id, identity_token)
+            docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "creating lunks block", '')
+            if tlog_status:
+                logger.info(f"Save create_lunks transparency success.")
+            else:
+                logger.info(f"Save create_lunks transparency failed.")
 
-        # Verify transparencyLog
-        logger.info("Verify transparencyLog")
-        verify_tlog_status = docker_service.verify_chain_state("create_lunks", tlog)
+            # Verify transparencyLog
+            logger.info("Verify transparencyLog")
+            verify_tlog_status = docker_service.verify_chain_state("create_lunks", tlog)
+        else:
+            verify_tlog_status = "skipped"
 
         del os.environ['http_proxy']
         del os.environ['https_proxy']
@@ -908,19 +918,21 @@ async def create_lunks(request: MountLunksRequest):
         else:
             print("Proxy is unsetted.")
 
-        from sigstore.oidc import Issuer
-        issuer = Issuer.production()
-        identity_token = issuer.identity_token()
-        tlog_status, tlog_id = docker_service.commit_and_save_receipt("mount_lunks", '', tlog, record_id, str(identity_token))
-        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "mount_lunks block", '')
-        if tlog_status:
-            logger.info(f"Save build transparency success.")
-        else:
-            logger.info(f"Save build transparency failed.")
+        identity_token = resolve_sigstore_identity_token("mount_lunks", logger=logger, allow_interactive=True)
+        tlog_id = None
+        if identity_token:
+            tlog_status, tlog_id = docker_service.commit_and_save_receipt("mount_lunks", '', tlog, record_id, identity_token)
+            docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "mount_lunks block", '')
+            if tlog_status:
+                logger.info(f"Save build transparency success.")
+            else:
+                logger.info(f"Save build transparency failed.")
 
-        # Verify transparencyLog
-        logger.info("Verify transparencyLog")
-        verify_tlog_status = docker_service.verify_chain_state("mount_lunks", tlog)
+            # Verify transparencyLog
+            logger.info("Verify transparencyLog")
+            verify_tlog_status = docker_service.verify_chain_state("mount_lunks", tlog)
+        else:
+            verify_tlog_status = "skipped"
 
         del os.environ['http_proxy']
         del os.environ['https_proxy']
@@ -973,19 +985,21 @@ async def create_lunks(request: UnmountLunksRequest):
         else:
             print("Proxy is unsetted.")
 
-        from sigstore.oidc import Issuer
-        issuer = Issuer.production()
-        identity_token = issuer.identity_token()
-        tlog_status, tlog_id = docker_service.commit_and_save_receipt("unmount_lunks", '', tlog, record_id, str(identity_token))
-        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "unmount_lunks block", '')
-        if tlog_status:
-            logger.info(f"Save build transparency success.")
-        else:
-            logger.info(f"Save build transparency failed.")
+        identity_token = resolve_sigstore_identity_token("unmount_lunks", logger=logger, allow_interactive=True)
+        tlog_id = None
+        if identity_token:
+            tlog_status, tlog_id = docker_service.commit_and_save_receipt("unmount_lunks", '', tlog, record_id, identity_token)
+            docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "unmount_lunks block", '')
+            if tlog_status:
+                logger.info(f"Save build transparency success.")
+            else:
+                logger.info(f"Save build transparency failed.")
 
-        # Verify transparencyLog
-        logger.info("Verify transparencyLog")
-        verify_tlog_status = docker_service.verify_chain_state("unmount_lunks", tlog)
+            # Verify transparencyLog
+            logger.info("Verify transparencyLog")
+            verify_tlog_status = docker_service.verify_chain_state("unmount_lunks", tlog)
+        else:
+            verify_tlog_status = "skipped"
 
         del os.environ['http_proxy']
         del os.environ['https_proxy']

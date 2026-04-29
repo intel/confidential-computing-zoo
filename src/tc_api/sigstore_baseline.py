@@ -10,8 +10,9 @@ from sigstore._internal.trust import TrustedRoot
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from sigstore.dsse import StatementBuilder, Subject
-from sigstore.oidc import IdentityToken, Issuer
+from sigstore.oidc import IdentityToken
 from sigstore.sign import SigningContext
+from .sigstore_identity import resolve_sigstore_identity_token_object
 
 
 _OWNER_KEY_LOCK = Lock()
@@ -43,10 +44,14 @@ def _resolve_identity_token(identity_token_str: Optional[str] = None) -> Identit
     if identity_token_str:
         return IdentityToken(identity_token_str)
 
-    token = Issuer.production().identity_token()
-    if isinstance(token, IdentityToken):
-        return token
-    return IdentityToken(str(token))
+    token = resolve_sigstore_identity_token_object("baseline")
+    if token is None:
+        raise RuntimeError(
+            "No reusable Sigstore identity token is available for baseline signing. "
+            "Set TC_API_REAL_REKOR_IDENTITY_TOKEN, pre-populate the token cache, "
+            "or enable TC_API_SIGSTORE_INTERACTIVE_LOGIN=true."
+        )
+    return token
 
 
 def generate_chain_owner_pub_key_pem(chain_id: str) -> str:
