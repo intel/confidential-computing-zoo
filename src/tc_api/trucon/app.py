@@ -68,7 +68,7 @@ from .database import (
 from tc_api.sigstore_baseline import build_baseline_sigstore_bundle
 from .adapters.oci_mirror import OciBundleMirror, build_mirror_annotations
 from .adapters.sigstore import SigstoreLogAdapter
-from .adapters.ccel import compute_ccel_digest
+from .adapters.ccel import compute_ccel_digest, read_ccel_eventlog_b64
 from .adapters.tdx_quote import TdxQuoteAdapter
 from .internal_transport import (
     AUTH_TRANSPORT_HEADER,
@@ -238,10 +238,12 @@ def _create_workload_chain_baseline(
 
     try:
         ccel_digest = compute_ccel_digest()
+        ccel_eventlog_b64 = read_ccel_eventlog_b64()
         signed_bundle, pub_key_pem, event_digest = build_baseline_sigstore_bundle(
             chain_id=chain_id,
             rtmr_value=rtmr_value,
             ccel_digest=ccel_digest,
+            ccel_eventlog_b64=ccel_eventlog_b64,
             identity_token_str=identity_token_str,
             rekor_url=getattr(_immutable_log, "rekor_url", None),
         )
@@ -383,6 +385,7 @@ class LatestStateResponse(BaseModel):
 class InitChainBaselineResponse(BaseModel):
     rtmr_value: Optional[str] = None
     ccel_digest: Optional[str] = None
+    ccel_eventlog_b64: Optional[str] = None
     init_token: str
 
 class InitChainRequest(BaseModel):
@@ -918,8 +921,9 @@ def get_init_chain_baseline(chain_id: str):
             except Exception as e:
                 logger.error("Failed to read RTMR[%d]: %s", RTMR_INDEX, e)
 
-        # Compute CCEL digest
+        # Compute CCEL baseline material
         ccel_digest = compute_ccel_digest()
+        ccel_eventlog_b64 = read_ccel_eventlog_b64()
 
         # Generate init_token
         init_token = secrets.token_urlsafe(32)
@@ -927,11 +931,13 @@ def get_init_chain_baseline(chain_id: str):
             "chain_id": chain_id,
             "rtmr_value": rtmr_value,
             "ccel_digest": ccel_digest,
+            "ccel_eventlog_b64": ccel_eventlog_b64,
         }
 
         return InitChainBaselineResponse(
             rtmr_value=rtmr_value,
             ccel_digest=ccel_digest,
+            ccel_eventlog_b64=ccel_eventlog_b64,
             init_token=init_token,
         )
 

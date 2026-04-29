@@ -41,6 +41,7 @@ def test_build_baseline_sigstore_bundle_contains_replay_fields(mock_signing_ctx,
             chain_id="default",
             rtmr_value="11" * 48,
             ccel_digest="sha384:" + ("22" * 48),
+            ccel_eventlog_b64="Zm9v",
             identity_token_str="mock-token",
         )
 
@@ -52,5 +53,5 @@ def test_build_baseline_sigstore_bundle_contains_replay_fields(mock_signing_ctx,
     assert captured_predicate["digest"] == event_digest
     assert len(captured_predicate["entry_digests"]) == 3
     assert any(entry["key"] == "baseline_rtmr" for entry in captured_predicate["entries"])
-    assert any(entry["key"] == "ccel_digest" for entry in captured_predicate["entries"])
+    assert any(entry["key"] == "ccel_eventlog_b64" and entry["value"] == "Zm9v" for entry in captured_predicate["entries"])
     assert any(entry["key"] == "pub_key" and entry["value"] == pub_key_pem for entry in captured_predicate["entries"])

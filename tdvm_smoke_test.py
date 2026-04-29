@@ -34,6 +34,18 @@ OPTIONAL_TDX_PATHS = (
 )
 REPO_ROOT = Path(__file__).resolve().parent
 REAL_QUOTE_CHECK_SCRIPT = REPO_ROOT / "tests" / "check_real_tdx_quote.py"
+SRC_ROOT = REPO_ROOT / "src"
+DEFAULT_TRUCON_UDS_PATH = "/var/run/trucon/trucon.sock"
+
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from tc_api.sigstore_baseline import build_baseline_sigstore_bundle
+from tc_api.sigstore_identity import resolve_sigstore_identity_token
+from tc_api.tlog_client import TrustedLogAPI
+from tc_api.trucon.adapters.ccel import read_ccel_eventlog_used_binary
+from tc_api.trucon.adapters.sigstore import SigstoreLogAdapter
+from tc_api.trucon.internal_transport import request_json, resolve_trucon_url
 
 
 class SmokeTestError(RuntimeError):
@@ -205,6 +217,205 @@ def run_quote_check(args: argparse.Namespace) -> Dict[str, Any]:
     if result.returncode != 0:
         raise SmokeTestError("Repository TDX quote adapter check failed")
     return payload
+
+
+def _entry_value(predicate_entries: list[Dict[str, Any]], key: str) -> Optional[str]:
+    for entry in predicate_entries:
+        if isinstance(entry, dict) and entry.get("key") == key:
+            value = entry.get("value")
+            return value if isinstance(value, str) else None
+    return None
+
+
+def _trucon_request(
+    method: str,
+    path: str,
+    timeout: int,
+    json_body: Optional[Dict[str, Any]] = None,
+    trucon_url: Optional[str] = None,
+    uds_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    try:
+        return request_json(
+            method,
+            path,
+            json_body=json_body,
+            caller_service="tc_api",
+            timeout=timeout,
+            trucon_url=trucon_url,
+            uds_path=uds_path,
+        )
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace") if exc.fp is not None else ""
+        raise SmokeTestError(
+            f"{method.upper()} {path} via TruCon failed with status {exc.code}: {body.strip()}"
+        ) from exc
+    except error.URLError as exc:
+        raise SmokeTestError(f"{method.upper()} {path} via TruCon failed: {exc}") from exc
+
+
+def run_baseline_chain_smoke(args: argparse.Namespace) -> Dict[str, Any]:
+    print_step("Running Event Log 0 baseline smoke against real TD VM CCEL material")
+
+    identity_token = resolve_sigstore_identity_token("tdvm_smoke_baseline", allow_interactive=False)
+    if not identity_token:
+        raise SmokeTestError(
+            "No reusable Sigstore identity token is available for baseline smoke. "
+            "Run tc_api.oidc_preflight --fetch --force-oob or set TC_API_REAL_REKOR_IDENTITY_TOKEN."
+        )
+
+    local_ccel_bytes = read_ccel_eventlog_used_binary()
+    if not local_ccel_bytes:
+        raise SmokeTestError("Unable to read non-empty CCEL event log bytes from the current TD VM")
+
+    local_ccel_b64 = encode_bytes(local_ccel_bytes)
+    chain_id = f"{args.user_id_prefix}-baseline-{uuid.uuid4().hex[:8]}"
+    trucon_url = resolve_trucon_url(args.trucon_url)
+    trucon_uds_path = args.trucon_uds_path or (
+        DEFAULT_TRUCON_UDS_PATH if Path(DEFAULT_TRUCON_UDS_PATH).exists() else None
+    )
+
+    baseline = _trucon_request(
+        "GET",
+        f"/init-chain/{chain_id}/baseline",
+        DEFAULT_TIMEOUT,
+        trucon_url=trucon_url,
+        uds_path=trucon_uds_path,
+    )
+    print_json(
+        "Baseline response",
+        {
+            "chain_id": chain_id,
+            "rtmr_value": baseline.get("rtmr_value"),
+            "ccel_digest": baseline.get("ccel_digest"),
+            "ccel_eventlog_b64_chars": len(baseline.get("ccel_eventlog_b64") or ""),
+            "ccel_eventlog_matches_local": baseline.get("ccel_eventlog_b64") == local_ccel_b64,
+        },
+    )
+
+    baseline_ccel_b64 = baseline.get("ccel_eventlog_b64")
+    if baseline_ccel_b64 != local_ccel_b64:
+        raise SmokeTestError("Baseline endpoint returned CCEL event log bytes that do not match local TD VM CCEL material")
+
+    reserve = _trucon_request(
+        "POST",
+        "/commit-intents/reserve",
+        DEFAULT_TIMEOUT,
+        json_body={
+            "chain_id": chain_id,
+            "idempotency_key": f"tdvm-smoke-init-{chain_id}",
+            "is_baseline": True,
+        },
+        trucon_url=trucon_url,
+        uds_path=trucon_uds_path,
+    )
+
+    signed_bundle, pub_key_pem, event_digest = build_baseline_sigstore_bundle(
+        chain_id=chain_id,
+        rtmr_value=baseline.get("rtmr_value"),
+        ccel_digest=baseline.get("ccel_digest"),
+        ccel_eventlog_b64=baseline_ccel_b64,
+        identity_token_str=identity_token,
+        rekor_url=args.rekor_url,
+        sequence_num=reserve.get("sequence_num", 1),
+        prev_event_digest=reserve.get("prev_event_digest"),
+        prev_lookup_hash=reserve.get("prev_lookup_hash"),
+    )
+
+    init_result = _trucon_request(
+        "POST",
+        "/init-chain",
+        DEFAULT_TIMEOUT,
+        json_body={
+            "chain_id": chain_id,
+            "init_token": baseline["init_token"],
+            "intent_token": reserve.get("intent_token"),
+            "signed_bundle": signed_bundle,
+            "pub_key": pub_key_pem,
+        },
+        trucon_url=trucon_url,
+        uds_path=trucon_uds_path,
+    )
+    print_json("Baseline init submission", init_result)
+
+    deadline = time.monotonic() + args.baseline_timeout
+    state: Dict[str, Any] = {}
+    verify_chain: Dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        state = _trucon_request(
+            "GET",
+            f"/chain-state/{chain_id}",
+            DEFAULT_TIMEOUT,
+            trucon_url=trucon_url,
+            uds_path=trucon_uds_path,
+        )
+        verify_chain = _trucon_request(
+            "GET",
+            f"/verify-chain/{chain_id}",
+            DEFAULT_TIMEOUT,
+            trucon_url=trucon_url,
+            uds_path=trucon_uds_path,
+        )
+        print(
+            "[tdvm-smoke] baseline chain status="
+            f"head_log_id={state.get('head_log_id')} confirmed={verify_chain.get('rekor_confirmed')} "
+            f"pending={verify_chain.get('rekor_pending')} valid={verify_chain.get('valid')}"
+        )
+        if state.get("head_log_id") and verify_chain.get("rekor_confirmed") == 1 and verify_chain.get("rekor_pending") == 0:
+            break
+        time.sleep(args.poll_interval)
+    else:
+        raise SmokeTestError(
+            "Baseline chain did not reach confirmed immutable state before timeout: "
+            + json.dumps({"state": state, "verify_chain": verify_chain}, ensure_ascii=True, default=str)
+        )
+
+    adapter = SigstoreLogAdapter(rekor_url=args.rekor_url) if args.rekor_url else SigstoreLogAdapter()
+    tlog = TrustedLogAPI(immutable_log=adapter, trucon_url=trucon_url)
+    verify_result = tlog.verify_record(
+        state["head_log_id"],
+        policy={"chain_id": chain_id, "expected_entry_count": 1},
+    )
+    if not verify_result.success:
+        raise SmokeTestError(
+            "Immutable replay verification for baseline smoke failed: "
+            + json.dumps(verify_result.errors, ensure_ascii=True, default=str)
+        )
+
+    entry = verify_result.details["entries"][0]
+    predicate_entries = entry.get("predicate_entries") or []
+    replay_ccel_b64 = _entry_value(predicate_entries, "ccel_eventlog_b64")
+    if replay_ccel_b64 != local_ccel_b64:
+        raise SmokeTestError("Immutable replay Event Log 0 payload did not preserve the local TD VM CCEL event log bytes")
+
+    try:
+        replay_ccel_bytes = base64.b64decode(replay_ccel_b64, validate=True) if replay_ccel_b64 else b""
+        replay_ccel_decodable = True
+    except Exception:
+        replay_ccel_bytes = b""
+        replay_ccel_decodable = False
+
+    result = {
+        "chain_id": chain_id,
+        "trucon_url": trucon_url,
+        "trucon_uds_path": trucon_uds_path,
+        "record_id": init_result.get("record_id"),
+        "head_log_id": state.get("head_log_id"),
+        "sequence_num": state.get("sequence_num"),
+        "event_id": entry.get("event_id"),
+        "event_type": entry.get("event_type"),
+        "event_digest": entry.get("digest") or event_digest,
+        "verify_success": verify_result.success,
+        "baseline_rtmr": _entry_value(predicate_entries, "baseline_rtmr"),
+        "ccel_digest": _entry_value(predicate_entries, "ccel_digest"),
+        "ccel_eventlog_b64_chars": len(replay_ccel_b64 or ""),
+        "ccel_eventlog_decodable": replay_ccel_decodable,
+        "ccel_eventlog_bytes": len(replay_ccel_bytes),
+        "ccel_eventlog_matches_local": replay_ccel_bytes == local_ccel_bytes,
+        "local_ccel_bytes": len(local_ccel_bytes),
+    }
+    print_json("Baseline immutable replay audit", result)
+    return result
 
 
 def run_build(
@@ -392,8 +603,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--summary-file", help="Optional path to write smoke test summary JSON")
     parser.add_argument("--kbs-url", help="Optional KBS probe URL used by preflight")
     parser.add_argument("--quote-check-timeout", type=int, default=120, help="Seconds to wait for the repository TDX quote check")
+    parser.add_argument("--baseline-timeout", type=int, default=180, help="Seconds to wait for baseline immutable confirmation")
+    parser.add_argument("--trucon-url", help="Override TruCon base URL for baseline smoke")
+    parser.add_argument("--trucon-uds-path", help="Override TruCon UDS path for baseline smoke")
+    parser.add_argument("--rekor-url", help="Override Rekor base URL for baseline smoke verification")
     parser.add_argument("--skip-preflight", action="store_true", help="Skip local TD VM preflight checks")
     parser.add_argument("--skip-quote-check", action="store_true", help="Skip the repository real TDX quote acquisition check")
+    parser.add_argument("--skip-baseline-smoke", action="store_true", help="Skip Event Log 0 baseline immutable smoke check")
     parser.add_argument("--skip-publish", action="store_true", help="Run only health and build")
     parser.add_argument("--skip-deploy", action="store_true", help="Run health, build and publish only")
     parser.add_argument("--no-attestation", action="store_true", help="Disable attestation in deploy-launch request")
@@ -414,6 +630,7 @@ def main() -> int:
         "preflight": None,
         "quote_check": None,
         "health": None,
+        "baseline": None,
         "build": None,
         "publish": None,
         "launch": None,
@@ -432,6 +649,12 @@ def main() -> int:
             summary["quote_check"] = "skipped"
 
         summary["health"] = run_health_check(session, base_url)
+
+        if not args.skip_baseline_smoke:
+            summary["baseline"] = run_baseline_chain_smoke(args)
+        else:
+            summary["baseline"] = "skipped"
+
         build_result = run_build(session, base_url, args, user_id)
         summary["build"] = build_result
 

@@ -373,6 +373,7 @@ def test_public_rekor_baseline_bundle_round_trip_smoke(real_rekor_runtime):
         chain_id=chain_id,
         rtmr_value="11" * 48,
         ccel_digest="sha384:" + ("22" * 48),
+        ccel_eventlog_b64="Zm9v",
         identity_token_str=identity_token,
     )
 
@@ -400,7 +401,7 @@ def test_public_rekor_baseline_bundle_round_trip_smoke(real_rekor_runtime):
     assert verify_result.details["entries"][0]["digest"] == event_digest
     predicate_entries = verify_result.details["entries"][0]["predicate_entries"]
     assert any(entry["key"] == "baseline_rtmr" and entry["value"] == "11" * 48 for entry in predicate_entries)
-    assert any(entry["key"] == "ccel_digest" and entry["value"] == "sha384:" + ("22" * 48) for entry in predicate_entries)
+    assert any(entry["key"] == "ccel_eventlog_b64" and entry["value"] == "Zm9v" for entry in predicate_entries)
     assert any(entry["key"] == "pub_key" and entry["value"] == pub_key_pem for entry in predicate_entries)
 
 
@@ -446,7 +447,7 @@ def test_public_rekor_init_chain_submit_verify_baseline_smoke(real_rekor_runtime
     assert entry["predecessor_status"] == "origin"
     predicate_entries = entry["predicate_entries"]
     assert any(item["key"] == "baseline_rtmr" and item["value"] == "aa" * 48 for item in predicate_entries)
-    assert any(item["key"] == "ccel_digest" and isinstance(item["value"], str) for item in predicate_entries)
+    assert any(item["key"] == "ccel_eventlog_b64" and isinstance(item["value"], str) for item in predicate_entries)
     assert any(item["key"] == "pub_key" and item["value"].startswith("-----BEGIN PUBLIC KEY-----") for item in predicate_entries)
 
 
@@ -506,7 +507,7 @@ def test_public_rekor_lazy_workload_baseline_smoke(real_rekor_runtime, real_reko
     assert entry["predecessor_status"] == "origin"
     predicate_entries = entry["predicate_entries"]
     assert any(item["key"] == "baseline_rtmr" and item["value"] == "aa" * 48 for item in predicate_entries)
-    assert any(item["key"] == "ccel_digest" and isinstance(item["value"], str) for item in predicate_entries)
+    assert any(item["key"] == "ccel_eventlog_b64" and isinstance(item["value"], str) for item in predicate_entries)
     assert any(item["key"] == "pub_key" and item["value"].startswith("-----BEGIN PUBLIC KEY-----") for item in predicate_entries)
 
 

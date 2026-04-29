@@ -92,6 +92,7 @@ def build_baseline_sigstore_bundle(
     chain_id: str,
     rtmr_value: Optional[str],
     ccel_digest: Optional[str],
+    ccel_eventlog_b64: Optional[str] = None,
     identity_token_str: Optional[str] = None,
     rekor_url: Optional[str] = None,
     sequence_num: int = 1,
@@ -104,7 +105,10 @@ def build_baseline_sigstore_bundle(
     created_iso = datetime.now(timezone.utc).isoformat()
     entries = [
         {"key": "baseline_rtmr", "value": rtmr_value or "null"},
-        {"key": "ccel_digest", "value": ccel_digest or "null"},
+        {
+            "key": "ccel_eventlog_b64" if ccel_eventlog_b64 is not None else "ccel_digest",
+            "value": ccel_eventlog_b64 if ccel_eventlog_b64 is not None else (ccel_digest or "null"),
+        },
         {"key": "pub_key", "value": pub_key_pem},
     ]
     entry_digests = [_compute_entry_digest(entry["key"], entry["value"]) for entry in entries]

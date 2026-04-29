@@ -263,7 +263,9 @@ def _entry_has_event_log0_baseline(entry: Dict[str, Any]) -> bool:
         for item in entry.get("predicate_entries", [])
         if isinstance(item, dict)
     }
-    return {"baseline_rtmr", "ccel_digest", "pub_key"}.issubset(observed)
+    return {"baseline_rtmr", "pub_key"}.issubset(observed) and (
+        "ccel_eventlog_b64" in observed or "ccel_digest" in observed
+    )
 
 
 def _classify_public_history_status(entry: Dict[str, Any]) -> Optional[str]:
@@ -751,7 +753,7 @@ class TrustedLogAPI:
         Initialize a chain with Event Log 0 (baseline record).
 
         Two-phase protocol:
-          1. GET /init-chain/{chain_id}/baseline → rtmr_value, ccel_digest, init_token
+          1. GET /init-chain/{chain_id}/baseline → rtmr_value, ccel_digest, ccel_eventlog_b64, init_token
                     2. Build a Sigstore DSSE bundle for Event Log 0, POST /init-chain
 
         Returns the init-chain response dict on success, or None if the chain
@@ -779,6 +781,7 @@ class TrustedLogAPI:
         init_token = baseline["init_token"]
         rtmr_value = baseline.get("rtmr_value")
         ccel_digest = baseline.get("ccel_digest")
+        ccel_eventlog_b64 = baseline.get("ccel_eventlog_b64")
         idempotency_key = f"init-chain-{chain_id}"
 
         try:
@@ -808,6 +811,7 @@ class TrustedLogAPI:
                 chain_id=chain_id,
                 rtmr_value=rtmr_value,
                 ccel_digest=ccel_digest,
+                ccel_eventlog_b64=ccel_eventlog_b64,
                 rekor_url=getattr(self.immutable_log, "rekor_url", None),
                 sequence_num=intent.get("sequence_num", 1),
                 prev_event_digest=intent.get("prev_event_digest"),

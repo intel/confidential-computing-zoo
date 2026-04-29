@@ -1,10 +1,18 @@
-"""Tests for CCEL reading and digest computation."""
+"""Tests for CCEL reading, trimming, and digest computation."""
 
+import base64
 import hashlib
 import os
+import struct
 import pytest
 
-from tc_api.trucon.adapters.ccel import read_ccel_binary, compute_ccel_digest
+from tc_api.trucon.adapters.ccel import (
+    compute_ccel_digest,
+    read_ccel_binary,
+    read_ccel_eventlog_b64,
+    read_ccel_eventlog_used_binary,
+    trim_ccel_eventlog_binary,
+)
 
 
 class TestReadCcelBinary:
@@ -53,3 +61,51 @@ class TestComputeCcelDigest:
         assert d1 == d2
         assert d1.startswith("sha384:")
         assert len(d1) == len("sha384:") + 96  # 384 bits = 96 hex chars
+
+
+class TestReadTrimmedEventLog:
+    @staticmethod
+    def _sample_eventlog() -> bytes:
+        specid = (
+            struct.pack("<III", 1, 3, 0)
+            + (b"\x00" * 16)
+            + struct.pack("<I", 33)
+            + b"Spec ID Event03\x00"
+            + struct.pack("<I", 0)
+            + struct.pack("<BBBB", 0, 2, 0, 2)
+            + struct.pack("<I", 1)
+            + struct.pack("<HH", 0x0C, 48)
+            + struct.pack("<B", 0)
+        )
+        event_data = b"test"
+        event = (
+            struct.pack("<III", 2, 0x0D, 1)
+            + struct.pack("<H", 0x0C)
+            + (b"\x11" * 48)
+            + struct.pack("<I", len(event_data))
+            + event_data
+        )
+        sentinel = bytes.fromhex("ffffffff00000000")
+        return specid + event + sentinel + (b"\x00" * 32)
+
+    def test_trims_to_used_bytes_before_sentinel(self):
+        data = self._sample_eventlog()
+        trimmed = trim_ccel_eventlog_binary(data)
+        assert len(trimmed) == len(data) - 8 - 32
+        assert trimmed.endswith(b"test")
+
+    def test_reads_trimmed_eventlog_from_file(self, tmp_path):
+        eventlog_file = tmp_path / "CCEL"
+        data = self._sample_eventlog()
+        eventlog_file.write_bytes(data)
+
+        trimmed = read_ccel_eventlog_used_binary(str(eventlog_file))
+        assert trimmed == trim_ccel_eventlog_binary(data)
+
+    def test_reads_trimmed_eventlog_as_base64(self, tmp_path):
+        eventlog_file = tmp_path / "CCEL"
+        data = self._sample_eventlog()
+        eventlog_file.write_bytes(data)
+
+        result = read_ccel_eventlog_b64(str(eventlog_file))
+        assert result == base64.b64encode(trim_ccel_eventlog_binary(data)).decode("ascii")

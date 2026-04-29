@@ -1,4 +1,5 @@
 import argparse
+import base64
 import hashlib
 import json
 import sys
@@ -138,6 +139,7 @@ def _build_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
             "provenance_status": (replay.get("provenance") or {}).get("status"),
             "entry_status_counts": entry_status_counts,
             "first_entry_issue": first_entry_issue,
+            "event_log0_audit": _collect_event_log0_audit(replay_entries),
         },
         "attested_head": {
             "present": attested_head.get("present"),
@@ -209,6 +211,50 @@ def _entry_value(predicate_entries: List[Dict[str, Any]], key: str) -> Optional[
             value = entry.get("value")
             return value if isinstance(value, str) else None
     return None
+
+
+def _collect_event_log0_audit(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    audit: Dict[str, Any] = {
+        "present": False,
+        "event_id": None,
+        "chain_id": None,
+        "baseline_rtmr": None,
+        "ccel_digest": None,
+        "ccel_eventlog_b64_present": False,
+        "ccel_eventlog_b64_chars": None,
+        "ccel_eventlog_decodable": None,
+        "ccel_eventlog_bytes": None,
+    }
+    if not entries:
+        return audit
+
+    baseline_entry = entries[0]
+    predicate_entries = baseline_entry.get("predicate_entries") or []
+    ccel_eventlog_b64 = _entry_value(predicate_entries, "ccel_eventlog_b64")
+    audit.update(
+        {
+            "present": baseline_entry.get("event_type") == "chain.init",
+            "event_id": baseline_entry.get("event_id"),
+            "chain_id": baseline_entry.get("chain_id"),
+            "baseline_rtmr": _entry_value(predicate_entries, "baseline_rtmr"),
+            "ccel_digest": _entry_value(predicate_entries, "ccel_digest"),
+            "ccel_eventlog_b64_present": ccel_eventlog_b64 is not None,
+            "ccel_eventlog_b64_chars": len(ccel_eventlog_b64) if ccel_eventlog_b64 is not None else None,
+        }
+    )
+    if ccel_eventlog_b64 is None:
+        return audit
+
+    try:
+        decoded = base64.b64decode(ccel_eventlog_b64, validate=True)
+    except Exception:
+        audit["ccel_eventlog_decodable"] = False
+        audit["ccel_eventlog_bytes"] = None
+        return audit
+
+    audit["ccel_eventlog_decodable"] = True
+    audit["ccel_eventlog_bytes"] = len(decoded)
+    return audit
 
 
 def _derive_replay_chain_state(immutable_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -660,6 +706,7 @@ def _render_text(result: Dict[str, Any]) -> str:
     diagnostics = result.get("diagnostics") or {}
     replay_diagnostics = diagnostics.get("replay") or {}
     first_entry_issue = replay_diagnostics.get("first_entry_issue")
+    event_log0_audit = replay_diagnostics.get("event_log0_audit") or {}
     if diagnostics:
         lines.append("Diagnostics:")
         lines.append(
@@ -667,6 +714,15 @@ def _render_text(result: Dict[str, Any]) -> str:
             f"replay_success={replay_diagnostics.get('success')} provenance_status={replay_diagnostics.get('provenance_status')} "
             f"fallback_valid={(diagnostics.get('fallback') or {}).get('valid')} first_error={diagnostics.get('first_error')}"
         )
+        if event_log0_audit.get("present"):
+            lines.append(
+                "  "
+                f"event_log0_audit=event_id={event_log0_audit.get('event_id')} "
+                f"ccel_eventlog_b64_present={event_log0_audit.get('ccel_eventlog_b64_present')} "
+                f"ccel_eventlog_b64_chars={event_log0_audit.get('ccel_eventlog_b64_chars')} "
+                f"ccel_eventlog_decodable={event_log0_audit.get('ccel_eventlog_decodable')} "
+                f"ccel_eventlog_bytes={event_log0_audit.get('ccel_eventlog_bytes')}"
+            )
         if first_entry_issue is not None:
             lines.append(
                 "  "
