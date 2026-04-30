@@ -42,10 +42,13 @@ mkdir -p uploads builds logs /dev/shm
 export HOST=${HOST:-0.0.0.0}
 export PORT=${PORT:-8000}
 export TRUCON_PORT=${TRUCON_PORT:-8001}
+export TRUCON_RTMR_INDEX=${TRUCON_RTMR_INDEX:-2}
 export TC_API_WORKERS=${TC_API_WORKERS:-1}
 export DOCKTAP_SOCKET=${DOCKTAP_SOCKET:-/var/run/docktap/docker.sock}
 export TRUCON_UDS_PATH=${TRUCON_UDS_PATH:-/var/run/trucon/trucon.sock}
 export DEBUG=${DEBUG:-false}
+export ENABLE_TDX=${ENABLE_TDX:-true}
+export TRUCON_AUTH_DISABLED=${TRUCON_AUTH_DISABLED:-false}
 export INIT_DEFAULT_CHAIN_ON_STARTUP=${INIT_DEFAULT_CHAIN_ON_STARTUP:-false}
 export PYTHON_BIN=${PYTHON_BIN:-python3}
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"

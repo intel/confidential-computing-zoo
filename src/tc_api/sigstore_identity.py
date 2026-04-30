@@ -28,6 +28,16 @@ _MEMORY_TOKEN: Optional[str] = None
 _MEMORY_EXPIRY: Optional[int] = None
 
 
+class MissingSigstoreIdentityTokenError(RuntimeError):
+    def __init__(self, operation: str):
+        super().__init__(
+            f"Sigstore identity token is required for {operation}. Provide identity_token in the request, "
+            f"set {SIGSTORE_IDENTITY_TOKEN_ENV}, pre-populate {_cache_path()}, or enable "
+            f"{SIGSTORE_INTERACTIVE_LOGIN_ENV} for interactive refresh."
+        )
+        self.operation = operation
+
+
 def _get_logger(logger: Optional[logging.Logger]) -> logging.Logger:
     return logger or logging.getLogger(__name__)
 
@@ -148,6 +158,7 @@ def resolve_sigstore_identity_token(
     logger: Optional[logging.Logger] = None,
     allow_interactive: Optional[bool] = None,
     min_ttl_seconds: Optional[int] = None,
+    require_token: bool = False,
 ) -> Optional[str]:
     log = _get_logger(logger)
     min_ttl = _min_ttl_seconds() if min_ttl_seconds is None else max(0, min_ttl_seconds)
@@ -183,6 +194,8 @@ def resolve_sigstore_identity_token(
         allow_interactive = _parse_bool(os.environ.get(SIGSTORE_INTERACTIVE_LOGIN_ENV), default=False)
 
     if not allow_interactive:
+        if require_token:
+            raise MissingSigstoreIdentityTokenError(operation)
         log.warning(
             "Skipping Sigstore identity acquisition for %s because no reusable token is available. "
             "Set %s, pre-populate %s, or enable %s for interactive refresh.",

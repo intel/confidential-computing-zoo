@@ -12,6 +12,7 @@ Covers:
 """
 
 import json
+import importlib
 import logging
 import sqlite3
 import threading
@@ -34,6 +35,7 @@ from tc_api.trucon.database import (
 from tc_api.tlog.local_mr import LocalMRAdapter
 
 logger = logging.getLogger("trucon")
+trucon_app = importlib.import_module("tc_api.trucon.app")
 
 
 # ---------------------------------------------------------------------------
@@ -306,14 +308,12 @@ class TestQueueSnapshotMetric:
         insert_record("rec-4", "e4", {}, "FAILED_TERMINAL", chain_id="a",
                        rtmr_extended=True, sequence_num=4, db_path=db)
 
-        with caplog.at_level(logging.INFO, logger="trucon"):
-            stats = get_queue_stats(db)
-            logger.info(
-                "metric=queue_snapshot queue_depth=%d submitting=%d failed_retryable=%d failed_terminal=%d total_retries=%d",
-                stats['queued_count'], stats['submitting_count'],
-                stats['failed_retryable_count'], stats['failed_terminal_count'],
-                stats['total_retry_count'],
-            )
+        with patch.object(trucon_app, "_last_queue_snapshot", None), \
+             patch.object(trucon_app, "_last_queue_snapshot_tick", 0), \
+             patch.object(trucon_app, "_queue_snapshot_tick", 0):
+            with caplog.at_level(logging.INFO, logger="trucon"):
+                stats = get_queue_stats(db)
+                trucon_app._emit_queue_snapshot(stats)
 
         snapshot_msgs = [m for m in caplog.messages if "metric=queue_snapshot" in m]
         assert len(snapshot_msgs) == 1
@@ -326,14 +326,12 @@ class TestQueueSnapshotMetric:
 
     def test_empty_queue_snapshot_all_zeros(self, db, caplog):
         """Verify empty queue snapshot shows all counts as 0."""
-        with caplog.at_level(logging.INFO, logger="trucon"):
-            stats = get_queue_stats(db)
-            logger.info(
-                "metric=queue_snapshot queue_depth=%d submitting=%d failed_retryable=%d failed_terminal=%d total_retries=%d",
-                stats['queued_count'], stats['submitting_count'],
-                stats['failed_retryable_count'], stats['failed_terminal_count'],
-                stats['total_retry_count'],
-            )
+        with patch.object(trucon_app, "_last_queue_snapshot", None), \
+             patch.object(trucon_app, "_last_queue_snapshot_tick", 0), \
+             patch.object(trucon_app, "_queue_snapshot_tick", 0):
+            with caplog.at_level(logging.INFO, logger="trucon"):
+                stats = get_queue_stats(db)
+                trucon_app._emit_queue_snapshot(stats)
 
         snapshot_msgs = [m for m in caplog.messages if "metric=queue_snapshot" in m]
         assert len(snapshot_msgs) == 1
@@ -343,6 +341,29 @@ class TestQueueSnapshotMetric:
         assert "failed_retryable=0" in msg
         assert "failed_terminal=0" in msg
         assert "total_retries=0" in msg
+
+    def test_duplicate_queue_snapshot_is_suppressed_until_heartbeat(self, caplog):
+        """Verify repeated identical snapshots are not logged every tick."""
+        stats = {
+            "queued_count": 0,
+            "submitting_count": 0,
+            "failed_retryable_count": 0,
+            "failed_terminal_count": 0,
+            "total_retry_count": 0,
+        }
+
+        with patch.object(trucon_app, "_last_queue_snapshot", None), \
+             patch.object(trucon_app, "_last_queue_snapshot_tick", 0), \
+             patch.object(trucon_app, "_queue_snapshot_tick", 0), \
+             patch.object(trucon_app, "QUEUE_SNAPSHOT_HEARTBEAT_TICKS", 3):
+            with caplog.at_level(logging.INFO, logger="trucon"):
+                trucon_app._emit_queue_snapshot(stats)
+                trucon_app._emit_queue_snapshot(stats)
+                trucon_app._emit_queue_snapshot(stats)
+                trucon_app._emit_queue_snapshot(stats)
+
+        snapshot_msgs = [m for m in caplog.messages if "metric=queue_snapshot" in m]
+        assert len(snapshot_msgs) == 2
 
 
 # ===========================================================================

@@ -728,11 +728,17 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
     def traverse(self, end_log_id: str, count: int = 10) -> list[Any]:
         results = []
         current_id = end_log_id
+        seen_ids = set()
         
         try:
             for _ in range(count):
                 if not current_id:
                     break
+
+                current_key = str(current_id)
+                if current_key in seen_ids:
+                    break
+                seen_ids.add(current_key)
 
                 entry = self.get_entry(current_id)
                 if not entry:
@@ -769,7 +775,12 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
                         elif "prev_log_id" in payload:
                             current_id = payload.get("prev_log_id")
                         elif "prev_lookup_hash" in predicate:
-                            current_id = None
+                            candidates = self.find_entries_by_payload_hash(predicate.get("prev_lookup_hash"))
+                            if candidates:
+                                candidate = candidates[0]
+                                current_id = candidate.get("uuid") or candidate.get("log_id") or candidate.get("entry_id")
+                            else:
+                                current_id = None
                         else:
                             current_id = None
                             

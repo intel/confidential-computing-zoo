@@ -70,6 +70,11 @@ class ControlPlaneHarness:
         )
         self._monkeypatch.setattr(
             main_mod.docker_service,
+            "export_image_to_oci",
+            lambda *args, **kwargs: "oci:/tmp/builds/bld-test123/plain",
+        )
+        self._monkeypatch.setattr(
+            main_mod.docker_service,
             "generate_sbom",
             lambda *args, **kwargs: str(self._build_dir / "bld-test123" / "bld-test123-sbom.json"),
         )
@@ -132,6 +137,7 @@ def _build_payload():
         "app_binary": base64.b64encode(b"test-binary").decode(),
         "encrypt": False,
         "user_id": "build-user",
+        "identity_token": "fake-identity-token",
         "sign_key": "dummy-sign-key",
         "cert": "dummy-cert",
     }
@@ -181,7 +187,7 @@ def test_build_flow_preserves_result_fields(harness, patched_lifespan, commit_su
     assert result_data["status"] == "success"
     assert result_data["current_step"] == "Build completed successfully"
     assert result_data["transparencyLog_verify"] == verify_status
-    assert "image_url" in result_data
+    assert result_data["image_url"] == "oci:/tmp/builds/bld-test123/plain"
 
 
 @pytest.mark.parametrize(

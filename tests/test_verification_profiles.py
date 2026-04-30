@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from tc_api.main import launch_container_async
+from tc_api.main import _normalize_local_oci_reference, launch_container_async
 from tc_api.services import DockerService
 from tc_api.verification_profiles import evaluate_profiles
 
@@ -244,6 +244,7 @@ def test_launch_async_emits_launch_profile_fields(tmp_path):
                 request,
                 "launch-123",
                 "svc-a",
+                "workload-chain-svc-a",
                 str(tmp_path),
                 tlog,
                 "rec-1",
@@ -260,3 +261,10 @@ def test_launch_async_emits_launch_profile_fields(tmp_path):
     assert "devices" in keys
     assert "capabilities" in keys
     assert "launch_instance_ids" in keys
+
+
+def test_normalize_local_oci_ref_for_sbom_verification(tmp_path):
+    image_dir = tmp_path / "plain"
+    image_dir.mkdir()
+    assert _normalize_local_oci_reference(str(image_dir)) == f"oci:{image_dir}"
+    assert _normalize_local_oci_reference(f"oci:{image_dir}") == f"oci:{image_dir}"

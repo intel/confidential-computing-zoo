@@ -149,13 +149,23 @@ class TestDevModeBypass:
 # ---------------------------------------------------------------------------
 
 class TestStartupGuard:
-    """TruCon refuses to start when auth is enabled but token is empty."""
+    """TruCon startup behavior when auth config is incomplete."""
 
-    def test_startup_exits_without_token(self):
-        """Lifespan should raise RuntimeError when _AUTH_DISABLED=False and _SERVICE_TOKEN=''."""
+    def test_startup_falls_back_without_token_in_non_tdx(self):
         with patch(f"{MOD}._AUTH_DISABLED", False), \
              patch(f"{MOD}._SERVICE_TOKEN", ""), \
-             patch(f"{MOD}._TRUCON_UDS_PATH", ""):
+             patch(f"{MOD}._TRUCON_UDS_PATH", ""), \
+             patch(f"{MOD}._ENABLE_TDX", False):
+            with TestClient(app, raise_server_exceptions=False) as client:
+                response = client.get("/status")
+            assert response.status_code == 200
+
+    def test_startup_exits_without_token_when_tdx_enabled(self):
+        """Lifespan should still raise RuntimeError when strict TDX mode is enabled."""
+        with patch(f"{MOD}._AUTH_DISABLED", False), \
+             patch(f"{MOD}._SERVICE_TOKEN", ""), \
+             patch(f"{MOD}._TRUCON_UDS_PATH", ""), \
+             patch(f"{MOD}._ENABLE_TDX", True):
             with pytest.raises(RuntimeError, match="Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH"):
                 with TestClient(app):
                     pass

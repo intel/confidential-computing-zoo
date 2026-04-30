@@ -1,4 +1,5 @@
 import ctypes
+import fcntl
 import hashlib
 import logging
 import os
@@ -30,6 +31,20 @@ class _TdxRtmrEvent(ctypes.Structure):
     ]
 
 
+class _TdxGuestReportReq(ctypes.Structure):
+    _fields_ = [
+        ("reportdata", ctypes.c_uint8 * 64),
+        ("tdreport", ctypes.c_uint8 * 1024),
+    ]
+
+
+class _TdxGuestExtendRtmrReq(ctypes.Structure):
+    _fields_ = [
+        ("data", ctypes.c_uint8 * 48),
+        ("index", ctypes.c_uint8),
+    ]
+
+
 _TDX_ATTEST_ERROR_NAMES = {
     0x0000: "TDX_ATTEST_SUCCESS",
     0x0001: "TDX_ATTEST_ERROR_UNEXPECTED",
@@ -47,6 +62,14 @@ _TDX_ATTEST_ERROR_NAMES = {
 }
 
 
+def _ioc(direction: int, type_chr: str, number: int, size: int) -> int:
+    return (direction << 30) | (ord(type_chr) << 8) | number | (size << 16)
+
+
+_TDX_CMD_GET_REPORT0 = _ioc(3, "T", 1, ctypes.sizeof(_TdxGuestReportReq))
+_TDX_CMD_EXTEND_RTMR = _ioc(2, "T", 3, ctypes.sizeof(_TdxGuestExtendRtmrReq))
+
+
 class TdxMRAdapter(LocalMRAdapter):
     """
     Adapter for Intel TDX RTMRs via the Linux TDX guest driver's sysfs ABI.
@@ -55,16 +78,20 @@ class TdxMRAdapter(LocalMRAdapter):
     the RTMR sysfs node delegates the extend operation to the kernel driver,
     which performs the underlying TDG.MR.RTMR.EXTEND call.
     """
+    # TDREPORT uses a different layout from the quote body. These offsets were
+    # confirmed against real /dev/tdx_guest TDREPORT output and the RTMR values
+    # embedded in a quote taken from the same TD state.
     _REPORT_RTMR_OFFSETS = {
-        0: 192,
-        1: 240,
-        2: 288,
-        3: 336,
+        0: 720,
+        1: 768,
+        2: 816,
+        3: 864,
     }
 
     def __init__(self, sysfs_base_path: str = "/sys/class/misc/tdx_guest/measurements/rtmr"):
         self.sysfs_base_path = sysfs_base_path
         self.attest_library_path = os.environ.get("TRUCON_TDX_ATTEST_LIB", "libtdx_attest.so")
+        self.guest_device_path = os.environ.get("TRUCON_TDX_GUEST_DEVICE", "")
 
     @classmethod
     def is_available(
@@ -77,7 +104,11 @@ class TdxMRAdapter(LocalMRAdapter):
     @classmethod
     def is_report_read_available(cls, index: int) -> bool:
         try:
-            cls()._read_from_tdreport(index)
+            adapter = cls()
+            if adapter._resolve_guest_device_path() is not None:
+                adapter._read_from_ioctl_report(index)
+            else:
+                adapter._read_from_tdreport(index)
             return True
         except Exception:
             return False
@@ -93,6 +124,9 @@ class TdxMRAdapter(LocalMRAdapter):
 
         try:
             adapter = cls(sysfs_base_path=sysfs_base_path)
+            if adapter._resolve_guest_device_path() is not None:
+                adapter._read_from_ioctl_report(index)
+                return True
             library = adapter._load_attest_library()
             getattr(library, "tdx_att_extend")
             adapter._read_from_tdreport(index)
@@ -103,6 +137,20 @@ class TdxMRAdapter(LocalMRAdapter):
     def _get_path(self, index: int) -> str:
         # Expected pattern: /sys/class/misc/tdx_guest/measurements/rtmr0:sha384
         return f"{self.sysfs_base_path}{index}:sha384"
+
+    def _resolve_guest_device_path(self) -> str | None:
+        if self.guest_device_path:
+            return self.guest_device_path if os.path.exists(self.guest_device_path) else None
+        for candidate in ("/dev/tdx_guest", "/dev/tdx-guest"):
+            if os.path.exists(candidate):
+                return candidate
+        return None
+
+    def _open_guest_device(self) -> int:
+        device_path = self._resolve_guest_device_path()
+        if device_path is None:
+            raise FileNotFoundError("No TDX guest ioctl device is available")
+        return os.open(device_path, os.O_RDWR)
 
     def _load_attest_library(self):
         library = ctypes.CDLL(self.attest_library_path)
@@ -142,9 +190,38 @@ class TdxMRAdapter(LocalMRAdapter):
         report_bytes = bytes(report.d)
         return report_bytes[offset : offset + 48].hex()
 
+    def _read_from_ioctl_report(self, index: int) -> str:
+        offset = self._REPORT_RTMR_OFFSETS.get(index)
+        if offset is None:
+            raise ValueError(f"TDREPORT RTMR read is unsupported for index {index}")
+
+        fd = self._open_guest_device()
+        try:
+            request = _TdxGuestReportReq()
+            fcntl.ioctl(fd, _TDX_CMD_GET_REPORT0, request, True)
+        finally:
+            os.close(fd)
+
+        report_bytes = bytes(request.tdreport)
+        return report_bytes[offset : offset + 48].hex()
+
+    def _extend_via_ioctl(self, index: int, raw_bytes: bytes) -> None:
+        request = _TdxGuestExtendRtmrReq()
+        for offset, value in enumerate(raw_bytes):
+            request.data[offset] = value
+        request.index = index
+
+        fd = self._open_guest_device()
+        try:
+            fcntl.ioctl(fd, _TDX_CMD_EXTEND_RTMR, request, True)
+        finally:
+            os.close(fd)
+
     def read(self, index: int) -> str:
         path = self._get_path(index)
         if not os.path.exists(path):
+            if self._resolve_guest_device_path() is not None:
+                return self._read_from_ioctl_report(index)
             return self._read_from_tdreport(index)
             
         try:
@@ -178,6 +255,8 @@ class TdxMRAdapter(LocalMRAdapter):
                 # The kernel driver's sysfs write handler performs the real RTMR extend.
                 with open(path, "rb+") as f:
                     f.write(raw_bytes)
+            elif self._resolve_guest_device_path() is not None:
+                self._extend_via_ioctl(index, raw_bytes)
             else:
                 self._extend_via_attest_library(index, raw_bytes)
                 

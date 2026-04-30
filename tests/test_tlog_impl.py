@@ -455,6 +455,38 @@ def test_sigstore_adapter_traverse(mock_rekor):
     assert len(results) == 1
 
 
+def test_sigstore_adapter_traverse_follows_prev_lookup_hash_candidates(mock_rekor):
+    adapter = SigstoreLogAdapter()
+    mock_instance = mock_rekor.return_value
+
+    def make_entry(sequence_num, digest, prev_lookup_hash=None):
+        payload = {
+            "predicate": {
+                "chain_id": "tc-api-workload-oci",
+                "event_type": "chain.init" if sequence_num == 1 else "launch",
+                "sequence_num": sequence_num,
+                "digest": digest,
+                "prev_event_digest": None if sequence_num == 1 else "sha384:evt-1",
+                "prev_lookup_hash": prev_lookup_hash,
+            }
+        }
+        enc_payload = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8")
+        return {"uuid": f"id-{sequence_num}", "body": {"spec": {"payload": enc_payload}}}
+
+    entry_1 = make_entry(1, "sha384:evt-1")
+    entry_2 = make_entry(2, "sha384:evt-2", adapter._payload_hash_from_entry(entry_1))
+
+    mock_instance.log.entries.get.side_effect = [
+        {"id-2": entry_2},
+        {"id-1": entry_1},
+    ]
+
+    with patch.object(adapter, "find_entries_by_payload_hash", return_value=[entry_1]):
+        results = adapter.traverse("id-2", count=5)
+
+    assert [entry["uuid"] for entry in results] == ["id-2", "id-1"]
+
+
 def test_sigstore_adapter_traverse_keeps_normalized_entry_dict(mock_rekor):
     adapter = SigstoreLogAdapter()
     mock_instance = mock_rekor.return_value

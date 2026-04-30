@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tc_api.cli.verify import main
+from tc_api.cli.verify import _normalize_replay_entries, main
 from tc_api.trucon.evidence import compute_binding_expected_value
 
 
@@ -217,6 +217,41 @@ def test_verify_cli_fail_on_pending(capsys):
     assert exit_code == 1
     assert captured["summary"]["status"] == "failed"
     assert "Pending records present while --fail-on-pending is enabled" in captured["errors"]
+
+
+def test_normalize_replay_entries_preserves_predicate_entries():
+    entries = [
+        {
+            "index": 1,
+            "event_id": "evt-1",
+            "event_type": "launch",
+            "sequence_num": 2,
+            "digest": "sha384:abc",
+            "created": "2026-01-01T00:00:00Z",
+            "prev_event_digest": "sha384:def",
+            "prev_lookup_hash": "sha256:123",
+            "predecessor_ok": True,
+            "candidate_count": 1,
+            "materialized_candidate_count": 1,
+            "matched_candidate_count": 1,
+            "predecessor_status": "proven",
+            "owner_status": None,
+            "boundary_status": None,
+            "public_history_ok": True,
+            "public_history_status": "public",
+            "replay_provenance": "attestation-storage",
+            "history_materialization_provenance": "attestation-storage",
+            "predicate_entries": [{"key": "launch_id", "value": "launch-123"}],
+            "subject_names": ["trusted-log-chain_tc-api-workload-oci"],
+            "signer_identity": "alice@example.com",
+            "signer_identity_match": True,
+            "errors": [],
+        }
+    ]
+
+    normalized = _normalize_replay_entries(entries)
+
+    assert normalized[0]["predicate_entries"] == [{"key": "launch_id", "value": "launch-123"}]
 
 
 def test_verify_cli_human_output_contains_per_record_detail(capsys):

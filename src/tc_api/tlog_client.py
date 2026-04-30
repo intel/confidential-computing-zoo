@@ -629,9 +629,12 @@ class TrustedLogAPI:
 
         # Generate idempotency key for retry safety
         idempotency_key = (commit_options or {}).get("idempotency_key") or f"idk-{uuid.uuid4().hex[:12]}"
+        identity_token_str = (commit_options or {}).get("identity_token")
+        if not identity_token_str:
+            raise ValueError("Identity token is required to commit a record synchronously.")
 
         if get_chain_state(chain_id) is None:
-            self.init_chain(chain_id)
+            self.init_chain(chain_id, identity_token_str=identity_token_str)
 
         reservation = self._reserve_commit_intent(chain_id=chain_id, idempotency_key=idempotency_key)
         if reservation.get("committed"):
@@ -679,10 +682,6 @@ class TrustedLogAPI:
             "prev_lookup_hash": reservation.get("prev_lookup_hash"),
         }
         
-        # Identity Token retrieval
-        identity_token_str = (commit_options or {}).get("identity_token")
-        if not identity_token_str:
-            raise ValueError("Identity token is required to commit a record synchronously.")
         identity_token = IdentityToken(identity_token_str)
 
         # Construct DSSE Statement — subject uses chain_id format
@@ -748,7 +747,11 @@ class TrustedLogAPI:
             prev_mr_value=trucon_response.get("prev_mr_value"),
         )
 
-    def init_chain(self, chain_id: str = "default") -> Optional[Dict[str, Any]]:
+    def init_chain(
+        self,
+        chain_id: str = "default",
+        identity_token_str: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         Initialize a chain with Event Log 0 (baseline record).
 
@@ -812,6 +815,7 @@ class TrustedLogAPI:
                 rtmr_value=rtmr_value,
                 ccel_digest=ccel_digest,
                 ccel_eventlog_b64=ccel_eventlog_b64,
+                identity_token_str=identity_token_str,
                 rekor_url=getattr(self.immutable_log, "rekor_url", None),
                 sequence_num=intent.get("sequence_num", 1),
                 prev_event_digest=intent.get("prev_event_digest"),

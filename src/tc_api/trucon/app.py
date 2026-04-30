@@ -507,9 +507,9 @@ _local_mr = None       # Set during lifespan
 _immutable_log = None   # Set during lifespan
 _quote_adapter = None    # Set during lifespan
 
-# RTMR[2] is the OS/application-layer measurement register in TDX.
-# RTMR[0]/[1] are firmware/boot-locked; RTMR[3] is reserved.
-RTMR_INDEX = 2
+# RTMR[2] is the default OS/application-layer measurement register in TDX.
+# RTMR[0]/[1] are firmware/boot-locked; RTMR[3] can be used for experiments.
+RTMR_INDEX = int(os.environ.get("TRUCON_RTMR_INDEX", "2"))
 
 # Pending init tokens: {init_token -> chain_id}
 # Populated by GET /init-chain/.../baseline, consumed by POST /init-chain
@@ -590,7 +590,11 @@ def _initialize_local_mr_adapter():
 _stop_daemon = threading.Event()
 MAX_RETRIES = 10
 POLL_INTERVAL = 5.0
+QUEUE_SNAPSHOT_HEARTBEAT_TICKS = max(1, int(os.environ.get("TRUCON_QUEUE_SNAPSHOT_HEARTBEAT_TICKS", "12")))
 _bundle_mirror: Optional[OciBundleMirror] = None
+_last_queue_snapshot: Optional[tuple[int, int, int, int, int]] = None
+_last_queue_snapshot_tick = 0
+_queue_snapshot_tick = 0
 
 
 def _extract_bundle_payload_b64(bundle_json: str) -> str:
@@ -657,6 +661,41 @@ def _drain_mirror_publish_queue() -> None:
                 last_error=str(exc),
                 increment_retry_count=True,
             )
+
+
+def _queue_snapshot_tuple(stats: Dict[str, int]) -> tuple[int, int, int, int, int]:
+    return (
+        stats['queued_count'],
+        stats['submitting_count'],
+        stats['failed_retryable_count'],
+        stats['failed_terminal_count'],
+        stats['total_retry_count'],
+    )
+
+
+def _emit_queue_snapshot(stats: Dict[str, int]) -> None:
+    global _last_queue_snapshot, _last_queue_snapshot_tick, _queue_snapshot_tick
+
+    snapshot = _queue_snapshot_tuple(stats)
+    _queue_snapshot_tick += 1
+    should_emit = _last_queue_snapshot != snapshot
+
+    if not should_emit and (_queue_snapshot_tick - _last_queue_snapshot_tick) >= QUEUE_SNAPSHOT_HEARTBEAT_TICKS:
+        should_emit = True
+
+    if not should_emit:
+        return
+
+    _last_queue_snapshot = snapshot
+    _last_queue_snapshot_tick = _queue_snapshot_tick
+    logger.info(
+        "metric=queue_snapshot queue_depth=%d submitting=%d failed_retryable=%d failed_terminal=%d total_retries=%d",
+        snapshot[0],
+        snapshot[1],
+        snapshot[2],
+        snapshot[3],
+        snapshot[4],
+    )
 
 def _submit_daemon_loop():
     """Background thread: drain commit_queue to Rekor in sequence order."""
@@ -765,12 +804,7 @@ def _submit_daemon_tick():
 
     # Emit queue snapshot at end of each tick
     stats = get_queue_stats()
-    logger.info(
-        "metric=queue_snapshot queue_depth=%d submitting=%d failed_retryable=%d failed_terminal=%d total_retries=%d",
-        stats['queued_count'], stats['submitting_count'],
-        stats['failed_retryable_count'], stats['failed_terminal_count'],
-        stats['total_retry_count'],
-    )
+    _emit_queue_snapshot(stats)
 
 def _handle_retry(record_id: str):
     """Increment retry; transition to FAILED_RETRYABLE or FAILED_TERMINAL."""
@@ -790,14 +824,19 @@ def _handle_retry(record_id: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _local_mr, _immutable_log, _quote_adapter, _uds_gateway, _bundle_mirror
+    global _local_mr, _immutable_log, _quote_adapter, _uds_gateway, _bundle_mirror, _AUTH_DISABLED
 
     # Service authentication startup checks
     if _AUTH_DISABLED:
         logger.warning("⚠ TruCon service authentication DISABLED — development mode only")
     elif not _SERVICE_TOKEN and not _TRUCON_UDS_PATH:
-        logger.error("Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled. Refusing to start.")
-        raise RuntimeError("Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled")
+        if _ENABLE_TDX:
+            logger.error("Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled. Refusing to start.")
+            raise RuntimeError("Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled")
+        logger.warning(
+            "Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled. Falling back to auth-disabled development mode."
+        )
+        _AUTH_DISABLED = True
 
     # Single-instance enforcement
     acquire_instance_lock()
@@ -864,7 +903,7 @@ app = FastAPI(
 _AUTH_DISABLED = os.environ.get("TRUCON_AUTH_DISABLED", "").lower() == "true"
 _SERVICE_TOKEN = os.environ.get("TRUCON_SERVICE_TOKEN", "")
 _TRUCON_UDS_PATH = os.environ.get("TRUCON_UDS_PATH", "")
-_ENABLE_TDX = os.environ.get("ENABLE_TDX", "").lower() == "true"
+_ENABLE_TDX = os.environ.get("ENABLE_TDX", "true").lower() == "true"
 _TRUCON_HTTP_PORT = int(os.environ.get("TRUCON_PORT", "8001"))
 _INTERNAL_PROXY_SECRET = secrets.token_urlsafe(32)
 _uds_gateway: Optional[TruConUnixSocketGateway] = None

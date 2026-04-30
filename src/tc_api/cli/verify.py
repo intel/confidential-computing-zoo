@@ -75,6 +75,7 @@ def _normalize_replay_entries(immutable_entries: List[Dict[str, Any]]) -> List[D
             "public_history_status": entry.get("public_history_status"),
             "replay_provenance": entry.get("replay_provenance"),
             "history_materialization_provenance": entry.get("history_materialization_provenance"),
+            "predicate_entries": entry.get("predicate_entries", []),
             "subject_names": entry.get("subject_names", []),
             "signer_identity": entry.get("signer_identity"),
             "signer_identity_match": entry.get("signer_identity_match"),

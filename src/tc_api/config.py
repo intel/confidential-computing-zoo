@@ -7,7 +7,7 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 
 # Docker Configuration
 DOCKER_REGISTRY = config("DOCKER_REGISTRY", default="docker.io")
-DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="####")
+DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="trustedzoo")
 
 # File Storage Configuration
 UPLOAD_DIR = config("UPLOAD_DIR", default="./uploads")
@@ -30,10 +30,10 @@ KBS_ENDPOINT = config("KBS_ENDPOINT", default="/kbs/v0")
 KBS_CLIENT_CMD = config("KBS_CLIENT_CMD", default="kbs-client")
 
 # Sigstore author Configuration
-GIT_EMAIL = config("GIT_EMAIL", default="####@i###.com")
+GIT_EMAIL = config("GIT_EMAIL", default="qingchengx.zeng@intel.com")
 
 # Runtime feature flags
-ENABLE_TDX = config("ENABLE_TDX", default=False, cast=bool)
+ENABLE_TDX = config("ENABLE_TDX", default=True, cast=bool)
 INIT_DEFAULT_CHAIN_ON_STARTUP = config("INIT_DEFAULT_CHAIN_ON_STARTUP", default=True, cast=bool)
 TRANSPARENCY_SERVICE_CHAIN_ID = config("TRANSPARENCY_SERVICE_CHAIN_ID", default="tc-api-service")
 TRANSPARENCY_WORKLOAD_CHAIN_PREFIX = config("TRANSPARENCY_WORKLOAD_CHAIN_PREFIX", default="tc-api-workload-")

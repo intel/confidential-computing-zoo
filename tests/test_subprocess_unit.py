@@ -19,6 +19,14 @@ class DummySigner:
         self.entries.append(entry)
 
 
+class DummyTlog:
+    def __init__(self):
+        self.entries = []
+
+    def add_entry(self, record_id, entry):
+        self.entries.append((record_id, entry))
+
+
 @pytest.fixture
 def docker_service(tmp_path, monkeypatch):
     monkeypatch.setattr(services, "BUILD_DIR", str(tmp_path / "builds"))
@@ -110,3 +118,46 @@ def test_build_result_shows_failed_when_build_step_fails():
     result_payload = result_response.json()
     assert result_payload["status"] == "failed"
     assert result_payload["current_step"] == "Container build failed"
+
+
+def test_verify_sbom_accepts_local_oci_layout(docker_service, tmp_path):
+    tlog = DummyTlog()
+    image_dir = tmp_path / "plain"
+    image_dir.mkdir()
+    (image_dir / "index.json").write_text("{}", encoding="utf-8")
+    (image_dir / "oci-layout").write_text('{"imageLayoutVersion":"1.0.0"}', encoding="utf-8")
+    sbom_path = tmp_path / "sbom.json"
+    sbom_path.write_text('{"spdxVersion":"SPDX-2.3"}', encoding="utf-8")
+
+    verified = docker_service.verify_sbom(f"oci:{image_dir}", str(sbom_path), tlog, "rec-1")
+
+    assert verified is True
+
+
+@pytest.mark.asyncio
+async def test_launch_containers_normalizes_local_oci_image_id(docker_service, tmp_path):
+    tlog = DummyTlog()
+    results = [
+        SimpleNamespace(returncode=0, stdout="copied", stderr=""),
+        SimpleNamespace(returncode=0, stdout="loaded", stderr=""),
+        SimpleNamespace(returncode=0, stdout="started", stderr=""),
+        SimpleNamespace(returncode=0, stdout="container-1\n", stderr=""),
+        SimpleNamespace(returncode=0, stdout="running\n", stderr=""),
+    ]
+
+    with patch("tc_api.services.subprocess.run", side_effect=results) as run_mock:
+        launched = await docker_service.launch_containers(
+            tlog,
+            "rec-1",
+            image_url="./builds/bld-1/plain",
+            image_id="oci:./builds/bld-1/plain",
+            launch_pth=str(tmp_path),
+            workload_id="svc-a",
+            launch_id="launch-123",
+        )
+
+    assert launched == [{"container_ID": "container-1", "container_Status": "running"}]
+    first_cmd = run_mock.call_args_list[0].args[0]
+    third_cmd = run_mock.call_args_list[2].args[0]
+    assert first_cmd[-1].endswith(":tc-api-launch-123:latest")
+    assert third_cmd[-1] == "tc-api-launch-123:latest"

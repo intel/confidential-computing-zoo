@@ -1509,8 +1509,11 @@ class DockerService:
 
 
     def pull_image(self, tlog: TrustedLogAPI, record_id: str, image_url: str, openssl_key: str, target_dir: str, max_retries: int = 3, retry_delay: int = 5) -> bool:
-        
-        source_ref = image_url.replace("docker.io","docker:/")
+
+        source_ref = image_url
+        if source_ref and ":" not in source_ref and os.path.isdir(source_ref):
+            source_ref = f"oci:{source_ref}"
+        source_ref = source_ref.replace("docker.io","docker:/")
         dest_ref = os.path.join('oci:'+target_dir,'encrypted')
         insecure_local_registry = source_ref.startswith("docker://localhost:") or source_ref.startswith("docker://127.0.0.1:")
 
@@ -1670,6 +1673,32 @@ class DockerService:
 
     def verify_sbom(self,imagesurl,sbom_url,tlog: TrustedLogAPI, record_id: str, cosign_pubkey='cosign.pub') -> bool:
 
+        if imagesurl.startswith("oci:"):
+            image_path = imagesurl[4:]
+            layout_ok = os.path.isdir(image_path) and os.path.exists(os.path.join(image_path, "index.json")) and os.path.exists(os.path.join(image_path, "oci-layout"))
+            if not layout_ok:
+                tlog.add_entry(record_id, Entry(key="verify_sbom_status", value="failed"))
+                tlog.add_entry(record_id, Entry(key="verify_sbom_mode", value="local_oci_layout"))
+                return False
+
+            try:
+                with open(sbom_url, "r", encoding="utf-8") as handle:
+                    sbom_data = json.load(handle)
+            except Exception as exc:
+                logger.error(f"Failed to load local SBOM {sbom_url}: {exc}")
+                tlog.add_entry(record_id, Entry(key="verify_sbom_status", value="failed"))
+                tlog.add_entry(record_id, Entry(key="verify_sbom_mode", value="local_oci_layout"))
+                return False
+
+            if not isinstance(sbom_data, dict) or not sbom_data.get("spdxVersion"):
+                tlog.add_entry(record_id, Entry(key="verify_sbom_status", value="failed"))
+                tlog.add_entry(record_id, Entry(key="verify_sbom_mode", value="local_oci_layout"))
+                return False
+
+            tlog.add_entry(record_id, Entry(key="verify_sbom_mode", value="local_oci_layout"))
+            tlog.add_entry(record_id, Entry(key="verify_sbom_status", value="success"))
+            return True
+
         images_fullName = imagesurl.replace("docker.io/","")
         # 1. verify signed image
         try:
@@ -1738,8 +1767,13 @@ class DockerService:
 
     async def launch_containers(self, tlog, record_id, image_url, image_id, launch_pth, workload_id: Optional[str] = None, launch_id: Optional[str] = None):
         image_dir = 'oci:' + os.path.join(launch_pth,'encrypted')
-        loaded_image_ref = image_id if ':' in image_id else f"{image_id}:latest"
-        archive_path = os.path.join(launch_pth, f"{image_id.replace('/', '_')}-image.tar")
+        if image_id.startswith("oci:"):
+            local_tag = launch_id or workload_id or f"local-{uuid.uuid4().hex[:12]}"
+            loaded_image_ref = f"tc-api-{local_tag}:latest"
+        else:
+            loaded_image_ref = image_id if ':' in image_id else f"{image_id}:latest"
+        archive_name = loaded_image_ref.replace('/', '_').replace(':', '_')
+        archive_path = os.path.join(launch_pth, f"{archive_name}-image.tar")
         archive_ref = f"docker-archive:{archive_path}:{loaded_image_ref}"
         
         try:

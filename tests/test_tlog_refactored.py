@@ -88,8 +88,17 @@ def test_tdx_mr_adapter_detects_libtdx_attest_extend_fallback(monkeypatch):
 def test_tdx_mr_adapter_rejects_extend_availability_when_fallback_unusable(monkeypatch):
     monkeypatch.setattr(TdxMRAdapter, "is_available", classmethod(lambda cls, index, sysfs_base_path="/sys/class/misc/tdx_guest/measurements/rtmr": False))
     monkeypatch.setattr(TdxMRAdapter, "_load_attest_library", lambda self: (_ for _ in ()).throw(OSError("libtdx_attest missing")))
+    monkeypatch.setattr(TdxMRAdapter, "_resolve_guest_device_path", lambda self: None)
 
     assert TdxMRAdapter.is_extend_available(2) is False
+
+
+def test_tdx_mr_adapter_detects_ioctl_extend_fallback(monkeypatch):
+    monkeypatch.setattr(TdxMRAdapter, "is_available", classmethod(lambda cls, index, sysfs_base_path="/sys/class/misc/tdx_guest/measurements/rtmr": False))
+    monkeypatch.setattr(TdxMRAdapter, "_resolve_guest_device_path", lambda self: "/dev/tdx_guest")
+    monkeypatch.setattr(TdxMRAdapter, "_read_from_ioctl_report", lambda self, index: "44" * 48)
+
+    assert TdxMRAdapter.is_extend_available(3) is True
 
 def test_tdx_mr_adapter(tmp_path):
     # Setup mock sysfs
@@ -119,9 +128,10 @@ def test_tdx_mr_adapter(tmp_path):
 
 def test_tdx_mr_adapter_reads_rtmr_from_tdreport_when_sysfs_missing(monkeypatch):
     adapter = TdxMRAdapter(sysfs_base_path="/nonexistent/rtmr")
+    monkeypatch.setattr(adapter, "_resolve_guest_device_path", lambda: None)
     report = bytearray(1024)
     expected_rtmr = bytes.fromhex("22" * 48)
-    report[288:336] = expected_rtmr
+    report[816:864] = expected_rtmr
 
     class FakeGetReport:
         argtypes = None
@@ -141,8 +151,17 @@ def test_tdx_mr_adapter_reads_rtmr_from_tdreport_when_sysfs_missing(monkeypatch)
     assert adapter.read(2) == expected_rtmr.hex()
 
 
+def test_tdx_mr_adapter_reads_rtmr_via_ioctl_when_device_available(monkeypatch):
+    adapter = TdxMRAdapter(sysfs_base_path="/nonexistent/rtmr")
+    monkeypatch.setattr(adapter, "_resolve_guest_device_path", lambda: "/dev/tdx_guest")
+    monkeypatch.setattr(adapter, "_read_from_ioctl_report", lambda index: "55" * 48)
+
+    assert adapter.read(3) == "55" * 48
+
+
 def test_tdx_mr_adapter_extends_via_libtdx_attest_when_sysfs_missing(monkeypatch):
     adapter = TdxMRAdapter(sysfs_base_path="/nonexistent/rtmr")
+    monkeypatch.setattr(adapter, "_resolve_guest_device_path", lambda: None)
     values = iter(["00" * 48, "33" * 48])
 
     class FakeExtend:
@@ -180,8 +199,26 @@ def test_tdx_mr_adapter_extends_via_libtdx_attest_when_sysfs_missing(monkeypatch
     assert new_val == "33" * 48
 
 
+def test_tdx_mr_adapter_extends_via_ioctl_when_device_available(monkeypatch):
+    adapter = TdxMRAdapter(sysfs_base_path="/nonexistent/rtmr")
+    monkeypatch.setattr(adapter, "_resolve_guest_device_path", lambda: "/dev/tdx_guest")
+    values = iter(["00" * 48, "66" * 48])
+    captured = {}
+
+    monkeypatch.setattr(adapter, "read", lambda index: next(values))
+    monkeypatch.setattr(adapter, "_extend_via_ioctl", lambda index, raw_bytes: captured.update({"index": index, "raw_bytes": raw_bytes}))
+
+    new_val, prev_val = adapter.extend(3, "11" * 48)
+
+    assert prev_val == "00" * 48
+    assert new_val == "66" * 48
+    assert captured["index"] == 3
+    assert captured["raw_bytes"] == bytes.fromhex("11" * 48)
+
+
 def test_tdx_mr_adapter_reports_libtdx_attest_extend_errors(monkeypatch):
     adapter = TdxMRAdapter(sysfs_base_path="/nonexistent/rtmr")
+    monkeypatch.setattr(adapter, "_resolve_guest_device_path", lambda: None)
 
     class FakeExtend:
         argtypes = None
