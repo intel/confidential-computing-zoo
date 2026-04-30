@@ -547,6 +547,42 @@ def _crash_recovery():
             )
             logger.info("Rebuilt chain_state for chain '%s' at sequence_num=%d", cid, highest['sequence_num'])
 
+
+def _initialize_local_mr_adapter():
+    from .adapters.tdx_mr import TdxMRAdapter
+
+    if TdxMRAdapter.is_available(RTMR_INDEX):
+        logger.info("TDX RTMR adapter initialized")
+        return TdxMRAdapter()
+
+    if TdxMRAdapter.is_extend_available(RTMR_INDEX):
+        logger.info("TDX RTMR adapter initialized via libtdx_attest fallback")
+        return TdxMRAdapter()
+
+    if TdxMRAdapter.is_report_read_available(RTMR_INDEX):
+        message = (
+            "TDX RTMR sysfs not found, but TDREPORT-backed RTMR reads are available; "
+            "no RTMR extend interface is available on this platform"
+        )
+        if _ENABLE_TDX:
+            logger.error("ENABLE_TDX=true but %s. Refusing to start in degraded mode.", message)
+            raise RuntimeError(f"ENABLE_TDX=true requires RTMR extend support; {message}")
+        logger.warning(
+            "NON-TEE MODE: %s; running without hardware measurement extensions because no extend interface is available on this platform",
+            message,
+        )
+        return None
+
+    message = "TDX RTMR sysfs not found and no libtdx_attest extend path is available"
+    if _ENABLE_TDX:
+        logger.error("ENABLE_TDX=true but %s. Refusing to start in degraded mode.", message)
+        raise RuntimeError(f"ENABLE_TDX=true requires RTMR extend support; {message}")
+    logger.warning(
+        "NON-TEE MODE: %s — running without hardware measurement extensions (development/testing only)",
+        message,
+    )
+    return None
+
 # ---------------------------------------------------------------------------
 # Submit daemon thread
 # ---------------------------------------------------------------------------
@@ -774,18 +810,10 @@ async def lifespan(app: FastAPI):
 
     # Initialize adapters
     try:
-        from .adapters.tdx_mr import TdxMRAdapter
-        if TdxMRAdapter.is_available(RTMR_INDEX):
-            _local_mr = TdxMRAdapter()
-            logger.info("TDX RTMR adapter initialized")
-        elif TdxMRAdapter.is_report_read_available(RTMR_INDEX):
-            logger.warning(
-                "NON-TEE MODE: TDX RTMR sysfs not found, but TDREPORT-backed RTMR reads are available; "
-                "running without hardware measurement extensions because no extend interface is available on this platform"
-            )
-        else:
-            logger.warning("NON-TEE MODE: TDX RTMR sysfs not found — running without hardware measurement extensions (development/testing only)")
+        _local_mr = _initialize_local_mr_adapter()
     except Exception as e:
+        if _ENABLE_TDX:
+            raise
         logger.warning("Could not init local MR adapter: %s", e)
 
     mirror_location = (
@@ -836,6 +864,7 @@ app = FastAPI(
 _AUTH_DISABLED = os.environ.get("TRUCON_AUTH_DISABLED", "").lower() == "true"
 _SERVICE_TOKEN = os.environ.get("TRUCON_SERVICE_TOKEN", "")
 _TRUCON_UDS_PATH = os.environ.get("TRUCON_UDS_PATH", "")
+_ENABLE_TDX = os.environ.get("ENABLE_TDX", "").lower() == "true"
 _TRUCON_HTTP_PORT = int(os.environ.get("TRUCON_PORT", "8001"))
 _INTERNAL_PROXY_SECRET = secrets.token_urlsafe(32)
 _uds_gateway: Optional[TruConUnixSocketGateway] = None

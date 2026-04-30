@@ -58,6 +58,38 @@ def test_tdx_mr_adapter_detects_real_sysfs_node(tmp_path):
 
     assert TdxMRAdapter.is_available(2, sysfs_base_path=str(d / "rtmr")) is True
     assert TdxMRAdapter.is_available(1, sysfs_base_path=str(d / "rtmr")) is False
+    assert TdxMRAdapter.is_extend_available(2, sysfs_base_path=str(d / "rtmr")) is True
+
+
+def test_tdx_mr_adapter_detects_libtdx_attest_extend_fallback(monkeypatch):
+    class FakeExtend:
+        argtypes = None
+        restype = None
+
+    class FakeGetReport:
+        argtypes = None
+        restype = None
+
+        def __call__(self, report_data_ptr, report_ptr):
+            return 0
+
+    class FakeLibrary:
+        def __init__(self):
+            self.tdx_att_get_report = FakeGetReport()
+            self.tdx_att_extend = FakeExtend()
+
+    monkeypatch.setattr(TdxMRAdapter, "is_available", classmethod(lambda cls, index, sysfs_base_path="/sys/class/misc/tdx_guest/measurements/rtmr": False))
+    monkeypatch.setattr(TdxMRAdapter, "_load_attest_library", lambda self: FakeLibrary())
+    monkeypatch.setattr(TdxMRAdapter, "_read_from_tdreport", lambda self, index: "22" * 48)
+
+    assert TdxMRAdapter.is_extend_available(2) is True
+
+
+def test_tdx_mr_adapter_rejects_extend_availability_when_fallback_unusable(monkeypatch):
+    monkeypatch.setattr(TdxMRAdapter, "is_available", classmethod(lambda cls, index, sysfs_base_path="/sys/class/misc/tdx_guest/measurements/rtmr": False))
+    monkeypatch.setattr(TdxMRAdapter, "_load_attest_library", lambda self: (_ for _ in ()).throw(OSError("libtdx_attest missing")))
+
+    assert TdxMRAdapter.is_extend_available(2) is False
 
 def test_tdx_mr_adapter(tmp_path):
     # Setup mock sysfs

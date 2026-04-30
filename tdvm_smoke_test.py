@@ -41,6 +41,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from tc_api.sigstore_baseline import build_baseline_sigstore_bundle
+from tc_api.config import ENABLE_TDX
 from tc_api.sigstore_identity import resolve_sigstore_identity_token
 from tc_api.tlog_client import TrustedLogAPI
 from tc_api.trucon.adapters.ccel import read_ccel_eventlog_used_binary
@@ -423,6 +424,7 @@ def run_build(
     base_url: str,
     args: argparse.Namespace,
     user_id: str,
+    identity_token: Optional[str] = None,
 ) -> Dict[str, Any]:
     print_step("Submitting build-package request")
 
@@ -442,6 +444,8 @@ def run_build(
         build_payload["sign_key"] = sign_key
     if cert:
         build_payload["cert"] = cert
+    if identity_token:
+        build_payload["identity_token"] = identity_token
 
     response = session_request(
         session,
@@ -490,6 +494,7 @@ def run_publish(
     args: argparse.Namespace,
     build_result: Dict[str, Any],
     user_id: str,
+    identity_token: Optional[str] = None,
 ) -> Dict[str, Any]:
     print_step("Submitting publish-package request")
 
@@ -499,6 +504,7 @@ def run_publish(
         "user_id": user_id,
         "sbom_url": build_result["sbom_url"],
         "log_evidence": True,
+        "identity_token": identity_token,
         "metadata": {
             "smoke_test": "tdvm",
             "requested_at": int(time.time()),
@@ -537,6 +543,7 @@ def run_deploy(
     build_result: Dict[str, Any],
     publish_result: Dict[str, Any],
     user_id: str,
+    identity_token: Optional[str] = None,
 ) -> Dict[str, Any]:
     print_step("Submitting deploy-launch request")
 
@@ -546,6 +553,7 @@ def run_deploy(
         "image_url": publish_result.get("image_url"),
         "sbom_url": build_result.get("sbom_url"),
         "attestation_required": not args.no_attestation,
+        "identity_token": identity_token,
         "metadata": {
             "smoke_test": "tdvm",
             "source_build_id": build_result["build_id"],
@@ -624,6 +632,13 @@ def main() -> int:
     base_url = args.base_url.rstrip("/")
     user_id = f"{args.user_id_prefix}-{uuid.uuid4().hex[:8]}"
 
+    if not args.skip_deploy and not args.no_encrypt and not ENABLE_TDX:
+        print(
+            "[tdvm-smoke] ENABLE_TDX=false in the current service configuration; "
+            "forcing --no-encrypt so deploy can launch without a decryption key"
+        )
+        args.no_encrypt = True
+
     summary: Dict[str, Any] = {
         "base_url": base_url,
         "user_id": user_id,
@@ -650,15 +665,27 @@ def main() -> int:
 
         summary["health"] = run_health_check(session, base_url)
 
-        if not args.skip_baseline_smoke:
-            summary["baseline"] = run_baseline_chain_smoke(args)
-        else:
-            summary["baseline"] = "skipped"
+        stage_identity_token: Optional[str] = None
+        if not args.skip_publish:
+            stage_identity_token = resolve_sigstore_identity_token(
+                "tdvm_smoke_build_publish",
+                allow_interactive=False,
+                min_ttl_seconds=0,
+            )
+            if not stage_identity_token:
+                raise SmokeTestError(
+                    "No reusable Sigstore identity token is available for build/publish transparency logging. "
+                    "Run tc_api.oidc_preflight --fetch --force-oob immediately before the smoke test."
+                )
 
-        build_result = run_build(session, base_url, args, user_id)
+        build_result = run_build(session, base_url, args, user_id, identity_token=stage_identity_token)
         summary["build"] = build_result
 
         if args.skip_publish:
+            if not args.skip_baseline_smoke:
+                summary["baseline"] = run_baseline_chain_smoke(args)
+            else:
+                summary["baseline"] = "skipped"
             write_summary(args.summary_file, summary)
             print_step("Smoke test completed through build stage")
             return 0
@@ -666,19 +693,54 @@ def main() -> int:
         if not has_registry_configuration():
             summary["publish"] = "skipped: DOCKER_REPOSITORY is not configured for registry push"
             summary["launch"] = "skipped: publish stage was skipped"
+            if not args.skip_baseline_smoke:
+                summary["baseline"] = run_baseline_chain_smoke(args)
+            else:
+                summary["baseline"] = "skipped"
             write_summary(args.summary_file, summary)
             print_step("Smoke test completed through build stage; publish/deploy skipped because DOCKER_REPOSITORY is not configured")
             return 0
 
-        publish_result = run_publish(session, base_url, args, build_result, user_id)
+        publish_result = run_publish(
+            session,
+            base_url,
+            args,
+            build_result,
+            user_id,
+            identity_token=stage_identity_token,
+        )
         summary["publish"] = publish_result
+
+        if not args.skip_baseline_smoke:
+            summary["baseline"] = run_baseline_chain_smoke(args)
+        else:
+            summary["baseline"] = "skipped"
 
         if args.skip_deploy:
             write_summary(args.summary_file, summary)
             print_step("Smoke test completed through publish stage")
             return 0
 
-        launch_result = run_deploy(session, base_url, args, build_result, publish_result, user_id)
+        deploy_identity_token = resolve_sigstore_identity_token(
+            "tdvm_smoke_deploy",
+            allow_interactive=False,
+            min_ttl_seconds=0,
+        )
+        if not deploy_identity_token:
+            raise SmokeTestError(
+                "No reusable Sigstore identity token is available for deploy transparency logging. "
+                "Run tc_api.oidc_preflight --fetch --force-oob immediately before the smoke test."
+            )
+
+        launch_result = run_deploy(
+            session,
+            base_url,
+            args,
+            build_result,
+            publish_result,
+            user_id,
+            identity_token=deploy_identity_token,
+        )
         summary["launch"] = launch_result
         write_summary(args.summary_file, summary)
         print_step("TD VM smoke test completed successfully")

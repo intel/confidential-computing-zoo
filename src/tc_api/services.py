@@ -489,6 +489,133 @@ class DockerService:
                     os.remove(archive_path)
                 except OSError:
                     logger.debug("Failed to remove temporary archive %s", archive_path)
+
+    def export_image_to_oci(self, image_name: str, build_id: str, tlog: TrustedLogAPI, record_id: str) -> Optional[str]:
+        """Export a daemon image to OCI layout without encryption."""
+        archive_path = None
+        docker_save_cmd = None
+        cmd = None
+        try:
+            build_path = os.path.join(BUILD_DIR, build_id)
+            plain_path = os.path.join(build_path, "plain")
+            os.makedirs(plain_path, exist_ok=True)
+
+            logger.info(f"Starting OCI export for image: {image_name}")
+            archive_path = os.path.join(build_path, f"{build_id}-image.tar")
+
+            docker_save_cmd = [DOCKER_CMD, "save", "-o", archive_path, image_name]
+            logger.debug(f"Executing docker save command: {' '.join(docker_save_cmd)}")
+            docker_save_result = subprocess.run(
+                docker_save_cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if docker_save_result.returncode != 0:
+                logger.error(f"Docker save failed before OCI export: {docker_save_result.stderr}")
+
+                export_log = {
+                    "docker_save_command": " ".join(docker_save_cmd),
+                    "docker_save_exit_code": docker_save_result.returncode,
+                    "docker_save_stdout": docker_save_result.stdout,
+                    "docker_save_stderr": docker_save_result.stderr,
+                    "status": "failed",
+                    "error": {
+                        "type": "subprocess.CalledProcessError",
+                        "message": docker_save_result.stderr,
+                    },
+                }
+                tlog.add_entry(record_id, Entry(key="image_export", value=export_log))
+                return None
+
+            cmd = [
+                SKOPEO_CMD,
+                "copy",
+                f"docker-archive:{archive_path}",
+                f"oci:{plain_path}:latest",
+            ]
+            logger.debug(f"Executing OCI export command: {' '.join(cmd)}")
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=self._syft_environment(),
+            )
+
+            if result.returncode == 0:
+                logger.info(f"Successfully exported image {image_name} to {plain_path}")
+
+                export_log = {
+                    "docker_save_command": " ".join(docker_save_cmd),
+                    "command": " ".join(cmd),
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "output_path": plain_path,
+                    "status": "success",
+                }
+                tlog.add_entry(record_id, Entry(key="image_export", value=export_log))
+                return f"oci:{plain_path}"
+
+            logger.error(f"OCI export failed: {result.stderr}")
+            logger.debug(f"OCI export stdout: {result.stdout}")
+
+            export_log = {
+                "docker_save_command": " ".join(docker_save_cmd),
+                "command": " ".join(cmd),
+                "exit_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "status": "failed",
+                "error": {
+                    "type": "subprocess.CalledProcessError",
+                    "message": result.stderr,
+                },
+            }
+            tlog.add_entry(record_id, Entry(key="image_export", value=export_log))
+            return None
+        except subprocess.TimeoutExpired:
+            logger.error(f"OCI export timed out for image: {image_name}")
+            export_log = {
+                "docker_save_command": " ".join(docker_save_cmd) if docker_save_cmd else None,
+                "command": " ".join(cmd) if cmd else None,
+                "status": "timeout",
+                "error": {
+                    "type": "subprocess.TimeoutExpired",
+                    "message": f"OCI export timed out for image: {image_name}",
+                },
+            }
+            tlog.add_entry(record_id, Entry(key="image_export", value=export_log))
+            return None
+        except FileNotFoundError as exc:
+            logger.error(f"OCI export command not found: {exc}")
+            export_log = {
+                "status": "failed",
+                "error": {
+                    "type": "FileNotFoundError",
+                    "message": str(exc),
+                },
+            }
+            tlog.add_entry(record_id, Entry(key="image_export", value=export_log))
+            return None
+        except Exception as exc:
+            logger.error(f"Unexpected error exporting image to OCI: {str(exc)}")
+            export_log = {
+                "status": "failed",
+                "error": {
+                    "type": str(type(exc)),
+                    "message": str(exc),
+                },
+            }
+            tlog.add_entry(record_id, Entry(key="image_export", value=export_log))
+            return None
+        finally:
+            if archive_path and os.path.exists(archive_path):
+                try:
+                    os.remove(archive_path)
+                except OSError:
+                    logger.debug("Failed to remove temporary archive %s", archive_path)
     
     def sign_image(self, image_name: str, private_key_path: str, tlog: TrustedLogAPI, record_id: str) -> Tuple[bool, Optional[str]]:
         """
@@ -519,10 +646,12 @@ class DockerService:
 
                 return False, None
             
-            # Extract proper base name and construct registry reference
-            #base_name = self._extract_base_name(image_name)
+            # Sign the same canonical registry ref that launch verification will later check.
             base_name = image_name.split("/")[-1] + ":latest-encrypted"
-            full_image_ref = f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{base_name}"
+            if DOCKER_REPOSITORY.startswith(("localhost:", "127.0.0.1:")):
+                full_image_ref = f"{DOCKER_REPOSITORY}/{base_name}"
+            else:
+                full_image_ref = f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{base_name}"
             
             logger.info(f"Constructed full image reference: {full_image_ref}")
             
@@ -669,10 +798,11 @@ class DockerService:
 
                 return False, None
             
-            # Extract proper base name and construct registry reference
-            #base_name = self._extract_base_name(image_name)
             base_name = image_name.split("/")[-1] + ":latest-encrypted"
-            full_image_ref = f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{base_name}"
+            if DOCKER_REPOSITORY.startswith(("localhost:", "127.0.0.1:")):
+                full_image_ref = f"{DOCKER_REPOSITORY}/{base_name}"
+            else:
+                full_image_ref = f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{base_name}"
             
             logger.info(f"Constructed full image reference: {full_image_ref}")
             
@@ -793,9 +923,14 @@ class DockerService:
 
         # Extract image name for registry destination
         def extract_image_name(ref: str) -> str:
-            # For path like 'oci:/path/to/builds/bld-123/user-id-bld-123'
-            # Return 'user-id-bld-123:latest-encrypted'
-            parts = ref.split('/')
+            # Normalize transport prefixes before deriving the publish target name.
+            normalized_ref = ref
+            if normalized_ref.startswith('oci:'):
+                normalized_ref = normalized_ref[4:]
+            elif normalized_ref.startswith('docker-daemon:'):
+                normalized_ref = normalized_ref[len('docker-daemon:'):]
+
+            parts = normalized_ref.split('/')
             image_name = parts[-1]
             if ':' not in image_name:
                 image_name += ':latest-encrypted'
@@ -806,11 +941,18 @@ class DockerService:
             # Remove any duplicate 'oci:' prefixes
             source_ref = 'oci:' + source_ref.replace('oci:', '')
             
-        # Fix destination reference format for registry
+        # Fix destination reference format for registry while preserving repository path.
         if dest_ref.startswith('docker://'):
-            registry = dest_ref.split('/')[2]  # Get registry name
+            destination_path = dest_ref[len('docker://'):]
+            path_parts = destination_path.split('/')
+            registry = path_parts[0]
+            repository_parts = path_parts[1:-1]
             image_name = extract_image_name(source_ref)
-            dest_ref = f"docker://{registry}/{image_name}"
+            repository_prefix = '/'.join(repository_parts)
+            if repository_prefix:
+                dest_ref = f"docker://{registry}/{repository_prefix}/{image_name}"
+            else:
+                dest_ref = f"docker://{registry}/{image_name}"
 
         insecure_local_registry = dest_ref.startswith("docker://localhost:") or dest_ref.startswith("docker://127.0.0.1:")
         attempt = 0
@@ -970,12 +1112,10 @@ class DockerService:
                         setattr(build_result, key, value)
                         logger.debug(f"Updated {key} for build {build_id}")
                 
-                # Trigger cleanup for completed builds
-                if status in ['success', 'failed'] and status != old_status:
-                    # Clean up in background (keep logs for failed builds)
+                # Successful builds must keep OCI artifacts available for later publish/deploy.
+                if status == 'failed' and status != old_status:
                     try:
-                        keep_logs = (status == 'failed')
-                        self.cleanup_build_artifacts(build_id, keep_logs=keep_logs)
+                        self.cleanup_build_artifacts(build_id, keep_logs=True)
                     except Exception as e:
                         logger.warning(f"Cleanup failed for build {build_id}: {e}")
                         
@@ -1372,6 +1512,7 @@ class DockerService:
         
         source_ref = image_url.replace("docker.io","docker:/")
         dest_ref = os.path.join('oci:'+target_dir,'encrypted')
+        insecure_local_registry = source_ref.startswith("docker://localhost:") or source_ref.startswith("docker://127.0.0.1:")
 
         attempt = 0
         while attempt < max_retries:
@@ -1384,6 +1525,8 @@ class DockerService:
                 else:
                     # Non-TDX mode can operate without decryption key when image is not encrypted.
                     cmd = [SKOPEO_CMD, "copy", source_ref, dest_ref]
+                if insecure_local_registry:
+                    cmd.insert(2, "--src-tls-verify=false")
                 logger.debug(f"Pull command: {' '.join(cmd)}")
 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -1550,7 +1693,7 @@ class DockerService:
         #2. verify attestation
         try:
             cosign_attcmd = [
-                    COSIGN_CMD, "verify-attestation", "--key", cosign_pubkey, "--type", "spdx", imagesurl]
+                    COSIGN_CMD, "verify-attestation", "--key", cosign_pubkey, "--type", "spdx", images_fullName]
             
             cosign_attverify = subprocess.run(cosign_attcmd, capture_output=True, text=True)
             logger.info(f"Attestation_Vertify CMD: {' '.join(cosign_attcmd)}")
@@ -1594,16 +1737,17 @@ class DockerService:
 
 
     async def launch_containers(self, tlog, record_id, image_url, image_id, launch_pth, workload_id: Optional[str] = None, launch_id: Optional[str] = None):
-        # skopeo copy oci:encrypt/ docker-daemon:test_pull:latest
         image_dir = 'oci:' + os.path.join(launch_pth,'encrypted')
-        Newimage_name = 'docker-daemon:'+ image_id + ":latest"
+        loaded_image_ref = image_id if ':' in image_id else f"{image_id}:latest"
+        archive_path = os.path.join(launch_pth, f"{image_id.replace('/', '_')}-image.tar")
+        archive_ref = f"docker-archive:{archive_path}:{loaded_image_ref}"
         
         try:
-            cmd = [SKOPEO_CMD, "copy", image_dir, Newimage_name]
+            cmd = [SKOPEO_CMD, "copy", image_dir, archive_ref]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             
             if res.returncode == 0:
-                logger.info(f"Success add {Newimage_name} image.")
+                logger.info(f"Success export {loaded_image_ref} archive.")
                 logger.debug(f"CMD: {' '.join(cmd)}")
                 tlog.add_entry(record_id, Entry(key="pullImage", value={"pullImage_cmd": " ".join(cmd), "pullImage_status": "success"}))
             else:
@@ -1612,27 +1756,26 @@ class DockerService:
                 tlog.add_entry(record_id, Entry(key="pullImage_status", value="failed"))
                 return False
 
-            #get_imageID = [DOCKER_CMD, "images", "--format", "'{{.ID}}'"]
-            cmd = ["docker", "images","--format", "{{.Repository}} {{.Tag}} {{.ID}}","--no-trunc"]
-            output = subprocess.check_output(cmd, text=True)
-            images = []
-            for line in output.strip().split('\n'):
-                if not line: continue
-                repo, tag, full_id = line.split(' ', 2)
-                short_id = full_id.split(':')[-1][:12]
-                images.append({
-                    "repository": repo,
-                    "tag": tag,
-                    "id": short_id,
-                    "full_id": full_id
-                    })
-
-            imageID = ''
-            for i in images:
-                if image_id in i['repository']:
-                    imageID = i['id']
-                    break
-            logger.info(f"Get image id {imageID}")
+            load_cmd = [DOCKER_CMD, "load", "-i", archive_path]
+            load_res = subprocess.run(load_cmd, capture_output=True, text=True, timeout=600)
+            if load_res.returncode == 0:
+                logger.info(f"Success load image {loaded_image_ref}.")
+                tlog.add_entry(record_id, Entry(key="docker_load", value={
+                    "docker_load_cmd": " ".join(load_cmd),
+                    "docker_load_status": "success",
+                    "docker_load_stdout": load_res.stdout,
+                    "docker_load_stderr": load_res.stderr,
+                }))
+            else:
+                logger.info("Failed load image archive.")
+                logger.debug(f"CMD: {' '.join(load_cmd)}")
+                tlog.add_entry(record_id, Entry(key="docker_load", value={
+                    "docker_load_cmd": " ".join(load_cmd),
+                    "docker_load_status": "failed",
+                    "docker_load_stdout": load_res.stdout,
+                    "docker_load_stderr": load_res.stderr,
+                }))
+                return False
 
             # run docker image
             docker_cmd = [
@@ -1665,7 +1808,7 @@ class DockerService:
             else:
                 logger.info("ENABLE_TDX=false, skipping TDX device and attestation mounts")
 
-            docker_cmd.append(imageID)
+            docker_cmd.append(loaded_image_ref)
             logger.info(f"Runcmd : {' '.join(docker_cmd)}")
             dockerRUn = subprocess.run(docker_cmd, capture_output=True, text=True)
             if dockerRUn.returncode == 0:
@@ -1687,11 +1830,11 @@ class DockerService:
             getID = [DOCKER_CMD, "ps", "-q", "--latest"]
             getID_res = subprocess.run(getID, capture_output=True, text=True)
             if getID_res.returncode == 0:
-                containerID = getID_res.stdout.replace("\n","")
+                containerID = getID_res.stdout.strip()
                 logger.info(f"Success get image ID {containerID}")
                 tlog.add_entry(record_id, Entry(key="getContainerID_cmd", value={"getContainerID_cmd": " ".join(getID),
                                      "getContainerID_status": "success",
-                                     "getID_stdout": getID_res.stdout
+                                     "getID_stdout": containerID
                                      }))
                 tlog.add_entry(record_id, Entry(key="instance_id", value=containerID))
             else:
@@ -1702,13 +1845,13 @@ class DockerService:
                 return False
             
             #docker inspect ID --format '{{.State.Status}}'
-            getStatus = [DOCKER_CMD, "inspect", "--format", "'{{.State.Status}}'", containerID]
+            getStatus = [DOCKER_CMD, "inspect", "--format", "{{.State.Status}}", containerID]
             getStatus_res = subprocess.run(getStatus, capture_output=True, text=True)
             if getStatus_res.returncode == 0:
-                status_text = getStatus_res.stdout.replace("\n", "")
+                status_text = getStatus_res.stdout.strip()
                 logger.info(f"Success get container {containerID} status: {status_text}")
                 tlog.add_entry(record_id, Entry(key="getStatus_cmd", value={"getStatus_cmd": " ".join(getStatus),
-                                     "get_status": getStatus_res.stdout}))
+                                     "get_status": status_text}))
             else:
                 logger.info("Failed get container status.")
                 logger.error(f"get container status cmd: {' '.join(getStatus)}")
@@ -1717,8 +1860,9 @@ class DockerService:
                                      }))
                 return False
             
-            tlog.add_entry(record_id, Entry(key="container_info", value={"container_ID": getID_res.stdout, "container_Status": getStatus_res.stdout}))
-            return [{"container_ID": getID_res.stdout, "container_Status": getStatus_res.stdout}]
+            container_info = {"container_ID": containerID, "container_Status": status_text}
+            tlog.add_entry(record_id, Entry(key="container_info", value=container_info))
+            return [container_info]
 
         except Exception as e:
             logger.error(f"Launch contaioner failed: {str(e)}")

@@ -169,6 +169,25 @@ Note: `submit_record()` and `get_latest_state()` are no longer exposed on the tc
 - `verify_record()` verifies immutable-backend entries starting from a confirmed tail log identifier. Callers can provide policy such as `chain_id` and `signer_identity`, and the result includes structured per-entry detail for operator tooling.
 - `TrustedLogAPI` (tc_api-side) is stateless and safe for multi-worker deployment. All ordering and state are managed by the single-instance TruCon.
 
+### tc_api Chain Routing Contract
+
+The current tc_api integration uses explicit `chain_ref` routing when it calls `init_record()`:
+
+- build and publish create records on `TRANSPARENCY_SERVICE_CHAIN_ID`, which defaults to `tc-api-service`;
+- launch creates records on `TRANSPARENCY_WORKLOAD_CHAIN_PREFIX + workload_id`, which defaults to `tc-api-workload-<workload_id>`.
+
+This is now the intended caller contract for tc_api-facing transparency operations. Using the legacy `default` chain for new build/publish receipts is no longer the operationally preferred path.
+
+### Chain Owner Key Persistence Contract
+
+The owner key used for reservation-backed commit authorization is chain-scoped and persistent.
+
+- Event Log 0 stores the owner public key in the baseline payload as `pub_key`.
+- later commits for the same chain must sign matching `owner_authorization` payloads with the corresponding private key.
+- tc_api therefore persists the chain owner private key under `OWNER_KEY_DIR` and reuses it across process restarts.
+
+If the persisted key is lost while the TruCon chain history remains, `/commit` will reject future writes for that chain because the live authorization signer no longer matches the baseline `pub_key`. Operators should therefore treat owner-key persistence and chain history as one recovery domain.
+
 For the current real-Rekor smoke path, two implementation limitations remain important for operators and tests:
 
 - replay treats Rekor `payloadHash(sha256)` lookup as predecessor candidate discovery only, not protocol truth
@@ -266,7 +285,7 @@ See `src/tc_api/trucon/app.py` for Pydantic request/response models (`CommitRequ
 
 ```python
 # tc_api side — stateless, multi-worker safe
-ctx = trusted_log.init_record()
+ctx = trusted_log.init_record(context={"chain_ref": "tc-api-service"})
 trusted_log.add_entry(ctx.record_id, Entry(key="docker-pull", value=image_ref))
 trusted_log.add_entry(ctx.record_id, Entry(key="verify-sbom", value={"digest": sbom_digest, "format": "spdx"}))
 
@@ -285,7 +304,7 @@ queue = trusted_log.get_commit_queue_status()
 event_log = trusted_log.get_event_log(log_uuid="log-uuid-example")
 
 # Resolve the confirmed chain tail from TruCon, then verify immutable-backend entries
-verify = trusted_log.verify_record(target="head_log_id_value", policy={"chain_id": "default"})
+verify = trusted_log.verify_record(target="head_log_id_value", policy={"chain_id": "tc-api-service"})
 ```
 
 The preferred operator-facing surface remains `tc-verify --evidence ...`; direct `verify_record()` usage is best understood as the library-level replay primitive beneath that CLI flow.

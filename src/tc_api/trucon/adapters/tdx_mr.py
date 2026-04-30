@@ -82,6 +82,24 @@ class TdxMRAdapter(LocalMRAdapter):
         except Exception:
             return False
 
+    @classmethod
+    def is_extend_available(
+        cls,
+        index: int,
+        sysfs_base_path: str = "/sys/class/misc/tdx_guest/measurements/rtmr",
+    ) -> bool:
+        if cls.is_available(index, sysfs_base_path=sysfs_base_path):
+            return True
+
+        try:
+            adapter = cls(sysfs_base_path=sysfs_base_path)
+            library = adapter._load_attest_library()
+            getattr(library, "tdx_att_extend")
+            adapter._read_from_tdreport(index)
+            return True
+        except Exception:
+            return False
+
     def _get_path(self, index: int) -> str:
         # Expected pattern: /sys/class/misc/tdx_guest/measurements/rtmr0:sha384
         return f"{self.sysfs_base_path}{index}:sha384"

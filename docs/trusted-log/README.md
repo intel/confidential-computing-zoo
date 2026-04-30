@@ -15,6 +15,27 @@ This allows users and applications to verify both:
 - Remote immutable event history.
 - TEE quote evidence for expected runtime state.
 
+## Chain Conventions
+
+The current tc_api and TruCon integration now uses explicit chain classes instead of relying on the historical `default` chain for every control-plane event.
+
+- `tc-api-service` is the service-level control-plane chain used by tc_api build and publish transparency commits.
+- `tc-api-workload-<workload_id>` is the workload-scoped chain used by launch transparency commits.
+- `tdvm-smoke-baseline-<suffix>` remains the explicit Event Log 0 / baseline validation chain used by the real TD VM smoke.
+
+This split is operationally important:
+
+- build and publish receipts are now isolated from older `default`-chain history and stale predecessor state;
+- launch receipts remain workload-scoped and replayable as independent chain epochs;
+- operator tooling can distinguish service-plane trust events from workload-plane trust events without inferring semantics from mixed historical chains.
+
+The naming is configurable through:
+
+- `TRANSPARENCY_SERVICE_CHAIN_ID`
+- `TRANSPARENCY_WORKLOAD_CHAIN_PREFIX`
+
+Current defaults are intentionally stable and should be treated as part of the deployment contract unless a migration plan explicitly changes them.
+
 
 
 ## Why This Exists
@@ -120,6 +141,20 @@ If the identity token or pending data is missing, signing fails fast.
 **Crucially, the identity token's lifecycle is restricted entirely to the caller's synchronous request.** 
 During `commit_record()`, the short-lived OIDC token is immediately consumed to generate the signature and certificate bundle. The sealed `EventLog` written to the `Commit Queue` contains the finalized signature but **no identity tokens**. The background Submission Daemon executing `submit_record()` later merely forwards this static, fully-signed payload to the remote backend. The daemon requires no identity context, elegantly avoiding OIDC token expiration timeouts during offline queuing or retry loops.
 
+### Chain Owner Keys
+
+Each chain has a single long-term owner ECDSA P-384 key used to authorize reservation-backed commits after Event Log 0 establishes the chain root.
+
+That owner key is now persisted on disk instead of living only in process memory.
+
+- tc_api stores owner private keys under `OWNER_KEY_DIR`.
+- the same persisted key is reused after service restart for the same `chain_id`.
+- the corresponding public key recorded in Event Log 0 therefore remains stable across restarts.
+
+This is not an optimization. It is required for correctness. If a chain owner key changes after Event Log 0 has already been committed, later `/commit` requests for that chain will fail owner-authorization validation because the live signer no longer matches the public key anchored in the chain baseline.
+
+Operationally, treat `OWNER_KEY_DIR` as durable trust state. Deleting it without also rotating or recreating the associated chain baseline will strand the existing chain history.
+
 ## High-Level Lifecycle
 
 1. Initialize a trusted event-log instance on the tc_api side.
@@ -185,6 +220,16 @@ Because operations like `docker push` can be time-consuming and network-dependen
 3. **Commit (Synchronous)**: Before the API replies to the user, the workflow calls `commit_record()`. This reserves the predecessor contract from TruCon, signs the DSSE envelope locally using the caller's OIDC identity token, and POSTs the signed bundle plus `intent_token` to the TruCon.
 4. **TruCon Sequencing (Synchronous)**: The TruCon validates the reserved contract, then serializes RTMR extension + SQLite queue INSERT + chain state update under a `threading.Lock()`. The response includes `record_id`, `chain_id`, `sequence_num`, and `mr_value`.
 5. **Daemon Processing (Asynchronous)**: The embedded submit daemon inside the TruCon continuously polls the commit queue. It submits pending records in `sequence_num` order to Rekor via `SigstoreLogAdapter`, with automatic retry (up to 10 attempts) on failure.
+
+In the current deployment contract, that docker-push-style control-plane flow belongs on the `tc-api-service` chain rather than on `default`.
+
+Likewise, the tc_api launch flow records its launch transparency receipt on `tc-api-workload-<workload_id>`, where `<workload_id>` is the normalized workload identity already used by the launch/runtime orchestration layer.
+
+This means operators should expect:
+
+- service receipts such as build / publish on `tc-api-service`;
+- workload launch receipts on `tc-api-workload-plain`, `tc-api-workload-<other workload>`, and so on;
+- baseline-only validation chains to remain separate from both.
 
 ## Testing and Regression Verification
 

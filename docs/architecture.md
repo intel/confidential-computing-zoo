@@ -127,7 +127,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  subgraph DEFAULT[default chain]
+  subgraph SERVICE[tc-api-service chain]
     d0[Event Log 0 baseline]
     d1[build events]
     d2[publish events]
@@ -148,8 +148,8 @@ flowchart TB
     w20 --> w21 --> w22
   end
 
-  buildid[build_id publish_id] -. business correlation .-> DEFAULT
-  workloadid[workload_id equals chain_id in launch and runtime paths] -. chain key .-> W1
+  buildid[build_id publish_id] -. business correlation .-> SERVICE
+  workloadid[workload_id routed as tc-api-workload-<workload_id>] -. chain key .-> W1
   workloadid -. chain key .-> W2
   launchid[launch_id] -. attempt boundary .-> w11
   instanceid[instance_id or container_id] -. instance correlation inside workload chain .-> w12
@@ -160,13 +160,34 @@ At startup, tc_api initializes the `default` trust chain through the reservation
 
 In practice, this means the chain split can be read as follows:
 
-- The `default` chain is the control-plane chain. Build, publish, and unlabeled Docker operations are recorded here.
-- A workload chain is a workload-scoped runtime chain. Launch events and subsequent container lifecycle events (`create`, `start`, `stop`, `rm`) are recorded here when Docktap can resolve a non-`default` `workload_id`.
+- The `tc-api-service` chain is the control-plane service chain. tc_api build and publish transparency commits are recorded here.
+- A `tc-api-workload-<workload_id>` chain is the workload-scoped launch chain. tc_api launch transparency commits are recorded here.
+- A Docktap runtime chain is still workload-scoped. Runtime events (`create`, `start`, `stop`, `rm`) are recorded on the workload-derived chain when Docktap can resolve a non-`default` `workload_id`.
 - The routing key for a workload chain is `workload_id`, not `container_id`. Docktap resolves `chain_id` from the `io.trucon.workload-id` label on `create`, then reuses the persisted container-to-workload mapping for later `start`/`stop`/`rm` events.
 - Because of that, multiple containers do not automatically create multiple workload chains. Multiple containers with the same `workload_id` belong to the same workload chain, while different `workload_id` values create different workload chains.
 - A container without `io.trucon.workload-id` falls back to the `default` chain, so `default` is both the control-plane chain and the fallback runtime chain for unlabeled workloads.
 
-So the short answer is: build-time events normally land on `default`, runtime events normally land on a workload chain, and the number of workload chains is determined by distinct `workload_id` values rather than by the raw number of containers.
+For tc_api itself, the historical use of `default` for control-plane receipts is no longer the recommended model. The current operational contract is:
+
+- `tc-api-service` for build / publish receipts;
+- `tc-api-workload-<workload_id>` for launch receipts;
+- `default` only as a legacy or fallback chain unless an explicit migration keeps using it.
+
+So the short answer is: tc_api build/publish receipts land on `tc-api-service`, tc_api launch receipts land on workload-derived chains, Docktap runtime events remain workload-scoped, and the number of workload chains is determined by distinct `workload_id` values rather than by the raw number of containers.
+
+### 3.4.1 Owner Key Persistence
+
+Reservation-backed commits rely on the chain owner's long-term ECDSA P-384 key. Event Log 0 anchors that key by storing its public half as `pub_key` in the chain baseline.
+
+Because later `/commit` requests must present `owner_authorization` signed by the matching private key, tc_api now persists chain owner keys under `OWNER_KEY_DIR` instead of keeping them only in process memory.
+
+Operational implications:
+
+- `OWNER_KEY_DIR` is durable trust state and should survive tc_api restarts.
+- restoring TruCon SQLite state without restoring the matching owner keys can strand existing chains.
+- deleting owner keys without re-baselining the affected chain will cause future reservation-backed commits to fail owner-authorization validation.
+
+This persistence requirement is especially important for long-lived control-plane chains such as `tc-api-service`, where service restarts are expected but chain identity must remain stable.
 
 For TruCon internal architecture details (lock model, SQLite schema, crash recovery, verification), see [trusted-log/architecture.md](trusted-log/architecture.md).
 

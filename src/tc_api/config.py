@@ -14,6 +14,7 @@ UPLOAD_DIR = config("UPLOAD_DIR", default="./uploads")
 BUILD_DIR = config("BUILD_DIR", default="./builds")
 LOGS_DIR = config("LOGS_DIR", default="./logs")
 COMMIT_QUEUE_DB = config("COMMIT_QUEUE_DB", default="/dev/shm/commit_queue.db")
+OWNER_KEY_DIR = config("OWNER_KEY_DIR", default="./logs/owner_keys")
 
 # External Tools
 DOCKER_CMD = config("DOCKER_CMD", default="docker")
@@ -34,6 +35,8 @@ GIT_EMAIL = config("GIT_EMAIL", default="####@i###.com")
 # Runtime feature flags
 ENABLE_TDX = config("ENABLE_TDX", default=False, cast=bool)
 INIT_DEFAULT_CHAIN_ON_STARTUP = config("INIT_DEFAULT_CHAIN_ON_STARTUP", default=True, cast=bool)
+TRANSPARENCY_SERVICE_CHAIN_ID = config("TRANSPARENCY_SERVICE_CHAIN_ID", default="tc-api-service")
+TRANSPARENCY_WORKLOAD_CHAIN_PREFIX = config("TRANSPARENCY_WORKLOAD_CHAIN_PREFIX", default="tc-api-workload-")
 
 # Trust API Configuration
 TRUCON_URL = config("TRUCON_URL", default="http://127.0.0.1:8001")

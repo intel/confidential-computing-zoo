@@ -373,6 +373,30 @@ class TestStartupWarning:
         warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("NON-TEE MODE" in r.message for r in warning_records)
 
+    def test_enable_tdx_rejects_read_only_rtmr_mode(self):
+        from tc_api.trucon.app import _initialize_local_mr_adapter
+
+        with patch("tc_api.trucon.app._ENABLE_TDX", True), \
+             patch("tc_api.trucon.app.RTMR_INDEX", 2), \
+             patch("tc_api.trucon.app.logger"), \
+             patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_available", return_value=False), \
+             patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_extend_available", return_value=False), \
+             patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_report_read_available", return_value=True):
+            with pytest.raises(RuntimeError, match="requires RTMR extend support"):
+                _initialize_local_mr_adapter()
+
+    def test_enable_tdx_rejects_missing_rtmr_support(self):
+        from tc_api.trucon.app import _initialize_local_mr_adapter
+
+        with patch("tc_api.trucon.app._ENABLE_TDX", True), \
+             patch("tc_api.trucon.app.RTMR_INDEX", 2), \
+             patch("tc_api.trucon.app.logger"), \
+             patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_available", return_value=False), \
+             patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_extend_available", return_value=False), \
+             patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_report_read_available", return_value=False):
+            with pytest.raises(RuntimeError, match="requires RTMR extend support"):
+                _initialize_local_mr_adapter()
+
 
 class TestOwnerAuthorizationVerification:
     def test_confirmed_record_reports_owner_proven(self, db):

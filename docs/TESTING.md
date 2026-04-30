@@ -109,6 +109,26 @@ Important current behavior:
 - it auto-skips `publish` and `deploy` when `DOCKER_REPOSITORY` is unset or still contains the placeholder value;
 - it writes a machine-readable summary file when `--summary-file` is provided.
 
+### Non-TDX Deploy Smoke Constraints
+
+The current service stack used in this repository can run with `ENABLE_TDX=false`. On that path, real quote acquisition on the VM can still succeed, but deploy smoke must not assume TDX-specific launch decryption is available inside the service.
+
+The validated behavior from the current real smoke is:
+
+- `tdvm_smoke_test.py` auto-forces non-encrypted deploy smoke when the service configuration reports `ENABLE_TDX=false`;
+- launch skips TDX attestation device mounts and skips SBOM signature verification when no `cosignPub` key is available from the launch key material;
+- build and publish can still complete with real Sigstore/OIDC-backed transparency verification in this mode.
+
+Operationally, this means that on the current VM and local service stack, the correct full smoke target is:
+
+- real quote acquisition;
+- baseline immutable replay;
+- non-encrypted build;
+- non-encrypted publish to the local registry;
+- non-TDX launch.
+
+Do not treat non-encrypted deploy smoke on this stack as a regression. It is the expected acceptance path until the service itself is running with TDX-enabled launch/decryption support.
+
 For build-only validation on a TD VM without registry setup:
 
 ```bash
@@ -126,6 +146,45 @@ export DOCKER_REPOSITORY=localhost:5000/tcapi
 ```
 
 The current service implementation treats `localhost` / `127.0.0.1` registry targets as insecure local registries and uses `skopeo copy --dest-tls-verify=false` for that path. This is only intended for local smoke validation.
+
+### Launch Import Path Used by Real Smoke
+
+The current deploy smoke no longer relies on `skopeo copy ... docker-daemon:...` during launch.
+
+That transport proved unreliable in the current environment for two separate reasons during validation:
+
+- Docker API version negotiation via `docker-daemon:` was too old for publish/import on this daemon in some paths;
+- direct OCI-to-`docker-daemon:` import in launch could fail even after the image had been pulled successfully.
+
+The stable launch path now validated by the real smoke is:
+
+```bash
+skopeo copy oci:<launch-dir>/encrypted docker-archive:<launch-dir>/<image>-image.tar:<image>:latest
+docker load -i <launch-dir>/<image>-image.tar
+docker run ... <image>:latest
+```
+
+This is the path to preserve when debugging or refactoring launch on the current stack. It is the reason the end-to-end real smoke now reaches a running container in non-TDX mode.
+
+### Recommended Full Real Smoke Command
+
+For the currently validated local-registry and remote-OIDC setup, use one chained command so the short-lived Sigstore token stays valid through the whole smoke:
+
+```bash
+export DOCKER_REPOSITORY=localhost:5000/tcapi
+export PYTHONPATH=$PWD/src
+export TC_API_REAL_REKOR_IDENTITY_TOKEN_MIN_TTL=0
+
+python -m tc_api.oidc_preflight --fetch --force-oob && \
+python tdvm_smoke_test.py --summary-file /tmp/tdvm_smoke_full_deploy_summary.json
+```
+
+On the current validated run, that sequence completed all of the following successfully:
+
+- build with `transparencyLog_verify = success`;
+- publish with `transparencyLog_verify = success`;
+- baseline immutable replay with explicit CCEL size / decode audit fields;
+- deploy-launch with a running container result.
 
 ## Sigstore OIDC in Remote / SSH Environments
 

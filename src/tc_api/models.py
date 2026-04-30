@@ -11,7 +11,7 @@ class BuildPackageRequest(BaseModel):
     cert: Optional[str] = None
     encrypt: bool = False
     user_id: str
-    #identity_token: Optional[str] = None
+    identity_token: Optional[str] = None
 
 class BuildPackageResponse(BaseModel):
     build_id: str
@@ -27,6 +27,7 @@ class PublishPackageRequest(BaseModel):
     user_id: str
     log_evidence: bool = True
     image_url: Optional[str] = None
+    identity_token: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
@@ -67,6 +68,7 @@ class LaunchRequest(BaseModel):
     image_url: Optional[str] = None
     sbom_url: Optional[str] = None
     attestation_required: bool = True
+    identity_token: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 class LaunchResponse(BaseModel):

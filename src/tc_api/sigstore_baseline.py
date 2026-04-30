@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 from threading import Lock
@@ -12,11 +13,66 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from sigstore.dsse import StatementBuilder, Subject
 from sigstore.oidc import IdentityToken
 from sigstore.sign import SigningContext
+from .config import OWNER_KEY_DIR
 from .sigstore_identity import resolve_sigstore_identity_token_object
 
 
 _OWNER_KEY_LOCK = Lock()
 _CHAIN_OWNER_PRIVATE_KEYS: dict[str, ec.EllipticCurvePrivateKey] = {}
+
+
+def _owner_key_path(chain_id: str) -> str:
+    digest = hashlib.sha256(chain_id.encode("utf-8")).hexdigest()
+    return os.path.join(OWNER_KEY_DIR, f"{digest}.pem")
+
+
+def _load_owner_private_key_from_disk(chain_id: str) -> Optional[ec.EllipticCurvePrivateKey]:
+    key_path = _owner_key_path(chain_id)
+    if not os.path.exists(key_path):
+        return None
+
+    with open(key_path, "rb") as key_file:
+        key_bytes = key_file.read()
+    private_key = serialization.load_pem_private_key(key_bytes, password=None)
+    if not isinstance(private_key, ec.EllipticCurvePrivateKey):
+        raise TypeError(f"Unexpected owner key type for chain '{chain_id}'")
+    return private_key
+
+
+def _store_owner_private_key_to_disk(chain_id: str, private_key: ec.EllipticCurvePrivateKey) -> None:
+    os.makedirs(OWNER_KEY_DIR, exist_ok=True)
+    try:
+        os.chmod(OWNER_KEY_DIR, 0o700)
+    except OSError:
+        pass
+
+    key_path = _owner_key_path(chain_id)
+    pem_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    with open(key_path, "wb") as key_file:
+        key_file.write(pem_bytes)
+    try:
+        os.chmod(key_path, 0o600)
+    except OSError:
+        pass
+
+
+def _get_or_create_chain_owner_private_key(chain_id: str) -> ec.EllipticCurvePrivateKey:
+    with _OWNER_KEY_LOCK:
+        private_key = _CHAIN_OWNER_PRIVATE_KEYS.get(chain_id)
+        if private_key is not None:
+            return private_key
+
+        private_key = _load_owner_private_key_from_disk(chain_id)
+        if private_key is None:
+            private_key = ec.generate_private_key(ec.SECP384R1())
+            _store_owner_private_key_to_disk(chain_id, private_key)
+
+        _CHAIN_OWNER_PRIVATE_KEYS[chain_id] = private_key
+        return private_key
 
 
 def _canonical_json(data: Any) -> str:
@@ -55,11 +111,7 @@ def _resolve_identity_token(identity_token_str: Optional[str] = None) -> Identit
 
 
 def generate_chain_owner_pub_key_pem(chain_id: str) -> str:
-    with _OWNER_KEY_LOCK:
-        private_key = _CHAIN_OWNER_PRIVATE_KEYS.get(chain_id)
-        if private_key is None:
-            private_key = ec.generate_private_key(ec.SECP384R1())
-            _CHAIN_OWNER_PRIVATE_KEYS[chain_id] = private_key
+    private_key = _get_or_create_chain_owner_private_key(chain_id)
 
     pub_key_pem = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.PEM,
@@ -69,12 +121,7 @@ def generate_chain_owner_pub_key_pem(chain_id: str) -> str:
 
 
 def get_chain_owner_private_key(chain_id: str) -> Optional[ec.EllipticCurvePrivateKey]:
-    with _OWNER_KEY_LOCK:
-        private_key = _CHAIN_OWNER_PRIVATE_KEYS.get(chain_id)
-        if private_key is None:
-            private_key = ec.generate_private_key(ec.SECP384R1())
-            _CHAIN_OWNER_PRIVATE_KEYS[chain_id] = private_key
-        return private_key
+    return _get_or_create_chain_owner_private_key(chain_id)
 
 
 def build_signing_context(rekor_url: Optional[str] = None) -> SigningContext:

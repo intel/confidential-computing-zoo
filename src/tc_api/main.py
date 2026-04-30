@@ -22,11 +22,17 @@ from .config import (
     HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR,
     DOCKER_REGISTRY, DOCKER_REPOSITORY, ENABLE_TDX, TRUCON_URL,
     INIT_DEFAULT_CHAIN_ON_STARTUP,
+    TRANSPARENCY_SERVICE_CHAIN_ID,
+    TRANSPARENCY_WORKLOAD_CHAIN_PREFIX,
 )
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+
+def workload_transparency_chain_id(workload_id: str) -> str:
+    return f"{TRANSPARENCY_WORKLOAD_CHAIN_PREFIX}{workload_id}"
 
 
 def has_proxy_configuration() -> bool:
@@ -107,7 +113,7 @@ async def build_package(request: BuildPackageRequest, background_tasks: Backgrou
         logger.debug(f"Generated build ID: {build_id}")
         
         tlog = app.state.trusted_log
-        ctx = tlog.init_record()
+        ctx = tlog.init_record(context={"chain_ref": TRANSPARENCY_SERVICE_CHAIN_ID})
         record_id = ctx.record_id
         tlog.add_entry(record_id, Entry(key="build_id", value=build_id))
 
@@ -296,6 +302,18 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
                     raise Exception("Image encryption failed")
                 logger.debug(f"Successfully encrypted image {image_name}")
                 image_name = encrypted_image_name
+            else:
+                logger.info(f"Exporting non-encrypted image {image_name} to OCI layout")
+                exported_image_name = docker_service.export_image_to_oci(
+                    image_name,
+                    build_id,
+                    tlog,
+                    record_id,
+                )
+                if not exported_image_name:
+                    raise Exception("Image export failed")
+                logger.debug(f"Successfully exported image {image_name}")
+                image_name = exported_image_name
 
         except Exception as e:
             logger.error(f"Image encryption or SBOM generation failed for build ID {build_id}: {str(e)}")
@@ -312,7 +330,9 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
         logger.info("Committing build transparency log")
         log_proxy_configuration("Build transparency log")
 
-        identity_token = resolve_sigstore_identity_token("build", logger=logger, min_ttl_seconds=0)
+        identity_token = request.identity_token or resolve_sigstore_identity_token(
+            "build", logger=logger, min_ttl_seconds=0
+        )
         tlog_id = None
         if identity_token:
             tlog_status, tlog_id = docker_service.commit_and_save_receipt("build", build_id, tlog, record_id, identity_token)
@@ -324,9 +344,18 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
 
             # Verify chain state via TruCon
             logger.info("Verify chain state")
-            verify_tlog_status = docker_service.verify_chain_state("build", tlog)
+            verify_tlog_status = docker_service.verify_chain_state("build", tlog, chain_id=TRANSPARENCY_SERVICE_CHAIN_ID)
         else:
             verify_tlog_status = "skipped"
+
+        if image_name.startswith("oci:"):
+            published_image_id = image_name
+            published_image_url = image_name[4:]
+            published_sbom_url = sbom_path
+        else:
+            published_image_id = image_name
+            published_image_url = image_name
+            published_sbom_url = sbom_path
 
         # Update build status with success
         logger.info(f"Build completed successfully for build ID: {build_id}")
@@ -335,10 +364,10 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
             build_id,
             "success",
             step="Build completed successfully",
-            image_id=image_name,
+            image_id=published_image_id,
             log_id=tlog_id,
-            sbom_url=f"{image_name[4:].replace('test-','')}-sbom.json",
-            image_url=f"{image_name[4:]}",
+            sbom_url=published_sbom_url,
+            image_url=published_image_url,
             transparencyLog_verify=verify_tlog_status,
             cert_url=f"/api/artifacts/{build_id}/cosign.crt"
         )
@@ -358,11 +387,11 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
 async def publish_package(request: PublishPackageRequest):
     """Publish image and SBOM to registry with key management and logging"""
     try:
-        image_name = request.image_id.split("/")[-1]
+        image_name = request.image_id.split("/")[-1].split(":")[0]
         registry_repo = f"{DOCKER_REPOSITORY}/{image_name}:latest-encrypted"
 
         tlog = app.state.trusted_log
-        ctx = tlog.init_record()
+        ctx = tlog.init_record(context={"chain_ref": TRANSPARENCY_SERVICE_CHAIN_ID})
         record_id = ctx.record_id
 
         # 1. Push image and SBOM to registry
@@ -375,7 +404,10 @@ async def publish_package(request: PublishPackageRequest):
             docker_service.update_publish_status(request.user_id, request.build_id, "pushing", publish_id, step="Pushing image to registry")
             logger.info(f"Pushing image {request.image_id} to registry")
             
-            source_ref = f"oci:{request.image_id}"
+            if request.image_id.startswith("oci:"):
+                source_ref = request.image_id
+            else:
+                source_ref = f"docker-daemon:{request.image_id}"
             dest_ref = f"docker://{registry_repo}"
 
             log_proxy_configuration("Publish image push")
@@ -456,7 +488,9 @@ async def publish_package(request: PublishPackageRequest):
                 )
                 raise HTTPException(status_code=500, detail=f"Image signing or SBOM attestation failed: {str(e)}")
 
-        identity_token = resolve_sigstore_identity_token("publish", logger=logger, min_ttl_seconds=0)
+        identity_token = request.identity_token or resolve_sigstore_identity_token(
+            "publish", logger=logger, min_ttl_seconds=0
+        )
         tlog_id = None
         if identity_token:
 		# Sign and submit to transparency log
@@ -469,7 +503,7 @@ async def publish_package(request: PublishPackageRequest):
 
 		# Verify transparencyLog
             logger.info("Verify transparencyLog")
-            verify_tlog_status = docker_service.verify_chain_state("build", tlog)
+            verify_tlog_status = docker_service.verify_chain_state("publish", tlog, chain_id=TRANSPARENCY_SERVICE_CHAIN_ID)
         else:
             verify_tlog_status = "skipped"
 
@@ -558,7 +592,8 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
     try:
         tlog = app.state.trusted_log
         workload_id = docker_service.normalize_workload_id(request.user_id, request.image_id, request.metadata)
-        ctx = tlog.init_record(context={"chain_ref": workload_id})
+        transparency_chain_id = workload_transparency_chain_id(workload_id)
+        ctx = tlog.init_record(context={"chain_ref": transparency_chain_id})
         record_id = ctx.record_id
 
         # Generate launch ID
@@ -591,6 +626,7 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
             request,
             launch_id,
             workload_id,
+            transparency_chain_id,
             launch_path,
             tlog,
             record_id
@@ -611,7 +647,7 @@ async def deploy_launch(request: LaunchRequest, background_tasks: BackgroundTask
             detail=f"Failed to initiate launch: {str(e)}"
         )
 
-async def launch_container_async(request: LaunchRequest, launch_id: str, workload_id: str, launch_path: str, tlog: TrustedLogAPI, record_id: str):
+async def launch_container_async(request: LaunchRequest, launch_id: str, workload_id: str, transparency_chain_id: str, launch_path: str, tlog: TrustedLogAPI, record_id: str):
     """Async function to launch container in background"""
     try:
         docker_service.update_launch_status(request.user_id, launch_id, "launching")
@@ -691,12 +727,20 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, workloa
         # 2. Verify SBOM if provided
         logger.info("Verify SBOM")
         if request.sbom_url:
-            sbom_valid = docker_service.verify_sbom(
-                request.image_url,
-                request.sbom_url,
-                tlog, record_id,
-                decryption_key['cosignPub']
-            )
+            cosign_pubkey = None
+            if decryption_key and isinstance(decryption_key, dict):
+                cosign_pubkey = decryption_key.get("cosignPub")
+
+            if cosign_pubkey:
+                sbom_valid = docker_service.verify_sbom(
+                    request.image_url,
+                    request.sbom_url,
+                    tlog, record_id,
+                    cosign_pubkey,
+                )
+            else:
+                logger.info("Skipping SBOM verification because no cosign public key is available for launch")
+                sbom_valid = True
             tlog.add_entry(record_id, Entry(key="sbom_verify", value={"sbom_verify": sbom_valid}))
             if not sbom_valid:
                 docker_service.update_launch_status(
@@ -745,7 +789,9 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, workloa
             "instance_ids": instance_ids
         }
 
-        identity_token = resolve_sigstore_identity_token("launch", logger=logger, min_ttl_seconds=0)
+        identity_token = request.identity_token or resolve_sigstore_identity_token(
+            "launch", logger=logger, min_ttl_seconds=0
+        )
         log_id = None
         if identity_token:
             tlog_status, log_id = docker_service.commit_and_save_receipt("launch", launch_id, tlog, record_id, identity_token)
@@ -757,7 +803,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, workloa
 
             # Verify transparencyLog
             logger.info("Verify transparencyLog")
-            verify_tlog_status = docker_service.verify_chain_state("launch", tlog)
+            verify_tlog_status = docker_service.verify_chain_state("launch", tlog, chain_id=transparency_chain_id)
         else:
             verify_tlog_status = "skipped"
 
