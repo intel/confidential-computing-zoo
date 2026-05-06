@@ -41,6 +41,7 @@ SIGSTORE_OIDC_ISSUER_URL = os.environ.get("TC_API_SIGSTORE_OIDC_ISSUER", "https:
 SIGSTORE_OIDC_CLIENT_ID = os.environ.get("TC_API_SIGSTORE_OIDC_CLIENT_ID", "sigstore")
 SIGSTORE_OIDC_CLIENT_SECRET = os.environ.get("TC_API_SIGSTORE_OIDC_CLIENT_SECRET", "")
 SIGSTORE_OIDC_SESSION_TTL_SECONDS = max(60, int(os.environ.get("TC_API_SIGSTORE_OIDC_SESSION_TTL_SECONDS", "600")))
+SIGSTORE_OOB_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
 _sigstore_login_sessions: dict[str, dict[str, Any]] = {}
 _sigstore_login_results: dict[str, dict[str, Any]] = {}
 _sigstore_login_sessions_lock = threading.Lock()
@@ -165,17 +166,21 @@ def _normalize_sigstore_login_flow(flow: Optional[str]) -> str:
         return "copy-url"
     if normalized in {"server-callback", "server_callback", "callback", "direct"}:
         return "server-callback"
+    if normalized in {"oob", "verification-code", "verification_code", "device"}:
+        return "oob"
     raise HTTPException(
         status_code=400,
         detail={
             "error": "Unsupported Sigstore login flow.",
-            "supported_flows": ["copy-url", "server-callback"],
+            "supported_flows": ["copy-url", "server-callback", "oob"],
             "received": flow,
         },
     )
 
 
-def _sigstore_redirect_uri_for_flow(request: Request, flow: str) -> str:
+def _sigstore_redirect_uri_for_flow(request: Request, flow: str, force_oob: bool = False) -> str:
+    if force_oob or flow == "oob":
+        return SIGSTORE_OOB_REDIRECT_URI
     if flow == "server-callback":
         return str(request.url_for("sigstore_identity_callback"))
     return _sigstore_provider_callback_base_url()
@@ -210,7 +215,7 @@ def _store_sigstore_login_session(
     return session
 
 
-def _start_sigstore_login(operation: str, request: Request, flow: str = "copy-url") -> dict[str, Any]:
+def _start_sigstore_login(operation: str, request: Request, flow: str = "copy-url", force_oob: bool = False) -> dict[str, Any]:
     normalized_flow = _normalize_sigstore_login_flow(flow)
     cached_token = resolve_sigstore_identity_token(
         operation,
@@ -235,7 +240,7 @@ def _start_sigstore_login(operation: str, request: Request, flow: str = "copy-ur
     issuer = _get_sigstore_issuer()
     code_verifier, code_challenge = _build_sigstore_pkce_pair()
     state = str(uuid.uuid4())
-    redirect_uri = _sigstore_redirect_uri_for_flow(request, normalized_flow)
+    redirect_uri = _sigstore_redirect_uri_for_flow(request, normalized_flow, force_oob=force_oob)
     auth_params = {
         "response_type": "code",
         "client_id": SIGSTORE_OIDC_CLIENT_ID,
@@ -256,7 +261,12 @@ def _start_sigstore_login(operation: str, request: Request, flow: str = "copy-ur
         redirect_uri,
         normalized_flow,
     )
-    if normalized_flow == "copy-url":
+    if normalized_flow == "oob" or force_oob:
+        message = (
+            "Open auth_url in a browser. After sign-in, Sigstore will show a verification code. Copy that code and submit it back to the server to finish token exchange."
+        )
+        completion_hint = "copy the verification code and submit it back to the server"
+    elif normalized_flow == "copy-url":
         message = (
             "Open auth_url in a browser. After sign-in, the browser will land on a URL that starts with "
             "https://oauth2.sigstore.dev/auth/callback. Copy that full URL and submit it back to the server so it can finish token exchange automatically."
@@ -594,6 +604,7 @@ async def sigstore_interactive_login(operation: str = "build", session_id: Optio
     safe_operation = escape(operation, quote=True)
     remote_token_url = escape(_sigstore_interactive_token_flow_path(operation, "copy-url"), quote=True)
     callback_token_url = escape(_sigstore_interactive_token_flow_path(operation, "server-callback"), quote=True)
+    oob_token_url = escape(_sigstore_interactive_token_path(operation, force_oob=True), quote=True)
     submit_url = escape("/api/sigstore/identity-token", quote=True)
     existing_session: Optional[dict[str, Any]] = None
     if session_id:
@@ -645,8 +656,9 @@ async def sigstore_interactive_login(operation: str = "build", session_id: Optio
     <p>
         <button type=\"button\" onclick=\"startLogin('copy-url')\">Start SSH/Remote Login</button>
     <pre id="status">{escape(initial_status, quote=False)}</pre>
-    </p>
+    <p>
     <pre id="auth_url">{escape(initial_auth_url, quote=False)}</pre>
+        <button type="button" onclick="startLogin('oob')">Start OOB Login</button>
     <pre id=\"status\">Idle</pre>
     <h2>Login URL</h2>
     <pre id=\"auth_url\">Not started</pre>
@@ -657,6 +669,11 @@ async def sigstore_interactive_login(operation: str = "build", session_id: Optio
     </p>
     <h2>Identity Token</h2>
     <textarea id=\"token\" spellcheck=\"false\" placeholder=\"Token will appear here after login completes\"></textarea>
+    <h2>Verification Code</h2>
+    <textarea id="verification_code" spellcheck="false" placeholder="For OOB Mode: paste the verification code shown by Sigstore here"></textarea>
+    <p>
+        <button type="button" onclick="completeOobLogin()">Submit Verification Code</button>
+    </p>
     <h2>Retry Example</h2>
     <pre id=\"retry\">curl -X POST \"http://127.0.0.1:8000/api/build-package\" -H \"Content-Type: application/json\" -d '{sample_payload}'</pre>
     <script>
@@ -701,7 +718,13 @@ async def sigstore_interactive_login(operation: str = "build", session_id: Optio
             tokenBox.value = '';
             redirectUrl.value = '';
             try {{
-                const response = await fetch(flow === 'server-callback' ? '{callback_token_url}' : '{remote_token_url}');
+                let loginUrl = '{remote_token_url}';
+                if (flow === 'server-callback') {{
+                    loginUrl = '{callback_token_url}';
+                }} else if (flow === 'oob') {{
+                    loginUrl = '{oob_token_url}';
+                }}
+                const response = await fetch(loginUrl);
                 const data = await response.json();
                 if (!response.ok) {{
                     status.textContent = JSON.stringify(data, null, 2);
@@ -763,6 +786,46 @@ async def sigstore_interactive_login(operation: str = "build", session_id: Optio
                 status.textContent = String(error);
             }}
         }}
+
+        async function completeOobLogin() {{
+            const status = document.getElementById('status');
+            const tokenBox = document.getElementById('token');
+            const verificationCode = document.getElementById('verification_code').value.trim();
+            if (!pendingSessionId) {{
+                status.textContent = 'Start a login flow first to create a Sigstore session.';
+                return;
+            }}
+            if (pendingFlow !== 'oob') {{
+                status.textContent = 'The current session is not using OOB. Start OOB Login to use verification codes.';
+                return;
+            }}
+            if (!verificationCode) {{
+                status.textContent = 'Paste the verification code before submitting.';
+                return;
+            }}
+            status.textContent = 'Finishing Sigstore login from the pasted verification code...';
+            try {{
+                const response = await fetch('{submit_url}', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        operation: '{safe_operation}',
+                        session_id: pendingSessionId,
+                        verification_code: verificationCode,
+                    }}),
+                }});
+                const data = await response.json();
+                if (!response.ok) {{
+                    status.textContent = JSON.stringify(data, null, 2);
+                    return;
+                }}
+                tokenBox.value = data.identity_token;
+                status.textContent = JSON.stringify(data, null, 2);
+                updateRetry(data.identity_token);
+            }} catch (error) {{
+                status.textContent = String(error);
+            }}
+        }}
     </script>
 </body>
 </html>
@@ -773,7 +836,8 @@ async def sigstore_interactive_login(operation: str = "build", session_id: Optio
 @app.get("/api/sigstore/identity-token")
 async def sigstore_identity_token(request: Request, operation: str = "build", flow: str = "copy-url", force_oob: bool = False):
     try:
-        return _start_sigstore_login(operation, request, flow=flow)
+        effective_flow = "oob" if force_oob else flow
+        return _start_sigstore_login(operation, request, flow=effective_flow, force_oob=force_oob)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1133,11 +1197,25 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
         identity_token = request.identity_token
         tlog_id = None
         tlog_status, tlog_id = docker_service.commit_and_save_receipt("build", build_id, tlog, record_id, identity_token)
-        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", build_id)
+        if tlog_id is not None:
+            docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", build_id)
         if tlog_status:
             logger.info("Save build transparency success.")
         else:
             logger.info("Save build transparency failed.")
+            docker_service.update_build_status(
+                request.user_id,
+                build_id,
+                "failed",
+                step="Transparency log commit failed",
+                image_id=image_name,
+                image_url=image_name,
+                sbom_url=sbom_path,
+                cert_url=f"/api/artifacts/{build_id}/cosign.crt",
+                transparencyLog_verify="failed",
+                error_message="Build transparency log commit failed",
+            )
+            return
 
         # Verify chain state via TruCon
         logger.info("Verify chain state")

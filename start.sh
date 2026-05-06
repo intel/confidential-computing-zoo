@@ -6,6 +6,16 @@ set -e
 
 echo "Starting TC API Service..."
 
+default_python_bin() {
+    if [ -n "${PYTHON_BIN:-}" ]; then
+        echo "$PYTHON_BIN"
+    elif [ -x "$PWD/venv/bin/python" ]; then
+        echo "$PWD/venv/bin/python"
+    else
+        echo "python3"
+    fi
+}
+
 # Check if Docker is available
 if ! command -v docker &> /dev/null; then
     echo "Error: Docker is not installed or not in PATH"
@@ -50,7 +60,7 @@ export DEBUG=${DEBUG:-false}
 export ENABLE_TDX=${ENABLE_TDX:-true}
 export TRUCON_AUTH_DISABLED=${TRUCON_AUTH_DISABLED:-false}
 export INIT_DEFAULT_CHAIN_ON_STARTUP=${INIT_DEFAULT_CHAIN_ON_STARTUP:-false}
-export PYTHON_BIN=${PYTHON_BIN:-python3}
+export PYTHON_BIN=$(default_python_bin)
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
 # Create Docktap proxy socket directory
@@ -63,12 +73,12 @@ mkdir -p "$TRUCON_SOCKET_DIR"
 
 # Generate a session-scoped service token for TruCon authentication
 if [ -z "$TRUCON_SERVICE_TOKEN" ]; then
-    export TRUCON_SERVICE_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+    export TRUCON_SERVICE_TOKEN=$($PYTHON_BIN -c "import secrets; print(secrets.token_urlsafe(32))")
     echo "✓ Generated TRUCON_SERVICE_TOKEN for this session"
 fi
 
 echo "Starting TruCon (single-instance sequencer) on port $TRUCON_PORT..."
-uvicorn tc_api.trucon.app:app --host 0.0.0.0 --port $TRUCON_PORT --workers 1 &
+"$PYTHON_BIN" -m uvicorn tc_api.trucon.app:app --host 0.0.0.0 --port $TRUCON_PORT --workers 1 &
 TRUCON_PID=$!
 
 # Wait briefly for TruCon to be ready
@@ -111,10 +121,10 @@ echo "Starting TC API on $HOST:$PORT"
 echo "Debug mode: $DEBUG"
 
 # Start the FastAPI application
-if [ "$1" = "dev" ]; then
+if [ "${1:-}" = "dev" ]; then
     echo "Starting in development mode with auto-reload..."
-    uvicorn tc_api.main:app --host $HOST --port $PORT --reload
+    "$PYTHON_BIN" -m uvicorn tc_api.main:app --host $HOST --port $PORT --reload
 else
     echo "Starting in production mode..."
-    uvicorn tc_api.main:app --host $HOST --port $PORT --workers "$TC_API_WORKERS"
+    "$PYTHON_BIN" -m uvicorn tc_api.main:app --host $HOST --port $PORT --workers "$TC_API_WORKERS"
 fi

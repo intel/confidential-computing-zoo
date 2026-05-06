@@ -234,6 +234,17 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Emits explicit runtime outcomes (`operation_result`) plus workload, instance, and image-target identity fields required by the `docktap-runtime` verification profile.
 - Persists and propagates `launch_id` for runtime events attributable to a REST-originated launch flow so launch verification can correlate REST launch intent with Docktap `create`/`start` evidence.
 - Best-effort submission: Docktap uses the shared internal transport and identifies as a commit-oriented internal caller; TruCon failures still log a warning and do not block Docker API responses.
+
+### 4.3 Trust-Service Wrapper
+
+> **Status: Implemented.** `scripts/dev-up.sh` is the preferred single-host wrapper when operators want one command to start the local development stack without collapsing service boundaries.
+
+- Runs above the existing process entrypoints instead of replacing them.
+- Verifies KBS reachability first because KBS remains an external dependency, not a child process of the tc_api stack.
+- Builds and runs the dedicated AA/CDH/ASR container from `aa_asr_cdh/Dockerfile` when needed.
+- Leaves `start.sh` responsible only for `tc_api`, TruCon, and Docktap.
+- Cleans up the trust-service container on wrapper exit while preserving `start.sh`'s existing cleanup ownership for the main stack.
+- Exists to provide operator convenience, not to redefine runtime ownership or merge the trust stack into the application entrypoint.
 - Retains local routing, mapping, and retry state only for bounded operational windows; replay and verification rely on TruCon and immutable backends, not on Docktap-local persistence.
 - Exposes HTTP health endpoint (`/healthz` on configurable port, default 8002) for container health checks.
 - Docktap down = Docker CLI unavailable (by design — all operations must be recorded).
@@ -484,6 +495,8 @@ See GAP-12 in `docs/overview_tasks.md`.
 - TruCon deployed as single-instance service (`--workers 1`) to preserve lock-based serialization.
 - Submission daemon runs as an embedded thread inside TruCon.
 - Docktap deployed as an independent container (Docker Compose) or background process (`start.sh`). Shares the same Docker image as tc_api and TruCon with a different command override. Exposes proxy socket via bind-mount (`/var/run/docktap/`) and health endpoint on port 8002.
+- AA/CDH/ASR deployed as a dedicated trust-service container (or their own entrypoint) rather than being folded into `start.sh`; the repository now provides `scripts/dev-up.sh` as a wrapper for single-host startup convenience.
+- KBS remains an external dependency. The wrapper verifies KBS reachability but does not claim ownership of its lifecycle.
 - Docktap also owns a periodic local-state sweeper that bounds in-memory operation state, removed-container mappings, and resolved retry bookkeeping via environment-configured retention windows.
 - SQLite commit queue stored in ephemeral tmpfs (`/dev/shm/`) for confidential computing compliance.
 - Current implementation shares a mounted/internal socket directory and prefers `TRUCON_UDS_PATH` for same-machine internal traffic in both bare-metal and Docker Compose deployments.

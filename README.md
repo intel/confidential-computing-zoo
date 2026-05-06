@@ -72,6 +72,47 @@ Use `--force-oob` if your environment needs the out-of-band login path.
 - Recommended rollout posture is TruCon-only operation with process supervision, parity checks on critical flows, and degraded-mode handling that preserves external business results when trust-event submission is unavailable.
 - Docktap keeps only bounded local routing, mapping, and retry state. Replay and verification rely on TruCon and immutable backend state rather than Docktap-local persistence.
 
+## Docktap OIDC
+
+Docktap remains on the same OIDC/Sigstore identity model as the rest of the control plane. The recommended user experience is to acquire a short-lived Sigstore identity token immediately before starting Docktap, rather than introducing a separate runtime identity broker or non-OIDC trust path.
+
+Recommended flows:
+
+- Same-machine browser access: start Docktap through the CLI helper and let the browser complete the server-side login session.
+- Remote SSH session with a browser that can reach the server by IP or hostname: pass `--browser-base-url` so the interactive login page opens on a browser-reachable address instead of remote `localhost`.
+- Remote SSH session without callback reachability: use `--sigstore-login oob` so Sigstore shows a verification code and the CLI completes the flow without requiring a server callback URL.
+- Non-interactive process managers: pre-acquire a token with `sigstore-token --format export` and inject `DOCKTAP_SIGSTORE_IDENTITY_TOKEN` into the Docktap process environment.
+
+Examples:
+
+```shell
+# Preferred one-shot startup when your browser can reach the tc_api server
+python -m tc_api.cli.client \
+  --base-url http://127.0.0.1:8000 \
+  --browser-base-url http://<server-ip>:8000 \
+  --open-browser \
+  run-docktap
+
+# SSH / remote flow that uses Sigstore verification-code login
+python -m tc_api.cli.client \
+  --base-url http://127.0.0.1:8000 \
+  --sigstore-login oob \
+  run-docktap
+
+# Atomic helper for OOB login -> Docktap startup -> immediate pull replay -> log capture
+python scripts/run_docktap_oob_atomic.py
+
+# Pre-acquire a token for systemd or another non-interactive launcher
+python -m tc_api.cli.client \
+  --base-url http://127.0.0.1:8000 \
+  --sigstore-login oob \
+  sigstore-token --format export
+```
+
+`run-docktap` is the preferred human-facing entrypoint because it keeps the OIDC acquisition step adjacent to Docktap startup and avoids long-lived token handling in ad hoc shell scripts.
+
+For the live Docktap -> public Rekor -> TruCon `/commit` debug loop, `scripts/run_docktap_oob_atomic.py` is the shortest operator path. It discovers the current live `TRUCON_SERVICE_TOKEN`, runs the Sigstore verification-code flow, starts Docktap with that fresh identity token, immediately replays the host and OpenClaw `docker pull` calls, and writes the combined Docktap logs under `logs/`.
+
 ## Chain Verification CLI
 
 Operators can verify a trust chain with the package CLI:
@@ -436,6 +477,42 @@ pip install -e .
 
 Please refer to: [https://github.com/RodgerZhu/deploy-encrypted-image-in-tdvm?tab=readme-ov-file](https://github.com/RodgerZhu/deploy-encrypted-image-in-tdvm?tab=readme-ov-file).
 
+### Unified Local Startup
+
+If you want one local entrypoint without merging trust-stack logic into `start.sh`, use `scripts/dev-up.sh`.
+
+What it does:
+
+- Verifies that KBS is reachable on `KBS_HOST:KBS_PORT` (defaults: `127.0.0.1:8080`)
+- Builds the trust-service image from `aa_asr_cdh/Dockerfile` if needed
+- Starts the AA/CDH/ASR trust-service container on the host network
+- Hands off to the existing `./start.sh` for `tc_api + trucon + docktap`
+
+What it does not do:
+
+- It does not start KBS for you. KBS remains an external dependency.
+- It does not move AA/CDH/ASR into the main `start.sh`; the trust stack stays separately managed.
+
+Example:
+
+```bash
+# Ensure KBS is already running on localhost:8080
+bash scripts/dev-up.sh
+```
+
+Useful environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KBS_HOST` | `127.0.0.1` | Host checked before trust-service startup |
+| `KBS_PORT` | `8080` | Port checked before trust-service startup |
+| `TRUST_SERVICE_IMAGE` | `tc-api-trust-service:dev` | Image tag used for the AA/CDH/ASR container |
+| `TRUST_SERVICE_CONTAINER_NAME` | `tc-api-trust-service` | Container name used by the wrapper |
+| `TRUST_SERVICE_BUILD` | `missing` | `missing`, `always`, or `never` |
+| `TRUST_SERVICE_PORT` | `8006` | Port used to confirm `api-server-rest` readiness |
+
+When `scripts/dev-up.sh` exits, it stops the trust-service container it started. The underlying `start.sh` cleanup still owns `trucon` and `docktap`.
+
 ### Run Service
 
 ```bash
@@ -522,6 +599,8 @@ docker run -it --network host --privileged \
 ### Deploy with Docker Compose
 
 Docker Compose deploys three services: `tc-api`, `trucon`, and `docktap`.
+
+This compose file intentionally does not embed the AA/CDH/ASR trust stack or KBS. For single-host development, use `scripts/dev-up.sh` when you want a unified entrypoint while keeping those lifecycle boundaries explicit.
 
 1. Generate a service token and start all services:
 

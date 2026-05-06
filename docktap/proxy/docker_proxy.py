@@ -236,17 +236,15 @@ class DockerProxyServer:
 
         # Phase 2b: unknown size/streaming body.
         idle_timeout = 8 if is_streaming_endpoint(request_path) else 2
-        last_data_time = time.time()
+        docker_sock.settimeout(idle_timeout)
         while True:
             try:
                 chunk = docker_sock.recv(16384)
                 if not chunk:
                     break
                 response += chunk
-                last_data_time = time.time()
             except socket.timeout:
-                if time.time() - last_data_time >= idle_timeout:
-                    break
+                break
 
         logger.debug(f"Read {len(response)} bytes from Docker")
         return response
@@ -390,60 +388,15 @@ class DockerProxyServer:
             
             # Stream response to client as it arrives to avoid client-side stalls.
             docker_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            docker_sock.settimeout(10)
+            docker_sock.settimeout(30)
             docker_sock.connect(self.docker_socket_path)
             docker_sock.sendall(request_data)
 
-            response = b""
-            header_end = -1
-            content_length = None
-            body_bytes_received = 0
-            idle_timeout = 8 if is_streaming_endpoint(path) else 2
-            max_duration = 45 if is_streaming_endpoint(path) else 15
-            started_at = time.time()
-            last_data_time = time.time()
-
-            while True:
-                if time.time() - started_at >= max_duration:
-                    logger.warning(
-                        "Response read deadline reached for path %s (streaming=%s)",
-                        path,
-                        is_streaming_endpoint(path),
-                    )
-                    break
-
-                try:
-                    chunk = docker_sock.recv(16384)
-                except socket.timeout:
-                    if time.time() - last_data_time >= idle_timeout:
-                        break
-                    continue
-
-                if not chunk:
-                    break
-
-                last_data_time = time.time()
-                client_socket.sendall(chunk)
-
-                # Keep a bounded buffer for metadata extraction/logging.
-                if len(response) < 262144:
-                    remaining = 262144 - len(response)
-                    response += chunk[:remaining]
-
-                if header_end == -1:
-                    header_end = response.find(b"\r\n\r\n")
-                    if header_end != -1:
-                        header_blob = response[:header_end].decode('utf-8', errors='replace')
-                        content_length = self._get_content_length(header_blob)
-                        body_part = response[header_end + 4:]
-                        body_bytes_received = len(body_part)
-                else:
-                    body_bytes_received += len(chunk)
-
-                if content_length is not None and body_bytes_received >= content_length:
-                    break
-
+            response = self._read_docker_response(docker_sock, path)
             docker_sock.close()
+
+            if response:
+                client_socket.sendall(response)
 
             if response:
                 logger.debug(f"Sent response: {len(response)} bytes buffered")

@@ -19,11 +19,13 @@ import urllib.request
 import urllib.error
 
 from tc_api.tlog.types import Entry
+from tc_api.sigstore_baseline import build_signing_context
 from tc_api.tlog_client import (
     canonical_json,
     compute_entry_digest,
     compute_event_digest,
 )
+from tc_api.sigstore_identity import resolve_sigstore_identity_token, token_seconds_remaining
 from tc_api.trucon.internal_transport import request_json
 
 from sigstore.oidc import IdentityToken, detect_credential
@@ -34,11 +36,83 @@ logger = logging.getLogger(__name__)
 
 # Only these Docker operation types trigger a TruCon commit.
 SUBMITTABLE_OPERATIONS = {"pull", "create", "start", "stop", "rm"}
+DEFAULT_REKOR_URL = "https://rekor.sigstore.dev"
+
+
+def _identity_token_min_ttl_seconds() -> int:
+    raw_value = os.environ.get("DOCKTAP_SIGSTORE_IDENTITY_MIN_TTL", "15").strip()
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        return 15
+
+
+def _explicit_identity_token_min_ttl_seconds() -> int:
+    raw_value = os.environ.get("DOCKTAP_EXPLICIT_SIGSTORE_IDENTITY_MIN_TTL", "0").strip()
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        return 0
+
+
+def _token_is_reusable(raw_token: str, min_ttl_seconds: int) -> bool:
+    remaining = token_seconds_remaining(raw_token)
+    if remaining is None:
+        return True
+    return remaining > min_ttl_seconds
+
+
+def _resolve_identity_token_str() -> Optional[str]:
+    """Resolve a Sigstore identity token for non-interactive Docktap use.
+
+    Precedence:
+    1. ``DOCKTAP_SIGSTORE_IDENTITY_TOKEN`` for sidecar-specific injection.
+    2. ``SIGSTORE_IDENTITY_TOKEN`` for generic Sigstore-compatible tooling.
+    3. Shared cached token resolution via ``tc_api.sigstore_identity``.
+    4. Ambient credential detection via ``sigstore.oidc.detect_credential()``.
+    """
+    min_ttl_seconds = _identity_token_min_ttl_seconds()
+    explicit_min_ttl_seconds = _explicit_identity_token_min_ttl_seconds()
+
+    for env_var in ("DOCKTAP_SIGSTORE_IDENTITY_TOKEN", "SIGSTORE_IDENTITY_TOKEN"):
+        token = os.environ.get(env_var, "").strip()
+        if token:
+            if not _token_is_reusable(token, explicit_min_ttl_seconds):
+                remaining = token_seconds_remaining(token)
+                logger.warning(
+                    "Ignoring %s because it expires too soon (%ss remaining, min ttl %ss)",
+                    env_var,
+                    remaining if remaining is not None else -1,
+                    explicit_min_ttl_seconds,
+                )
+                continue
+            return token
+
+    cached = resolve_sigstore_identity_token(
+        operation="docktap",
+        logger=logger,
+        allow_interactive=False,
+        require_token=False,
+        min_ttl_seconds=min_ttl_seconds,
+    )
+    if cached:
+        return cached
+
+    detected = detect_credential()
+    if not detected:
+        return None
+
+    token = str(detected).strip()
+    return token or None
 
 
 def _resolve_runtime_engine(op_record) -> str:
     runtime_engine = getattr(op_record, "runtime_engine", "")
     return runtime_engine or "docker"
+
+
+def _docktap_rekor_url() -> str:
+    return os.environ.get("DOCKTAP_REKOR_URL", DEFAULT_REKOR_URL).strip() or DEFAULT_REKOR_URL
 
 
 @dataclass
@@ -420,7 +494,7 @@ class TruConCommitter:
         }
 
         # 4. Acquire OIDC identity token
-        identity_token_str = detect_credential()
+        identity_token_str = _resolve_identity_token_str()
         if not identity_token_str:
             logger.warning("No ambient OIDC credential available; skipping TruCon commit for %s", operation_type)
             return False
@@ -440,9 +514,8 @@ class TruConCommitter:
             .build()
         )
 
-        # 6. Sign with Sigstore (offline mode — no Rekor upload)
-        ctx_prod = SigningContext.production()
-        ctx_prod._rekor = None
+        # 6. Sign with Sigstore using the configured Rekor instance.
+        ctx_prod = build_signing_context(_docktap_rekor_url())
 
         with ctx_prod.signer(identity_token, cache=True) as signer:
             bundle = signer.sign_dsse(statement)

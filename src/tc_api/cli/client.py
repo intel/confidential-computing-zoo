@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 import requests
 from sigstore.oidc import Issuer
+from tc_api.sigstore_identity import cache_sigstore_identity_token
 
 
 DEFAULT_BASE_URL = os.environ.get("TC_API_BASE_URL", "http://localhost:8000")
@@ -18,6 +19,8 @@ DEFAULT_SIGSTORE_LOGIN_MODE = os.environ.get("TC_CLIENT_SIGSTORE_LOGIN", "auto")
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_SIGSTORE_WAIT_SECONDS = int(os.environ.get("TC_CLIENT_SIGSTORE_WAIT_SECONDS", "300"))
 SIGSTORE_POLL_INTERVAL_SECONDS = 2
+DEFAULT_DOCKTAP_SOCKET_PATH = os.environ.get("SOCK_BRIDGE_SOCKET", "/var/run/docktap/docker.sock")
+DEFAULT_DOCKER_SOCKET_PATH = os.environ.get("DOCKER_SOCKET", "/var/run/docker.sock")
 
 
 class ClientError(RuntimeError):
@@ -108,6 +111,45 @@ def _build_parser() -> argparse.ArgumentParser:
     tlog = subparsers.add_parser("transparency-log", help="GET /api/transparency-log/{log_id}")
     tlog.add_argument("log_id")
 
+    token = subparsers.add_parser("sigstore-token", help="Acquire a Sigstore identity token for non-interactive producers such as Docktap")
+    token.add_argument(
+        "--format",
+        dest="token_format",
+        choices=["json", "export"],
+        default="json",
+        help="Output as JSON metadata or as a shell export snippet",
+    )
+    token.add_argument(
+        "--env-var",
+        default="DOCKTAP_SIGSTORE_IDENTITY_TOKEN",
+        help="Environment variable name to use when --format export is selected",
+    )
+
+    run_docktap = subparsers.add_parser(
+        "run-docktap",
+        help="Acquire a Sigstore identity token and immediately exec Docktap with it",
+    )
+    run_docktap.add_argument(
+        "--socket-path",
+        default=DEFAULT_DOCKTAP_SOCKET_PATH,
+        help=f"Docktap listen socket path (default: {DEFAULT_DOCKTAP_SOCKET_PATH})",
+    )
+    run_docktap.add_argument(
+        "--docker-socket-path",
+        default=DEFAULT_DOCKER_SOCKET_PATH,
+        help=f"Docker daemon socket path (default: {DEFAULT_DOCKER_SOCKET_PATH})",
+    )
+    run_docktap.add_argument(
+        "--debug",
+        action="store_true",
+        help="Start Docktap with --debug enabled",
+    )
+    run_docktap.add_argument(
+        "--env-var",
+        default="DOCKTAP_SIGSTORE_IDENTITY_TOKEN",
+        help="Environment variable name used to pass the acquired identity token to Docktap",
+    )
+
     return parser
 
 
@@ -168,6 +210,16 @@ def _path_from_url_or_path(value: str) -> str:
     return path
 
 
+def _absolute_url(base_url: str, value: str) -> str:
+    raw_value = value.strip()
+    if not raw_value:
+        return raw_value
+    parsed = urllib.parse.urlparse(raw_value)
+    if parsed.scheme and parsed.netloc:
+        return raw_value
+    return urllib.parse.urljoin(f"{base_url.rstrip('/')}/", raw_value.lstrip("/"))
+
+
 def _rewrite_browser_url(url: str, browser_base_url: str) -> str:
     raw_url = url.strip()
     if not raw_url or not browser_base_url.strip():
@@ -205,7 +257,107 @@ def _acquire_sigstore_token_oob() -> str:
         client_secret=os.environ.get("TC_API_SIGSTORE_OIDC_CLIENT_SECRET", ""),
         force_oob=True,
     )
-    return str(token).strip()
+    token_str = str(token).strip()
+    if token_str:
+        cache_sigstore_identity_token(token_str)
+    return token_str
+
+
+def _start_sigstore_identity_session(client: ApiClient, operation: str, flow: str) -> dict[str, Any]:
+    query = urllib.parse.urlencode({"operation": operation, "flow": flow})
+    response = client.request_json("GET", f"/api/sigstore/identity-token?{query}")
+    if not response.ok:
+        raise ClientError(json.dumps(response.data, ensure_ascii=False))
+    if not isinstance(response.data, dict):
+        raise ClientError("Server returned an invalid Sigstore login response.")
+    return response.data
+
+
+def _token_from_started_sigstore_session(
+    client: ApiClient,
+    login_payload: dict[str, Any],
+    *,
+    operation: str,
+    open_browser: bool,
+    browser_base_url: str,
+    sigstore_login_mode: str,
+) -> str:
+    status = str(login_payload.get("status") or "").strip()
+    if status == "token_ready":
+        identity_token = str(login_payload.get("identity_token") or "").strip()
+        if not identity_token:
+            raise ClientError("Sigstore login completed but no identity_token was returned.")
+        cache_sigstore_identity_token(identity_token)
+        return identity_token
+
+    if status != "browser_login_pending":
+        raise ClientError(f"Unsupported Sigstore login status: {status or 'unknown'}")
+
+    detail = {
+        "after_login_open_url": _absolute_url(client.base_url, str(login_payload.get("interactive_login_url") or "")),
+        "interactive_continue_url": _absolute_url(client.base_url, str(login_payload.get("interactive_login_url") or "")),
+        "session_id": login_payload.get("session_id"),
+        "login_status_url": _absolute_url(
+            client.base_url,
+            f"/api/sigstore/login-status/{login_payload.get('session_id')}",
+        ),
+    }
+    return _complete_sigstore_login(
+        client,
+        detail,
+        operation=operation,
+        open_browser=open_browser,
+        browser_base_url=browser_base_url,
+        sigstore_login_mode=sigstore_login_mode,
+    )
+
+
+def _acquire_sigstore_token_for_cli(
+    client: ApiClient,
+    *,
+    operation: str,
+    open_browser: bool,
+    browser_base_url: str,
+    sigstore_login_mode: str,
+) -> str:
+    selected_mode = (sigstore_login_mode or "auto").strip().lower()
+    if selected_mode == "oob":
+        return _acquire_sigstore_token_oob()
+
+    requested_flow = "server-callback"
+    if selected_mode == "auto" and not browser_base_url.strip() and not DEFAULT_BROWSER_BASE_URL:
+        requested_flow = "copy-url"
+
+    login_payload = _start_sigstore_identity_session(client, operation, requested_flow)
+    token = _token_from_started_sigstore_session(
+        client,
+        login_payload,
+        operation=operation,
+        open_browser=open_browser,
+        browser_base_url=browser_base_url,
+        sigstore_login_mode=sigstore_login_mode,
+    )
+    if token:
+        cache_sigstore_identity_token(token)
+    return token
+
+
+def _exec_docktap_with_identity_token(
+    identity_token: str,
+    *,
+    socket_path: str,
+    docker_socket_path: str,
+    debug: bool,
+    env_var: str,
+) -> None:
+    env = os.environ.copy()
+    env[env_var] = identity_token
+
+    argv = [sys.executable, "-m", "docktap.main", "--socket-path", socket_path, "--docker-socket-path", docker_socket_path]
+    if debug:
+        argv.append("--debug")
+
+    os.execvpe(sys.executable, argv, env)
 
 
 def _select_sigstore_login_mode(
@@ -312,6 +464,35 @@ def _request_with_sigstore_retry(
 def _run_command(args: argparse.Namespace) -> Any:
     client = ApiClient(args.base_url, timeout_seconds=args.timeout)
 
+    if args.command == "sigstore-token":
+        identity_token = _acquire_sigstore_token_for_cli(
+            client,
+            operation="docktap",
+            open_browser=args.open_browser,
+            browser_base_url=args.browser_base_url,
+            sigstore_login_mode=args.sigstore_login,
+        )
+        if args.token_format == "export":
+            return f"export {args.env_var}={json.dumps(identity_token)}"
+        return {"identity_token": identity_token}
+
+    if args.command == "run-docktap":
+        identity_token = _acquire_sigstore_token_for_cli(
+            client,
+            operation="docktap",
+            open_browser=args.open_browser,
+            browser_base_url=args.browser_base_url,
+            sigstore_login_mode=args.sigstore_login,
+        )
+        _exec_docktap_with_identity_token(
+            identity_token,
+            socket_path=args.socket_path,
+            docker_socket_path=args.docker_socket_path,
+            debug=args.debug,
+            env_var=args.env_var,
+        )
+        return None
+
     if args.command == "build":
         payload = _load_json_payload(args)
         return _request_with_sigstore_retry(client, "POST", "/api/build-package", payload, "build", args.open_browser, args.browser_base_url, args.sigstore_login)
@@ -340,6 +521,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     except ClientError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    if isinstance(result, str):
+        print(result)
+        return 0
     _print_json(result)
     return 0
 

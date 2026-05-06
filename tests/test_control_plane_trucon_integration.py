@@ -164,7 +164,7 @@ def _launch_payload():
 
 @pytest.mark.parametrize(
     ("commit_success", "verify_status"),
-    [(True, "success"), (False, "degraded")],
+    [(True, "success")],
 )
 def test_build_flow_preserves_result_fields(harness, patched_lifespan, commit_success, verify_status):
     harness.patch_build_success()
@@ -188,6 +188,31 @@ def test_build_flow_preserves_result_fields(harness, patched_lifespan, commit_su
     assert result_data["current_step"] == "Build completed successfully"
     assert result_data["transparencyLog_verify"] == verify_status
     assert result_data["image_url"] == "oci:/tmp/builds/bld-test123/plain"
+
+
+def test_build_flow_fails_when_transparency_commit_fails(harness, patched_lifespan, monkeypatch):
+    harness.patch_build_success()
+    harness.patch_trucon(commit_success=False, verify_status="degraded")
+    monkeypatch.setattr(
+        main_mod.docker_service,
+        "verify_chain_state",
+        lambda *args, **kwargs: pytest.fail("verify_chain_state should not run when build commit fails"),
+    )
+
+    with harness.client() as client:
+        response = client.post("/api/build-package", json=_build_payload())
+
+        assert response.status_code == 200
+        result = client.get("/api/build-result/bld-test123")
+
+    assert result.status_code == 200
+    result_data = result.json()
+    assert result_data["build_id"] == "bld-test123"
+    assert result_data["status"] == "failed"
+    assert result_data["current_step"] == "Transparency log commit failed"
+    assert result_data["transparencyLog_verify"] == "failed"
+    assert result_data["image_url"] == "oci:/tmp/builds/bld-test123/plain"
+    assert result_data["error_message"] == "Build transparency log commit failed"
 
 
 @pytest.mark.parametrize(
