@@ -28,6 +28,8 @@ SKOPEO_DESTINATION = config("SKOPEO_DESTINATION", default="oci")
 KBS_URL = config("KBS_URL", default="http://127.0.0.1:8006/cdh/resource/default/image-decryption-keys/")
 KBS_ENDPOINT = config("KBS_ENDPOINT", default="/kbs/v0")
 KBS_CLIENT_CMD = config("KBS_CLIENT_CMD", default="kbs-client")
+KBS_FETCH_RETRIES = config("KBS_FETCH_RETRIES", default=5, cast=int)
+KBS_FETCH_RETRY_DELAY_SECONDS = config("KBS_FETCH_RETRY_DELAY_SECONDS", default=1.0, cast=float)
 
 # Sigstore author Configuration
 GIT_EMAIL = config("GIT_EMAIL", default="qingchengx.zeng@intel.com")

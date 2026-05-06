@@ -1009,6 +1009,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
         decryption_key = None
         public_encryption_key = None
         private_encryption_key = None
+        encryption_key_source = "generated"
         logger.debug(f"Checking for provided sign_key and cert for build ID: {build_id}")
         if not request.sign_key or not request.cert:
             docker_service.update_build_status(request.user_id, build_id, "preparing", step="Get signing and encryption keys")
@@ -1026,6 +1027,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
                     )
                     logger.debug("get key failed")
                     return
+                encryption_key_source = "kbs"
             else:
                 logger.info("ENABLE_TDX=false, skipping KBS attestation key retrieval")
             
@@ -1050,6 +1052,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
             public_encryption_key = pub_enc_key
             if not decryption_key:
                 decryption_key = {"opensslPub": pub_enc_key}
+                encryption_key_source = "generated"
             logger.debug(f"Successfully generated keys for build ID: {build_id}")
             
             docker_service.update_build_status(
@@ -1082,7 +1085,12 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
                     raise Exception("Encryption requested, but no encryption key available")
 
                 docker_service.update_build_status(request.user_id, build_id, "encrypting", step="Encrypting container image")
-                logger.info(f"Encrypting image {image_name}")
+                logger.info(
+                    "Encrypting image %s with key source=%s path=%s",
+                    image_name,
+                    encryption_key_source,
+                    decryption_key.get("opensslPub"),
+                )
                 encrypted_image_name = docker_service.encrypt_image(
                     image_name,
                     build_id,
@@ -1493,7 +1501,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, workloa
         log_proxy_configuration("Launch image pull")
 
         # 1. Pull and verify image
-        logger.info("Get encrypted iamge and decrypt")
+        logger.info("Get encrypted image and decrypt")
         pull_success = docker_service.pull_image(
             tlog, record_id,
             image_url=request.image_url,
@@ -1507,7 +1515,7 @@ async def launch_container_async(request: LaunchRequest, launch_id: str, workloa
                 "failed",
                 error_message="Image pull failed"
             )
-            logger.debug("Get encrypted iamge and decrypt failed")
+            logger.debug("Get encrypted image and decrypt failed")
             tlog.add_entry(record_id, Entry(key="launch_result", value="failed"))
             return
             

@@ -54,9 +54,8 @@ COPY ./*.toml /app/
 
 EXPOSE 8006 4050
 
-RUN mkdir -p /app/kbs /app/certs
-COPY ./certs /app/certs
-COPY ./scripts/trust_service.sh /app/
+RUN mkdir -p /app/kbs
+COPY ./trust_service.sh /app/trust_service.sh
 #Run the application
 RUN chmod +x *service.sh
 CMD ["bash", "/app/trust_service.sh"]

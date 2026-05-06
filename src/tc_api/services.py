@@ -67,6 +67,111 @@ class DockerService:
             pass
         return env
 
+    def _validate_public_encryption_key(self, public_key_path: str) -> Tuple[bool, str]:
+        cmd = ["openssl", "pkey", "-pubin", "-in", public_key_path, "-noout"]
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except Exception as exc:
+            return False, f"OpenSSL key validation failed to run: {exc}"
+
+        if result.returncode == 0:
+            return True, result.stdout.strip() or "public key validated"
+
+        failure_detail = result.stderr.strip() or result.stdout.strip() or "OpenSSL rejected the public key"
+        return False, failure_detail
+
+    def _derive_public_key_from_private_key(self, private_key_path: str, public_key_path: str) -> Tuple[bool, str]:
+        cmd = ["openssl", "pkey", "-in", private_key_path, "-pubout", "-out", public_key_path]
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except Exception as exc:
+            return False, f"OpenSSL public key derivation failed to run: {exc}"
+
+        if result.returncode == 0 and os.path.exists(public_key_path):
+            return True, result.stdout.strip() or "public key derived"
+
+        failure_detail = result.stderr.strip() or result.stdout.strip() or "OpenSSL failed to derive a public key"
+        return False, failure_detail
+
+    def _should_retry_kbs_download(self, failure_detail: str) -> bool:
+        transient_markers = [
+            "failed to connect",
+            "connection refused",
+            "connection reset",
+            "timed out",
+            "empty reply from server",
+            "could not resolve host",
+            "recv failure",
+            "returned error: 502",
+            "returned error: 503",
+            "returned error: 504",
+        ]
+        lowered = failure_detail.lower()
+        return any(marker in lowered for marker in transient_markers)
+
+    def _download_kbs_artifact(self, url: str, destination_path: str) -> Tuple[bool, str]:
+        cmd = ["curl", "-fsSL", url, "-o", destination_path]
+        attempts = max(1, KBS_FETCH_RETRIES)
+
+        for attempt in range(1, attempts + 1):
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+            except Exception as exc:
+                failure_detail = f"curl failed to run for {url}: {exc}"
+            else:
+                if result.returncode == 0 and os.path.exists(destination_path):
+                    detail = result.stdout.strip() or f"downloaded {url}"
+                    if attempt > 1:
+                        detail = f"{detail} after {attempt} attempts"
+                    return True, detail
+                failure_detail = result.stderr.strip() or result.stdout.strip() or f"curl failed for {url}"
+
+            if os.path.exists(destination_path):
+                try:
+                    os.remove(destination_path)
+                except OSError:
+                    pass
+
+            is_last_attempt = attempt == attempts
+            if is_last_attempt or not self._should_retry_kbs_download(failure_detail):
+                if attempt > 1:
+                    failure_detail = f"{failure_detail} after {attempt} attempts"
+                return False, failure_detail
+
+            logger.info(
+                "KBS artifact fetch failed for %s (attempt %s/%s): %s. Retrying in %.1fs.",
+                url,
+                attempt,
+                attempts,
+                failure_detail,
+                KBS_FETCH_RETRY_DELAY_SECONDS,
+            )
+            time.sleep(KBS_FETCH_RETRY_DELAY_SECONDS)
+
+    def _download_first_available_kbs_artifact(self, destination_path: str, candidate_names: list[str]) -> Tuple[bool, Optional[str], str]:
+        attempts = []
+        for candidate_name in candidate_names:
+            ok, detail = self._download_kbs_artifact(f"{KBS_URL}{candidate_name}", destination_path)
+            if ok:
+                return True, candidate_name, detail
+            attempts.append(f"{candidate_name}: {detail}")
+        return False, None, "; ".join(attempts)
+
     def normalize_workload_id(self, user_id: str, image_id: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         metadata = metadata or {}
         workload_id = metadata.get("workload_id")
@@ -346,6 +451,7 @@ class DockerService:
         archive_path = None
         docker_save_cmd = None
         cmd = None
+        key_validation_detail = None
         try:
             # Setup paths for encrypted image
             build_path = os.path.join(BUILD_DIR, build_id)
@@ -369,43 +475,27 @@ class DockerService:
                 tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
                 return None
             
-            logger.info(f"Starting encryption process for image: {image_name}")
-            archive_path = os.path.join(build_path, f"{build_id}-image.tar")
-
-            docker_save_cmd = [DOCKER_CMD, "save", "-o", archive_path, image_name]
-            logger.debug(f"Executing docker save command: {' '.join(docker_save_cmd)}")
-            docker_save_result = subprocess.run(
-                docker_save_cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-            if docker_save_result.returncode != 0:
-                logger.error(f"Docker save failed before encryption: {docker_save_result.stderr}")
-
+            logger.info("Starting encryption process for image: %s using public key %s", image_name, public_key_path)
+            key_valid, key_validation_detail = self._validate_public_encryption_key(public_key_path)
+            if not key_valid:
+                logger.error("Encryption key validation failed for %s: %s", public_key_path, key_validation_detail)
                 encryption_log = {
-                    "docker_save_command": " ".join(docker_save_cmd),
-                    "docker_save_exit_code": docker_save_result.returncode,
-                    "docker_save_stdout": docker_save_result.stdout,
-                    "docker_save_stderr": docker_save_result.stderr,
+                    "public_key_path": public_key_path,
                     "status": "failed",
                     "error": {
-                        "type": "subprocess.CalledProcessError",
-                        "message": docker_save_result.stderr,
-                    },
+                        "type": "InvalidEncryptionKey",
+                        "message": key_validation_detail,
+                    }
                 }
                 tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
                 return None
-            
-            # Current skopeo docker-daemon transport negotiates an API version that is too old
-            # for this daemon, so encrypt from a docker-archive produced by docker save instead.
             cmd = [
                 SKOPEO_CMD, "copy",
                 "--encryption-key", f"jwe:{public_key_path}",
-                f"docker-archive:{archive_path}",
+                f"docker-daemon:{image_name}",
                 f"oci:{encrypted_path}:latest-encrypted"
             ]
-            
+
             logger.debug(f"Executing encryption command: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
@@ -414,12 +504,78 @@ class DockerService:
                 timeout=300,
                 env=self._syft_environment(),
             )
+
+            transport_error = f"{result.stdout}\n{result.stderr}".lower()
+            needs_archive_fallback = (
+                result.returncode != 0
+                and (
+                    "client version" in transport_error
+                    or "server api version" in transport_error
+                    or "api version" in transport_error
+                    or "docker-daemon" in transport_error
+                )
+            )
+
+            if needs_archive_fallback:
+                logger.warning(
+                    "docker-daemon transport failed during encryption, retrying via docker-archive: %s",
+                    result.stderr or result.stdout,
+                )
+
+                archive_path = os.path.join(build_path, f"{build_id}-image.tar")
+                docker_save_cmd = [DOCKER_CMD, "save", "-o", archive_path, image_name]
+                logger.debug(f"Executing docker save command: {' '.join(docker_save_cmd)}")
+                docker_save_result = subprocess.run(
+                    docker_save_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                if docker_save_result.returncode != 0:
+                    logger.error(f"Docker save failed before encryption fallback: {docker_save_result.stderr}")
+
+                    encryption_log = {
+                        "public_key_path": public_key_path,
+                        "key_validation": key_validation_detail,
+                        "command": " ".join(cmd),
+                        "exit_code": result.returncode,
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                        "docker_save_command": " ".join(docker_save_cmd),
+                        "docker_save_exit_code": docker_save_result.returncode,
+                        "docker_save_stdout": docker_save_result.stdout,
+                        "docker_save_stderr": docker_save_result.stderr,
+                        "status": "failed",
+                        "error": {
+                            "type": "subprocess.CalledProcessError",
+                            "message": docker_save_result.stderr,
+                        },
+                    }
+                    tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
+                    return None
+
+                cmd = [
+                    SKOPEO_CMD, "copy",
+                    "--encryption-key", f"jwe:{public_key_path}",
+                    f"docker-archive:{archive_path}",
+                    f"oci:{encrypted_path}:latest-encrypted"
+                ]
+
+                logger.debug(f"Executing fallback encryption command: {' '.join(cmd)}")
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    env=self._syft_environment(),
+                )
             
             if result.returncode == 0:
                 logger.info(f"Successfully encrypted image {image_name} to {encrypted_path}")
 
                 encryption_log = {
-                    "docker_save_command": " ".join(docker_save_cmd),
+                    "public_key_path": public_key_path,
+                    "key_validation": key_validation_detail,
                     "command": " ".join(cmd),
                     "exit_code": result.returncode,
                     "stdout": result.stdout,
@@ -427,6 +583,8 @@ class DockerService:
                     "output_path": encrypted_path,
                     "status": "success"
                 }
+                if docker_save_cmd:
+                    encryption_log["docker_save_command"] = " ".join(docker_save_cmd)
                 tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
 
                 # Return OCI reference in the correct format
@@ -436,7 +594,8 @@ class DockerService:
                 logger.debug(f"Encryption stdout: {result.stdout}")
 
                 encryption_log = {
-                    "docker_save_command": " ".join(docker_save_cmd),
+                    "public_key_path": public_key_path,
+                    "key_validation": key_validation_detail,
                     "command": " ".join(cmd),
                     "exit_code": result.returncode,
                     "stdout": result.stdout,
@@ -447,6 +606,8 @@ class DockerService:
                         "message": result.stderr
                     }
                 }
+                if docker_save_cmd:
+                    encryption_log["docker_save_command"] = " ".join(docker_save_cmd)
                 tlog.add_entry(record_id, Entry(key="image_encryption", value=encryption_log))
 
                 return None
@@ -1710,7 +1871,8 @@ class DockerService:
             tlog.add_entry(record_id, Entry(key="verify_sbom_cmd", value=" ".join(cosign_cmd)))
 
             if cosign_verify.returncode != 0:
-                logger.debug(f"Failed to verify: {cosign_verify.stderr}")
+                failure_detail = cosign_verify.stderr.strip() or cosign_verify.stdout.strip() or "cosign verify failed without output"
+                logger.warning("Cosign verify failed for %s: %s", images_fullName, failure_detail)
                 tlog.add_entry(record_id, Entry(key="verify_sbom_status", value="failed"))
                 return False
             tlog.add_entry(record_id, Entry(key="verify_sbom_status", value="success"))
@@ -1729,7 +1891,8 @@ class DockerService:
             tlog.add_entry(record_id, Entry(key="verify_attestation_cmd", value=" ".join(cosign_attcmd)))
 
             if cosign_attverify.returncode != 0:
-                logger.debug(f"Failed to verify: {cosign_attverify.stderr}")
+                failure_detail = cosign_attverify.stderr.strip() or cosign_attverify.stdout.strip() or "cosign verify-attestation failed without output"
+                logger.warning("Cosign verify-attestation failed for %s: %s", images_fullName, failure_detail)
                 tlog.add_entry(record_id, Entry(key="verify_attestation_status", value="failed"))
                 return False
 
@@ -1906,41 +2069,101 @@ class DockerService:
 
     def get_pubKey_from_KBS(self, tlog: TrustedLogAPI = None, record_id: str = None):
         try:
-            key_dict = {'opensslKey':'openssl.key', 'cosignKey':'cosign.key', 'opensslPub':'openssl.pub', 'cosignPub':'cosign.pub'}
-            if os.path.exists('openssl.pub'):
-                for key,value in key_dict.items():
-                    if not os.path.exists(value):
-                        logger.info(f"Failed get {key}!")
-                        tlog.add_entry(record_id, Entry(key="get_key", value="failed"))
-                        return False, None
-                    else:
-                        key_dict[key] = os.path.realpath(value)
-                        tlog.add_entry(record_id, Entry(key="get_key", value="true"))
-                return 'trusted', key_dict
+            kbs_key_dir = os.path.join(BUILD_DIR, "_kbs_keys", record_id or uuid.uuid4().hex[:8])
+            os.makedirs(kbs_key_dir, exist_ok=True)
 
-            opensslKey_cmd = ["curl", KBS_URL+"openssl.key", "-o","openssl.key"]
-            cosignPub_cmd = ["curl", KBS_URL+"cosign.pub", "-o","cosign.pub"]
-            opensslPub_cmd = ["curl", KBS_URL+"openssl.pub", "-o","openssl.pub"]
-            cosignKey_cmd = ["curl", KBS_URL+"cosign.key", "-o","cosign.key"]
+            key_dict = {
+                "opensslKey": os.path.join(kbs_key_dir, "openssl.key"),
+                "cosignKey": os.path.join(kbs_key_dir, "cosign.key"),
+                "opensslPub": os.path.join(kbs_key_dir, "openssl.pub"),
+                "cosignPub": os.path.join(kbs_key_dir, "cosign.pub"),
+            }
 
-            opensslKey_res = subprocess.run(opensslKey_cmd, capture_output=True, text=True)
-            cosignPub_res = subprocess.run(cosignPub_cmd, capture_output=True, text=True)
-            opensslPub_res = subprocess.run(opensslPub_cmd, capture_output=True, text=True)
-            cosignKey_res = subprocess.run(cosignKey_cmd, capture_output=True, text=True)
+            openssl_key_ok, openssl_key_source, openssl_key_detail = self._download_first_available_kbs_artifact(
+                key_dict["opensslKey"],
+                ["openssl.key", "key.pem"],
+            )
+            cosign_key_ok, cosign_key_source, cosign_key_detail = self._download_first_available_kbs_artifact(
+                key_dict["cosignKey"],
+                ["cosign.key"],
+            )
+            cosign_pub_ok, cosign_pub_source, cosign_pub_detail = self._download_first_available_kbs_artifact(
+                key_dict["cosignPub"],
+                ["cosign.pub"],
+            )
 
-            for key,value in key_dict.items():
-                if not os.path.exists(value):
-                    logger.info(f"Failed get {key}!")
-                    tlog.add_entry(record_id, Entry(key="get_key", value="failed"))
-                    return False, None
+            openssl_pub_ok, openssl_pub_source, openssl_pub_detail = self._download_first_available_kbs_artifact(
+                key_dict["opensslPub"],
+                ["openssl.pub", "pub.pem"],
+            )
+            if openssl_pub_ok:
+                key_valid, key_validation_detail = self._validate_public_encryption_key(key_dict["opensslPub"])
+                if not key_valid:
+                    logger.warning(
+                        "Downloaded KBS public key %s failed validation: %s. Will try deriving from private key.",
+                        openssl_pub_source,
+                        key_validation_detail,
+                    )
+                    openssl_pub_ok = False
+                    openssl_pub_detail = key_validation_detail
+
+            if not openssl_pub_ok and openssl_key_ok:
+                derived, derive_detail = self._derive_public_key_from_private_key(
+                    key_dict["opensslKey"],
+                    key_dict["opensslPub"],
+                )
+                if derived:
+                    openssl_pub_ok = True
+                    openssl_pub_source = f"derived-from:{openssl_key_source}"
+                    openssl_pub_detail = derive_detail
                 else:
-                    key_dict[key] = os.path.realpath(value)
-            tlog.add_entry(record_id, Entry(key="key", value=key_dict))
+                    openssl_pub_detail = f"{openssl_pub_detail}; {derive_detail}" if openssl_pub_detail else derive_detail
+
+            required_failures = []
+            if not openssl_key_ok:
+                required_failures.append(f"opensslKey: {openssl_key_detail}")
+            if not cosign_key_ok:
+                required_failures.append(f"cosignKey: {cosign_key_detail}")
+            if not openssl_pub_ok:
+                required_failures.append(f"opensslPub: {openssl_pub_detail}")
+
+            if required_failures:
+                failure_detail = "; ".join(required_failures)
+                logger.error("Failed to retrieve valid keys from KBS: %s", failure_detail)
+                if tlog and record_id:
+                    tlog.add_entry(record_id, Entry(key="get_key", value={"status": "failed", "error": failure_detail}))
+                return False, None
+
+            key_dict = {key: os.path.realpath(value) for key, value in key_dict.items() if os.path.exists(value)}
+            logger.info(
+                "Retrieved KBS keys: opensslKey=%s opensslPub=%s cosignKey=%s cosignPub=%s",
+                openssl_key_source,
+                openssl_pub_source,
+                cosign_key_source,
+                cosign_pub_source,
+            )
+            if tlog and record_id:
+                tlog.add_entry(
+                    record_id,
+                    Entry(
+                        key="key",
+                        value={
+                            **key_dict,
+                            "sources": {
+                                "opensslKey": openssl_key_source,
+                                "opensslPub": openssl_pub_source,
+                                "cosignKey": cosign_key_source,
+                                "cosignPub": cosign_pub_source,
+                            },
+                        },
+                    ),
+                )
             return 'trusted', key_dict
 
         except Exception as e:
             logger.error(f"Launch contaioner failed: {str(e)}")
-            tlog.add_entry(record_id, Entry(key="key", value=f"Get key failed: {e}"))
+            if tlog and record_id:
+                tlog.add_entry(record_id, Entry(key="key", value=f"Get key failed: {e}"))
             return False, None
 
     def commit_and_save_receipt(self, api_type, build_id, tlog: TrustedLogAPI, record_id: str, identity_token_str: str):
