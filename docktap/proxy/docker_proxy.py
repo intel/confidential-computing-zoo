@@ -24,6 +24,8 @@ LAUNCH_LABEL = "io.trucon.launch-id"
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+ATTESTATION_REQUIRED_ENV = "DOCKTAP_REQUIRE_ATTESTATION"
+
 
 class DockerProxyServer:
     """Unix socket proxy server that intercepts Docker CLI operations"""
@@ -44,6 +46,11 @@ class DockerProxyServer:
         self.tracker = OperationTracker()
         self._trucon_committer = trucon_committer
         self._runtime_adapter = DockerRuntimeAdapter(runtime_engine=runtime_engine)
+
+    @staticmethod
+    def _attestation_required() -> bool:
+        raw_value = os.environ.get(ATTESTATION_REQUIRED_ENV, "1").strip().lower()
+        return raw_value not in {"0", "false", "no", "off"}
 
     def set_log_callback(self, callback):
         """Set callback function for logging operations"""
@@ -259,11 +266,10 @@ class DockerProxyServer:
                     pass
         return None
 
-    def _create_error_response(self, message: str) -> bytes:
-        """Create HTTP error response"""
-        body = f'{{"message": "{message}"}}'
+    def _create_json_response(self, status_line: str, payload: Dict[str, Any]) -> bytes:
+        body = json.dumps(payload, ensure_ascii=True)
         response = (
-            "HTTP/1.1 503 Service Unavailable\r\n"
+            f"HTTP/1.1 {status_line}\r\n"
             "Content-Type: application/json\r\n"
             f"Content-Length: {len(body)}\r\n"
             "\r\n"
@@ -271,17 +277,29 @@ class DockerProxyServer:
         )
         return response.encode('utf-8')
 
+    def _create_error_response(self, message: str) -> bytes:
+        """Create HTTP error response"""
+        return self._create_json_response("503 Service Unavailable", {"message": message})
+
     def _create_bad_request_response(self, message: str) -> bytes:
         """Create HTTP 400 response for malformed client requests."""
-        body = f'{{"message": "{message}"}}'
-        response = (
-            "HTTP/1.1 400 Bad Request\r\n"
-            "Content-Type: application/json\r\n"
-            f"Content-Length: {len(body)}\r\n"
-            "\r\n"
-            f"{body}"
+        return self._create_json_response("400 Bad Request", {"message": message})
+
+    def _create_attestation_required_response(self, operation_type: str) -> bytes:
+        from trucon_client import get_attestation_challenge
+
+        challenge = get_attestation_challenge("docktap")
+        message = (
+            f"Attested Docker login required before docker {operation_type}. "
+            f"Open {challenge.get('interactive_login_url')} and complete Sigstore sign-in, then retry."
         )
-        return response.encode('utf-8')
+        return self._create_json_response(
+            "428 Precondition Required",
+            {
+                "message": message,
+                "detail": challenge,
+            },
+        )
 
     def handle_client(self, client_socket: socket.socket):
         """Handle client connection with operation tracking and parent linking."""
@@ -366,6 +384,14 @@ class DockerProxyServer:
                 op_record.parent_id = last_container_op_id
 
             operation, path_only, params = self._parse_http_request(request_data)
+            if self._trucon_committer is not None and self._attestation_required():
+                from trucon_client import SUBMITTABLE_OPERATIONS, _resolve_identity_token_str
+
+                if operation in SUBMITTABLE_OPERATIONS and not _resolve_identity_token_str():
+                    client_socket.sendall(self._create_attestation_required_response(operation))
+                    logger.info("Blocked docker %s until attestation login completes", operation)
+                    return
+
             if self._log_callback:
                 log_data = {
                     'operation': operation,

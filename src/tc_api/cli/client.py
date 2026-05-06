@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 import requests
-from sigstore.oidc import Issuer
 from tc_api.sigstore_identity import cache_sigstore_identity_token
 
 
@@ -248,19 +247,62 @@ def _is_loopback_browser_url(url: str) -> bool:
     return host in {"localhost", "127.0.0.1", "::1"}
 
 
-def _acquire_sigstore_token_oob() -> str:
-    print("Using Sigstore verification-code flow.", file=sys.stderr)
-    print("A public Sigstore login URL will be shown next. Open it in your browser, complete login, and paste the verification code back here.", file=sys.stderr)
-    issuer = Issuer.production()
-    token = issuer.identity_token(
-        client_id=os.environ.get("TC_API_SIGSTORE_OIDC_CLIENT_ID", "sigstore"),
-        client_secret=os.environ.get("TC_API_SIGSTORE_OIDC_CLIENT_SECRET", ""),
-        force_oob=True,
+def _acquire_sigstore_token_oob(client: ApiClient, operation: str) -> str:
+    print("Using tc_api-managed Sigstore verification-code flow.", file=sys.stderr)
+    print(
+        "A tc_api-managed Sigstore login URL will be shown next. Open it in your browser, complete login, and paste the verification code back here.",
+        file=sys.stderr,
     )
-    token_str = str(token).strip()
-    if token_str:
-        cache_sigstore_identity_token(token_str)
-    return token_str
+
+    login_payload = _start_sigstore_identity_session(client, operation, "oob")
+    status = str(login_payload.get("status") or "").strip()
+    if status == "token_ready":
+        identity_token = str(login_payload.get("identity_token") or "").strip()
+        if not identity_token:
+            raise ClientError("Sigstore login completed but no identity_token was returned.")
+        cache_sigstore_identity_token(identity_token)
+        return identity_token
+
+    if status != "browser_login_pending":
+        raise ClientError(f"Unsupported Sigstore login status: {status or 'unknown'}")
+
+    auth_url = str(login_payload.get("auth_url") or "").strip()
+    session_id = str(login_payload.get("session_id") or "").strip()
+    flow = str(login_payload.get("flow") or "oob").strip().lower()
+    if not auth_url or not session_id:
+        raise ClientError("Server did not return enough Sigstore OOB login guidance to continue.")
+
+    print(f"Go to the following link in a browser:\n\n        {auth_url}", file=sys.stderr)
+    payload: dict[str, Any] = {
+        "operation": operation,
+        "session_id": session_id,
+    }
+    if flow == "copy-url":
+        redirect_url = input("Enter the final browser URL: ").strip()
+        if not redirect_url:
+            raise ClientError("The final browser URL is required.")
+        payload["redirect_url"] = redirect_url
+    else:
+        verification_code = input("Enter verification code: ").strip()
+        if not verification_code:
+            raise ClientError("Sigstore verification code is required.")
+        payload["verification_code"] = verification_code
+
+    response = client.request_json(
+        "POST",
+        "/api/sigstore/identity-token",
+        payload,
+    )
+    if not response.ok:
+        raise ClientError(json.dumps(response.data, ensure_ascii=False))
+    if not isinstance(response.data, dict):
+        raise ClientError("Server returned an invalid Sigstore token exchange response.")
+
+    identity_token = str(response.data.get("identity_token") or "").strip()
+    if not identity_token:
+        raise ClientError("Sigstore login completed but no identity_token was returned.")
+    cache_sigstore_identity_token(identity_token)
+    return identity_token
 
 
 def _start_sigstore_identity_session(client: ApiClient, operation: str, flow: str) -> dict[str, Any]:
@@ -322,7 +364,7 @@ def _acquire_sigstore_token_for_cli(
 ) -> str:
     selected_mode = (sigstore_login_mode or "auto").strip().lower()
     if selected_mode == "oob":
-        return _acquire_sigstore_token_oob()
+        return _acquire_sigstore_token_oob(client, operation)
 
     requested_flow = "server-callback"
     if selected_mode == "auto" and not browser_base_url.strip() and not DEFAULT_BROWSER_BASE_URL:
@@ -391,7 +433,7 @@ def _complete_sigstore_login(
 
     selected_mode = _select_sigstore_login_mode(sigstore_login_mode, continue_url, browser_base_url)
     if selected_mode == "oob":
-        return _acquire_sigstore_token_oob()
+        return _acquire_sigstore_token_oob(client, operation)
 
     if not continue_url or not session_id or not status_url:
         raise ClientError("Server did not return enough Sigstore login guidance to continue.")

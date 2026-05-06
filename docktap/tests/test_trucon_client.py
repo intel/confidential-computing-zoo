@@ -13,6 +13,7 @@ from trucon_client import (
     SUBMITTABLE_OPERATIONS,
     _build_entries,
     _resolve_identity_token_str,
+    get_attestation_challenge,
 )
 from tc_api.tlog.types import Entry
 from proxy.operation_log import OperationRecord
@@ -256,6 +257,37 @@ class TestBestEffortFailureHandling:
 
         assert result is False
         assert any("OIDC" in r.message for r in caplog.records)
+
+    def test_get_attestation_challenge_uses_tc_api_response(self, monkeypatch):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "interactive_login_url": "/api/sigstore/interactive-login?operation=docktap&session_id=sess-1",
+                        "auth_url": "https://oauth2.sigstore.dev/auth?client_id=sigstore",
+                        "session_id": "sess-1",
+                        "login_status_url": "/api/sigstore/login-status/sess-1",
+                    }
+                ).encode("utf-8")
+
+        monkeypatch.setenv("DOCKTAP_ATTESTATION_API_URL", "http://127.0.0.1:8000")
+        monkeypatch.setenv("DOCKTAP_ATTESTATION_BROWSER_BASE_URL", "http://server.example:8000")
+
+        with patch("trucon_client.urllib.request.urlopen", return_value=FakeResponse()):
+            challenge = get_attestation_challenge("docktap")
+
+        assert challenge["status"] == "login_required"
+        assert challenge["session_id"] == "sess-1"
+        assert challenge["auth_url"] == "https://oauth2.sigstore.dev/auth?client_id=sigstore"
+        assert challenge["interactive_login_url"] == (
+            "http://server.example:8000/api/sigstore/interactive-login?operation=docktap&session_id=sess-1"
+        )
 
     def test_submit_operation_uses_explicit_identity_token_env(self, monkeypatch):
         committer = TruConCommitter()

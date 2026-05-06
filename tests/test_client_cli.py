@@ -1,3 +1,4 @@
+import builtins
 import json
 
 import pytest
@@ -124,7 +125,7 @@ def test_build_command_auto_falls_back_to_oob(monkeypatch, capsys):
         return FakeResponse(200, {"build_id": "bld-123", "status": "submitted"})
 
     monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
-    monkeypatch.setattr(client_mod, "_acquire_sigstore_token_oob", lambda: "token-xyz")
+    monkeypatch.setattr(client_mod, "_acquire_sigstore_token_oob", lambda client, operation: "token-xyz")
 
     rc = client_mod.main([
         "build",
@@ -312,18 +313,43 @@ def test_run_docktap_auto_mode_uses_copy_url_session_without_browser_base(monkey
 
 
 def test_acquire_sigstore_token_oob_caches_token(monkeypatch):
-    class FakeIssuer:
-        def identity_token(self, **kwargs):
-            return "token-xyz"
-
     cached = {}
-    monkeypatch.setattr(client_mod.Issuer, "production", lambda: FakeIssuer())
+    calls = []
+
+    def fake_request_json(self, method, path, payload=None):
+        calls.append((method, path, payload))
+        if len(calls) == 1:
+            return FakeResponse(
+                200,
+                {
+                    "status": "browser_login_pending",
+                    "flow": "oob",
+                    "session_id": "sess-123",
+                    "auth_url": "https://oauth2.sigstore.dev/auth/auth?client_id=sigstore",
+                },
+            )
+        return FakeResponse(200, {"status": "token_ready", "identity_token": "token-xyz"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "code-123")
     monkeypatch.setattr(client_mod, "cache_sigstore_identity_token", lambda token: cached.setdefault("token", token))
 
-    token = client_mod._acquire_sigstore_token_oob()
+    token = client_mod._acquire_sigstore_token_oob(client_mod.ApiClient("http://localhost:8000"), "docktap")
 
     assert token == "token-xyz"
     assert cached["token"] == "token-xyz"
+    assert calls == [
+        ("GET", "/api/sigstore/identity-token?operation=docktap&flow=oob", None),
+        (
+            "POST",
+            "/api/sigstore/identity-token",
+            {
+                "operation": "docktap",
+                "session_id": "sess-123",
+                "verification_code": "code-123",
+            },
+        ),
+    ]
 
 
 def test_exec_docktap_with_identity_token_uses_expected_execvpe(monkeypatch):

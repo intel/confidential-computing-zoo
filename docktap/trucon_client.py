@@ -15,6 +15,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+import urllib.parse
 import urllib.request
 import urllib.error
 
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 # Only these Docker operation types trigger a TruCon commit.
 SUBMITTABLE_OPERATIONS = {"pull", "create", "start", "stop", "rm"}
 DEFAULT_REKOR_URL = "https://rekor.sigstore.dev"
+DEFAULT_TC_API_URL = "http://127.0.0.1:8000"
 
 
 def _identity_token_min_ttl_seconds() -> int:
@@ -113,6 +115,91 @@ def _resolve_runtime_engine(op_record) -> str:
 
 def _docktap_rekor_url() -> str:
     return os.environ.get("DOCKTAP_REKOR_URL", DEFAULT_REKOR_URL).strip() or DEFAULT_REKOR_URL
+
+
+def _docktap_attestation_api_url() -> str:
+    return (
+        os.environ.get("DOCKTAP_ATTESTATION_API_URL", "").strip()
+        or os.environ.get("TC_API_BASE_URL", "").strip()
+        or DEFAULT_TC_API_URL
+    )
+
+
+def _docktap_attestation_browser_base_url() -> str:
+    return (
+        os.environ.get("DOCKTAP_ATTESTATION_BROWSER_BASE_URL", "").strip()
+        or os.environ.get("TC_API_BROWSER_BASE_URL", "").strip()
+    )
+
+
+def _rewrite_browser_url(url: str, browser_base_url: str) -> str:
+    raw_url = (url or "").strip()
+    raw_base = (browser_base_url or "").strip()
+    if not raw_url or not raw_base:
+        return raw_url
+
+    parsed_url = urllib.parse.urlparse(raw_url)
+    parsed_base = urllib.parse.urlparse(raw_base)
+    if not parsed_url.scheme or not parsed_url.netloc:
+        return raw_url
+    if not parsed_base.scheme or not parsed_base.netloc:
+        return raw_url
+
+    return urllib.parse.urlunparse(
+        (
+            parsed_base.scheme,
+            parsed_base.netloc,
+            parsed_url.path,
+            parsed_url.params,
+            parsed_url.query,
+            parsed_url.fragment,
+        )
+    )
+
+
+def get_attestation_challenge(operation: str = "docktap") -> dict:
+    """Create a simple tc_api-backed login challenge for attested Docker use."""
+    base_url = _docktap_attestation_api_url().rstrip("/")
+    browser_base_url = _docktap_attestation_browser_base_url()
+    request_url = (
+        f"{base_url}/api/sigstore/identity-token?"
+        f"{urllib.parse.urlencode({'operation': operation, 'flow': 'copy-url'})}"
+    )
+    fallback_interactive_url = f"{base_url}/api/sigstore/interactive-login?operation={urllib.parse.quote(operation)}"
+    challenge = {
+        "status": "login_required",
+        "operation": operation,
+        "message": "Attested Docker session required. Open the login URL, complete Sigstore sign-in, then retry the Docker command.",
+        "interactive_login_url": _rewrite_browser_url(fallback_interactive_url, browser_base_url) or fallback_interactive_url,
+        "auth_url": None,
+        "session_id": None,
+        "login_status_url": None,
+    }
+
+    try:
+        with urllib.request.urlopen(request_url, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.warning("Failed to create attestation login challenge from tc_api: %s", exc)
+        return challenge
+
+    interactive_login_url = str(payload.get("interactive_login_url") or "").strip()
+    auth_url = str(payload.get("auth_url") or "").strip()
+    session_id = str(payload.get("session_id") or "").strip()
+    login_status_url = str(payload.get("login_status_url") or "").strip()
+
+    if interactive_login_url:
+        absolute_interactive_url = urllib.parse.urljoin(f"{base_url}/", interactive_login_url.lstrip("/"))
+        challenge["interactive_login_url"] = _rewrite_browser_url(absolute_interactive_url, browser_base_url)
+    if auth_url:
+        challenge["auth_url"] = auth_url
+    if session_id:
+        challenge["session_id"] = session_id
+    if login_status_url:
+        absolute_status_url = urllib.parse.urljoin(f"{base_url}/", login_status_url.lstrip("/"))
+        challenge["login_status_url"] = _rewrite_browser_url(absolute_status_url, browser_base_url)
+
+    return challenge
 
 
 @dataclass

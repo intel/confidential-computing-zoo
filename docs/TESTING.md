@@ -233,6 +233,214 @@ PYTHONPATH=$PWD/src python tdvm_smoke_test.py --skip-preflight --skip-quote-chec
 
 This verified the intended operational property: one OIDC login was sufficient for the subsequent build and publish flow, with no second browser login prompt during the service-side Sigstore operations.
 
+## OpenClaw Sandbox Through Docktap
+
+The following sequence was validated live for the OpenClaw sandbox flow under `/home/siyuan/self-maintained-tools/2.Run_openclaw_in_sandbox`, with all Docker operations routed through Docktap and attested to real Rekor plus TruCon.
+
+Recommended order:
+
+```bash
+cd /home/siyuan/tc_api
+
+TRUST_SERVICE_BUILD=never ./scripts/dev-up.sh
+```
+
+In a second terminal, start Docktap with attestation-gate behavior enabled:
+
+```bash
+cd /home/siyuan/tc_api
+
+env -u DOCKTAP_SIGSTORE_IDENTITY_TOKEN -u SIGSTORE_IDENTITY_TOKEN \
+   PYTHONPATH=$PWD/docktap:$PWD/src \
+   TRUCON_URL=http://127.0.0.1:8001 \
+   TRUCON_SERVICE_TOKEN='ZL5rd7vZcA0hWSJBeAVZQoiBLNO2KLEi89_4SRUCiGM' \
+   DOCKTAP_REQUIRE_ATTESTATION=1 \
+   DOCKTAP_ATTESTATION_API_URL=http://127.0.0.1:8000 \
+   DOCKTAP_ATTESTATION_BROWSER_BASE_URL=http://127.0.0.1:8000 \
+   ./venv/bin/python -m docktap.main \
+      --socket-path /var/run/docktap/docker.sock \
+      --docker-socket-path /var/run/docker.sock \
+      --debug 2>&1 | tee logs/openclaw-sbx-docktap-latest.log
+```
+
+In a third terminal, start or refresh the OpenClaw sandbox container so it uses Docktap instead of the host Docker socket directly:
+
+```bash
+cd /home/siyuan/self-maintained-tools/2.Run_openclaw_in_sandbox
+
+OPENCLAW_DOCKER_SOCKET=/var/run/docktap/docker.sock ./run-sbx.sh
+```
+
+Confirm the gateway container is really pointed at Docktap:
+
+```bash
+docker inspect openclaw-gateway --format '{{json .Config.Env}}'
+```
+
+Expected env fragment:
+
+```text
+DOCKER_HOST=unix:///var/run/docktap/docker.sock
+```
+
+If no fresh Sigstore token is cached yet, fetch one before the first pull:
+
+```bash
+cd /home/siyuan/tc_api
+
+PYTHONPATH=$PWD/src ./venv/bin/python -m tc_api.cli.client \
+   --base-url http://127.0.0.1:8000 \
+   --sigstore-login oob \
+   sigstore-token --format json
+```
+
+Then trigger the Docker operation from inside OpenClaw:
+
+```bash
+docker exec openclaw-gateway sh -lc 'docker pull hello-world:latest'
+```
+
+The validated successful outcome was:
+
+```text
+latest: Pulling from library/hello-world
+Digest: sha256:f9078146db2e05e794366b1bfe584a14ea6317f44027d10ef7dad65279026885
+Status: Image is up to date for hello-world:latest
+docker.io/library/hello-world:latest
+```
+
+### Expected Docktap Evidence
+
+Inspect the Docktap log file:
+
+```bash
+cd /home/siyuan/tc_api
+
+grep -E 'Cached Sigstore identity token|OPERATION=pull|POST /api/v1/log/entries/|Transparency log entry created with index|TruCon commit succeeded' \
+   logs/openclaw-sbx-docktap-latest.log
+```
+
+Expected evidence for a successful run includes all of the following classes of lines:
+
+```text
+INFO:trucon_client:Cached Sigstore identity token with ... remaining
+[TRUSTED_LOG] ... OPERATION=pull IMAGE=docker.io/library/hello-world ...
+DEBUG:urllib3.connectionpool:https://rekor.sigstore.dev:443 "POST /api/v1/log/entries/ HTTP/1.1" 201 None
+DEBUG:sigstore.sign:Transparency log entry created with index: ...
+INFO:trucon_client:TruCon commit succeeded for pull (event_id=...)
+```
+
+On the validated live run, the successful Rekor transparency entry was created with index `1451852684`.
+
+### Token Expiry Behavior
+
+The current behavior is intentionally strict because Sigstore identity tokens are short-lived.
+
+- Docktap first tries an explicit token from `DOCKTAP_SIGSTORE_IDENTITY_TOKEN`.
+- If that token is missing or below the allowed remaining lifetime threshold, Docktap ignores it.
+- Docktap then resolves the shared cached token from `/dev/shm/tc_api_sigstore_identity_token.json` using the same reuse logic as tc_api.
+- If there is still no reusable token and `DOCKTAP_REQUIRE_ATTESTATION=1`, Docktap does not forward the Docker `pull` or other submittable request to Docker.
+- Instead it returns an attestation-login challenge to the caller and waits for the operator to complete a fresh Sigstore login.
+
+The user-visible failure mode is therefore a login challenge rather than a best-effort background attestation miss:
+
+```text
+Error response from daemon: Attested Docker login required before docker pull. Open http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap and complete Sigstore sign-in, then retry.
+```
+
+The Docktap-side evidence for token expiry or near-expiry currently looks like this:
+
+```text
+WARNING:trucon_client:Ignoring DOCKTAP_SIGSTORE_IDENTITY_TOKEN because it expires too soon (... remaining, min ttl ...)
+WARNING:trucon_client:Skipping Sigstore identity acquisition for docktap because no reusable token is available.
+INFO:proxy.docker_proxy:Blocked docker pull until attestation login completes
+```
+
+### How The User Sees The Challenge
+
+Docktap does not show a separate UI by itself. The current user-facing behavior is delivered through the normal Docker error path.
+
+- Docktap intercepts submittable Docker operations such as `pull` before forwarding them to the real Docker daemon.
+- If no reusable Sigstore token exists, Docktap returns `HTTP 428 Precondition Required` instead of proxying the request.
+- The JSON response contains a human-readable `message` and machine-readable `detail` fields such as `interactive_login_url`, `session_id`, and `login_status_url`.
+- When the caller is the normal Docker CLI, that `message` is surfaced as the familiar daemon-style CLI error text.
+
+In practice, users perceive the challenge as a failed Docker command with an explicit retry instruction:
+
+```text
+Error response from daemon: Attested Docker login required before docker pull. Open http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap and complete Sigstore sign-in, then retry.
+```
+
+So for an OpenClaw user, the visible contract is intentionally simple:
+
+- the current `docker pull` fails;
+- the error text includes the login URL;
+- after login, rerun the same Docker command.
+
+Users do not need to know that Docktap is the component generating the challenge unless they are debugging the stack.
+
+### How The Login Refresh Was Completed
+
+In the validated OpenClaw run, the expired-token path was recovered by using the tc_api-managed Sigstore login flow rather than by injecting a token manually into Docktap.
+
+The exact recovery step was:
+
+```bash
+cd /home/siyuan/tc_api
+
+PYTHONPATH=$PWD/src ./venv/bin/python -m tc_api.cli.client \
+   --base-url http://127.0.0.1:8000 \
+   --sigstore-login oob \
+   sigstore-token --format json
+```
+
+That flow works as follows:
+
+- the CLI asks tc_api to start a Sigstore login session with `GET /api/sigstore/identity-token?...`;
+- tc_api returns a browser login URL and session metadata, or immediately returns a cached token if one is still usable;
+- after the browser login completes, the CLI submits the verification code back to tc_api with `POST /api/sigstore/identity-token`;
+- tc_api exchanges that verification code against the Sigstore token endpoint;
+- tc_api writes the refreshed identity token to the shared cache file `/dev/shm/tc_api_sigstore_identity_token.json` via `cache_sigstore_identity_token(...)`;
+- Docktap reuses that shared cached token on the next `docker pull`.
+
+Operationally, this means the recovery path is:
+
+1. the first Docker command is blocked by Docktap;
+2. the operator completes one fresh tc_api-managed Sigstore login;
+3. the shared cache is refreshed;
+4. the operator replays the same Docker command;
+5. Docktap can now sign and upload to Rekor.
+
+### What Identity The Signature Uses
+
+The successful OpenClaw replay still used your Sigstore/OIDC login identity. It was not an anonymous local fallback and it was not a separate service identity invented by Docktap.
+
+For the validated run, the refreshed identity token carried:
+
+- `email = siyuan.hui@intel.com`
+- federated GitHub connector claims under `federated_claims`
+
+The important distinction is:
+
+- the login method was GitHub-backed Sigstore login;
+- the signer identity used by Sigstore/Fulcio verification is the identity derived from the OIDC token, which in this environment resolves to the email identity rather than a raw GitHub username;
+- the token still preserves the underlying GitHub federation information, so the login is still traceable to your GitHub-authenticated session.
+
+So the short answer is: yes, it is still your GitHub-backed login session, but the signer identity that downstream Sigstore verification typically sees is the derived email identity from that token.
+
+Operationally, token expiry is handled by refreshing the shared Sigstore token and replaying the same Docker command:
+
+```bash
+cd /home/siyuan/tc_api
+
+PYTHONPATH=$PWD/src ./venv/bin/python -m tc_api.cli.client \
+   --base-url http://127.0.0.1:8000 \
+   --sigstore-login oob \
+   sigstore-token --format json
+
+docker exec openclaw-gateway sh -lc 'docker pull hello-world:latest'
+```
+
 ## Verification CLI Checks
 
 The operator-facing chain verification CLI can be exercised directly:

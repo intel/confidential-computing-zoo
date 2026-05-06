@@ -234,6 +234,9 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Emits explicit runtime outcomes (`operation_result`) plus workload, instance, and image-target identity fields required by the `docktap-runtime` verification profile.
 - Persists and propagates `launch_id` for runtime events attributable to a REST-originated launch flow so launch verification can correlate REST launch intent with Docktap `create`/`start` evidence.
 - Best-effort submission: Docktap uses the shared internal transport and identifies as a commit-oriented internal caller; TruCon failures still log a warning and do not block Docker API responses.
+- When `DOCKTAP_REQUIRE_ATTESTATION=1` and no reusable Sigstore identity token is available, Docktap blocks submittable Docker operations before they reach Docker and returns an HTTP `428 Precondition Required` challenge instead.
+- For Docker CLI users, that challenge is surfaced as a normal daemon-style CLI error message containing the interactive login URL, so the user experience is "login, then retry the same Docker command" rather than silent best-effort attestation failure.
+- Docktap itself does not own an independent browser or account flow. The recovery path is delegated to tc_api's Sigstore login endpoints, which refresh the shared token cache consumed by later Docktap operations.
 
 ### 4.3 Trust-Service Wrapper
 

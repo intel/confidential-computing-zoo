@@ -82,6 +82,45 @@ def test_handle_client_uses_shared_response_reader_without_half_closing_upstream
     assert client_socket.closed is True
 
 
+def test_handle_client_blocks_submittable_request_until_attestation_login_is_ready(monkeypatch):
+    proxy = DockerProxyServer(
+        listen_socket_path="/tmp/test-docker-proxy.sock",
+        docker_socket_path="/var/run/docker.sock",
+        trucon_committer=object(),
+    )
+    client_socket = FakeClientSocket()
+    request_data = b"POST /v1.41/images/create?fromImage=hello-world&tag=latest HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    op_record = OperationRecord(
+        operation={"type": "pull", "action": "docker pull", "api_path": "/v1.41/images/create", "method": "POST"},
+        image={"name": "hello-world", "tag": "latest"},
+    )
+
+    monkeypatch.setenv("DOCKTAP_REQUIRE_ATTESTATION", "1")
+
+    with patch.object(proxy, "_read_client_request", return_value=(request_data, None)), \
+         patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
+         patch.object(proxy, "_parse_http_request", return_value=("pull", "/v1.41/images/create", {"fromImage": "hello-world", "tag": "latest"})), \
+         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("proxy.docker_proxy.log_operation_json") as log_operation_json, \
+         patch("trucon_client._resolve_identity_token_str", return_value=None), \
+         patch("trucon_client.get_attestation_challenge", return_value={
+             "status": "login_required",
+             "interactive_login_url": "http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap",
+             "auth_url": "https://oauth2.sigstore.dev/auth?client_id=sigstore",
+             "session_id": "sess-1",
+             "login_status_url": "http://127.0.0.1:8000/api/sigstore/login-status/sess-1",
+         }):
+        proxy.handle_client(client_socket)
+
+    assert len(client_socket.sent) == 1
+    response_text = client_socket.sent[0].decode("utf-8")
+    assert "428 Precondition Required" in response_text
+    assert "Attested Docker login required before docker pull" in response_text
+    assert "http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap" in response_text
+    enrich_response.assert_not_called()
+    log_operation_json.assert_not_called()
+
+
 def test_handle_client_records_no_response_when_shared_reader_returns_empty_bytes():
     proxy = DockerProxyServer(
         listen_socket_path="/tmp/test-docker-proxy.sock",
