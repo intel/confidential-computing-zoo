@@ -2,8 +2,8 @@
 Docktap TruCon commit client.
 
 Submits signed DSSE bundles to TruCon for Docker lifecycle operations.
-Best-effort: failures are logged as warnings and never block Docker proxy
-responses.
+Failures are surfaced to the caller so the proxy can decide whether the
+Docker response should still be released to the client.
 """
 
 import json
@@ -15,18 +15,17 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-import urllib.parse
 import urllib.request
 import urllib.error
 
 from tc_api.tlog.types import Entry
-from tc_api.sigstore_baseline import build_signing_context
 from tc_api.tlog_client import (
     canonical_json,
     compute_entry_digest,
     compute_event_digest,
 )
-from tc_api.sigstore_identity import resolve_sigstore_identity_token, token_seconds_remaining
+from tc_api.sigstore_identity import resolve_sigstore_identity_token
+from tc_api.sigstore_baseline import build_signing_context
 from tc_api.trucon.internal_transport import request_json
 
 from sigstore.oidc import IdentityToken, detect_credential
@@ -37,31 +36,6 @@ logger = logging.getLogger(__name__)
 
 # Only these Docker operation types trigger a TruCon commit.
 SUBMITTABLE_OPERATIONS = {"pull", "create", "start", "stop", "rm"}
-DEFAULT_REKOR_URL = "https://rekor.sigstore.dev"
-DEFAULT_TC_API_URL = "http://127.0.0.1:8000"
-
-
-def _identity_token_min_ttl_seconds() -> int:
-    raw_value = os.environ.get("DOCKTAP_SIGSTORE_IDENTITY_MIN_TTL", "15").strip()
-    try:
-        return max(0, int(raw_value))
-    except ValueError:
-        return 15
-
-
-def _explicit_identity_token_min_ttl_seconds() -> int:
-    raw_value = os.environ.get("DOCKTAP_EXPLICIT_SIGSTORE_IDENTITY_MIN_TTL", "0").strip()
-    try:
-        return max(0, int(raw_value))
-    except ValueError:
-        return 0
-
-
-def _token_is_reusable(raw_token: str, min_ttl_seconds: int) -> bool:
-    remaining = token_seconds_remaining(raw_token)
-    if remaining is None:
-        return True
-    return remaining > min_ttl_seconds
 
 
 def _resolve_identity_token_str() -> Optional[str]:
@@ -73,21 +47,9 @@ def _resolve_identity_token_str() -> Optional[str]:
     3. Shared cached token resolution via ``tc_api.sigstore_identity``.
     4. Ambient credential detection via ``sigstore.oidc.detect_credential()``.
     """
-    min_ttl_seconds = _identity_token_min_ttl_seconds()
-    explicit_min_ttl_seconds = _explicit_identity_token_min_ttl_seconds()
-
     for env_var in ("DOCKTAP_SIGSTORE_IDENTITY_TOKEN", "SIGSTORE_IDENTITY_TOKEN"):
         token = os.environ.get(env_var, "").strip()
         if token:
-            if not _token_is_reusable(token, explicit_min_ttl_seconds):
-                remaining = token_seconds_remaining(token)
-                logger.warning(
-                    "Ignoring %s because it expires too soon (%ss remaining, min ttl %ss)",
-                    env_var,
-                    remaining if remaining is not None else -1,
-                    explicit_min_ttl_seconds,
-                )
-                continue
             return token
 
     cached = resolve_sigstore_identity_token(
@@ -95,7 +57,6 @@ def _resolve_identity_token_str() -> Optional[str]:
         logger=logger,
         allow_interactive=False,
         require_token=False,
-        min_ttl_seconds=min_ttl_seconds,
     )
     if cached:
         return cached
@@ -108,98 +69,26 @@ def _resolve_identity_token_str() -> Optional[str]:
     return token or None
 
 
+def has_reusable_identity_token() -> bool:
+    return _resolve_identity_token_str() is not None
+
+
+def _extract_rekor_identifiers(bundle) -> Dict[str, Optional[str]]:
+    log_entry = getattr(bundle, "log_entry", None)
+    if log_entry is None:
+        return {"initial_bundle_rekor_uuid": None, "initial_bundle_rekor_log_index": None}
+
+    rekor_uuid = getattr(log_entry, "uuid", None)
+    rekor_log_index = getattr(log_entry, "log_index", None)
+    return {
+        "initial_bundle_rekor_uuid": str(rekor_uuid) if rekor_uuid else None,
+        "initial_bundle_rekor_log_index": str(rekor_log_index) if rekor_log_index is not None else None,
+    }
+
+
 def _resolve_runtime_engine(op_record) -> str:
     runtime_engine = getattr(op_record, "runtime_engine", "")
     return runtime_engine or "docker"
-
-
-def _docktap_rekor_url() -> str:
-    return os.environ.get("DOCKTAP_REKOR_URL", DEFAULT_REKOR_URL).strip() or DEFAULT_REKOR_URL
-
-
-def _docktap_attestation_api_url() -> str:
-    return (
-        os.environ.get("DOCKTAP_ATTESTATION_API_URL", "").strip()
-        or os.environ.get("TC_API_BASE_URL", "").strip()
-        or DEFAULT_TC_API_URL
-    )
-
-
-def _docktap_attestation_browser_base_url() -> str:
-    return (
-        os.environ.get("DOCKTAP_ATTESTATION_BROWSER_BASE_URL", "").strip()
-        or os.environ.get("TC_API_BROWSER_BASE_URL", "").strip()
-    )
-
-
-def _rewrite_browser_url(url: str, browser_base_url: str) -> str:
-    raw_url = (url or "").strip()
-    raw_base = (browser_base_url or "").strip()
-    if not raw_url or not raw_base:
-        return raw_url
-
-    parsed_url = urllib.parse.urlparse(raw_url)
-    parsed_base = urllib.parse.urlparse(raw_base)
-    if not parsed_url.scheme or not parsed_url.netloc:
-        return raw_url
-    if not parsed_base.scheme or not parsed_base.netloc:
-        return raw_url
-
-    return urllib.parse.urlunparse(
-        (
-            parsed_base.scheme,
-            parsed_base.netloc,
-            parsed_url.path,
-            parsed_url.params,
-            parsed_url.query,
-            parsed_url.fragment,
-        )
-    )
-
-
-def get_attestation_challenge(operation: str = "docktap") -> dict:
-    """Create a simple tc_api-backed login challenge for attested Docker use."""
-    base_url = _docktap_attestation_api_url().rstrip("/")
-    browser_base_url = _docktap_attestation_browser_base_url()
-    request_url = (
-        f"{base_url}/api/sigstore/identity-token?"
-        f"{urllib.parse.urlencode({'operation': operation, 'flow': 'copy-url'})}"
-    )
-    fallback_interactive_url = f"{base_url}/api/sigstore/interactive-login?operation={urllib.parse.quote(operation)}"
-    challenge = {
-        "status": "login_required",
-        "operation": operation,
-        "message": "Attested Docker session required. Open the login URL, complete Sigstore sign-in, then retry the Docker command.",
-        "interactive_login_url": _rewrite_browser_url(fallback_interactive_url, browser_base_url) or fallback_interactive_url,
-        "auth_url": None,
-        "session_id": None,
-        "login_status_url": None,
-    }
-
-    try:
-        with urllib.request.urlopen(request_url, timeout=5) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except Exception as exc:
-        logger.warning("Failed to create attestation login challenge from tc_api: %s", exc)
-        return challenge
-
-    interactive_login_url = str(payload.get("interactive_login_url") or "").strip()
-    auth_url = str(payload.get("auth_url") or "").strip()
-    session_id = str(payload.get("session_id") or "").strip()
-    login_status_url = str(payload.get("login_status_url") or "").strip()
-
-    if interactive_login_url:
-        absolute_interactive_url = urllib.parse.urljoin(f"{base_url}/", interactive_login_url.lstrip("/"))
-        challenge["interactive_login_url"] = _rewrite_browser_url(absolute_interactive_url, browser_base_url)
-    if auth_url:
-        challenge["auth_url"] = auth_url
-    if session_id:
-        challenge["session_id"] = session_id
-    if login_status_url:
-        absolute_status_url = urllib.parse.urljoin(f"{base_url}/", login_status_url.lstrip("/"))
-        challenge["login_status_url"] = _rewrite_browser_url(absolute_status_url, browser_base_url)
-
-    return challenge
 
 
 @dataclass
@@ -222,6 +111,10 @@ class PendingSubmission:
 
 class RetryQueuedError(RuntimeError):
     """Raised after an initial retryable failure has been queued for retry."""
+
+
+class MissingIdentityTokenError(RuntimeError):
+    """Raised when Docktap cannot obtain a reusable Sigstore identity token."""
 
 
 def _infer_operation_result(op_record) -> str:
@@ -583,8 +476,9 @@ class TruConCommitter:
         # 4. Acquire OIDC identity token
         identity_token_str = _resolve_identity_token_str()
         if not identity_token_str:
-            logger.warning("No ambient OIDC credential available; skipping TruCon commit for %s", operation_type)
-            return False
+            raise MissingIdentityTokenError(
+                f"No reusable Sigstore identity token is available for docker {operation_type}"
+            )
 
         identity_token = IdentityToken(identity_token_str)
 
@@ -601,13 +495,15 @@ class TruConCommitter:
             .build()
         )
 
-        # 6. Sign with Sigstore using the configured Rekor instance.
-        ctx_prod = build_signing_context(_docktap_rekor_url())
+        # 6. Sign with the shared Sigstore context builder instead of mutating
+        # private Rekor state, which breaks DSSE finalization in newer sigstore releases.
+        signing_context = build_signing_context()
 
-        with ctx_prod.signer(identity_token, cache=True) as signer:
+        with signing_context.signer(identity_token, cache=True) as signer:
             bundle = signer.sign_dsse(statement)
 
         bundle_json = bundle.to_json()
+        rekor_identifiers = _extract_rekor_identifiers(bundle)
 
         # 7. POST to TruCon /commit
         idempotency_key = f"idk-{uuid.uuid4().hex[:12]}"
@@ -637,7 +533,15 @@ class TruConCommitter:
             raise
 
         self._mark_acknowledged(submission, response)
-        logger.info("TruCon commit succeeded for %s (event_id=%s)", operation_type, event_id)
+        logger.info(
+            "TruCon commit accepted for %s (event_id=%s, record_id=%s, sequence_num=%s, initial_bundle_rekor_uuid=%s, initial_bundle_rekor_log_index=%s)",
+            operation_type,
+            event_id,
+            response.get("record_id"),
+            response.get("sequence_num"),
+            rekor_identifiers["initial_bundle_rekor_uuid"],
+            rekor_identifiers["initial_bundle_rekor_log_index"],
+        )
         return True
 
     def _post_to_trucon(

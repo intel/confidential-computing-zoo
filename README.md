@@ -74,30 +74,46 @@ Use `--force-oob` if your environment needs the out-of-band login path.
 
 ## Docktap OIDC
 
-Docktap remains on the same OIDC/Sigstore identity model as the rest of the control plane. The recommended user experience is to acquire a short-lived Sigstore identity token immediately before starting Docktap, rather than introducing a separate runtime identity broker or non-OIDC trust path.
+Docktap remains on the same OIDC/Sigstore identity model as the rest of the control plane, but the current operator contract is stricter than before.
+
+- `./start.sh restart` is the local lifecycle entrypoint for `tc_api`, TruCon, and Docktap.
+- `start.sh` now enables `DOCKTAP_REQUIRE_ATTESTATION=1` by default.
+- If a reusable Sigstore token is already cached, Docktap reuses it automatically.
+- If no reusable token is available, Docktap blocks submittable Docker operations such as `pull`, returns an attestation-login challenge, and expects the user to log in and retry the same Docker command.
+
+That means the normal user flow is no longer "always log in before startup". The default flow is "run the stack, try the Docker operation, complete login only if challenged".
 
 Recommended flows:
 
-- Same-machine browser access: start Docktap through the CLI helper and let the browser complete the server-side login session.
-- Remote SSH session with a browser that can reach the server by IP or hostname: pass `--browser-base-url` so the interactive login page opens on a browser-reachable address instead of remote `localhost`.
-- Remote SSH session without callback reachability: use `--sigstore-login oob` so Sigstore shows a verification code and the CLI completes the flow without requiring a server callback URL.
+- Same-machine browser access: keep the default gate enabled, let the Docker command fail with the browser login URL, complete login, then retry.
+- Remote SSH session with a browser that can reach the server by IP or hostname: set `DOCKTAP_ATTESTATION_BROWSER_BASE_URL` before `./start.sh restart` so the challenge points at a browser-reachable address instead of remote `localhost`.
+- Remote SSH session without callback reachability: use the challenge's out-of-band login command and complete Sigstore verification-code login through `tc-client`.
 - Non-interactive process managers: pre-acquire a token with `sigstore-token --format export` and inject `DOCKTAP_SIGSTORE_IDENTITY_TOKEN` into the Docktap process environment.
 
 Examples:
 
 ```shell
-# Preferred one-shot startup when your browser can reach the tc_api server
-python -m tc_api.cli.client \
-  --base-url http://127.0.0.1:8000 \
-  --browser-base-url http://<server-ip>:8000 \
-  --open-browser \
-  run-docktap
+# Start the local stack with the default attestation gate enabled
+./start.sh restart
 
-# SSH / remote flow that uses Sigstore verification-code login
-python -m tc_api.cli.client \
-  --base-url http://127.0.0.1:8000 \
-  --sigstore-login oob \
-  run-docktap
+# If your browser must reach the server on a non-localhost address, override the base URL used in the challenge
+DOCKTAP_ATTESTATION_BROWSER_BASE_URL=http://<server-ip>:8000 ./start.sh restart
+
+# Example OpenClaw-side Docker operation through Docktap
+docker exec openclaw-gateway sh -lc 'docker pull hello-world:latest'
+
+# Build traffic still flows through Docktap, but current trusted-event submission only covers pull/create/start/stop/rm
+docker exec openclaw-gateway sh -lc "mkdir -p /tmp/docktap-build && printf 'FROM hello-world:latest\nLABEL docktap.validation=build\n' >/tmp/docktap-build/Dockerfile && docker build -t docktap-build-probe:latest /tmp/docktap-build"
+
+# Explicit lifecycle validation for run/deploy-style container operations
+docker exec openclaw-gateway sh -lc 'docker pull busybox:latest'
+docker exec openclaw-gateway sh -lc 'docker create --name docktap-busybox busybox:latest sh -c "sleep 300"'
+docker exec openclaw-gateway sh -lc 'docker start docktap-busybox'
+docker exec openclaw-gateway sh -lc 'docker stop docktap-busybox'
+docker exec openclaw-gateway sh -lc 'docker rm docktap-busybox'
+
+# If challenged, complete remote OOB login with tc-client and retry the same Docker command
+tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
 
 # Atomic helper for OOB login -> Docktap startup -> immediate pull replay -> log capture
 python scripts/run_docktap_oob_atomic.py
@@ -109,9 +125,27 @@ python -m tc_api.cli.client \
   sigstore-token --format export
 ```
 
-`run-docktap` is the preferred human-facing entrypoint because it keeps the OIDC acquisition step adjacent to Docktap startup and avoids long-lived token handling in ad hoc shell scripts.
+When the challenge path is triggered, the daemon-style error now looks like this:
 
-For the live Docktap -> public Rekor -> TruCon `/commit` debug loop, `scripts/run_docktap_oob_atomic.py` is the shortest operator path. It discovers the current live `TRUCON_SERVICE_TOKEN`, runs the Sigstore verification-code flow, starts Docktap with that fresh identity token, immediately replays the host and OpenClaw `docker pull` calls, and writes the combined Docktap logs under `logs/`.
+```text
+Error response from daemon: Attested Docker login required before docker pull.
+Browser login: http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap&session_id=<session-id>
+Remote login command: tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+If tc-client is unavailable, from the tc_api repo root run: bash setup.sh
+Then run: ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+Then retry.
+```
+
+`scripts/run_docktap_oob_atomic.py` remains the shortest one-shot debug path when you explicitly want OOB login, Docktap startup, immediate pull replay, and combined log capture in one command.
+
+For manual OpenClaw validation, interpret those commands as follows:
+
+- `docker pull` validates the attestation gate and the `pull` runtime event.
+- `docker build` validates that Docker build traffic is still routed through Docktap, but it does not currently emit a TruCon runtime commit.
+- `docker create` plus `docker start` is the clearest way to validate `run` or `deploy`-style container activation, because Docktap records `create` and `start` as separate runtime events.
+- `docker stop` and `docker rm` validate the shutdown and removal side of the runtime lifecycle.
+
+For the live Docktap -> public Rekor -> TruCon `/commit` debug loop, `scripts/run_docktap_oob_atomic.py` is still the shortest operator path. It discovers the current live `TRUCON_SERVICE_TOKEN`, runs the Sigstore verification-code flow, starts Docktap with that fresh identity token, immediately replays the host and OpenClaw `docker pull` calls, and writes the combined Docktap logs under `logs/`.
 
 ## Chain Verification CLI
 
@@ -500,6 +534,8 @@ Example:
 bash scripts/dev-up.sh
 ```
 
+If the external trust-service / KBS side is already prepared separately, use `./start.sh restart` directly for the local `tc_api + trucon + docktap` lifecycle.
+
 Useful environment variables:
 
 | Variable | Default | Description |
@@ -512,6 +548,11 @@ Useful environment variables:
 | `TRUST_SERVICE_PORT` | `8006` | Port used to confirm `api-server-rest` readiness |
 
 When `scripts/dev-up.sh` exits, it stops the trust-service container it started. The underlying `start.sh` cleanup still owns `trucon` and `docktap`.
+
+Under `start.sh`, the default runtime log files are:
+
+- `logs/docktap-latest.log` for Docktap proxy activity and `initial_bundle_rekor_*` acceptance logs
+- `logs/trucon-latest.log` for TruCon queueing, retries, and `confirmed_rekor_*` confirmation logs
 
 ### Run Service
 
@@ -654,6 +695,11 @@ TruCon internal callers now prefer the shared Unix socket at `/var/run/trucon/tr
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker daemon socket path |
 | `DOCKTAP_HEALTH_PORT` | `8002` | HTTP health endpoint port |
 | `DOCKTAP_SOCKET` | `/var/run/docktap/docker.sock` | Proxy socket path (bare-metal `start.sh`) |
+| `DOCKTAP_REQUIRE_ATTESTATION` | `1` | Block submittable Docker operations until a reusable Sigstore token is available |
+| `DOCKTAP_ATTESTATION_API_URL` | `http://127.0.0.1:8000` | Base API URL embedded in the attestation-login challenge |
+| `DOCKTAP_ATTESTATION_BROWSER_BASE_URL` | `http://127.0.0.1:8000` | Browser-visible base URL embedded in the attestation-login challenge |
+| `DOCKTAP_LOG_FILE` | `./logs/docktap-latest.log` | Docktap runtime log path used by `start.sh` |
+| `TRUCON_LOG_FILE` | `./logs/trucon-latest.log` | TruCon runtime log path used by `start.sh` |
 
 ## Configuration
 

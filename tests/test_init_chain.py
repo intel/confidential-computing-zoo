@@ -498,6 +498,19 @@ class TestPostInitChain:
 
 
 class TestLazyWorkloadBaseline:
+    def test_first_default_commit_requires_explicit_baseline(self, trucon_client):
+        resp = trucon_client.post("/commit", json={
+            "bundle": '{"payloadType":"test"}',
+            "chain_id": "default",
+            "event_digest": "sha384:" + "ab" * 48,
+        })
+
+        assert resp.status_code == 409
+        assert "create Event Log 0 before committing" in resp.json()["detail"]
+
+        records = trucon_db_mod.get_chain_records("default", db_path=trucon_client.app.state.test_db_path)
+        assert records == []
+
     def test_first_workload_commit_requires_explicit_baseline(self, trucon_client):
         resp = trucon_client.post("/commit", json={
             "bundle": '{"payloadType":"test"}',

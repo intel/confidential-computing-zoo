@@ -458,6 +458,12 @@ Minimum required metrics:
 - terminal_failure_count
 - idempotency_hit_count
 
+Runtime log semantics are also split deliberately across the two layers:
+
+- Docktap logs `TruCon commit accepted ... initial_bundle_rekor_uuid=... initial_bundle_rekor_log_index=...` after queue admission, which reflects the transparency entry embedded in the locally signed bundle.
+- TruCon logs `confirmed_rekor_log_id=... confirmed_rekor_uuid=... confirmed_rekor_log_index=...` only after asynchronous immutable-backend confirmation.
+- Operators should not treat Docktap's `initial_bundle_rekor_*` fields as the final public confirmation identifiers for the record.
+
 ## 9. Security and Trust Boundaries
 
 - Internal service calls must be authenticated and authorized.

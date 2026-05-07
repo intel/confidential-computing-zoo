@@ -100,6 +100,18 @@ logger = logging.getLogger("trucon")
 INTENT_TTL_SECONDS = int(os.environ.get("TRUCON_INTENT_TTL_SECONDS", "300"))
 
 
+def _extract_confirmed_rekor_identifiers(log_id: str, receipt: Optional[Dict[str, Any]]) -> Dict[str, Optional[str]]:
+    receipt_data = receipt or {}
+    confirmed_rekor_uuid = receipt_data.get("uuid") or receipt_data.get("entryUUID")
+    confirmed_rekor_log_index = receipt_data.get("log_index") or receipt_data.get("logIndex")
+    confirmed_rekor_log_id = receipt_data.get("log_id") or receipt_data.get("logID") or log_id
+    return {
+        "confirmed_rekor_log_id": str(confirmed_rekor_log_id) if confirmed_rekor_log_id is not None else None,
+        "confirmed_rekor_uuid": str(confirmed_rekor_uuid) if confirmed_rekor_uuid else None,
+        "confirmed_rekor_log_index": str(confirmed_rekor_log_index) if confirmed_rekor_log_index is not None else None,
+    }
+
+
 def _build_chain_owner_attestation(
     chain_id: str,
     sequence_num: int,
@@ -755,6 +767,7 @@ def _submit_daemon_tick():
                 if _immutable_log:
                     log_id, status, _receipt = _immutable_log.submit_bundle(bundle)
                     if status == "confirmed":
+                        confirmed_rekor = _extract_confirmed_rekor_identifiers(log_id, _receipt)
                         update_record_confirmed(record_id, log_id)
                         submit_ms = (time.perf_counter() - t_submit) * 1000
                         logger.info("metric=submit_latency latency_ms=%.1f record_id=%s outcome=%s", submit_ms, record_id, "confirmed")
@@ -773,7 +786,15 @@ def _submit_daemon_tick():
                             head_log_id=log_id,
                         )
                         _enqueue_mirror_publish_for_record(record, log_id)
-                        logger.info("Record %s confirmed with log_id=%s", record_id, log_id)
+                        logger.info(
+                            "Record %s confirmed with confirmed_rekor_log_id=%s confirmed_rekor_uuid=%s confirmed_rekor_log_index=%s sequence_num=%s chain_id=%s",
+                            record_id,
+                            confirmed_rekor["confirmed_rekor_log_id"],
+                            confirmed_rekor["confirmed_rekor_uuid"],
+                            confirmed_rekor["confirmed_rekor_log_index"],
+                            seq,
+                            chain_id,
+                        )
                     else:
                         submit_ms = (time.perf_counter() - t_submit) * 1000
                         logger.info("metric=submit_latency latency_ms=%.1f record_id=%s outcome=%s", submit_ms, record_id, "failed_retryable")
@@ -1358,8 +1379,9 @@ def commit(req: CommitRequest, request: Request):
                 prev_mr_value=prev_mr_value,
             )
 
-        # 0.5 Non-default chains must be explicitly bootstrapped before legacy commit
-        if req.chain_id != "default" and get_chain_state(req.chain_id) is None:
+        # Legacy commit requires an initialized chain head. The default chain is not exempt:
+        # Event Log 0 must exist before any externally replayable history can be built.
+        if get_chain_state(req.chain_id) is None:
             raise HTTPException(
                 status_code=409,
                 detail=f"Chain '{req.chain_id}' is not initialized; create Event Log 0 before committing",

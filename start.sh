@@ -2,9 +2,38 @@
 
 # TC API Startup Script
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+PID_DIR="$SCRIPT_DIR/logs/pids"
+TC_API_PID_FILE="$PID_DIR/tc_api.pid"
+TRUCON_PID_FILE="$PID_DIR/trucon.pid"
+DOCKTAP_PID_FILE="$PID_DIR/docktap.pid"
+TC_API_PID=""
+TRUCON_PID=""
+DOCKTAP_PID=""
+START_MODE="production"
+COMMAND="start"
 
 echo "Starting TC API Service..."
+
+usage() {
+        cat <<'EOF'
+Usage:
+    ./start.sh
+    ./start.sh start [dev]
+    ./start.sh stop
+    ./start.sh restart [dev]
+
+Examples:
+    ./start.sh
+    ./start.sh dev
+    ./start.sh restart
+    ./start.sh restart dev
+EOF
+}
 
 default_python_bin() {
     if [ -n "${PYTHON_BIN:-}" ]; then
@@ -15,6 +44,182 @@ default_python_bin() {
         echo "python3"
     fi
 }
+
+pid_is_running() {
+    local pid="$1"
+    [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+read_pid_file() {
+    local pid_file="$1"
+    if [[ -f "$pid_file" ]]; then
+        tr -d '[:space:]' < "$pid_file"
+    fi
+}
+
+remove_pid_file_if_stale() {
+    local pid_file="$1"
+    local pid
+    pid=$(read_pid_file "$pid_file")
+    if [[ -n "$pid" ]] && ! pid_is_running "$pid"; then
+        rm -f "$pid_file"
+    fi
+}
+
+iter_matching_pids() {
+    local match_a="$1"
+    local match_b="${2:-}"
+    local proc_dir cmdline_path raw cmdline pid
+
+    for proc_dir in /proc/[0-9]*; do
+        [[ -d "$proc_dir" ]] || continue
+        cmdline_path="$proc_dir/cmdline"
+        [[ -r "$cmdline_path" ]] || continue
+        raw=$(tr '\000' ' ' < "$cmdline_path" 2>/dev/null || true)
+        [[ -n "$raw" ]] || continue
+        if [[ "$raw" == *"$match_a"* ]] && { [[ -z "$match_b" ]] || [[ "$raw" == *"$match_b"* ]]; }; then
+            pid="${proc_dir##*/}"
+            printf '%s\n' "$pid"
+        fi
+    done
+}
+
+stop_pid() {
+    local name="$1"
+    local pid="$2"
+
+    [[ -n "$pid" ]] || return 0
+    if ! pid_is_running "$pid"; then
+        return 0
+    fi
+
+    echo "Stopping $name (PID: $pid)..."
+    kill -TERM "$pid" 2>/dev/null || true
+    for _ in $(seq 1 30); do
+        if ! pid_is_running "$pid"; then
+            break
+        fi
+        sleep 1
+    done
+    if pid_is_running "$pid"; then
+        echo "$name did not exit after SIGTERM; sending SIGKILL..."
+        kill -KILL "$pid" 2>/dev/null || true
+    fi
+}
+
+stop_pid_from_file() {
+    local name="$1"
+    local pid_file="$2"
+    local pid
+
+    pid=$(read_pid_file "$pid_file")
+    if [[ -z "$pid" ]]; then
+        return 0
+    fi
+
+    stop_pid "$name" "$pid"
+
+    rm -f "$pid_file"
+}
+
+stop_matching_processes() {
+    local name="$1"
+    local match_a="$2"
+    local match_b="${3:-}"
+    local pid
+
+    while IFS= read -r pid; do
+        stop_pid "$name" "$pid"
+    done < <(iter_matching_pids "$match_a" "$match_b")
+}
+
+stop_services() {
+    mkdir -p "$PID_DIR"
+    remove_pid_file_if_stale "$TC_API_PID_FILE"
+    remove_pid_file_if_stale "$DOCKTAP_PID_FILE"
+    remove_pid_file_if_stale "$TRUCON_PID_FILE"
+
+    stop_pid_from_file "TC API" "$TC_API_PID_FILE"
+    stop_pid_from_file "Docktap" "$DOCKTAP_PID_FILE"
+    stop_pid_from_file "TruCon" "$TRUCON_PID_FILE"
+
+    stop_matching_processes "TC API" "tc_api.main:app" "--port ${PORT:-8000}"
+    stop_matching_processes "Docktap" "docktap.main" "${DOCKTAP_SOCKET:-/var/run/docktap/docker.sock}"
+    stop_matching_processes "TruCon" "tc_api.trucon.app:app" "--port ${TRUCON_PORT:-8001}"
+}
+
+cleanup() {
+    local exit_code=$?
+
+    if [[ -n "$TC_API_PID" ]]; then
+        stop_pid_from_file "TC API" "$TC_API_PID_FILE"
+        TC_API_PID=""
+    fi
+    if [[ -n "$DOCKTAP_PID" ]]; then
+        stop_pid_from_file "Docktap" "$DOCKTAP_PID_FILE"
+        DOCKTAP_PID=""
+    fi
+    if [[ -n "$TRUCON_PID" ]]; then
+        stop_pid_from_file "TruCon" "$TRUCON_PID_FILE"
+        TRUCON_PID=""
+    fi
+
+    exit "$exit_code"
+}
+
+case "${1:-start}" in
+    start)
+        COMMAND="start"
+        if [[ "${2:-}" == "dev" ]]; then
+            START_MODE="dev"
+        elif [[ -n "${2:-}" ]]; then
+            echo "Error: unsupported start mode '${2}'" >&2
+            usage >&2
+            exit 1
+        fi
+        ;;
+    dev)
+        COMMAND="start"
+        START_MODE="dev"
+        ;;
+    stop)
+        COMMAND="stop"
+        if [[ $# -gt 1 ]]; then
+            echo "Error: stop does not accept extra arguments" >&2
+            usage >&2
+            exit 1
+        fi
+        ;;
+    restart)
+        COMMAND="restart"
+        if [[ "${2:-}" == "dev" ]]; then
+            START_MODE="dev"
+        elif [[ -n "${2:-}" ]]; then
+            echo "Error: unsupported restart mode '${2}'" >&2
+            usage >&2
+            exit 1
+        fi
+        ;;
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
+    *)
+        echo "Error: unsupported command '${1}'" >&2
+        usage >&2
+        exit 1
+        ;;
+esac
+
+if [[ "$COMMAND" == "stop" ]]; then
+    stop_services
+    echo "All services stopped."
+    exit 0
+fi
+
+if [[ "$COMMAND" == "restart" ]]; then
+    stop_services
+fi
 
 # Check if Docker is available
 if ! command -v docker &> /dev/null; then
@@ -47,6 +252,16 @@ fi
 
 # Create necessary directories
 mkdir -p uploads builds logs /dev/shm
+mkdir -p "$PID_DIR"
+
+remove_pid_file_if_stale "$TC_API_PID_FILE"
+remove_pid_file_if_stale "$DOCKTAP_PID_FILE"
+remove_pid_file_if_stale "$TRUCON_PID_FILE"
+
+if [[ -f "$TC_API_PID_FILE" || -f "$DOCKTAP_PID_FILE" || -f "$TRUCON_PID_FILE" ]]; then
+    echo "Error: existing tc_api/trucon/docktap processes are already recorded. Run './start.sh stop' or './start.sh restart'." >&2
+    exit 1
+fi
 
 # Set default environment variables if not set
 export HOST=${HOST:-0.0.0.0}
@@ -55,13 +270,21 @@ export TRUCON_PORT=${TRUCON_PORT:-8001}
 export TRUCON_RTMR_INDEX=${TRUCON_RTMR_INDEX:-2}
 export TC_API_WORKERS=${TC_API_WORKERS:-1}
 export DOCKTAP_SOCKET=${DOCKTAP_SOCKET:-/var/run/docktap/docker.sock}
+export DOCKTAP_LOG_FILE=${DOCKTAP_LOG_FILE:-$PWD/logs/docktap-latest.log}
+export TRUCON_LOG_FILE=${TRUCON_LOG_FILE:-$PWD/logs/trucon-latest.log}
+export DOCKTAP_REQUIRE_ATTESTATION=${DOCKTAP_REQUIRE_ATTESTATION:-1}
 export TRUCON_UDS_PATH=${TRUCON_UDS_PATH:-/var/run/trucon/trucon.sock}
 export DEBUG=${DEBUG:-false}
 export ENABLE_TDX=${ENABLE_TDX:-true}
 export TRUCON_AUTH_DISABLED=${TRUCON_AUTH_DISABLED:-false}
-export INIT_DEFAULT_CHAIN_ON_STARTUP=${INIT_DEFAULT_CHAIN_ON_STARTUP:-false}
+export INIT_DEFAULT_CHAIN_ON_STARTUP=${INIT_DEFAULT_CHAIN_ON_STARTUP:-true}
 export PYTHON_BIN=$(default_python_bin)
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+
+if [ "$DOCKTAP_REQUIRE_ATTESTATION" = "1" ]; then
+    export DOCKTAP_ATTESTATION_API_URL=${DOCKTAP_ATTESTATION_API_URL:-http://127.0.0.1:${PORT}}
+    export DOCKTAP_ATTESTATION_BROWSER_BASE_URL=${DOCKTAP_ATTESTATION_BROWSER_BASE_URL:-$DOCKTAP_ATTESTATION_API_URL}
+fi
 
 # Create Docktap proxy socket directory
 DOCKTAP_SOCKET_DIR=$(dirname "$DOCKTAP_SOCKET")
@@ -72,59 +295,72 @@ TRUCON_SOCKET_DIR=$(dirname "$TRUCON_UDS_PATH")
 mkdir -p "$TRUCON_SOCKET_DIR"
 
 # Generate a session-scoped service token for TruCon authentication
-if [ -z "$TRUCON_SERVICE_TOKEN" ]; then
+if [ -z "${TRUCON_SERVICE_TOKEN:-}" ]; then
     export TRUCON_SERVICE_TOKEN=$($PYTHON_BIN -c "import secrets; print(secrets.token_urlsafe(32))")
     echo "✓ Generated TRUCON_SERVICE_TOKEN for this session"
 fi
 
 echo "Starting TruCon (single-instance sequencer) on port $TRUCON_PORT..."
-"$PYTHON_BIN" -m uvicorn tc_api.trucon.app:app --host 0.0.0.0 --port $TRUCON_PORT --workers 1 &
+mkdir -p "$(dirname "$TRUCON_LOG_FILE")"
+: > "$TRUCON_LOG_FILE"
+"$PYTHON_BIN" -m uvicorn tc_api.trucon.app:app --host 0.0.0.0 --port $TRUCON_PORT --workers 1 >> "$TRUCON_LOG_FILE" 2>&1 &
 TRUCON_PID=$!
+echo "$TRUCON_PID" > "$TRUCON_PID_FILE"
 
 # Wait briefly for TruCon to be ready
 sleep 2
 if ! kill -0 $TRUCON_PID 2>/dev/null; then
     echo "Error: TruCon failed to start"
+    rm -f "$TRUCON_PID_FILE"
     exit 1
 fi
 
 export TRUCON_URL="http://127.0.0.1:${TRUCON_PORT}"
+echo "✓ TruCon started (PID: $TRUCON_PID)"
+echo "  TruCon log file: $TRUCON_LOG_FILE"
 
 echo "Starting Docktap (Docker proxy sidecar) on $DOCKTAP_SOCKET..."
-"$PYTHON_BIN" -m docktap.main --socket-path "$DOCKTAP_SOCKET" --docker-socket-path /var/run/docker.sock &
+mkdir -p "$(dirname "$DOCKTAP_LOG_FILE")"
+: > "$DOCKTAP_LOG_FILE"
+"$PYTHON_BIN" -m docktap.main --socket-path "$DOCKTAP_SOCKET" --docker-socket-path /var/run/docker.sock >> "$DOCKTAP_LOG_FILE" 2>&1 &
 DOCKTAP_PID=$!
+echo "$DOCKTAP_PID" > "$DOCKTAP_PID_FILE"
 
 # Wait briefly for Docktap to be ready
 sleep 2
 if ! kill -0 $DOCKTAP_PID 2>/dev/null; then
     echo "Error: Docktap failed to start"
+    rm -f "$DOCKTAP_PID_FILE"
     kill -TERM $TRUCON_PID 2>/dev/null || true
     exit 1
 fi
 echo "✓ Docktap started (PID: $DOCKTAP_PID)"
+if [ "$DOCKTAP_REQUIRE_ATTESTATION" = "1" ]; then
+    echo "  Attestation gate: enabled"
+    echo "  Attestation API URL: $DOCKTAP_ATTESTATION_API_URL"
+    echo "  Browser base URL: $DOCKTAP_ATTESTATION_BROWSER_BASE_URL"
+else
+    echo "  Attestation gate: disabled"
+fi
+echo "  Docktap log file: $DOCKTAP_LOG_FILE"
 echo "  Use 'export DOCKER_HOST=unix://$DOCKTAP_SOCKET' to route Docker CLI through proxy"
 echo "  TruCon internal UDS path: $TRUCON_UDS_PATH"
 
-# Function to gracefully shutdown services when the script exits
-cleanup() {
-    echo "Stopping Docktap (PID: $DOCKTAP_PID)..."
-    kill -TERM $DOCKTAP_PID 2>/dev/null || true
-    echo "Stopping TruCon (PID: $TRUCON_PID)..."
-    kill -TERM $TRUCON_PID 2>/dev/null || true
-    wait $DOCKTAP_PID 2>/dev/null || true
-    wait $TRUCON_PID 2>/dev/null || true
-    echo "All services stopped."
-}
 trap cleanup EXIT INT TERM
 
 echo "Starting TC API on $HOST:$PORT"
 echo "Debug mode: $DEBUG"
 
 # Start the FastAPI application
-if [ "${1:-}" = "dev" ]; then
+if [[ "$START_MODE" == "dev" ]]; then
     echo "Starting in development mode with auto-reload..."
-    "$PYTHON_BIN" -m uvicorn tc_api.main:app --host $HOST --port $PORT --reload
+    "$PYTHON_BIN" -m uvicorn tc_api.main:app --host $HOST --port $PORT --reload &
 else
     echo "Starting in production mode..."
-    "$PYTHON_BIN" -m uvicorn tc_api.main:app --host $HOST --port $PORT --workers "$TC_API_WORKERS"
+    "$PYTHON_BIN" -m uvicorn tc_api.main:app --host $HOST --port $PORT --workers "$TC_API_WORKERS" &
 fi
+
+TC_API_PID=$!
+echo "$TC_API_PID" > "$TC_API_PID_FILE"
+
+wait "$TC_API_PID"

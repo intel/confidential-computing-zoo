@@ -175,6 +175,15 @@ For the lifecycle operations that Docktap submits to TruCon (`pull`, `create`, `
 
 This contract lets `tc-verify` distinguish successful versus failed runtime actions, keep one `docktap-runtime` profile across engines, and correlate REST launch intent with observed container creation/start evidence.
 
+## Logging Semantics
+
+Docktap and TruCon now expose two different Rekor-observability layers on purpose:
+
+- Docktap logs `TruCon commit accepted ... initial_bundle_rekor_uuid=... initial_bundle_rekor_log_index=...` once the locally signed DSSE bundle has been accepted for queueing.
+- Those `initial_bundle_rekor_*` fields come from the bundle created during Docktap-side signing and should be read as pre-confirmation identifiers.
+- TruCon later logs `confirmed_rekor_log_id=... confirmed_rekor_uuid=... confirmed_rekor_log_index=...` after the asynchronous immutable-backend confirmation completes.
+- For operators debugging runtime history, the Docktap log answers "what bundle did Docktap submit", while the TruCon confirmation log answers "what public Rekor record was finally confirmed".
+
 ## Docker Operation Mapping & Lifecycle
 
 This section documents the canonical request sequence observed in normal Docker flows

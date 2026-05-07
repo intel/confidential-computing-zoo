@@ -73,7 +73,7 @@ Recommended order:
 ```bash
 python -m pytest tests/test_tdx_quote_adapter.py -q
 python tests/check_real_tdx_quote.py
-bash start.sh
+./start.sh restart
 PYTHONPATH=$PWD/src python tdvm_smoke_test.py --summary-file /tmp/tdvm-smoke-summary.json
 ```
 
@@ -226,7 +226,7 @@ export DOCKER_REPOSITORY=localhost:5000/tcapi
 export TC_API_SIGSTORE_INTERACTIVE_LOGIN=false
 export TC_API_REAL_REKOR_IDENTITY_TOKEN_MIN_TTL=0
 
-bash start.sh
+./start.sh restart
 PYTHONPATH=$PWD/src python -m tc_api.oidc_preflight --fetch --force-oob
 PYTHONPATH=$PWD/src python tdvm_smoke_test.py --skip-preflight --skip-quote-check --skip-deploy --summary-file /tmp/tdvm-token-reuse-smoke.json
 ```
@@ -240,30 +240,34 @@ The following sequence was validated live for the OpenClaw sandbox flow under `/
 Recommended order:
 
 ```bash
-cd /home/siyuan/tc_api
+cd /path/to/tc_api
 
-TRUST_SERVICE_BUILD=never ./scripts/dev-up.sh
+./start.sh restart
 ```
 
-In a second terminal, start Docktap with attestation-gate behavior enabled:
+This section assumes the external trust-service / KBS side is already prepared separately. `./start.sh restart` is the local lifecycle entrypoint for `tc_api`, `TruCon`, and Docktap, and it now enables the Docktap attestation gate by default.
+
+When you need to stop the local stack that `start.sh` manages directly, use:
 
 ```bash
-cd /home/siyuan/tc_api
+cd /path/to/tc_api
 
-env -u DOCKTAP_SIGSTORE_IDENTITY_TOKEN -u SIGSTORE_IDENTITY_TOKEN \
-   PYTHONPATH=$PWD/docktap:$PWD/src \
-   TRUCON_URL=http://127.0.0.1:8001 \
-   TRUCON_SERVICE_TOKEN='ZL5rd7vZcA0hWSJBeAVZQoiBLNO2KLEi89_4SRUCiGM' \
-   DOCKTAP_REQUIRE_ATTESTATION=1 \
-   DOCKTAP_ATTESTATION_API_URL=http://127.0.0.1:8000 \
-   DOCKTAP_ATTESTATION_BROWSER_BASE_URL=http://127.0.0.1:8000 \
-   ./venv/bin/python -m docktap.main \
-      --socket-path /var/run/docktap/docker.sock \
-      --docker-socket-path /var/run/docker.sock \
-      --debug 2>&1 | tee logs/openclaw-sbx-docktap-latest.log
+./start.sh stop
 ```
 
-In a third terminal, start or refresh the OpenClaw sandbox container so it uses Docktap instead of the host Docker socket directly:
+If you need a non-default browser-visible base URL for the login challenge, set it before startup:
+
+```bash
+cd /path/to/tc_api
+
+DOCKTAP_ATTESTATION_API_URL=http://127.0.0.1:8000 \
+DOCKTAP_ATTESTATION_BROWSER_BASE_URL=http://127.0.0.1:8000 \
+./start.sh restart
+```
+
+If you prefer a one-shot helper for the OOB-login plus Docktap startup path, use `python scripts/run_docktap_oob_atomic.py` instead.
+
+In a second terminal, start or refresh the OpenClaw sandbox container so it uses Docktap instead of the host Docker socket directly:
 
 ```bash
 cd /home/siyuan/self-maintained-tools/2.Run_openclaw_in_sandbox
@@ -283,10 +287,12 @@ Expected env fragment:
 DOCKER_HOST=unix:///var/run/docktap/docker.sock
 ```
 
-If no fresh Sigstore token is cached yet, fetch one before the first pull:
+The `run-sbx.sh` startup step above is the OpenClaw-side setup. The next commands are additional manual validation steps for the Docktap attestation path; they are not emitted by the OpenClaw scripts themselves.
+
+If no fresh Sigstore token is cached yet, you can prefetch one before the manual validation pull below:
 
 ```bash
-cd /home/siyuan/tc_api
+cd /path/to/tc_api
 
 PYTHONPATH=$PWD/src ./venv/bin/python -m tc_api.cli.client \
    --base-url http://127.0.0.1:8000 \
@@ -294,13 +300,17 @@ PYTHONPATH=$PWD/src ./venv/bin/python -m tc_api.cli.client \
    sigstore-token --format json
 ```
 
-Then trigger the Docker operation from inside OpenClaw:
+If you skip that prefetch step, the first attested Docker operation may be challenged and need one login/retry cycle.
+
+To perform explicit manual validation through the OpenClaw gateway container, run the following sequence.
+
+`pull` validates the attestation gate plus the `pull` runtime event.
 
 ```bash
 docker exec openclaw-gateway sh -lc 'docker pull hello-world:latest'
 ```
 
-The validated successful outcome was:
+A successful run looks like this:
 
 ```text
 latest: Pulling from library/hello-world
@@ -311,26 +321,47 @@ docker.io/library/hello-world:latest
 
 ### Expected Docktap Evidence
 
-Inspect the Docktap log file:
+Inspect the Docktap runtime log written by `start.sh`:
 
 ```bash
-cd /home/siyuan/tc_api
+cd /path/to/tc_api
 
-grep -E 'Cached Sigstore identity token|OPERATION=pull|POST /api/v1/log/entries/|Transparency log entry created with index|TruCon commit succeeded' \
-   logs/openclaw-sbx-docktap-latest.log
+grep -E 'Cached Sigstore identity token|OPERATION=(pull|create|start|stop|rm)|POST /api/v1/log/entries/|Transparency log entry created with index|TruCon commit accepted|initial_bundle_rekor_' \
+   logs/docktap-latest.log
+
+grep -E 'confirmed_rekor_' logs/trucon-latest.log
 ```
 
-Expected evidence for a successful run includes all of the following classes of lines:
+Expected Docktap-side evidence for a successful lifecycle validation includes all of the following classes of lines:
 
 ```text
 INFO:trucon_client:Cached Sigstore identity token with ... remaining
 [TRUSTED_LOG] ... OPERATION=pull IMAGE=docker.io/library/hello-world ...
+[TRUSTED_LOG] ... OPERATION=create IMAGE=busybox:latest ...
+[TRUSTED_LOG] ... OPERATION=start CONTAINER=<container-id> ...
+[TRUSTED_LOG] ... OPERATION=stop CONTAINER=<container-id> ...
+[TRUSTED_LOG] ... OPERATION=rm CONTAINER=<container-id> ...
 DEBUG:urllib3.connectionpool:https://rekor.sigstore.dev:443 "POST /api/v1/log/entries/ HTTP/1.1" 201 None
 DEBUG:sigstore.sign:Transparency log entry created with index: ...
-INFO:trucon_client:TruCon commit succeeded for pull (event_id=...)
+INFO:trucon_client:TruCon commit accepted for pull (event_id=..., record_id=..., sequence_num=..., initial_bundle_rekor_uuid=..., initial_bundle_rekor_log_index=...)
+INFO:trucon_client:TruCon commit accepted for create (event_id=..., record_id=..., sequence_num=..., initial_bundle_rekor_uuid=..., initial_bundle_rekor_log_index=...)
+INFO:trucon_client:TruCon commit accepted for start (event_id=..., record_id=..., sequence_num=..., initial_bundle_rekor_uuid=..., initial_bundle_rekor_log_index=...)
+INFO:trucon_client:TruCon commit accepted for stop (event_id=..., record_id=..., sequence_num=..., initial_bundle_rekor_uuid=..., initial_bundle_rekor_log_index=...)
+INFO:trucon_client:TruCon commit accepted for rm (event_id=..., record_id=..., sequence_num=..., initial_bundle_rekor_uuid=..., initial_bundle_rekor_log_index=...)
+INFO:trucon:Record <record_id> confirmed with confirmed_rekor_log_id=... confirmed_rekor_uuid=... confirmed_rekor_log_index=... sequence_num=... chain_id=...
 ```
 
-On the validated live run, the successful Rekor transparency entry was created with index `1451852684`.
+For `docker build`, expect normal Docker success plus Docktap proxy visibility, but not a TruCon runtime commit. At the moment build traffic is routed through Docktap as a generic Docker API request rather than a submitted trusted-event class.
+
+That `initial_bundle_rekor_*` pair comes from the bundle produced during Docktap-side DSSE signing. It is not the final immutable confirmation emitted later by TruCon.
+
+TruCon confirmation happens asynchronously, and its final Rekor identifiers are emitted in `logs/trucon-latest.log` rather than `logs/docktap-latest.log`. The grep-friendly confirmation line now looks like this:
+
+```text
+INFO:trucon:Record <record_id> confirmed with confirmed_rekor_log_id=... confirmed_rekor_uuid=... confirmed_rekor_log_index=... sequence_num=... chain_id=...
+```
+
+If you need both layers during a live debug session, inspect `logs/docktap-latest.log` for `initial_bundle_rekor_*` and `logs/trucon-latest.log` for `confirmed_rekor_*`.
 
 ### Token Expiry Behavior
 
@@ -345,7 +376,12 @@ The current behavior is intentionally strict because Sigstore identity tokens ar
 The user-visible failure mode is therefore a login challenge rather than a best-effort background attestation miss:
 
 ```text
-Error response from daemon: Attested Docker login required before docker pull. Open http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap and complete Sigstore sign-in, then retry.
+Error response from daemon: Attested Docker login required before docker pull.
+Browser login: http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap&session_id=<session-id>
+Remote login command: tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+If tc-client is unavailable, from the tc_api repo root run: bash setup.sh
+Then run: ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+Then retry.
 ```
 
 The Docktap-side evidence for token expiry or near-expiry currently looks like this:
@@ -362,13 +398,18 @@ Docktap does not show a separate UI by itself. The current user-facing behavior 
 
 - Docktap intercepts submittable Docker operations such as `pull` before forwarding them to the real Docker daemon.
 - If no reusable Sigstore token exists, Docktap returns `HTTP 428 Precondition Required` instead of proxying the request.
-- The JSON response contains a human-readable `message` and machine-readable `detail` fields such as `interactive_login_url`, `session_id`, and `login_status_url`.
+- The JSON response contains a human-readable `message` and machine-readable `detail` fields such as `interactive_login_url`, `session_id`, `login_status_url`, and `oob_login_command`.
 - When the caller is the normal Docker CLI, that `message` is surfaced as the familiar daemon-style CLI error text.
 
 In practice, users perceive the challenge as a failed Docker command with an explicit retry instruction:
 
 ```text
-Error response from daemon: Attested Docker login required before docker pull. Open http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap and complete Sigstore sign-in, then retry.
+Error response from daemon: Attested Docker login required before docker pull.
+Browser login: http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap&session_id=<session-id>
+Remote login command: tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+If tc-client is unavailable, from the tc_api repo root run: bash setup.sh
+Then run: ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+Then retry.
 ```
 
 So for an OpenClaw user, the visible contract is intentionally simple:
@@ -386,7 +427,7 @@ In the validated OpenClaw run, the expired-token path was recovered by using the
 The exact recovery step was:
 
 ```bash
-cd /home/siyuan/tc_api
+cd /path/to/tc_api
 
 PYTHONPATH=$PWD/src ./venv/bin/python -m tc_api.cli.client \
    --base-url http://127.0.0.1:8000 \
@@ -431,7 +472,7 @@ So the short answer is: yes, it is still your GitHub-backed login session, but t
 Operationally, token expiry is handled by refreshing the shared Sigstore token and replaying the same Docker command:
 
 ```bash
-cd /home/siyuan/tc_api
+cd /path/to/tc_api
 
 PYTHONPATH=$PWD/src ./venv/bin/python -m tc_api.cli.client \
    --base-url http://127.0.0.1:8000 \
@@ -470,6 +511,59 @@ Recommended targeted regression for the verification plane:
 ```bash
 python -m pytest tests/test_tlog_impl.py tests/test_non_tee_verification.py tests/test_verify_cli.py tests/test_oci_bundle_mirror.py -q
 ```
+
+### OpenClaw Pull Smoke Test
+
+For the current environment, keep the automated OpenClaw smoke test scoped to `docker pull`. That path is stable, exercises the real OpenClaw -> Docktap -> TruCon flow, and avoids the current workload-chain evidence issues plus the short-lived-token pressure from extra `create/start/stop/rm` operations.
+
+Prerequisites:
+
+- `tc_api` on `http://127.0.0.1:8000` and TruCon on `http://127.0.0.1:8001` are already running;
+- a reusable Sigstore identity token is available;
+- the `openclaw-gateway` container is wired to Docktap and can reach `/var/run/docktap/docker.sock`.
+
+If no reusable Sigstore token is cached yet, refresh one first:
+
+```bash
+./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+```
+
+Shortcut script:
+
+```bash
+./scripts/verify_openclaw_pull.sh
+```
+
+Compatibility wrapper:
+
+```bash
+./scripts/verify_openclaw_workload_chain.sh
+```
+
+Useful overrides:
+
+- `OPENCLAW_GATEWAY_CONTAINER=...` targets a non-default OpenClaw gateway container name.
+- `OPENCLAW_DOCKER_HOST=unix:///var/run/docktap/docker.sock` chooses the Docker socket path used inside the OpenClaw container.
+- `PULL_IMAGE=hello-world:latest` swaps the image used for the pull test.
+- `LOG_TIMEOUT_SECONDS=...` adjusts how long the script waits for Docktap acceptance and TruCon confirmation in the logs.
+
+Equivalent manual flow:
+
+```bash
+docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
+
+grep -E 'OPERATION=pull|TruCon commit accepted for pull' logs/docktap-latest.log | tail -n 5
+grep -E 'confirmed_rekor_.*chain_id=default' logs/trucon-latest.log | tail -n 5
+```
+
+Expected result for this smoke test:
+
+- OpenClaw-side `docker pull` succeeds, even if the image is already up to date;
+- Docktap logs a new `OPERATION=pull` line;
+- Docktap logs a new `TruCon commit accepted for pull (...)` line;
+- TruCon logs a new `Record <record_id> confirmed ... chain_id=default` line.
+
+This validates the operator-visible Docktap path. It does not claim that `tc-verify --evidence` over the current `default` chain will pass, because that remains sensitive to older default-chain history.
 
 ## Real OCI Mirror Smoke Test
 

@@ -93,14 +93,12 @@ class TestCreatedAtColumn:
         row = conn.execute("SELECT created_at, updated_at FROM commit_queue WHERE record_id = 'rec-1'").fetchone()
         conn.close()
         assert row["created_at"] is not None
-        # created_at should be a valid ISO format timestamp
         datetime.fromisoformat(row["created_at"])
 
     def test_migration_backfills_created_at(self, tmp_path):
         """Verify migration backfills created_at from updated_at for pre-existing rows."""
         db_path = str(tmp_path / "legacy.db")
         conn = sqlite3.connect(db_path)
-        # Create table WITHOUT created_at (pre-migration schema)
         conn.execute('''
             CREATE TABLE commit_queue (
                 record_id TEXT PRIMARY KEY,
@@ -128,7 +126,6 @@ class TestCreatedAtColumn:
         conn.commit()
         conn.close()
 
-        # Run init_db which triggers migration
         init_db(db_path)
 
         conn = sqlite3.connect(db_path)
@@ -136,6 +133,23 @@ class TestCreatedAtColumn:
         row = conn.execute("SELECT created_at FROM commit_queue WHERE record_id = 'old-1'").fetchone()
         conn.close()
         assert row["created_at"] == "2026-04-01T00:00:00"
+
+
+def test_extract_confirmed_rekor_identifiers_prefers_receipt_fields():
+    result = trucon_app._extract_confirmed_rekor_identifiers(
+        "fallback-log-id",
+        {
+            "log_id": "confirmed-log-id",
+            "uuid": "confirmed-uuid",
+            "logIndex": 1457091955,
+        },
+    )
+
+    assert result == {
+        "confirmed_rekor_log_id": "confirmed-log-id",
+        "confirmed_rekor_uuid": "confirmed-uuid",
+        "confirmed_rekor_log_index": "1457091955",
+    }
 
 
 # ===========================================================================

@@ -4,7 +4,7 @@ import json
 import logging
 import time
 import urllib.error
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -12,8 +12,8 @@ from trucon_client import (
     TruConCommitter,
     SUBMITTABLE_OPERATIONS,
     _build_entries,
+    _extract_rekor_identifiers,
     _resolve_identity_token_str,
-    get_attestation_challenge,
 )
 from tc_api.tlog.types import Entry
 from proxy.operation_log import OperationRecord
@@ -33,19 +33,15 @@ def _make_record(**overrides) -> OperationRecord:
     return OperationRecord(**defaults)
 
 
-def _install_mock_signing_context(mock_build_context, *, bundle_json='{"fake": "bundle"}', sign_side_effect=None):
-    mock_ctx = MagicMock()
+def _mock_signing_context(bundle_json='{"fake": "bundle"}'):
     mock_signer = MagicMock()
-    if sign_side_effect is not None:
-        mock_signer.sign_dsse.side_effect = sign_side_effect
-    else:
-        mock_bundle = MagicMock()
-        mock_bundle.to_json.return_value = bundle_json
-        mock_signer.sign_dsse.return_value = mock_bundle
-    mock_ctx.signer.return_value.__enter__ = lambda s: mock_signer
-    mock_ctx.signer.return_value.__exit__ = lambda s, *a: None
-    mock_build_context.return_value = mock_ctx
-    return mock_ctx, mock_signer
+    mock_bundle = MagicMock()
+    mock_bundle.to_json.return_value = bundle_json
+    mock_signer.sign_dsse.return_value = mock_bundle
+    mock_signing_context = MagicMock()
+    mock_signing_context.signer.return_value.__enter__ = lambda s: mock_signer
+    mock_signing_context.signer.return_value.__exit__ = lambda s, *a: None
+    return mock_signing_context, mock_signer
 
 
 # ---------------------------------------------------------------------------
@@ -190,34 +186,6 @@ class TestBestEffortFailureHandling:
             assert _resolve_identity_token_str() == "generic-token"
         detect.assert_not_called()
 
-    def test_near_expiry_explicit_identity_token_remains_usable(self, monkeypatch):
-        monkeypatch.setenv("DOCKTAP_SIGSTORE_IDENTITY_TOKEN", "env-token")
-        with patch("trucon_client.token_seconds_remaining", return_value=7), \
-             patch("trucon_client.resolve_sigstore_identity_token") as resolve_token, \
-             patch("trucon_client.detect_credential") as detect:
-            assert _resolve_identity_token_str() == "env-token"
-
-        resolve_token.assert_not_called()
-        detect.assert_not_called()
-
-    def test_expired_explicit_identity_token_falls_back_to_shared_cache(self, monkeypatch):
-        monkeypatch.setenv(
-            "DOCKTAP_SIGSTORE_IDENTITY_TOKEN",
-            "eyJhbGciOiJub25lIn0.eyJleHAiOjF9.signature",
-        )
-        with patch("trucon_client.resolve_sigstore_identity_token", return_value="cached-token") as resolve_token, \
-             patch("trucon_client.detect_credential") as detect:
-            assert _resolve_identity_token_str() == "cached-token"
-
-        resolve_token.assert_called_once_with(
-            operation="docktap",
-            logger=ANY,
-            allow_interactive=False,
-            require_token=False,
-            min_ttl_seconds=15,
-        )
-        detect.assert_not_called()
-
     def test_shared_cached_sigstore_token_is_used_before_ambient_detection(self, monkeypatch):
         monkeypatch.delenv("DOCKTAP_SIGSTORE_IDENTITY_TOKEN", raising=False)
         monkeypatch.delenv("SIGSTORE_IDENTITY_TOKEN", raising=False)
@@ -234,9 +202,9 @@ class TestBestEffortFailureHandling:
             operation={"type": "start"},
             container={"id": "c123"},
         )
+        mock_signing_context, _ = _mock_signing_context()
         with patch("trucon_client.detect_credential", return_value="fake-token"), \
-             patch("trucon_client.build_signing_context") as mock_ctx:
-            _install_mock_signing_context(mock_ctx)
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             with caplog.at_level(logging.WARNING):
                 result = committer.submit_operation(rec, "start")
@@ -245,7 +213,7 @@ class TestBestEffortFailureHandling:
         assert any("TruCon commit failed" in r.message for r in caplog.records)
 
     def test_oidc_unavailable_returns_false(self, caplog):
-        """No OIDC credential → warning logged, returns False."""
+        """No reusable token → warning logged, returns False."""
         committer = TruConCommitter()
         rec = _make_record(
             operation={"type": "pull"},
@@ -256,38 +224,7 @@ class TestBestEffortFailureHandling:
                 result = committer.submit_operation(rec, "pull")
 
         assert result is False
-        assert any("OIDC" in r.message for r in caplog.records)
-
-    def test_get_attestation_challenge_uses_tc_api_response(self, monkeypatch):
-        class FakeResponse:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self):
-                return json.dumps(
-                    {
-                        "interactive_login_url": "/api/sigstore/interactive-login?operation=docktap&session_id=sess-1",
-                        "auth_url": "https://oauth2.sigstore.dev/auth?client_id=sigstore",
-                        "session_id": "sess-1",
-                        "login_status_url": "/api/sigstore/login-status/sess-1",
-                    }
-                ).encode("utf-8")
-
-        monkeypatch.setenv("DOCKTAP_ATTESTATION_API_URL", "http://127.0.0.1:8000")
-        monkeypatch.setenv("DOCKTAP_ATTESTATION_BROWSER_BASE_URL", "http://server.example:8000")
-
-        with patch("trucon_client.urllib.request.urlopen", return_value=FakeResponse()):
-            challenge = get_attestation_challenge("docktap")
-
-        assert challenge["status"] == "login_required"
-        assert challenge["session_id"] == "sess-1"
-        assert challenge["auth_url"] == "https://oauth2.sigstore.dev/auth?client_id=sigstore"
-        assert challenge["interactive_login_url"] == (
-            "http://server.example:8000/api/sigstore/interactive-login?operation=docktap&session_id=sess-1"
-        )
+        assert any("No reusable Sigstore identity token" in r.message for r in caplog.records)
 
     def test_submit_operation_uses_explicit_identity_token_env(self, monkeypatch):
         committer = TruConCommitter()
@@ -296,52 +233,59 @@ class TestBestEffortFailureHandling:
             image={"name": "nginx", "tag": "latest"},
         )
         monkeypatch.setenv("DOCKTAP_SIGSTORE_IDENTITY_TOKEN", "env-token")
+        mock_signing_context, _ = _mock_signing_context()
 
         with patch("trucon_client.detect_credential") as detect_credential, \
              patch("trucon_client.IdentityToken", return_value="tok") as identity_token, \
-             patch("trucon_client.build_signing_context") as build_context, \
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context), \
              patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 1}):
-            mock_ctx = MagicMock()
-            mock_signer = MagicMock()
-            mock_bundle = MagicMock()
-            mock_bundle.to_json.return_value = '{"fake": "bundle"}'
-            mock_signer.sign_dsse.return_value = mock_bundle
-            mock_ctx.signer.return_value.__enter__ = lambda s: mock_signer
-            mock_ctx.signer.return_value.__exit__ = lambda s, *a: None
-            build_context.return_value = mock_ctx
-
             result = committer.submit_operation(rec, "pull")
 
         assert result is True
         detect_credential.assert_not_called()
         identity_token.assert_called_once_with("env-token")
-        build_context.assert_called_once()
 
-    def test_submit_operation_uses_configured_docktap_rekor_url(self, monkeypatch):
+    def test_submit_operation_uses_shared_signing_context_builder(self):
         committer = TruConCommitter()
         rec = _make_record(
             operation={"type": "pull"},
             image={"name": "nginx", "tag": "latest"},
         )
-        monkeypatch.setenv("DOCKTAP_SIGSTORE_IDENTITY_TOKEN", "env-token")
-        monkeypatch.setenv("DOCKTAP_REKOR_URL", "https://rekor.example.test")
 
-        with patch("trucon_client.IdentityToken", return_value="tok"), \
-             patch("trucon_client.build_signing_context") as build_context, \
-             patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 1}):
-            mock_ctx = MagicMock()
-            mock_signer = MagicMock()
-            mock_bundle = MagicMock()
-            mock_bundle.to_json.return_value = '{"fake": "bundle"}'
-            mock_signer.sign_dsse.return_value = mock_bundle
-            mock_ctx.signer.return_value.__enter__ = lambda s: mock_signer
-            mock_ctx.signer.return_value.__exit__ = lambda s, *a: None
-            build_context.return_value = mock_ctx
+        mock_signer = MagicMock()
+        mock_bundle = MagicMock()
+        mock_bundle.to_json.return_value = '{"fake": "bundle"}'
+        mock_bundle.log_entry.uuid = "rekor-uuid-123"
+        mock_bundle.log_entry.log_index = 456
+        mock_signer.sign_dsse.return_value = mock_bundle
+        mock_signing_context = MagicMock()
+        mock_signing_context.signer.return_value.__enter__ = lambda s: mock_signer
+        mock_signing_context.signer.return_value.__exit__ = lambda s, *a: None
 
+        with patch("trucon_client.detect_credential", return_value="fake-token"), \
+             patch("trucon_client.IdentityToken", return_value="tok"), \
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context) as build_ctx, \
+             patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 1}), \
+             patch("trucon_client.logger") as logger_mock:
             result = committer.submit_operation(rec, "pull")
 
         assert result is True
-        build_context.assert_called_once_with("https://rekor.example.test")
+        build_ctx.assert_called_once_with()
+        mock_signing_context.signer.assert_called_once_with("tok", cache=True)
+        log_args = logger_mock.info.call_args[0]
+        assert log_args[0] == "TruCon commit accepted for %s (event_id=%s, record_id=%s, sequence_num=%s, initial_bundle_rekor_uuid=%s, initial_bundle_rekor_log_index=%s)"
+        assert log_args[1] == "pull"
+        assert str(log_args[2]).startswith("evt-")
+        assert log_args[3:] == ("rec-1", 1, "rekor-uuid-123", "456")
+
+    def test_extract_rekor_identifiers_prefers_uuid_and_keeps_log_index(self):
+        bundle = MagicMock()
+        bundle.log_entry.uuid = "rekor-uuid-123"
+        bundle.log_entry.log_index = 456
+
+        result = _extract_rekor_identifiers(bundle)
+
+        assert result == {"initial_bundle_rekor_uuid": "rekor-uuid-123", "initial_bundle_rekor_log_index": "456"}
 
     def test_signing_error_returns_false(self, caplog):
         """Sigstore signing exception → warning logged, returns False."""
@@ -351,10 +295,11 @@ class TestBestEffortFailureHandling:
             image={"name": "app"},
             container={"name": "c1", "id": "abc"},
         )
+        mock_signing_context = MagicMock()
+        mock_signing_context.signer.side_effect = RuntimeError("sign fail")
         with patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-             patch("trucon_client.build_signing_context") as mock_ctx:
-            _install_mock_signing_context(mock_ctx, sign_side_effect=RuntimeError("sign fail"))
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             with caplog.at_level(logging.WARNING):
                 result = committer.submit_operation(rec, "create")
@@ -419,17 +364,17 @@ class TestRetryAndAcknowledgement:
     def _signing_patches(self):
         return patch("trucon_client.detect_credential", return_value="fake-token"), \
             patch("trucon_client.IdentityToken", return_value="tok"), \
-            patch("trucon_client.build_signing_context")
+            patch("trucon_client.build_signing_context", return_value=_mock_signing_context()[0])
 
     def test_retryable_failure_is_queued(self):
         committer = self._make_committer()
         rec = _make_record(operation={"type": "start"}, container={"id": "abc123"})
+        mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("down")), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-             patch("trucon_client.build_signing_context") as mock_ctx:
-            _install_mock_signing_context(mock_ctx)
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             result = committer.submit_operation(rec, "start")
 
@@ -442,6 +387,7 @@ class TestRetryAndAcknowledgement:
     def test_retry_reuses_same_idempotency_key(self):
         committer = self._make_committer()
         rec = _make_record(operation={"type": "start"}, container={"id": "abc123"})
+        mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(
             committer,
@@ -450,8 +396,7 @@ class TestRetryAndAcknowledgement:
         ) as mock_post, \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-             patch("trucon_client.build_signing_context") as mock_ctx:
-            _install_mock_signing_context(mock_ctx)
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             committer.submit_operation(rec, "start")
             committer.process_retry_queue(now=time.monotonic())
@@ -464,6 +409,7 @@ class TestRetryAndAcknowledgement:
     def test_acknowledged_retry_is_marked_complete(self):
         committer = self._make_committer()
         rec = _make_record(operation={"type": "stop"}, container={"id": "xyz789"})
+        mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(
             committer,
@@ -472,8 +418,7 @@ class TestRetryAndAcknowledgement:
         ), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-             patch("trucon_client.build_signing_context") as mock_ctx:
-            _install_mock_signing_context(mock_ctx)
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             committer.submit_operation(rec, "stop")
             committer.process_retry_queue(now=time.monotonic())
@@ -486,12 +431,12 @@ class TestRetryAndAcknowledgement:
     def test_retry_exhaustion_marks_terminal_failure(self):
         committer = self._make_committer()
         rec = _make_record(operation={"type": "rm"}, container={"id": "del456"})
+        mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("still-down")), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-             patch("trucon_client.build_signing_context") as mock_ctx:
-            _install_mock_signing_context(mock_ctx)
+               patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             committer.submit_operation(rec, "rm")
             committer.process_retry_queue(now=time.monotonic())
@@ -504,12 +449,12 @@ class TestRetryAndAcknowledgement:
     def test_retryable_items_are_not_gc_eligible(self):
         committer = self._make_committer()
         rec = _make_record(operation={"type": "start"}, container={"id": "abc123"})
+        mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("down")), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-             patch("trucon_client.build_signing_context") as mock_ctx:
-            _install_mock_signing_context(mock_ctx)
+               patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             committer.submit_operation(rec, "start")
 
@@ -519,12 +464,12 @@ class TestRetryAndAcknowledgement:
     def test_acknowledged_items_are_gc_eligible_after_retention(self):
         committer = self._make_committer()
         rec = _make_record(operation={"type": "stop"}, container={"id": "xyz789"})
+        mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 1}), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-             patch("trucon_client.build_signing_context") as mock_ctx:
-            _install_mock_signing_context(mock_ctx)
+               patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             committer.submit_operation(rec, "stop")
 
@@ -534,12 +479,12 @@ class TestRetryAndAcknowledgement:
     def test_terminal_items_are_gc_eligible_after_retention(self):
         committer = self._make_committer()
         rec = _make_record(operation={"type": "rm"}, container={"id": "del456"})
+        mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("still-down")), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-             patch("trucon_client.build_signing_context") as mock_ctx:
-            _install_mock_signing_context(mock_ctx)
+               patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             committer.submit_operation(rec, "rm")
             committer.process_retry_queue(now=time.monotonic())

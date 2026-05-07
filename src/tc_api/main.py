@@ -28,7 +28,6 @@ from .sigstore_identity import MissingSigstoreIdentityTokenError, cache_sigstore
 from .config import (
     HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR,
     DOCKER_REGISTRY, DOCKER_REPOSITORY, ENABLE_TDX, TRUCON_URL,
-    INIT_DEFAULT_CHAIN_ON_STARTUP,
     TRANSPARENCY_SERVICE_CHAIN_ID,
     TRANSPARENCY_WORKLOAD_CHAIN_PREFIX,
 )
@@ -567,14 +566,11 @@ async def lifespan(app: FastAPI):
         trucon_url=TRUCON_URL,
     )
 
-    # Optionally initialize the default chain (Event Log 0 baseline).
-    if INIT_DEFAULT_CHAIN_ON_STARTUP:
-        try:
-            app.state.trusted_log.init_chain("default")
-        except Exception as e:
-            logger.warning("init-chain for 'default' failed (non-fatal): %s", e)
-    else:
-        logger.info("Skipping default chain initialization during startup")
+    # Default-chain Event Log 0 is mandatory for externally replayable verification.
+    try:
+        app.state.trusted_log.init_chain("default")
+    except Exception as e:
+        logger.warning("init-chain for 'default' failed (non-fatal): %s", e)
     
     yield
     
