@@ -1,8 +1,11 @@
-import ctypes
 import base64
+import ctypes
+import hashlib
 import os
 import uuid
 from dataclasses import dataclass
+
+from tc_api.trucon.evidence import decode_binding_expected_value, encode_binding_expected_value
 
 
 @dataclass(frozen=True)
@@ -59,13 +62,14 @@ class TdxQuoteAdapter:
         )
 
     @staticmethod
-    def _normalize_report_data(expected_value: str) -> bytes:
-        if not expected_value.startswith("sha384:"):
-            raise ValueError("expected_value must start with 'sha384:'")
-        raw = bytes.fromhex(expected_value.removeprefix("sha384:"))
-        if len(raw) != 48:
-            raise ValueError("expected_value must encode exactly 48 bytes")
-        return raw
+    def _normalize_report_data(expected_value: str) -> tuple[bytes, str]:
+        if expected_value.startswith("sha384:"):
+            raw = bytes.fromhex(expected_value.removeprefix("sha384:"))
+        else:
+            raw = decode_binding_expected_value(expected_value)
+        if len(raw) > _TDX_REPORT_DATA_SIZE:
+            raise ValueError("expected_value must encode at most 64 bytes")
+        return raw, expected_value
 
     def _resolve_quote_format(self, backend_name: str) -> str:
         if self.quote_format:
@@ -80,7 +84,7 @@ class TdxQuoteAdapter:
             raise ValueError("TSM report data must not exceed 64 bytes")
         return report_data.ljust(_TDX_REPORT_DATA_SIZE, b"\x00")
 
-    def _quote_via_tsm(self, report_data: bytes) -> QuoteMaterial:
+    def _quote_via_tsm(self, report_data: bytes, expected_value: str) -> QuoteMaterial:
         tsm_inblob = self._encode_tsm_inblob(report_data)
         if not os.path.exists(self.report_data_path):
             raise FileNotFoundError(f"TSM reportdata path missing: {self.report_data_path}")
@@ -101,11 +105,11 @@ class TdxQuoteAdapter:
 
         return QuoteMaterial(
             quote=base64.b64encode(quote_bytes).decode("ascii"),
-            report_data="sha384:" + report_data.hex(),
+            report_data=expected_value,
             quote_format=self._resolve_quote_format("tsm"),
         )
 
-    def _quote_via_tsm_report_instance(self, report_data: bytes) -> QuoteMaterial:
+    def _quote_via_tsm_report_instance(self, report_data: bytes, expected_value: str) -> QuoteMaterial:
         tsm_inblob = self._encode_tsm_inblob(report_data)
         if not os.path.isdir(self.report_root_path):
             raise FileNotFoundError(f"TSM report root missing: {self.report_root_path}")
@@ -128,7 +132,7 @@ class TdxQuoteAdapter:
 
             return QuoteMaterial(
                 quote=base64.b64encode(quote_bytes).decode("ascii"),
-                report_data="sha384:" + report_data.hex(),
+                report_data=expected_value,
                 quote_format=self._resolve_quote_format("tsm"),
             )
         finally:
@@ -200,9 +204,9 @@ class TdxQuoteAdapter:
         )
 
     def quote(self, expected_value: str) -> QuoteMaterial:
-        report_data = self._normalize_report_data(expected_value)
+        report_data, normalized_expected_value = self._normalize_report_data(expected_value)
         if os.path.exists(self.report_data_path) and os.path.exists(self.quote_path):
-            return self._quote_via_tsm(report_data)
+            return self._quote_via_tsm(report_data, normalized_expected_value)
         if os.path.isdir(self.report_root_path):
-            return self._quote_via_tsm_report_instance(report_data)
-        return self._quote_via_libtdx_attest(report_data, expected_value)
+            return self._quote_via_tsm_report_instance(report_data, normalized_expected_value)
+        return self._quote_via_libtdx_attest(report_data, normalized_expected_value)

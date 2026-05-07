@@ -319,6 +319,80 @@ Status: Image is up to date for hello-world:latest
 docker.io/library/hello-world:latest
 ```
 
+If you have already run that `docker pull` manually and only want to verify afterward, do not rerun the full helper first. Use one of the flows below.
+
+### Verify Immediately After A Manual Pull
+
+The shortest supported path now is to fetch the current attested head from TruCon and verify it immediately through the direct quote-backed path.
+
+Minimal sequence:
+
+```bash
+cd /path/to/tc_api
+
+PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_current_attested_head.py \
+   docktap-runtime
+```
+
+That helper does all of the following in one step:
+
+- fetches the current attested head from TruCon `/evidence/docktap-runtime`
+- reads the current quote from that response
+- reads the current immutable `head_log_id`
+- runs the direct quote-backed verifier without writing an intermediate evidence file
+
+If you want one explicit guardrail for automation, add `--expected-head-log-id`:
+
+```bash
+PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_current_attested_head.py \
+   docktap-runtime \
+   --expected-head-log-id <head_log_id>
+```
+
+### Direct Quote Mode
+
+`scripts/verify_current_attested_head.py` is just a convenience wrapper around the direct quote path. If you want to run that path manually, first export the current attested head, then extract `quote` and `head_log_id` and pass them explicitly:
+
+```bash
+cd /path/to/tc_api
+
+QUOTE_B64="$(./venv/bin/python - <<'PY'
+import json
+with open('/tmp/docktap-runtime-evidence.json', 'r', encoding='utf-8') as handle:
+    payload = json.load(handle)
+print(payload['quote'])
+PY
+)"
+
+HEAD_LOG_ID="$(./venv/bin/python - <<'PY'
+import json
+with open('/tmp/docktap-runtime-evidence.json', 'r', encoding='utf-8') as handle:
+    payload = json.load(handle)
+print(payload['head_log_id'])
+PY
+)"
+
+PYTHONPATH=$PWD/src ./venv/bin/tc-verify docktap-runtime \
+   --quote "$QUOTE_B64" \
+   --head-log-id "$HEAD_LOG_ID"
+```
+
+Operationally, that direct-quote mode does this:
+
+- replays immutable history from `--head-log-id`
+- derives the expected current head state from replay
+- checks that quote `REPORTDATA` contains the bound raw `head_log_id` bytes
+- checks that quote `RTMR[2]` matches the replay-derived measured head state
+
+So if your question is “I just ran the manual `docker pull`, what should I run next?”, the shortest answer is:
+
+```bash
+PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_current_attested_head.py \
+   docktap-runtime
+```
+
+Use the exported-evidence flow below only when you explicitly want a saved evidence artifact for debugging or archival.
+
 ### Expected Docktap Evidence
 
 Inspect the Docktap runtime log written by `start.sh`:

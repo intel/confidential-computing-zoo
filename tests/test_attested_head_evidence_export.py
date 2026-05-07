@@ -124,7 +124,7 @@ def test_evidence_export_success_returns_latest_confirmed_head(trucon_client):
 def test_evidence_export_fails_without_confirmed_head(trucon_client):
     client, db_path = trucon_client
     update_chain_state(chain_id="default", head_record_id="rec-pending", sequence_num=1, mr_value="aa" * 48, db_path=db_path)
-    trucon_app_mod._quote_adapter = MockQuoteAdapter("sha384:" + "11" * 48)
+    trucon_app_mod._quote_adapter = MockQuoteAdapter("head_log_id_bytes:" + "11" * 8)
 
     response = client.get("/evidence/default")
 
@@ -147,7 +147,7 @@ def test_evidence_export_fails_when_quote_acquisition_fails(trucon_client):
 def test_evidence_export_fails_on_binding_mismatch(trucon_client):
     client, db_path = trucon_client
     _insert_confirmed_record(db_path, "default", 1, "log-1", "aa" * 48)
-    trucon_app_mod._quote_adapter = MockQuoteAdapter("sha384:" + "ff" * 48)
+    trucon_app_mod._quote_adapter = MockQuoteAdapter("head_log_id_bytes:" + "ff" * 8)
 
     response = client.get("/evidence/default")
 

@@ -1,10 +1,11 @@
 import argparse
 import ctypes
-import hashlib
 import importlib.util
 import json
 import sys
 from pathlib import Path
+
+from tc_api.trucon.evidence import decode_binding_expected_value
 
 
 TDX_ERROR_NAMES = {
@@ -47,8 +48,7 @@ def _load_repo_quote_module(repo_root: Path):
 
 
 def _default_expected_value() -> str:
-    digest = hashlib.sha384(b"tc-api-real-tdx-quote-check").hexdigest()
-    return f"sha384:{digest}"
+    return "head_log_id_bytes:" + b"tc-api-real-tdx-quote-check".hex()
 
 
 def _hex_prefix(raw: bytes, size: int = 16) -> str:
@@ -105,7 +105,7 @@ def run_libtdx_probe(expected_value: str) -> dict:
     lib.tdx_att_free_quote.restype = ctypes.c_uint32
 
     report_data = TdxReportData()
-    raw = bytes.fromhex(expected_value.removeprefix("sha384:"))
+    raw = decode_binding_expected_value(expected_value)
     for index, byte in enumerate(raw):
         report_data.d[index] = byte
 

@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from tc_api.trucon.evidence import (
+    BINDING_ALGORITHM,
     REQUIRED_BOUND_FIELDS,
     canonicalize_attested_head_evidence,
     validate_attested_head_evidence_payload,
@@ -25,6 +26,7 @@ def test_valid_attested_head_evidence_fixture_is_accepted():
 
     assert evidence.version == "v1"
     assert evidence.tee_type == "tdx"
+    assert evidence.report_data_binding.algorithm == BINDING_ALGORITHM
     assert evidence.report_data_binding.bound_fields == list(REQUIRED_BOUND_FIELDS)
 
 

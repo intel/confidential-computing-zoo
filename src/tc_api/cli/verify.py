@@ -2,6 +2,7 @@ import argparse
 import base64
 import hashlib
 import json
+import struct
 import sys
 import urllib.error
 import urllib.request
@@ -12,8 +13,144 @@ from typing import Any, Dict, List, Optional
 from tc_api.config import TRUCON_SERVICE_TOKEN, TRUCON_URL
 from tc_api.tlog_client import TrustedLogAPI
 from tc_api.trucon.adapters.sigstore import SigstoreLogAdapter
-from tc_api.trucon.evidence import compute_binding_expected_value, load_attested_head_evidence_json
+from tc_api.trucon.evidence import (
+    compute_binding_expected_value,
+    decode_binding_expected_value,
+    load_attested_head_evidence_json,
+)
 from tc_api.verification_profiles import evaluate_profiles
+
+
+_TDX_QUOTE_HEADER_SIZE = 48
+_TDX_QUOTE_V4_BODY_SIZE = 584
+_TDX_QUOTE_V5_DESCRIPTOR_SIZE = 6
+_TDX_QUOTE_REPORT_DATA_START = 0x208
+_TDX_QUOTE_REPORT_DATA_END = 0x248
+_TDX_QUOTE_RTMR_START = 0x148
+_TDX_QUOTE_RTMR_COUNT = 4
+_TDX_QUOTE_RTMR_SIZE = 48
+_TDX_QUOTE_SUPPORTED_VERSIONS = {4, 5}
+
+
+def _parse_tdx_quote(quote_b64: str) -> Dict[str, Any]:
+    try:
+        quote_bytes = base64.b64decode(quote_b64, validate=True)
+    except Exception as exc:
+        raise ValueError(f"quote was not valid base64: {exc}") from exc
+
+    if len(quote_bytes) < _TDX_QUOTE_HEADER_SIZE:
+        raise ValueError("quote was shorter than the TDX quote header")
+
+    version = struct.unpack_from("<H", quote_bytes, 0)[0]
+    if version not in _TDX_QUOTE_SUPPORTED_VERSIONS:
+        raise ValueError(f"unsupported TDX quote version: {version}")
+
+    body_type: Optional[int] = None
+    body_size: int
+    body: bytes
+    if version == 4:
+        body_size = _TDX_QUOTE_V4_BODY_SIZE
+        required_size = _TDX_QUOTE_HEADER_SIZE + body_size
+        if len(quote_bytes) < required_size:
+            raise ValueError(
+                f"quote version 4 was truncated: expected at least {required_size} bytes, got {len(quote_bytes)}"
+            )
+        body = quote_bytes[_TDX_QUOTE_HEADER_SIZE:required_size]
+    else:
+        descriptor_end = _TDX_QUOTE_HEADER_SIZE + _TDX_QUOTE_V5_DESCRIPTOR_SIZE
+        if len(quote_bytes) < descriptor_end:
+            raise ValueError("quote version 5 was truncated before the body descriptor")
+        body_type = struct.unpack_from("<H", quote_bytes, _TDX_QUOTE_HEADER_SIZE)[0]
+        body_size = struct.unpack_from("<I", quote_bytes, _TDX_QUOTE_HEADER_SIZE + 2)[0]
+        if body_size < _TDX_QUOTE_REPORT_DATA_END:
+            raise ValueError(f"quote version 5 body was too small to contain report data: {body_size} bytes")
+        required_size = descriptor_end + body_size
+        if len(quote_bytes) < required_size:
+            raise ValueError(
+                f"quote version 5 was truncated: expected at least {required_size} bytes, got {len(quote_bytes)}"
+            )
+        body = quote_bytes[descriptor_end:required_size]
+
+    report_data = body[_TDX_QUOTE_REPORT_DATA_START:_TDX_QUOTE_REPORT_DATA_END]
+    if len(report_data) != 64:
+        raise ValueError(f"quote report_data had unexpected size: {len(report_data)}")
+
+    rtmrs = []
+    for index in range(_TDX_QUOTE_RTMR_COUNT):
+        start = _TDX_QUOTE_RTMR_START + (index * _TDX_QUOTE_RTMR_SIZE)
+        end = start + _TDX_QUOTE_RTMR_SIZE
+        rtmr = body[start:end]
+        if len(rtmr) != _TDX_QUOTE_RTMR_SIZE:
+            raise ValueError(f"quote RTMR[{index}] had unexpected size: {len(rtmr)}")
+        rtmrs.append(rtmr.hex())
+
+    return {
+        "parsed": True,
+        "version": version,
+        "body_type": body_type,
+        "body_size": body_size,
+        "quote_size": len(quote_bytes),
+        "report_data_hex": report_data.hex(),
+        "rtmrs": rtmrs,
+    }
+
+
+def _inspect_evidence_quote(evidence: Any) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "present": bool(evidence.quote),
+        "parsed": False,
+        "version": None,
+        "body_type": None,
+        "body_size": None,
+        "quote_size": None,
+        "report_data_hex": None,
+        "report_data_prefix_hex": None,
+        "report_data_prefix_matches_binding": None,
+        "report_data_zero_padded": None,
+        "rtmrs": [],
+        "mr_index": 2,
+        "mr_value_matches_quote": None,
+        "errors": [],
+    }
+    if not evidence.quote:
+        return result
+
+    try:
+        parsed = _parse_tdx_quote(evidence.quote)
+    except Exception as exc:
+        result["errors"].append(f"Quote parsing failed: {exc}")
+        return result
+
+    result.update(parsed)
+    result["parsed"] = True
+
+    report_data_hex = parsed["report_data_hex"]
+    expected_value = evidence.report_data_binding.expected_value
+    if not isinstance(expected_value, str) or not expected_value.startswith("sha384:"):
+        result["errors"].append("Evidence expected_value did not use the supported sha384: format")
+        return result
+
+    expected_prefix_hex = expected_value.removeprefix("sha384:").lower()
+    report_prefix_hex = report_data_hex[: len(expected_prefix_hex)]
+    report_padding_hex = report_data_hex[len(expected_prefix_hex):]
+    result["report_data_prefix_hex"] = report_prefix_hex
+    result["report_data_prefix_matches_binding"] = report_prefix_hex == expected_prefix_hex
+    result["report_data_zero_padded"] = set(report_padding_hex) <= {"0"}
+    if result["report_data_prefix_matches_binding"] is False:
+        result["errors"].append("Quote REPORTDATA prefix did not match evidence report_data_binding.expected_value")
+    if result["report_data_zero_padded"] is False:
+        result["errors"].append("Quote REPORTDATA suffix was not zero-padded after the bound sha384 digest")
+
+    quote_mr_value = None
+    if len(parsed["rtmrs"]) > result["mr_index"]:
+        quote_mr_value = parsed["rtmrs"][result["mr_index"]]
+    result["quote_mr_value"] = quote_mr_value
+    result["mr_value_matches_quote"] = quote_mr_value == evidence.mr_value
+    if result["mr_value_matches_quote"] is False:
+        result["errors"].append(
+            f"Quote RTMR[{result['mr_index']}] did not match evidence mr_value"
+        )
+    return result
 
 
 def _fetch_trucon_json(path: str) -> Dict[str, Any]:
@@ -28,13 +165,23 @@ def _fetch_trucon_json(path: str) -> Dict[str, Any]:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Verify a trusted-log chain using exported evidence, or explicit live troubleshooting mode"
+        description="Verify a trusted-log chain using exported evidence, direct quote input, or explicit live troubleshooting mode"
     )
     parser.add_argument("chain_id", nargs="?", help="Chain identifier to inspect in explicit live troubleshooting mode")
     parser.add_argument(
         "--evidence",
         dest="evidence_path",
         help="Path to exported attested-head evidence JSON, or '-' to read from stdin",
+    )
+    parser.add_argument(
+        "--quote",
+        dest="quote_value",
+        help="Base64-encoded quote value, '@path' to read a file, or '-' to read from stdin",
+    )
+    parser.add_argument(
+        "--head-log-id",
+        dest="head_log_id",
+        help="Immutable log head to replay when using --quote",
     )
     parser.add_argument(
         "--troubleshoot-live",
@@ -342,6 +489,93 @@ def _load_evidence(args: argparse.Namespace) -> Any:
     return evidence
 
 
+def _load_quote_value(args: argparse.Namespace) -> Optional[Dict[str, str]]:
+    if not args.quote_value:
+        return None
+
+    if args.quote_value == "-":
+        source = "stdin"
+        payload = sys.stdin.read()
+    elif args.quote_value.startswith("@"):
+        source = args.quote_value[1:]
+        payload = Path(source).read_text(encoding="utf-8")
+    else:
+        source = "argument"
+        payload = args.quote_value
+
+    quote_value = payload.strip()
+    if not quote_value:
+        raise ValueError("Quote input was empty")
+
+    return {"quote": quote_value, "source": source}
+
+
+def _inspect_quote_binding(
+    quote_b64: str,
+    expected_value: str,
+    expected_mr_value: Optional[str],
+    expected_mr_label: str,
+) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "present": bool(quote_b64),
+        "parsed": False,
+        "version": None,
+        "body_type": None,
+        "body_size": None,
+        "quote_size": None,
+        "report_data_hex": None,
+        "report_data_prefix_hex": None,
+        "report_data_prefix_matches_binding": None,
+        "report_data_zero_padded": None,
+        "rtmrs": [],
+        "mr_index": 2,
+        "mr_value_matches_quote": None,
+        "errors": [],
+    }
+    if not quote_b64:
+        return result
+
+    try:
+        parsed = _parse_tdx_quote(quote_b64)
+    except Exception as exc:
+        result["errors"].append(f"Quote parsing failed: {exc}")
+        return result
+
+    result.update(parsed)
+    result["parsed"] = True
+
+    try:
+        expected_bytes = decode_binding_expected_value(expected_value)
+    except ValueError as exc:
+        result["errors"].append(str(exc))
+        return result
+
+    report_data_hex = parsed["report_data_hex"]
+    expected_prefix_hex = expected_bytes.hex()
+    report_prefix_hex = report_data_hex[: len(expected_prefix_hex)]
+    report_padding_hex = report_data_hex[len(expected_prefix_hex):]
+    result["report_data_prefix_hex"] = report_prefix_hex
+    result["report_data_prefix_matches_binding"] = report_prefix_hex == expected_prefix_hex
+    result["report_data_zero_padded"] = set(report_padding_hex) <= {"0"}
+    if result["report_data_prefix_matches_binding"] is False:
+        result["errors"].append("Quote REPORTDATA prefix did not match the expected head_log_id binding bytes")
+    if result["report_data_zero_padded"] is False:
+        result["errors"].append("Quote REPORTDATA suffix was not zero-padded after the bound head_log_id bytes")
+
+    quote_mr_value = None
+    if len(parsed["rtmrs"]) > result["mr_index"]:
+        quote_mr_value = parsed["rtmrs"][result["mr_index"]]
+    result["quote_mr_value"] = quote_mr_value
+    result["mr_value_matches_quote"] = quote_mr_value == expected_mr_value
+    if expected_mr_value is None:
+        result["mr_value_matches_quote"] = None
+    elif result["mr_value_matches_quote"] is False:
+        result["errors"].append(
+            f"Quote RTMR[{result['mr_index']}] did not match {expected_mr_label}"
+        )
+    return result
+
+
 def _run_fallback_verification(args: argparse.Namespace, chain_id: str) -> Dict[str, Any]:
     trucon_result: Dict[str, Any] = {"reachable": False, "data": None, "error": None}
     chain_state: Dict[str, Any] = {}
@@ -409,6 +643,12 @@ def _normalize_evidence_result(
     immutable_data = immutable_result.get("details") or {}
     replay_entries = _normalize_replay_entries(immutable_data.get("entries", []))
     derived_replay = _derive_replay_chain_state(immutable_result)
+    quote_parse = _inspect_quote_binding(
+        evidence.quote,
+        evidence.report_data_binding.expected_value,
+        evidence.mr_value,
+        "evidence mr_value",
+    )
     attested_errors: List[str] = []
     mismatches: List[str] = []
 
@@ -436,6 +676,7 @@ def _normalize_evidence_result(
 
     attested_errors.extend(derived_replay.get("errors", []))
     attested_errors.extend(mismatches)
+    attested_errors.extend(quote_parse.get("errors", []))
 
     expired = False
     if evidence.expires_at is not None:
@@ -514,6 +755,7 @@ def _normalize_evidence_result(
             "recomputed_expected_value": evidence.__dict__.get("_recomputed_expected_value"),
             "matches_replay": not mismatches and not derived_replay.get("errors"),
             "mismatches": mismatches,
+            "quote_parse": quote_parse,
             "head_log_id": evidence.head_log_id,
             "sequence_num": evidence.sequence_num,
             "mr_value": evidence.mr_value,
@@ -538,6 +780,120 @@ def _normalize_evidence_result(
     if tee_error and tee_error not in result["errors"]:
         result["errors"].append(tee_error)
     return _attach_profile_results(result)
+
+
+def _normalize_quote_result(
+    args: argparse.Namespace,
+    quote_input: Dict[str, str],
+    immutable_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    immutable_data = immutable_result.get("details") or {}
+    replay_entries = _normalize_replay_entries(immutable_data.get("entries", []))
+    derived_replay = _derive_replay_chain_state(immutable_result)
+    expected_value = None
+    if not derived_replay.get("errors"):
+        expected_value = compute_binding_expected_value(
+            chain_id=args.chain_id,
+            sequence_num=derived_replay.get("sequence_num"),
+            head_log_id=args.head_log_id,
+            mr_value=derived_replay.get("mr_value"),
+        )
+    quote_parse = _inspect_quote_binding(
+        quote_input["quote"],
+        expected_value or "",
+        derived_replay.get("mr_value"),
+        "replay-derived mr_value",
+    )
+
+    attested_errors: List[str] = []
+    attested_errors.extend(derived_replay.get("errors", []))
+    attested_errors.extend(quote_parse.get("errors", []))
+
+    errors: List[str] = []
+    errors.extend(immutable_result.get("errors", []))
+    errors.extend(attested_errors)
+
+    immutable_success = immutable_result.get("success", False)
+    attested_valid = not attested_errors
+    success = immutable_success and attested_valid
+    status = "verified" if success else "failed"
+    provenance_status, provenance_detail = _summarize_replay_provenance(replay_entries)
+    verification_tier = _compute_verification_tier(provenance_status, attested_valid)
+
+    return _attach_profile_results({
+        "target": {
+            "chain_id": args.chain_id,
+            "head_log_id": args.head_log_id,
+            "source": "direct-quote",
+        },
+        "mode": {
+            "input_mode": "quote-backed",
+            "tee_required": True,
+            "tee_available": True,
+            "verification_mode": "quote-backed",
+            "status_detail": "tee-attested",
+            "fallback_used": False,
+            "mirror_required": args.require_mirror,
+            "mirror_configured": bool(args.mirror_dir),
+        },
+        "summary": {
+            "success": success,
+            "status": status,
+            "verification_tier": verification_tier,
+            "entry_count": immutable_data.get("entry_count", 0),
+            "confirmed_count": immutable_data.get("entry_count", 0),
+            "pending_count": 0,
+            "first_error_at": None,
+        },
+        "replay": {
+            "reachable": immutable_result.get("reachable", False),
+            "success": immutable_success,
+            "head_log_id": immutable_result.get("head_log_id"),
+            "entry_count": immutable_data.get("entry_count", 0),
+            "subject": immutable_data.get("subject"),
+            "entries": replay_entries,
+            "derived": derived_replay,
+            "provenance": {
+                "status": provenance_status,
+                "detail": provenance_detail,
+            },
+        },
+        "attested_head": {
+            "present": True,
+            "valid": attested_valid,
+            "tee_type": "tdx",
+            "source": quote_input["source"],
+            "generated_at": None,
+            "expires_at": None,
+            "expired": False,
+            "freshness": "no-expiry-bound",
+            "binding_verified": quote_parse.get("report_data_prefix_matches_binding") is True,
+            "expected_value": expected_value,
+            "recomputed_expected_value": expected_value,
+            "matches_replay": not derived_replay.get("errors"),
+            "mismatches": [],
+            "quote_parse": quote_parse,
+            "head_log_id": args.head_log_id,
+            "sequence_num": derived_replay.get("sequence_num"),
+            "mr_value": derived_replay.get("mr_value"),
+            "head_event_digest": derived_replay.get("head_event_digest"),
+            "errors": attested_errors,
+            "contract_scope": "current-head binding only",
+        },
+        "fallback": None,
+        "sources": {
+            "immutable_backend": {
+                "reachable": immutable_result.get("reachable", False),
+                "success": immutable_success,
+                "head_log_id": immutable_result.get("head_log_id"),
+                "entry_count": immutable_data.get("entry_count", 0),
+                "subject": immutable_data.get("subject"),
+            },
+            "trucon_chain": None,
+        },
+        "entries": replay_entries,
+        "errors": errors,
+    })
 
 
 def _normalize_fallback_result(
@@ -682,7 +1038,10 @@ def _render_text(result: Dict[str, Any]) -> str:
     provenance = replay.get("provenance") or {"status": "unavailable", "detail": "no replay provenance summary available"}
     lines.append(f"  rollout={rollout_status} {rollout_detail}")
     lines.append(f"  provenance={provenance.get('status')} {provenance.get('detail')}")
-    lines.append("  trust_sources=public_replay(history, baseline) + exported_evidence(current_head_binding)")
+    if result["mode"].get("input_mode") == "quote-backed":
+        lines.append("  trust_sources=public_replay(history, baseline) + direct_quote(current_head_binding)")
+    else:
+        lines.append("  trust_sources=public_replay(history, baseline) + exported_evidence(current_head_binding)")
 
     if attested_head.get("present"):
         lines.append("Attested head:")
@@ -691,6 +1050,13 @@ def _render_text(result: Dict[str, Any]) -> str:
             f"valid={attested_head.get('valid')} matches_replay={attested_head.get('matches_replay')} "
             f"freshness={attested_head.get('freshness')}"
         )
+        quote_parse = attested_head.get("quote_parse") or {}
+        if quote_parse.get("present"):
+            lines.append(
+                "  "
+                f"quote_parsed={quote_parse.get('parsed')} report_data_match={quote_parse.get('report_data_prefix_matches_binding')} "
+                f"rtmr{quote_parse.get('mr_index')}_match={quote_parse.get('mr_value_matches_quote')}"
+            )
         if attested_head.get("contract_scope"):
             lines.append(f"  contract_scope={attested_head.get('contract_scope')}")
     elif result["mode"].get("fallback_used"):
@@ -804,18 +1170,15 @@ def _render_text(result: Dict[str, Any]) -> str:
 
 
 def run_verification(args: argparse.Namespace) -> Dict[str, Any]:
-    try:
-        evidence = _load_evidence(args)
-    except Exception as exc:
-        target_chain_id = args.chain_id
+    def _invalid_attested_result(input_mode: str, source: str, target_chain_id: Optional[str], message: str) -> Dict[str, Any]:
         return {
-            "target": {"chain_id": target_chain_id, "source": "evidence-package"},
+            "target": {"chain_id": target_chain_id, "source": source},
             "mode": {
-                "input_mode": "evidence-backed",
+                "input_mode": input_mode,
                 "tee_required": args.require_tee,
                 "tee_available": False,
-                "verification_mode": "evidence-backed",
-                "status_detail": "invalid-evidence",
+                "verification_mode": input_mode,
+                "status_detail": f"invalid-{source}",
                 "fallback_used": False,
             },
             "summary": {
@@ -839,20 +1202,48 @@ def run_verification(args: argparse.Namespace) -> Dict[str, Any]:
                 "present": True,
                 "valid": False,
                 "matches_replay": None,
-                "errors": [f"Invalid evidence package: {exc}"],
+                "errors": [message],
             },
             "fallback": None,
             "sources": {"immutable_backend": None, "trucon_chain": None},
             "entries": [],
-            "errors": [f"Invalid evidence package: {exc}"],
+            "errors": [message],
         }
+
+    evidence = None
+    if args.evidence_path:
+        try:
+            evidence = _load_evidence(args)
+        except Exception as exc:
+            return _invalid_attested_result(
+                "evidence-backed",
+                "evidence-package",
+                args.chain_id,
+                f"Invalid evidence package: {exc}",
+            )
 
     if evidence is not None:
         immutable_result = _load_immutable_result(args, evidence.chain_id, evidence.head_log_id)
         return _normalize_evidence_result(args, evidence, immutable_result)
 
+    quote_input = None
+    if args.quote_value:
+        try:
+            quote_input = _load_quote_value(args)
+        except Exception as exc:
+            return _invalid_attested_result(
+                "quote-backed",
+                "direct-quote",
+                args.chain_id,
+                f"Invalid quote input: {exc}",
+            )
+
+    if quote_input is not None:
+        immutable_result = _load_immutable_result(args, args.chain_id, args.head_log_id)
+        return _normalize_quote_result(args, quote_input, immutable_result)
+
     if not args.chain_id:
-        raise ValueError("Either a chain_id or --evidence must be provided")
+        raise ValueError("Either a chain_id, --evidence, or --quote must be provided")
 
     fallback_result = _run_fallback_verification(args, args.chain_id)
     chain_state = fallback_result["chain_state"]
@@ -878,9 +1269,19 @@ def run_verification(args: argparse.Namespace) -> Dict[str, Any]:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    if not args.chain_id and not args.evidence_path:
-        parser.error("--evidence is required for supported external verification, or provide chain_id with --troubleshoot-live")
-    if args.chain_id and not args.evidence_path and not args.troubleshoot_live:
+    if args.evidence_path and args.quote_value:
+        parser.error("--evidence and --quote cannot be used together")
+    if args.quote_value and not args.chain_id:
+        parser.error("--quote requires a chain_id")
+    if args.quote_value and not args.head_log_id:
+        parser.error("--quote requires --head-log-id")
+    if args.quote_value and args.troubleshoot_live:
+        parser.error("--quote cannot be combined with --troubleshoot-live")
+    if args.head_log_id and not args.quote_value:
+        parser.error("--head-log-id is only supported with --quote")
+    if not args.chain_id and not args.evidence_path and not args.quote_value:
+        parser.error("--evidence is required for exported evidence verification, --quote for direct quote verification, or provide chain_id with --troubleshoot-live")
+    if args.chain_id and not args.evidence_path and not args.quote_value and not args.troubleshoot_live:
         parser.error("Bare chain_id verification is no longer a supported external path; use --evidence or add --troubleshoot-live")
     if args.troubleshoot_live and not args.chain_id:
         parser.error("--troubleshoot-live requires a chain_id")

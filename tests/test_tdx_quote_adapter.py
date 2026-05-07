@@ -60,8 +60,8 @@ def test_quote_uses_configfs_when_paths_exist(tmp_path):
     report_data_path.write_bytes(b"")
     quote_path.write_bytes(b"quote-bytes")
 
-    expected_value = "sha384:" + ("12" * 48)
-    expected_bytes = bytes.fromhex(expected_value.removeprefix("sha384:"))
+    expected_value = "head_log_id_bytes:" + ("12" * 24)
+    expected_bytes = bytes.fromhex(expected_value.removeprefix("head_log_id_bytes:"))
 
     adapter = TdxQuoteAdapter(
         report_data_path=str(report_data_path),
@@ -71,14 +71,14 @@ def test_quote_uses_configfs_when_paths_exist(tmp_path):
 
     result = adapter.quote(expected_value)
 
-    assert report_data_path.read_bytes() == expected_bytes + (b"\x00" * 16)
+    assert report_data_path.read_bytes() == expected_bytes + (b"\x00" * (64 - len(expected_bytes)))
     assert result.report_data == expected_value
     assert base64.b64decode(result.quote) == b"quote-bytes"
     assert result.quote_format == "tdx-configfs-tsm"
 
 
 def test_quote_falls_back_to_libtdx_attest(monkeypatch):
-    expected_value = "sha384:" + ("34" * 48)
+    expected_value = "head_log_id_bytes:" + ("34" * 24)
     fake_library = FakeLibTdxAttest(b"real-quote")
 
     adapter = TdxQuoteAdapter(
@@ -93,6 +93,23 @@ def test_quote_falls_back_to_libtdx_attest(monkeypatch):
     assert result.report_data == expected_value
     assert base64.b64decode(result.quote) == b"real-quote"
     assert result.quote_format == "tdx-libtdx-attest"
+
+
+def test_quote_preserves_legacy_sha384_binding(monkeypatch):
+    expected_value = "sha384:" + ("34" * 48)
+    fake_library = FakeLibTdxAttest(b"real-quote")
+
+    adapter = TdxQuoteAdapter(
+        report_data_path="/missing/reportdata",
+        quote_path="/missing/outblob",
+        report_root_path="/missing/reportroot",
+    )
+    monkeypatch.setattr(adapter, "_load_attest_library", lambda: fake_library)
+
+    result = adapter.quote(expected_value)
+
+    assert result.report_data == expected_value
+    assert base64.b64decode(result.quote) == b"real-quote"
 
 
 def test_quote_uses_dynamic_configfs_report_instance(tmp_path, monkeypatch):
@@ -111,7 +128,7 @@ def test_quote_uses_dynamic_configfs_report_instance(tmp_path, monkeypatch):
 
     monkeypatch.setattr(MODULE.os, "mkdir", fake_mkdir)
 
-    expected_value = "sha384:" + ("9a" * 48)
+    expected_value = "head_log_id_bytes:" + ("9a" * 24)
     adapter = TdxQuoteAdapter(
         report_data_path=str(report_root / "missing-reportdata"),
         quote_path=str(report_root / "missing-outblob"),
@@ -127,7 +144,7 @@ def test_quote_uses_dynamic_configfs_report_instance(tmp_path, monkeypatch):
 
 
 def test_quote_raises_when_libtdx_attest_report_fails(monkeypatch):
-    expected_value = "sha384:" + ("56" * 48)
+    expected_value = "head_log_id_bytes:" + ("56" * 24)
     fake_library = FakeLibTdxAttest(b"", report_error=5)
 
     adapter = TdxQuoteAdapter(

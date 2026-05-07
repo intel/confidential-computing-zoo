@@ -7,13 +7,10 @@
   "generated_at": "2026-04-19T10:15:00Z",
   "quote": "base64-tdx-quote",
   "report_data_binding": {
-    "algorithm": "sha384",
+    "algorithm": "head_log_id_bytes",
     "bound_fields": [
-      "chain_id",
-      "sequence_num",
-      "head_log_id",
-      "mr_value"
+      "head_log_id"
     ],
-    "expected_value": "sha384:bound-value"
+    "expected_value": "head_log_id_bytes:72656b6f722d6c6f672d30303037"
   }
 }

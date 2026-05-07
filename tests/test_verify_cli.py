@@ -1,5 +1,7 @@
 import json
 import os
+import base64
+import struct
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -8,7 +10,12 @@ import pytest
 
 from tc_api.cli.verify import _normalize_replay_entries, main
 from tc_api.trucon.adapters.sigstore import SigstoreLogAdapter
-from tc_api.trucon.evidence import compute_binding_expected_value
+from tc_api.trucon.evidence import (
+    BINDING_ALGORITHM,
+    REQUIRED_BOUND_FIELDS,
+    compute_binding_expected_value,
+    decode_binding_expected_value,
+)
 
 
 class _Response:
@@ -64,9 +71,38 @@ def _immutable_entry(event_id, event_type, digest, index, predicate_entries=None
 
 
 def _write_evidence(tmp_path, payload):
+    payload = dict(payload)
+    if "report_data_binding" in payload:
+        binding = dict(payload["report_data_binding"])
+        binding.setdefault("algorithm", BINDING_ALGORITHM)
+        binding.setdefault("bound_fields", list(REQUIRED_BOUND_FIELDS))
+        binding["algorithm"] = BINDING_ALGORITHM
+        binding["bound_fields"] = list(REQUIRED_BOUND_FIELDS)
+        payload["report_data_binding"] = binding
+    if payload.get("quote") == "base64-quote":
+        try:
+            payload["quote"] = _build_tdx_quote_v4(
+                payload["report_data_binding"]["expected_value"],
+                payload.get("mr_value"),
+            )
+        except ValueError:
+            pass
     evidence_path = Path(tmp_path) / "evidence.json"
     evidence_path.write_text(json.dumps(payload), encoding="utf-8")
     return str(evidence_path)
+
+
+def _build_tdx_quote_v4(expected_value: str, rtmr2_hex: str | None) -> str:
+    header = bytearray(48)
+    struct.pack_into("<H", header, 0, 4)
+
+    body = bytearray(584)
+    expected_bytes = decode_binding_expected_value(expected_value)
+    body[0x208:0x208 + len(expected_bytes)] = expected_bytes
+    if rtmr2_hex:
+        body[0x148 + (2 * 48):0x148 + (3 * 48)] = bytes.fromhex(rtmr2_hex)
+
+    return base64.b64encode(bytes(header + body)).decode("ascii")
 
 
 def test_verify_cli_json_success(capsys):
@@ -768,9 +804,176 @@ def test_verify_cli_evidence_mode_success(tmp_path, capsys):
     assert captured["mode"]["input_mode"] == "evidence-backed"
     assert captured["summary"]["status"] == "verified"
     assert captured["attested_head"]["matches_replay"] is True
+    assert captured["attested_head"]["quote_parse"]["parsed"] is True
+    assert captured["attested_head"]["quote_parse"]["report_data_prefix_matches_binding"] is True
+    assert captured["attested_head"]["quote_parse"]["mr_value_matches_quote"] is True
     assert captured["replay"]["provenance"]["status"] == "public"
     assert captured["attested_head"]["contract_scope"] == "current-head binding only"
     assert captured["replay"]["derived"]["sequence_num"] == 2
+
+
+def test_verify_cli_quote_mode_success(tmp_path, capsys):
+    baseline_rtmr = "11" * 48
+    head_digest = "sha384:" + ("22" * 48)
+    derived_mr = __import__("hashlib").sha384(bytes.fromhex(baseline_rtmr) + bytes.fromhex("22" * 48)).hexdigest()
+    expected_value = compute_binding_expected_value("default", 2, "log-tail", derived_mr)
+    quote_value = _build_tdx_quote_v4(expected_value, derived_mr)
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "chain_id": "default",
+                "entry_count": 2,
+                "entries": [
+                    _immutable_entry("evt-1", "launch", head_digest, 1),
+                    _immutable_entry(
+                        "evt-log0-default",
+                        "chain.init",
+                        None,
+                        2,
+                        predicate_entries=[
+                            {"key": "baseline_rtmr", "value": baseline_rtmr},
+                            {"key": "ccel_digest", "value": "sha384:" + ("33" * 48)},
+                            {"key": "pub_key", "value": "pem"},
+                        ],
+                    ),
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+        MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+        exit_code = main(["default", "--quote", quote_value, "--head-log-id", "log-tail", "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert captured["mode"]["input_mode"] == "quote-backed"
+    assert captured["summary"]["status"] == "verified"
+    assert captured["target"]["source"] == "direct-quote"
+    assert captured["attested_head"]["source"] == "argument"
+    assert captured["attested_head"]["quote_parse"]["parsed"] is True
+    assert captured["attested_head"]["quote_parse"]["report_data_prefix_matches_binding"] is True
+    assert captured["attested_head"]["quote_parse"]["mr_value_matches_quote"] is True
+    assert captured["attested_head"]["expected_value"] == expected_value
+
+
+def test_verify_cli_quote_mode_detects_binding_mismatch(capsys):
+    baseline_rtmr = "11" * 48
+    head_digest = "sha384:" + ("22" * 48)
+    derived_mr = __import__("hashlib").sha384(bytes.fromhex(baseline_rtmr) + bytes.fromhex("22" * 48)).hexdigest()
+    wrong_expected_value = compute_binding_expected_value("default", 1, "wrong-log", derived_mr)
+    quote_value = _build_tdx_quote_v4(wrong_expected_value, derived_mr)
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "chain_id": "default",
+                "entry_count": 1,
+                "entries": [
+                    _immutable_entry(
+                        "evt-log0-default",
+                        "chain.init",
+                        head_digest,
+                        1,
+                        predicate_entries=[
+                            {"key": "baseline_rtmr", "value": derived_mr},
+                            {"key": "ccel_digest", "value": "sha384:" + ("33" * 48)},
+                            {"key": "pub_key", "value": "pem"},
+                        ],
+                    )
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+        MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+        exit_code = main(["default", "--quote", quote_value, "--head-log-id", "log-tail", "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["mode"]["input_mode"] == "quote-backed"
+    assert captured["attested_head"]["quote_parse"]["report_data_prefix_matches_binding"] is False
+    assert any("Quote REPORTDATA prefix did not match the expected head_log_id binding bytes" in error for error in captured["errors"])
+
+
+def test_verify_cli_quote_mode_requires_head_log_id():
+    with pytest.raises(SystemExit) as exc_info:
+        main(["default", "--quote", "Zm9v"])
+
+    assert exc_info.value.code == 2
+
+
+def test_verify_cli_evidence_mode_detects_quote_rtmr_mismatch(tmp_path, capsys):
+    baseline_rtmr = "11" * 48
+    evidence_mr = baseline_rtmr
+    evidence_payload = {
+        "version": "v1",
+        "tee_type": "tdx",
+        "chain_id": "default",
+        "sequence_num": 1,
+        "head_log_id": "log-tail",
+        "mr_value": evidence_mr,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "quote": _build_tdx_quote_v4(
+            compute_binding_expected_value("default", 1, "log-tail", evidence_mr),
+            "22" * 48,
+        ),
+        "report_data_binding": {
+            "algorithm": "sha384",
+            "bound_fields": ["chain_id", "sequence_num", "head_log_id", "mr_value"],
+            "expected_value": compute_binding_expected_value("default", 1, "log-tail", evidence_mr),
+        },
+    }
+    evidence_path = _write_evidence(tmp_path, evidence_payload)
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "chain_id": "default",
+                "entry_count": 1,
+                "entries": [
+                    _immutable_entry(
+                        "evt-log0-default",
+                        "chain.init",
+                        "sha384:" + ("22" * 48),
+                        1,
+                        predicate_entries=[
+                            {"key": "baseline_rtmr", "value": evidence_mr},
+                            {"key": "ccel_digest", "value": "sha384:" + ("33" * 48)},
+                            {"key": "pub_key", "value": "pem"},
+                        ],
+                    )
+                ],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+        MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+        exit_code = main(["--evidence", evidence_path, "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["attested_head"]["quote_parse"]["parsed"] is True
+    assert captured["attested_head"]["quote_parse"]["mr_value_matches_quote"] is False
+    assert any("Quote RTMR[2] did not match evidence mr_value" in error for error in captured["errors"])
 
 
 def test_verify_cli_json_preserves_replay_provenance_boundary(tmp_path, capsys):
@@ -1117,7 +1320,7 @@ def test_verify_cli_rejects_invalid_evidence_binding(tmp_path, capsys):
             "report_data_binding": {
                 "algorithm": "sha384",
                 "bound_fields": ["chain_id", "sequence_num", "head_log_id", "mr_value"],
-                "expected_value": "sha384:" + ("ff" * 48),
+                "expected_value": "head_log_id_bytes:zz",
             },
         },
     )

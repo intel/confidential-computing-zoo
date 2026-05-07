@@ -1,12 +1,11 @@
 import json
-import hashlib
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-REQUIRED_BOUND_FIELDS = ("chain_id", "sequence_num", "head_log_id", "mr_value")
-BINDING_ALGORITHM = "sha384"
+REQUIRED_BOUND_FIELDS = ("head_log_id",)
+BINDING_ALGORITHM = "head_log_id_bytes"
 
 
 def canonical_json(data: Any) -> str:
@@ -86,31 +85,59 @@ def load_attested_head_evidence_json(payload: str) -> AttestedHeadEvidence:
     return validate_attested_head_evidence_payload(json.loads(payload))
 
 
+def _is_hex_string(value: str) -> bool:
+    if not value or len(value) % 2 != 0:
+        return False
+    try:
+        bytes.fromhex(value)
+    except ValueError:
+        return False
+    return True
+
+
+def binding_payload_bytes_from_head_log_id(head_log_id: str) -> bytes:
+    normalized = head_log_id.strip()
+    if _is_hex_string(normalized):
+        return bytes.fromhex(normalized)
+    return normalized.encode("utf-8")
+
+
+def encode_binding_expected_value(raw_bytes: bytes) -> str:
+    return f"{BINDING_ALGORITHM}:" + raw_bytes.hex()
+
+
+def decode_binding_expected_value(expected_value: str) -> bytes:
+    prefix = f"{BINDING_ALGORITHM}:"
+    if not expected_value.startswith(prefix):
+        raise ValueError(f"expected_value must start with '{prefix}'")
+    try:
+        return bytes.fromhex(expected_value.removeprefix(prefix))
+    except ValueError as exc:
+        raise ValueError("expected_value must encode valid hex bytes") from exc
+
+
 def compute_binding_expected_value(
     chain_id: str,
     sequence_num: int,
     head_log_id: str,
     mr_value: str,
 ) -> str:
-    bound_items = [
-        ["chain_id", chain_id],
-        ["sequence_num", sequence_num],
-        ["head_log_id", head_log_id],
-        ["mr_value", mr_value],
-    ]
-    payload = canonical_json(bound_items).encode("utf-8")
-    return f"{BINDING_ALGORITHM}:" + hashlib.sha384(payload).hexdigest()
+    del chain_id, sequence_num, mr_value
+    return encode_binding_expected_value(binding_payload_bytes_from_head_log_id(head_log_id))
 
 
 __all__ = [
     "AttestedHeadEvidence",
     "BINDING_ALGORITHM",
+    "binding_payload_bytes_from_head_log_id",
     "REQUIRED_BOUND_FIELDS",
     "ReportDataBinding",
     "ValidationError",
     "compute_binding_expected_value",
     "canonicalize_attested_head_evidence",
     "canonical_json",
+    "decode_binding_expected_value",
+    "encode_binding_expected_value",
     "load_attested_head_evidence_json",
     "validate_attested_head_evidence_payload",
 ]
