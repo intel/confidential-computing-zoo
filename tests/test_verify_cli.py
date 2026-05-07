@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -6,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from tc_api.cli.verify import _normalize_replay_entries, main
+from tc_api.trucon.adapters.sigstore import SigstoreLogAdapter
 from tc_api.trucon.evidence import compute_binding_expected_value
 
 
@@ -136,6 +138,56 @@ def test_verify_cli_json_success(capsys):
     assert captured["diagnostics"]["replay"]["success"] is True
     assert captured["diagnostics"]["fallback"]["valid"] is True
     assert "profiles" in captured
+
+
+def test_sigstore_payload_hash_lookup_retries_after_timeout():
+    attempts = []
+
+    def _urlopen(request, timeout=15):
+        attempts.append(timeout)
+        if len(attempts) < 3:
+            raise TimeoutError("The read operation timed out")
+        return _Response(["12345"])
+
+    with patch.dict(os.environ, {
+        "TC_API_REKOR_PAYLOAD_LOOKUP_RETRIES": "3",
+        "TC_API_REKOR_PAYLOAD_LOOKUP_BACKOFF_SECONDS": "0",
+        "TC_API_REKOR_PAYLOAD_LOOKUP_TIMEOUT_SECONDS": "7",
+    }, clear=False):
+        adapter = SigstoreLogAdapter()
+
+    with patch("tc_api.trucon.adapters.sigstore.urllib.request.urlopen", side_effect=_urlopen):
+        with patch.object(adapter, "get_entry", return_value={"uuid": "12345", "body": {"spec": {"payload": "e30="}}}) as mock_get_entry:
+            results = adapter.find_entries_by_payload_hash("sha256:test")
+
+    assert attempts == [7.0, 7.0, 7.0]
+    assert len(results) == 1
+    assert results[0]["uuid"] == "12345"
+    mock_get_entry.assert_called_once_with("12345")
+
+
+def test_sigstore_payload_hash_lookup_retries_when_candidates_are_unmaterialized():
+    with patch.dict(os.environ, {
+        "TC_API_REKOR_PAYLOAD_LOOKUP_RETRIES": "2",
+        "TC_API_REKOR_PAYLOAD_LOOKUP_BACKOFF_SECONDS": "0",
+        "TC_API_REKOR_PAYLOAD_LOOKUP_TIMEOUT_SECONDS": "7",
+    }, clear=False):
+        adapter = SigstoreLogAdapter()
+
+    with patch("tc_api.trucon.adapters.sigstore.urllib.request.urlopen", return_value=_Response(["12345"])):
+        with patch.object(
+            adapter,
+            "get_entry",
+            side_effect=[
+                {"uuid": "12345", "body": {"spec": {"payloadHash": {"algorithm": "sha256", "value": "deadbeef"}}}},
+                {"uuid": "12345", "body": {"spec": {"payload": "e30="}}},
+            ],
+        ) as mock_get_entry:
+            results = adapter.find_entries_by_payload_hash("sha256:test")
+
+    assert len(results) == 1
+    assert results[0]["uuid"] == "12345"
+    assert mock_get_entry.call_count == 2
 
 
 def test_verify_cli_rejects_bare_chain_id_without_troubleshooting_flag():

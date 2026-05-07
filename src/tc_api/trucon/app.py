@@ -935,7 +935,9 @@ def _authorize_caller(caller_service: str, request: Request) -> Optional[JSONRes
         return None
 
     if caller_service == "docktap":
-        if request.method == "POST" and request.url.path == "/commit":
+        if request.method == "POST" and request.url.path in {"/commit", "/commit-intents/reserve", "/init-chain"}:
+            return None
+        if request.method == "GET" and request.url.path.startswith("/init-chain/") and request.url.path.endswith("/baseline"):
             return None
         return JSONResponse(
             status_code=403,

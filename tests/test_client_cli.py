@@ -124,7 +124,7 @@ def test_build_command_auto_falls_back_to_oob(monkeypatch, capsys):
         return FakeResponse(200, {"build_id": "bld-123", "status": "submitted"})
 
     monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
-    monkeypatch.setattr(client_mod, "_acquire_sigstore_token_oob", lambda: "token-xyz")
+    monkeypatch.setattr(client_mod, "_acquire_sigstore_token_oob", lambda operation="docktap": "token-xyz")
 
     rc = client_mod.main([
         "build",
@@ -312,18 +312,18 @@ def test_run_docktap_auto_mode_uses_copy_url_session_without_browser_base(monkey
 
 
 def test_acquire_sigstore_token_oob_caches_token(monkeypatch):
-    class FakeIssuer:
-        def identity_token(self, **kwargs):
-            return "token-xyz"
+    calls = {}
 
-    cached = {}
-    monkeypatch.setattr(client_mod.Issuer, "production", lambda: FakeIssuer())
-    monkeypatch.setattr(client_mod, "cache_sigstore_identity_token", lambda token: cached.setdefault("token", token))
+    def fake_acquire(*, operation):
+        calls["operation"] = operation
+        return "token-xyz"
 
-    token = client_mod._acquire_sigstore_token_oob()
+    monkeypatch.setattr(client_mod, "acquire_sigstore_token_via_oob", fake_acquire)
+
+    token = client_mod._acquire_sigstore_token_oob("build")
 
     assert token == "token-xyz"
-    assert cached["token"] == "token-xyz"
+    assert calls["operation"] == "build"
 
 
 def test_exec_docktap_with_identity_token_uses_expected_execvpe(monkeypatch):

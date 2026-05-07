@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 import requests
-from sigstore.oidc import Issuer
+from tc_api.cli.oidc_verification_code import acquire_sigstore_token_via_oob
 from tc_api.sigstore_identity import cache_sigstore_identity_token
 
 
@@ -248,19 +248,8 @@ def _is_loopback_browser_url(url: str) -> bool:
     return host in {"localhost", "127.0.0.1", "::1"}
 
 
-def _acquire_sigstore_token_oob() -> str:
-    print("Using Sigstore verification-code flow.", file=sys.stderr)
-    print("A public Sigstore login URL will be shown next. Open it in your browser, complete login, and paste the verification code back here.", file=sys.stderr)
-    issuer = Issuer.production()
-    token = issuer.identity_token(
-        client_id=os.environ.get("TC_API_SIGSTORE_OIDC_CLIENT_ID", "sigstore"),
-        client_secret=os.environ.get("TC_API_SIGSTORE_OIDC_CLIENT_SECRET", ""),
-        force_oob=True,
-    )
-    token_str = str(token).strip()
-    if token_str:
-        cache_sigstore_identity_token(token_str)
-    return token_str
+def _acquire_sigstore_token_oob(operation: str = "docktap") -> str:
+    return acquire_sigstore_token_via_oob(operation=operation)
 
 
 def _start_sigstore_identity_session(client: ApiClient, operation: str, flow: str) -> dict[str, Any]:
@@ -322,7 +311,7 @@ def _acquire_sigstore_token_for_cli(
 ) -> str:
     selected_mode = (sigstore_login_mode or "auto").strip().lower()
     if selected_mode == "oob":
-        return _acquire_sigstore_token_oob()
+        return _acquire_sigstore_token_oob(operation)
 
     requested_flow = "server-callback"
     if selected_mode == "auto" and not browser_base_url.strip() and not DEFAULT_BROWSER_BASE_URL:
@@ -391,7 +380,7 @@ def _complete_sigstore_login(
 
     selected_mode = _select_sigstore_login_mode(sigstore_login_mode, continue_url, browser_base_url)
     if selected_mode == "oob":
-        return _acquire_sigstore_token_oob()
+        return _acquire_sigstore_token_oob(operation)
 
     if not continue_url or not session_id or not status_url:
         raise ClientError("Server did not return enough Sigstore login guidance to continue.")

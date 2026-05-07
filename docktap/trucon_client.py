@@ -25,8 +25,13 @@ from tc_api.tlog_client import (
     compute_event_digest,
 )
 from tc_api.sigstore_identity import resolve_sigstore_identity_token
-from tc_api.sigstore_baseline import build_signing_context
+from tc_api.sigstore_baseline import (
+    build_baseline_sigstore_bundle,
+    build_signing_context,
+    get_chain_owner_private_key,
+)
 from tc_api.trucon.internal_transport import request_json
+from tc_api.trucon.owner_authorization import sign_owner_authorization
 
 from sigstore.oidc import IdentityToken, detect_credential
 from sigstore.sign import SigningContext
@@ -36,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 # Only these Docker operation types trigger a TruCon commit.
 SUBMITTABLE_OPERATIONS = {"pull", "create", "start", "stop", "rm"}
+DEFAULT_RUNTIME_CHAIN_ID = os.environ.get("DOCKTAP_RUNTIME_CHAIN_ID", "docktap-runtime")
 
 
 def _resolve_identity_token_str() -> Optional[str]:
@@ -100,6 +106,8 @@ class PendingSubmission:
     event_id: str
     idempotency_key: str
     instance_id: Optional[str]
+    intent_token: Optional[str] = None
+    owner_authorization: Optional[Dict[str, object]] = None
     status: str = "retryable"
     retry_attempts: int = 0
     next_attempt_at: float = 0.0
@@ -191,6 +199,7 @@ class TruConCommitter:
         self._trucon_url = trucon_url or os.environ.get(
             "TRUCON_URL", "http://127.0.0.1:8001"
         )
+        self._runtime_chain_id = os.environ.get("DOCKTAP_RUNTIME_CHAIN_ID", DEFAULT_RUNTIME_CHAIN_ID)
         self._workload_store = workload_store
         self._max_retry_attempts = max_retry_attempts if max_retry_attempts is not None else int(
             os.environ.get("DOCKTAP_TRUCON_MAX_RETRY_ATTEMPTS", "3")
@@ -309,7 +318,7 @@ class TruConCommitter:
     def _resolve_chain_id(self, op_record, operation_type: str, workload_id: Optional[str], launch_id: Optional[str] = None) -> str:
         """Determine chain_id for this operation."""
         if operation_type == "pull":
-            return "default"
+            return self._runtime_chain_id
 
         container_id = op_record.container.get("id") if op_record.container else None
 
@@ -319,7 +328,7 @@ class TruConCommitter:
                 if self._workload_store and container_id:
                     self._workload_store.put(container_id, workload_id, launch_id=launch_id, operation="create")
                 return workload_id
-            return "default"
+            return self._runtime_chain_id
 
         # start / stop / rm — lookup persisted mapping
         if self._workload_store and container_id:
@@ -327,7 +336,7 @@ class TruConCommitter:
             if stored:
                 self._workload_store.touch(container_id, operation_type)
                 return stored
-        return "default"
+        return self._runtime_chain_id
 
     def _resolve_submission_context(
         self,
@@ -338,7 +347,7 @@ class TruConCommitter:
     ) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
         chain_id = self._resolve_chain_id(op_record, operation_type, workload_id, launch_id=launch_id)
         instance_id = None if operation_type == "pull" else (op_record.container.get("id") if op_record.container else None)
-        resolved_workload_id = workload_id or (chain_id if chain_id != "default" else None)
+        resolved_workload_id = workload_id
         resolved_launch_id = launch_id
 
         if operation_type in ("start", "stop", "rm") and self._workload_store and instance_id:
@@ -394,8 +403,10 @@ class TruConCommitter:
                 chain_id=submission.chain_id,
                 event_digest=submission.event_digest,
                 event_id=submission.event_id,
+                intent_token=submission.intent_token,
                 idempotency_key=submission.idempotency_key,
                 instance_id=submission.instance_id,
+                owner_authorization=submission.owner_authorization,
             )
         except Exception as exc:
             if self._is_retryable_commit_error(exc):
@@ -436,6 +447,81 @@ class TruConCommitter:
             "TruCon commit acknowledged after retry for %s (event_id=%s)",
             submission.operation_type,
             submission.event_id,
+        )
+
+    def _ensure_chain_initialized(self, chain_id: str, identity_token_str: str) -> Optional[Dict[str, object]]:
+        try:
+            baseline = request_json(
+                "GET",
+                f"/init-chain/{chain_id}/baseline",
+                caller_service="docktap",
+                timeout=30,
+                trucon_url=self._trucon_url,
+            )
+        except urllib.error.HTTPError as exc:
+            if exc.code == 409:
+                return None
+            raise
+
+        init_token = baseline["init_token"]
+        rtmr_value = baseline.get("rtmr_value")
+        ccel_digest = baseline.get("ccel_digest")
+        ccel_eventlog_b64 = baseline.get("ccel_eventlog_b64")
+        idempotency_key = f"init-chain-{chain_id}"
+
+        reservation = self._reserve_commit_intent(
+            chain_id=chain_id,
+            idempotency_key=idempotency_key,
+            is_baseline=True,
+        )
+        if reservation.get("committed"):
+            return {
+                "record_id": reservation.get("record_id"),
+                "sequence_num": reservation.get("sequence_num", 1),
+            }
+
+        signed_bundle, pub_key_pem, _event_digest = build_baseline_sigstore_bundle(
+            chain_id=chain_id,
+            rtmr_value=rtmr_value,
+            ccel_digest=ccel_digest,
+            ccel_eventlog_b64=ccel_eventlog_b64,
+            identity_token_str=identity_token_str,
+            sequence_num=reservation.get("sequence_num", 1),
+            prev_event_digest=reservation.get("prev_event_digest"),
+            prev_lookup_hash=reservation.get("prev_lookup_hash"),
+        )
+        return request_json(
+            "POST",
+            "/init-chain",
+            json_body={
+                "chain_id": chain_id,
+                "init_token": init_token,
+                "intent_token": reservation.get("intent_token"),
+                "signed_bundle": signed_bundle,
+                "pub_key": pub_key_pem,
+            },
+            caller_service="docktap",
+            timeout=30,
+            trucon_url=self._trucon_url,
+        )
+
+    def _reserve_commit_intent(
+        self,
+        chain_id: str,
+        idempotency_key: Optional[str] = None,
+        is_baseline: bool = False,
+    ) -> Dict[str, object]:
+        return request_json(
+            "POST",
+            "/commit-intents/reserve",
+            json_body={
+                "chain_id": chain_id,
+                "idempotency_key": idempotency_key,
+                "is_baseline": is_baseline,
+            },
+            caller_service="docktap",
+            timeout=30,
+            trucon_url=self._trucon_url,
         )
 
     def _do_submit(self, op_record, operation_type: str, *, workload_id: Optional[str] = None, launch_id: Optional[str] = None) -> bool:
@@ -480,9 +566,29 @@ class TruConCommitter:
                 f"No reusable Sigstore identity token is available for docker {operation_type}"
             )
 
+        self._ensure_chain_initialized(chain_id, identity_token_str)
+
+        idempotency_key = f"idk-{uuid.uuid4().hex[:12]}"
+        reservation = self._reserve_commit_intent(
+            chain_id=chain_id,
+            idempotency_key=idempotency_key,
+        )
+        if reservation.get("committed"):
+            logger.info(
+                "TruCon commit already recorded for %s (record_id=%s, sequence_num=%s)",
+                operation_type,
+                reservation.get("record_id"),
+                reservation.get("sequence_num"),
+            )
+            return True
+
         identity_token = IdentityToken(identity_token_str)
 
         # 5. Build DSSE statement
+        predicate_payload["chain_id"] = chain_id
+        predicate_payload["sequence_num"] = reservation["sequence_num"]
+        predicate_payload["prev_event_digest"] = reservation.get("prev_event_digest")
+        predicate_payload["prev_lookup_hash"] = reservation.get("prev_lookup_hash")
         subject = Subject(
             name=f"trusted-log-chain_{chain_id}",
             digest={"sha384": event_digest.split(":")[1]},
@@ -504,9 +610,19 @@ class TruConCommitter:
 
         bundle_json = bundle.to_json()
         rekor_identifiers = _extract_rekor_identifiers(bundle)
+        owner_authorization = None
+        owner_private_key = get_chain_owner_private_key(chain_id)
+        if owner_private_key is not None:
+            owner_authorization = sign_owner_authorization(
+                private_key=owner_private_key,
+                chain_id=chain_id,
+                sequence_num=reservation["sequence_num"],
+                prev_event_digest=reservation.get("prev_event_digest"),
+                prev_lookup_hash=reservation.get("prev_lookup_hash"),
+                event_digest=event_digest,
+            )
 
         # 7. POST to TruCon /commit
-        idempotency_key = f"idk-{uuid.uuid4().hex[:12]}"
         submission = PendingSubmission(
             operation_type=operation_type,
             bundle_json=bundle_json,
@@ -515,6 +631,8 @@ class TruConCommitter:
             event_id=event_id,
             idempotency_key=idempotency_key,
             instance_id=instance_id,
+            intent_token=reservation.get("intent_token"),
+            owner_authorization=owner_authorization,
         )
 
         try:
@@ -523,8 +641,10 @@ class TruConCommitter:
                 chain_id=chain_id,
                 event_digest=event_digest,
                 event_id=event_id,
+                intent_token=reservation.get("intent_token"),
                 idempotency_key=idempotency_key,
                 instance_id=instance_id,
+                owner_authorization=owner_authorization,
             )
         except Exception as exc:
             if self._is_retryable_commit_error(exc):
@@ -550,16 +670,20 @@ class TruConCommitter:
         chain_id: str,
         event_digest: str,
         event_id: str,
+        intent_token: Optional[str] = None,
         idempotency_key: Optional[str] = None,
         instance_id: Optional[str] = None,
+        owner_authorization: Optional[Dict[str, object]] = None,
     ) -> Dict:
         payload = {
             "bundle": bundle_json,
             "chain_id": chain_id,
             "event_digest": event_digest,
             "event_id": event_id,
+            "intent_token": intent_token,
             "idempotency_key": idempotency_key,
             "instance_id": instance_id,
+            "owner_authorization": owner_authorization,
         }
         return request_json(
             "POST",

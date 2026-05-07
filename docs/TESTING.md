@@ -363,6 +363,114 @@ INFO:trucon:Record <record_id> confirmed with confirmed_rekor_log_id=... confirm
 
 If you need both layers during a live debug session, inspect `logs/docktap-latest.log` for `initial_bundle_rekor_*` and `logs/trucon-latest.log` for `confirmed_rekor_*`.
 
+### Verify The Pull
+
+For the current OpenClaw `docker pull` path, the runtime event is recorded on the `docktap-runtime` chain rather than `default`.
+
+After a successful pull and TruCon confirmation, prefer the one-shot helper instead of exporting evidence manually:
+
+```bash
+cd /path/to/tc_api
+
+./scripts/verify_openclaw_pull.sh
+```
+
+That helper now performs the whole operator flow:
+
+- checks that OpenClaw is really wired to Docktap;
+- refreshes the shared Sigstore token interactively when no reusable token is cached yet;
+- runs the `docker pull` through the OpenClaw gateway;
+- waits for Docktap acceptance and TruCon confirmation on `docktap-runtime`;
+- exports attested-head evidence for `docktap-runtime`;
+- runs `tc-verify --evidence` automatically.
+
+If you do not want that full flow, use the standalone verification script instead. It does not do OIDC login, does not trigger a new `docker pull`, and only verifies an already exported evidence package against the expected immutable head.
+
+Minimal verify-only usage:
+
+```bash
+cd /path/to/tc_api
+
+PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_attested_head.py \
+   --evidence /tmp/docktap-runtime-evidence.json
+```
+
+That path is the intended "simple verify" contract:
+
+- you provide the exported evidence JSON;
+- by default the script trusts the `head_log_id` embedded in that evidence package;
+- if you want one more explicit guardrail, add `--expected-head-log-id <head_log_id>` and the script will reject mismatches before it runs the normal evidence-backed verifier.
+
+Use the full `verify_openclaw_pull.sh` helper only when you also want pull execution, token refresh, log waiting, and evidence export bundled together.
+
+Verifier-side replay now explicitly prefers materialized predecessor candidates over hash-only public duplicates when the same Rekor object can be observed in multiple forms.
+
+Operationally, that means:
+
+- `prev_lookup_hash` is still candidate discovery only;
+- if Rekor returns both a public hash-only body and a replayable `attestation-storage` or mirror-backed form for the same `entry_id|payload_hash`, replay keeps the materialized candidate;
+- `immutable_log.traverse()` applies the same preference when it chooses the previous hop, so the main replay chain does not get stuck on a public/unmaterialized duplicate when a replayable predecessor is already available.
+
+If you want structured verifier output, enable JSON mode for the same helper:
+
+```bash
+cd /path/to/tc_api
+
+VERIFY_JSON=1 ./scripts/verify_openclaw_pull.sh
+```
+
+The script writes the exported evidence to `/tmp/docktap-runtime-evidence.json` by default. Override that path if needed:
+
+```bash
+VERIFY_EVIDENCE_PATH=/tmp/my-openclaw-pull-evidence.json ./scripts/verify_openclaw_pull.sh
+```
+
+Only use the manual evidence-export path below when you need to export fresh evidence explicitly before the standalone verify step or when you are debugging the verifier itself:
+
+```bash
+cd /path/to/tc_api
+
+export TRUCON_SERVICE_TOKEN="$(tr '\0' '\n' < /proc/$(cat logs/pids/tc_api.pid)/environ | sed -n 's/^TRUCON_SERVICE_TOKEN=//p')"
+
+./venv/bin/python - <<'PY'
+import json
+import os
+import urllib.request
+
+url = 'http://127.0.0.1:8001/evidence/docktap-runtime'
+request = urllib.request.Request(
+   url,
+   headers={'Authorization': 'Bearer ' + os.environ['TRUCON_SERVICE_TOKEN']},
+)
+with urllib.request.urlopen(request, timeout=30) as response:
+   evidence = json.loads(response.read().decode('utf-8'))
+with open('/tmp/docktap-runtime-evidence.json', 'w', encoding='utf-8') as handle:
+   json.dump(evidence, handle, indent=2)
+print('/tmp/docktap-runtime-evidence.json')
+PY
+
+PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_attested_head.py \
+   --evidence /tmp/docktap-runtime-evidence.json
+```
+
+The current validated result for the OpenClaw `pull` smoke has the following shape:
+
+```text
+Chain: docktap-runtime
+Status: verified
+Verification tier: public+attestation-storage
+Mode: evidence-backed -> evidence-backed (tee-attested)
+Entries: 4 total, 4 confirmed, 0 pending
+```
+
+The exact entry count depends on how many runtime events already exist on `docktap-runtime`. The important invariants are:
+
+- `sequence_num=1` Event Log 0 baseline (`chain.init`)
+- the latest `head_log_id` in evidence matches the immutable replay head;
+- the replay remains continuous back to Event Log 0.
+
+The important replay invariant is not "take the first Rekor candidate returned for `prev_lookup_hash`". The verifier now prefers the candidate that is actually replayable. In practice this means an `attestation-storage` or mirror-materialized predecessor can override a public hash-only duplicate with the same `entry_id|payload_hash`, which is what keeps the runtime replay continuous across multi-entry OpenClaw pull validation.
+
 ### Token Expiry Behavior
 
 The current behavior is intentionally strict because Sigstore identity tokens are short-lived.
@@ -553,7 +661,7 @@ Equivalent manual flow:
 docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
 
 grep -E 'OPERATION=pull|TruCon commit accepted for pull' logs/docktap-latest.log | tail -n 5
-grep -E 'confirmed_rekor_.*chain_id=default' logs/trucon-latest.log | tail -n 5
+grep -E 'confirmed_rekor_.*chain_id=docktap-runtime' logs/trucon-latest.log | tail -n 5
 ```
 
 Expected result for this smoke test:
@@ -561,9 +669,9 @@ Expected result for this smoke test:
 - OpenClaw-side `docker pull` succeeds, even if the image is already up to date;
 - Docktap logs a new `OPERATION=pull` line;
 - Docktap logs a new `TruCon commit accepted for pull (...)` line;
-- TruCon logs a new `Record <record_id> confirmed ... chain_id=default` line.
+- TruCon logs a new `Record <record_id> confirmed ... chain_id=docktap-runtime` line.
 
-This validates the operator-visible Docktap path. It does not claim that `tc-verify --evidence` over the current `default` chain will pass, because that remains sensitive to older default-chain history.
+This validates the operator-visible Docktap path. For the current `pull` workflow, the supported verification target is the exported evidence for `docktap-runtime`, not the older `default` chain history.
 
 ## Real OCI Mirror Smoke Test
 
@@ -684,6 +792,7 @@ For common issuers, the derived signer identity follows sigstore-python's built-
 
 Notes:
 
+- When `INIT_DEFAULT_CHAIN_ON_STARTUP=true` (the default), tc_api now treats `default`-chain Event Log 0 initialization as mandatory startup work. If no reusable Sigstore identity token is available, startup fails fast with a baseline-initialization error instead of only logging a warning and continuing.
 - The test is skipped unless `TC_API_RUN_REAL_REKOR_TESTS=1` and `TC_API_REAL_REKOR_IDENTITY_TOKEN` are set.
 - It validates real bundle signing, public Rekor upload, retrieval, and immutable replay.
 - The default migration target now uses Rekor `intoto` uploads and expects replay materialization to come from Rekor-hosted attestation storage before any OCI mirror fallback is attempted.
@@ -694,6 +803,7 @@ Notes:
 - A separate DSSE regression smoke remains in place to document the previous public replay limit on canonicalized DSSE bodies.
 - It also includes an opt-in real Rekor + real OCI mirror + real verify multi-chain smoke that requires the head record to re-materialize DSSE payload fields through the mirror after the in-process cache is cleared.
 - Immutable replay now uses signed `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`, with Rekor `payloadHash(sha256)` lookup serving as candidate discovery only.
+- When multiple candidates share the same Rekor identity and payload hash, replay now prefers the materialized `attestation-storage` or mirror-backed form over a public hash-only duplicate, and `traverse()` applies the same rule when choosing predecessor hops.
 - Mixed-regime rollout behavior is still primarily covered by local regression tests rather than live public-Rekor integration.
 - The dedicated predecessor-proof smoke tests intentionally clear the adapter's in-process cache before replay to validate the public candidate-discovery path separately. Same-process cache may still be used as a local fallback during debugging, but cache-assisted replay no longer counts as public proof in verifier results.
 

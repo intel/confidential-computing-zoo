@@ -35,6 +35,7 @@ Each task has:
   - TruCon validates the submitted bundle against the reserved contract before enqueueing it.
   - Immutable replay, TruCon verification, and CLI verification now treat signed predecessor fields as protocol truth and use Rekor payload-hash lookup as candidate discovery only.
   - Immutable replay can now re-materialize hash-only public Rekor DSSE entries from a non-authoritative OCI bundle mirror keyed by `payload_hash`, including registry-backed mirrors.
+  - Replay candidate selection now prefers materialized `attestation-storage` or mirror-backed forms over public hash-only duplicates when they share the same Rekor identity and `payload_hash`, and traversal uses the same rule for predecessor-hop resolution.
   - Opt-in real integration coverage now includes a public Rekor + real OCI mirror + real verify multi-chain smoke path driven from `tc_api.oidc_preflight --fetch`.
   - Remaining work is mostly rollout hardening and legacy compatibility cleanup rather than primary protocol design.
 
@@ -102,6 +103,7 @@ Each task has:
   3. ✅ `/verify-chain/{chain_id}` reports `prev_event_digest`-based continuity results and predecessor candidate counts.
   4. ✅ Pending / unconfirmed records remain representable without falsely reporting predecessor success.
 - **Implementation Note**: verifier-facing continuity now uses `sequence_num`, `prev_event_digest`, and `prev_lookup_hash` as protocol truth. `prev_log_id` remains only in local bookkeeping, compatibility parsing, and some legacy traversal fallbacks.
+- **Implementation Note**: `prev_lookup_hash` discovery is not first-result-wins. When Rekor lookup yields both a public hash-only candidate and a replayable `attestation-storage` or mirror-backed candidate for the same logical predecessor, replay and traversal now keep the materialized candidate.
 
 #### Task 13.6: Finish regression coverage, rollout rules, and operator documentation
 

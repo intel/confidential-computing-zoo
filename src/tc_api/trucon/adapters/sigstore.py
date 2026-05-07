@@ -46,6 +46,18 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
             0.0,
             float(os.environ.get("TC_API_REKOR_ATTESTATION_FETCH_BACKOFF_SECONDS", "0.5")),
         )
+        self.payload_hash_lookup_retries = max(
+            0,
+            int(os.environ.get("TC_API_REKOR_PAYLOAD_LOOKUP_RETRIES", "3")),
+        )
+        self.payload_hash_lookup_backoff_seconds = max(
+            0.0,
+            float(os.environ.get("TC_API_REKOR_PAYLOAD_LOOKUP_BACKOFF_SECONDS", "2.0")),
+        )
+        self.payload_hash_lookup_timeout_seconds = max(
+            1.0,
+            float(os.environ.get("TC_API_REKOR_PAYLOAD_LOOKUP_TIMEOUT_SECONDS", "15")),
+        )
 
     @classmethod
     def _cache_key(cls, rekor_url: str, log_id: str) -> tuple[str, str]:
@@ -580,6 +592,35 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
             "_tc_replay_provenance": "mirror",
             "_tc_mirror_artifact_digest": record.get("artifact_digest"),
         }
+
+    @classmethod
+    def _candidate_preference(cls, candidate: Any) -> tuple[int, int, int, int]:
+        if not isinstance(candidate, dict):
+            return (0, 0, 0, 0)
+        body = cls._decode_body(candidate)
+        materialized = int(
+            cls._entry_has_decodable_payload(candidate)
+            or cls._decoded_attestation_payload_bytes(candidate.get("attestation")) is not None
+        )
+        provenance = candidate.get("_tc_replay_provenance")
+        provenance_rank = {
+            "mirror": 3,
+            "attestation-storage": 2,
+            "cache-assisted": 1,
+        }.get(provenance, 0)
+        has_identity = int(bool(candidate.get("uuid") or candidate.get("entryUUID") or candidate.get("log_id") or candidate.get("logID")))
+        has_payload_hash = int(
+            cls._committed_payload_hash_from_body(body) is not None
+            or cls._public_payload_hash_from_entry(candidate) is not None
+        )
+        return (materialized, provenance_rank, has_identity, has_payload_hash)
+
+    @classmethod
+    def _preferred_predecessor_candidate(cls, candidates: list[Any]) -> Optional[dict[str, Any]]:
+        dict_candidates = [candidate for candidate in candidates if isinstance(candidate, dict)]
+        if not dict_candidates:
+            return None
+        return max(dict_candidates, key=cls._candidate_preference)
         
     def submit_bundle(self, bundle: Bundle, prev_log_id: Optional[str] = None) -> Tuple[str, str, Any]:
         try:
@@ -678,17 +719,60 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
         )
 
         public_lookup_failed = False
-        try:
-            with urllib.request.urlopen(request, timeout=15) as response:
-                response_data = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            logger.warning("Rekor payload-hash lookup failed for %s: HTTP %s", payload_hash, exc.code)
-            public_lookup_failed = True
-            response_data = []
-        except Exception as exc:
-            logger.warning("Rekor payload-hash lookup failed for %s: %s", payload_hash, exc)
-            public_lookup_failed = True
-            response_data = []
+        response_data: Any = []
+        max_attempts = self.payload_hash_lookup_retries + 1
+        for attempt in range(1, max_attempts + 1):
+            retryable_empty_result = False
+            try:
+                with urllib.request.urlopen(request, timeout=self.payload_hash_lookup_timeout_seconds) as response:
+                    response_data = json.loads(response.read().decode("utf-8"))
+                if isinstance(response_data, dict):
+                    lookup_entries = response_data.get("entries") or response_data.get("ids") or response_data.get("uuids") or []
+                elif isinstance(response_data, list):
+                    lookup_entries = response_data
+                else:
+                    lookup_entries = []
+                retryable_empty_result = not lookup_entries
+                if not retryable_empty_result or attempt == max_attempts:
+                    break
+                logger.warning(
+                    "Rekor payload-hash lookup returned no entries for %s on attempt %s/%s; retrying",
+                    payload_hash,
+                    attempt,
+                    max_attempts,
+                )
+            except urllib.error.HTTPError as exc:
+                public_lookup_failed = True
+                response_data = []
+                retryable_status = exc.code in {408, 409, 425, 429, 500, 502, 503, 504}
+                if retryable_status and attempt < max_attempts:
+                    logger.warning(
+                        "Rekor payload-hash lookup failed for %s: HTTP %s on attempt %s/%s; retrying",
+                        payload_hash,
+                        exc.code,
+                        attempt,
+                        max_attempts,
+                    )
+                else:
+                    logger.warning("Rekor payload-hash lookup failed for %s: HTTP %s", payload_hash, exc.code)
+                    break
+            except Exception as exc:
+                public_lookup_failed = True
+                response_data = []
+                if attempt < max_attempts:
+                    logger.warning(
+                        "Rekor payload-hash lookup failed for %s: %s on attempt %s/%s; retrying",
+                        payload_hash,
+                        exc,
+                        attempt,
+                        max_attempts,
+                    )
+                else:
+                    logger.warning("Rekor payload-hash lookup failed for %s: %s", payload_hash, exc)
+                    break
+
+            if attempt < max_attempts and self.payload_hash_lookup_backoff_seconds > 0:
+                time.sleep(self.payload_hash_lookup_backoff_seconds)
 
         if isinstance(response_data, dict):
             candidate_ids = response_data.get("entries") or response_data.get("ids") or response_data.get("uuids") or []
@@ -697,19 +781,43 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
         else:
             candidate_ids = []
 
-        for candidate_id in candidate_ids:
-            if not isinstance(candidate_id, (str, int)):
-                continue
-            candidate_key = str(candidate_id)
-            if candidate_key in seen_ids:
-                continue
-            try:
-                entry = self.get_entry(candidate_key)
-            except Exception as exc:
-                logger.warning("Failed to materialize Rekor candidate %s for %s: %s", candidate_key, payload_hash, exc)
-                continue
-            seen_ids.add(candidate_key)
-            results.append(entry)
+        for attempt in range(1, max_attempts + 1):
+            results = []
+            seen_ids = set()
+            for candidate_id in candidate_ids:
+                if not isinstance(candidate_id, (str, int)):
+                    continue
+                candidate_key = str(candidate_id)
+                if candidate_key in seen_ids:
+                    continue
+                try:
+                    entry = self.get_entry(candidate_key)
+                except Exception as exc:
+                    logger.warning("Failed to materialize Rekor candidate %s for %s: %s", candidate_key, payload_hash, exc)
+                    continue
+                seen_ids.add(candidate_key)
+                results.append(entry)
+
+            materialized_results = [
+                entry
+                for entry in results
+                if isinstance(entry, dict)
+                and (
+                    self._entry_has_decodable_payload(entry)
+                    or self._decoded_attestation_payload_bytes(entry.get("attestation")) is not None
+                )
+            ]
+            retryable_unmaterialized_result = bool(candidate_ids) and not materialized_results
+            if not retryable_unmaterialized_result or attempt == max_attempts:
+                break
+            logger.warning(
+                "Rekor payload-hash lookup returned only unmaterialized candidates for %s on attempt %s/%s; retrying",
+                payload_hash,
+                attempt,
+                max_attempts,
+            )
+            if self.payload_hash_lookup_backoff_seconds > 0:
+                time.sleep(self.payload_hash_lookup_backoff_seconds)
 
         cached_entry = self._find_cached_entry_by_payload_hash(self.rekor_url, payload_hash)
         if cached_entry is not None:
@@ -777,7 +885,7 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
                         elif "prev_lookup_hash" in predicate:
                             candidates = self.find_entries_by_payload_hash(predicate.get("prev_lookup_hash"))
                             if candidates:
-                                candidate = candidates[0]
+                                candidate = self._preferred_predecessor_candidate(candidates)
                                 current_id = candidate.get("uuid") or candidate.get("log_id") or candidate.get("entry_id")
                             else:
                                 current_id = None

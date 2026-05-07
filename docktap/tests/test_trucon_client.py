@@ -235,7 +235,9 @@ class TestBestEffortFailureHandling:
         monkeypatch.setenv("DOCKTAP_SIGSTORE_IDENTITY_TOKEN", "env-token")
         mock_signing_context, _ = _mock_signing_context()
 
-        with patch("trucon_client.detect_credential") as detect_credential, \
+        with patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
+             patch("trucon_client.detect_credential") as detect_credential, \
              patch("trucon_client.IdentityToken", return_value="tok") as identity_token, \
              patch("trucon_client.build_signing_context", return_value=mock_signing_context), \
              patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 1}):
@@ -262,7 +264,9 @@ class TestBestEffortFailureHandling:
         mock_signing_context.signer.return_value.__enter__ = lambda s: mock_signer
         mock_signing_context.signer.return_value.__exit__ = lambda s, *a: None
 
-        with patch("trucon_client.detect_credential", return_value="fake-token"), \
+        with patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
              patch("trucon_client.build_signing_context", return_value=mock_signing_context) as build_ctx, \
              patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 1}), \
@@ -277,6 +281,41 @@ class TestBestEffortFailureHandling:
         assert log_args[1] == "pull"
         assert str(log_args[2]).startswith("evt-")
         assert log_args[3:] == ("rec-1", 1, "rekor-uuid-123", "456")
+
+    def test_submit_operation_signs_reservation_backed_predicate(self):
+        committer = TruConCommitter()
+        rec = _make_record(
+            operation={"type": "pull"},
+            image={"name": "nginx", "tag": "latest"},
+        )
+
+        captured_statement = {}
+        mock_signer = MagicMock()
+        mock_bundle = MagicMock()
+        mock_bundle.to_json.return_value = '{"fake": "bundle"}'
+
+        def _capture_statement(statement):
+            captured_statement["json"] = json.loads(statement._contents.decode("utf-8"))
+            return mock_bundle
+
+        mock_signer.sign_dsse.side_effect = _capture_statement
+        mock_signing_context = MagicMock()
+        mock_signing_context.signer.return_value.__enter__ = lambda s: mock_signer
+        mock_signing_context.signer.return_value.__exit__ = lambda s, *a: None
+
+        with patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 7, "prev_event_digest": "sha384:prev", "prev_lookup_hash": "sha256:lookup"}), \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
+             patch("trucon_client.IdentityToken", return_value="tok"), \
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context), \
+             patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 7}):
+            assert committer.submit_operation(rec, "pull") is True
+
+        predicate = captured_statement["json"]["predicate"]
+        assert predicate["chain_id"] == "docktap-runtime"
+        assert predicate["sequence_num"] == 7
+        assert predicate["prev_event_digest"] == "sha384:prev"
+        assert predicate["prev_lookup_hash"] == "sha256:lookup"
 
     def test_extract_rekor_identifiers_prefers_uuid_and_keeps_log_index(self):
         bundle = MagicMock()
@@ -297,7 +336,9 @@ class TestBestEffortFailureHandling:
         )
         mock_signing_context = MagicMock()
         mock_signing_context.signer.side_effect = RuntimeError("sign fail")
-        with patch("trucon_client.detect_credential", return_value="fake-token"), \
+        with patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
              patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
@@ -371,7 +412,9 @@ class TestRetryAndAcknowledgement:
         rec = _make_record(operation={"type": "start"}, container={"id": "abc123"})
         mock_signing_context, _ = _mock_signing_context()
 
-        with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("down")), \
+        with patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
+             patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("down")), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
              patch("trucon_client.build_signing_context", return_value=mock_signing_context):
@@ -394,6 +437,8 @@ class TestRetryAndAcknowledgement:
             "_post_to_trucon",
             side_effect=[urllib.error.URLError("down"), {"record_id": "rec-1", "sequence_num": 7}],
         ) as mock_post, \
+             patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
              patch("trucon_client.build_signing_context", return_value=mock_signing_context):
@@ -416,6 +461,8 @@ class TestRetryAndAcknowledgement:
             "_post_to_trucon",
             side_effect=[urllib.error.URLError("down"), {"record_id": "rec-9", "sequence_num": 9}],
         ), \
+             patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
              patch("trucon_client.build_signing_context", return_value=mock_signing_context):
@@ -434,9 +481,11 @@ class TestRetryAndAcknowledgement:
         mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("still-down")), \
+             patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-               patch("trucon_client.build_signing_context", return_value=mock_signing_context):
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             committer.submit_operation(rec, "rm")
             committer.process_retry_queue(now=time.monotonic())
@@ -452,9 +501,11 @@ class TestRetryAndAcknowledgement:
         mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("down")), \
+             patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-               patch("trucon_client.build_signing_context", return_value=mock_signing_context):
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             committer.submit_operation(rec, "start")
 
@@ -467,9 +518,11 @@ class TestRetryAndAcknowledgement:
         mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 1}), \
+             patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-               patch("trucon_client.build_signing_context", return_value=mock_signing_context):
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             committer.submit_operation(rec, "stop")
 
@@ -482,9 +535,11 @@ class TestRetryAndAcknowledgement:
         mock_signing_context, _ = _mock_signing_context()
 
         with patch.object(committer, "_post_to_trucon", side_effect=urllib.error.URLError("still-down")), \
+             patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
-               patch("trucon_client.build_signing_context", return_value=mock_signing_context):
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context):
 
             committer.submit_operation(rec, "rm")
             committer.process_retry_queue(now=time.monotonic())

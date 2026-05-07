@@ -305,6 +305,44 @@ def test_sigstore_adapter_enriches_public_hash_only_entry_from_attestation_befor
     assert entry["body"]["spec"]["payload"] == base64.b64encode(payload_bytes).decode("utf-8")
 
 
+def test_sigstore_adapter_traverse_prefers_materialized_candidate_for_prev_lookup_hash(mock_rekor):
+    adapter = SigstoreLogAdapter()
+    predecessor_entry = _make_rekor_entry("evt-1", sequence_num=2)
+    predecessor_entry["uuid"] = "materialized-predecessor"
+    predecessor_payload_hash = SigstoreLogAdapter._payload_hash_from_entry(predecessor_entry)
+    assert predecessor_payload_hash is not None
+    algorithm, value = predecessor_payload_hash.split(":", 1)
+
+    public_duplicate = {
+        "uuid": "public-duplicate",
+        "body": {
+            "spec": {
+                "payloadHash": {"algorithm": algorithm, "value": value},
+                "signatures": [{"verifier": "cert"}],
+                "envelopeHash": {"algorithm": algorithm, "value": value},
+            }
+        },
+    }
+
+    head_entry = _make_rekor_entry("evt-2", sequence_num=3, prev_lookup_hash=predecessor_payload_hash)
+    head_entry["uuid"] = "head-entry"
+
+    def _get_entry(log_id):
+        if log_id == "head-entry":
+            return head_entry
+        if log_id == "materialized-predecessor":
+            return predecessor_entry
+        raise AssertionError(f"unexpected log id: {log_id}")
+
+    with patch.object(adapter, "get_entry", side_effect=_get_entry):
+        with patch.object(adapter, "find_entries_by_payload_hash", return_value=[public_duplicate, predecessor_entry]):
+            traversed = adapter.traverse("head-entry", count=10)
+
+    assert len(traversed) == 2
+    assert traversed[0]["uuid"] == "head-entry"
+    assert traversed[1]["uuid"] == "materialized-predecessor"
+
+
 def test_sigstore_adapter_merges_attestation_from_raw_rekor_response(mock_rekor):
     adapter = SigstoreLogAdapter()
     statement = {
@@ -1091,6 +1129,49 @@ def test_verify_record_reports_decode_failed_when_candidates_cannot_be_normalize
     assert result.details["entries"][0]["predecessor_status"] == "decode_failed"
     assert result.details["entries"][0]["candidate_count"] == 1
     assert result.details["entries"][0]["materialized_candidate_count"] == 0
+
+
+def test_verify_record_prefers_materialized_candidate_over_public_duplicate_with_same_identity():
+    first_entry = _make_rekor_entry("evt-1")
+    first_entry["uuid"] = "shared-predecessor"
+    first_payload_b64 = first_entry["body"]["spec"]["payload"]
+    lookup_hash = "sha256:" + hashlib.sha256(base64.b64decode(first_payload_b64)).hexdigest()
+
+    public_duplicate = {
+        "uuid": "shared-predecessor",
+        "body": {
+            "spec": {
+                "payloadHash": {
+                    "algorithm": "sha256",
+                    "value": lookup_hash.split(":", 1)[1],
+                }
+            }
+        },
+    }
+    materialized_duplicate = json.loads(json.dumps(first_entry))
+    materialized_duplicate["uuid"] = "shared-predecessor"
+    materialized_duplicate["attestation"] = {"payload": first_payload_b64}
+    materialized_duplicate["_tc_replay_provenance"] = "attestation-storage"
+
+    second_entry = _make_rekor_entry("evt-2")
+    second_payload = json.loads(base64.b64decode(second_entry["body"]["spec"]["payload"]).decode("utf-8"))
+    second_payload["predicate"]["prev_lookup_hash"] = lookup_hash
+    second_entry["body"]["spec"]["payload"] = base64.b64encode(json.dumps(second_payload).encode("utf-8")).decode("utf-8")
+
+    api = TrustedLogAPI(
+        immutable_log=StubImmutableLog(
+            entries=[second_entry],
+            candidates={lookup_hash: [public_duplicate, materialized_duplicate]},
+        )
+    )
+
+    with patch("tc_api.tlog_client._extract_signer_identity", return_value="alice@example.com"):
+        result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
+
+    assert result.success is True
+    assert result.details["entries"][0]["predecessor_status"] == "proven"
+    assert result.details["entries"][0]["candidate_count"] == 1
+    assert result.details["entries"][0]["materialized_candidate_count"] == 1
 
 
 def test_verify_record_reports_ambiguous_when_multiple_candidates_match():

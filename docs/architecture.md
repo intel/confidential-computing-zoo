@@ -216,6 +216,8 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - The preferred replay-materialization path is public Rekor retrieval plus attestation storage on `intoto` entries; mirror resolution is used when public body and attestation retrieval still do not expose enough payload material for replay.
 - Mirror publication still happens after Rekor confirmation, so immutable verification may briefly report `public-only` or `public+attestation-storage` before the asynchronous mirror queue drains.
 - During replay, the verifier keeps Rekor inclusion as the authoritative public anchor and treats OCI mirror only as fallback payload materialization.
+- Candidate discovery by `prev_lookup_hash` is intentionally non-authoritative. If the same logical predecessor is observed both as a public hash-only Rekor body and as a replayable `attestation-storage` or mirror-materialized form with the same `entry_id|payload_hash`, replay now prefers the materialized form.
+- `SigstoreLogAdapter.traverse()` applies the same preference when resolving predecessor hops, so the main replay chain follows the best available replayable predecessor instead of stopping on the first public/unmaterialized duplicate returned by Rekor lookup.
 - `tc-verify` now needs to surface this explicitly through verification tiers such as `public-only`, `public+attestation-storage`, `public+mirrored`, and `public+mirrored+attested`.
 
 ### 4.2 Docktap Service

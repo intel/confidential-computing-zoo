@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import patch
 
 from tc_api.tlog_client import TrustedLogAPI
@@ -45,3 +46,34 @@ def test_init_chain_uses_active_identity_token_for_baseline_signing():
     assert result == {"record_id": "rec-123", "sequence_num": 1}
     assert captured["identity_token_str"] == "active-token-123"
     assert captured["chain_id"] == "tc-api-service"
+
+
+def test_init_chain_raises_when_baseline_bundle_cannot_be_built():
+    responses = [
+        {
+            "init_token": "init-123",
+            "rtmr_value": "aa" * 48,
+            "ccel_digest": "sha384:" + ("bb" * 48),
+            "ccel_eventlog_b64": "Zm9v",
+        },
+    ]
+
+    def fake_request_json(method, path, **kwargs):
+        assert responses, f"Unexpected request {method} {path}"
+        return responses.pop(0)
+
+    tlog = TrustedLogAPI(immutable_log=_ImmutableLog())
+
+    with patch("tc_api.tlog_client.request_json", side_effect=fake_request_json), \
+         patch.object(tlog, "_reserve_commit_intent", return_value={
+             "intent_token": "intent-123",
+             "sequence_num": 1,
+             "prev_event_digest": None,
+             "prev_lookup_hash": None,
+         }), \
+         patch(
+             "tc_api.tlog_client.build_baseline_sigstore_bundle",
+             side_effect=RuntimeError("missing token"),
+         ):
+        with pytest.raises(RuntimeError, match="Failed to build baseline Sigstore bundle"):
+            tlog.init_chain("tc-api-service", identity_token_str="active-token-123")

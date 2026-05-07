@@ -28,12 +28,14 @@ from .sigstore_identity import MissingSigstoreIdentityTokenError, cache_sigstore
 from .config import (
     HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR,
     DOCKER_REGISTRY, DOCKER_REPOSITORY, ENABLE_TDX, TRUCON_URL,
+    INIT_DEFAULT_CHAIN_ON_STARTUP,
     TRANSPARENCY_SERVICE_CHAIN_ID,
     TRANSPARENCY_WORKLOAD_CHAIN_PREFIX,
 )
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
+logging.getLogger("tuf.api._payload").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 SIGSTORE_OIDC_ISSUER_URL = os.environ.get("TC_API_SIGSTORE_OIDC_ISSUER", "https://oauth2.sigstore.dev/auth")
@@ -566,11 +568,16 @@ async def lifespan(app: FastAPI):
         trucon_url=TRUCON_URL,
     )
 
-    # Default-chain Event Log 0 is mandatory for externally replayable verification.
-    try:
-        app.state.trusted_log.init_chain("default")
-    except Exception as e:
-        logger.warning("init-chain for 'default' failed (non-fatal): %s", e)
+    if INIT_DEFAULT_CHAIN_ON_STARTUP:
+        # Default-chain Event Log 0 is mandatory for externally replayable verification.
+        try:
+            app.state.trusted_log.init_chain("default")
+        except Exception as e:
+            raise RuntimeError(
+                "Default-chain baseline initialization failed during startup. "
+                "Provide a reusable Sigstore identity token or disable INIT_DEFAULT_CHAIN_ON_STARTUP. "
+                f"Underlying error: {e}"
+            ) from e
     
     yield
     

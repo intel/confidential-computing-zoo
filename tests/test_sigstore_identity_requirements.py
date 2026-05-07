@@ -26,6 +26,16 @@ def test_required_sigstore_identity_uses_request_token():
     assert _resolve_required_sigstore_identity_token("build", "request-token") == "request-token"
 
 
+def test_startup_fails_when_default_chain_baseline_is_required_and_init_fails():
+    with patch("tc_api.main.INIT_DEFAULT_CHAIN_ON_STARTUP", True), patch(
+        "tc_api.tlog_client.TrustedLogAPI.init_chain",
+        side_effect=RuntimeError("missing baseline token"),
+    ):
+        with pytest.raises(RuntimeError, match="Default-chain baseline initialization failed during startup"):
+            with TestClient(main_mod.app):
+                pass
+
+
 def test_required_sigstore_identity_returns_http_400_when_missing():
     with patch(
         "tc_api.main.resolve_sigstore_identity_token",

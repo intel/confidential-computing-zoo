@@ -295,6 +295,61 @@ def _candidate_identity(candidate: Dict[str, Any]) -> str:
     return f"{entry_id}|{payload_hash}"
 
 
+def _summarize_replay_candidate(entry: Dict[str, Any]) -> Dict[str, Any]:
+    body = _decode_rekor_body(entry)
+    payload = _decode_dsse_payload(body)
+    predicate = payload.get("predicate", {}) if isinstance(payload, dict) else {}
+    return {
+        "entry_id": entry.get("entry_id") or entry.get("log_id") or entry.get("uuid") or entry.get("entryUUID"),
+        "sequence_num": predicate.get("sequence_num") if isinstance(predicate, dict) else entry.get("sequence_num"),
+        "event_id": predicate.get("event_id") if isinstance(predicate, dict) else entry.get("event_id"),
+        "chain_id": predicate.get("chain_id") if isinstance(predicate, dict) else entry.get("chain_id"),
+        "digest": predicate.get("digest") if isinstance(predicate, dict) else entry.get("digest"),
+        "payload_hash": entry.get("payload_hash") or _extract_committed_payload_hash(body),
+        "replay_provenance": entry.get("_tc_replay_provenance") or entry.get("replay_provenance") or "public",
+        "has_decodable_payload": _decode_dsse_payload(body) != {},
+        "has_attestation": entry.get("attestation") is not None,
+        "body_kind": body.get("kind") if isinstance(body, dict) else None,
+        "body_spec_keys": sorted((body.get("spec") or {}).keys()) if isinstance(body, dict) and isinstance(body.get("spec"), dict) else [],
+        "errors": entry.get("errors", []),
+    }
+
+
+def _summarize_normalized_candidate(candidate: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "entry_id": candidate.get("entry_id"),
+        "sequence_num": candidate.get("sequence_num"),
+        "event_id": candidate.get("event_id"),
+        "chain_id": candidate.get("chain_id"),
+        "digest": candidate.get("digest"),
+        "payload_hash": candidate.get("payload_hash"),
+        "prev_lookup_hash": candidate.get("prev_lookup_hash"),
+        "prev_event_digest": candidate.get("prev_event_digest"),
+        "replay_provenance": candidate.get("replay_provenance"),
+        "history_materialization_provenance": candidate.get("history_materialization_provenance"),
+        "public_history_status": candidate.get("public_history_status"),
+        "errors": candidate.get("errors", []),
+    }
+
+
+def _candidate_quality(candidate: Dict[str, Any]) -> tuple[int, int, int, int]:
+    materialized = int(
+        candidate.get("sequence_num") is not None
+        and candidate.get("digest") is not None
+        and candidate.get("payload_hash") is not None
+    )
+    provenance = candidate.get("replay_provenance")
+    provenance_rank = {
+        "mirror": 3,
+        "attestation-storage": 2,
+        "public": 1,
+        "cache-assisted": 0,
+    }.get(provenance, 0)
+    has_chain_id = int(candidate.get("chain_id") is not None)
+    fewer_errors = -len(candidate.get("errors") or [])
+    return materialized, provenance_rank, has_chain_id, fewer_errors
+
+
 def _matched_predecessor_contract(candidate: Dict[str, Any]) -> tuple[Any, Any, Any, Any]:
     return (
         candidate.get("chain_id"),
@@ -345,11 +400,16 @@ def _materialize_predecessor_candidates(
         return [], None
 
     candidate_sources: List[Dict[str, Any]] = []
+    local_candidates: List[Dict[str, Any]] = []
+    discovered_raw_summaries: List[Dict[str, Any]] = []
+    normalized_discovered_summaries: List[Dict[str, Any]] = []
     for entry in entries:
         if entry is current:
             continue
         if entry.get("payload_hash") == payload_hash:
-            candidate_sources.append(dict(entry))
+            local_candidate = dict(entry)
+            candidate_sources.append(local_candidate)
+            local_candidates.append(_summarize_normalized_candidate(local_candidate))
 
     finder = getattr(immutable_log, "find_entries_by_payload_hash", None)
     if callable(finder):
@@ -358,17 +418,38 @@ def _materialize_predecessor_candidates(
         except Exception as exc:
             return candidate_sources, str(exc)
         for raw_entry in discovered or []:
+            if isinstance(raw_entry, dict):
+                discovered_raw_summaries.append(_summarize_replay_candidate(raw_entry))
             normalized = _normalize_verification_entry(raw_entry, 0, None)
             candidate_sources.append(normalized)
+            normalized_discovered_summaries.append(_summarize_normalized_candidate(normalized))
 
-    deduped: List[Dict[str, Any]] = []
-    seen: set[str] = set()
+    if current.get("sequence_num") == 3:
+        logger.info(
+            "replay_predecessor_candidates=%s",
+            canonical_json(
+                {
+                    "chain_id": current.get("chain_id"),
+                    "current_event_id": current.get("event_id"),
+                    "current_sequence_num": current.get("sequence_num"),
+                    "prev_lookup_hash": payload_hash,
+                    "local_candidate_count": len(local_candidates),
+                    "local_candidates": local_candidates,
+                    "discovered_raw_candidate_count": len(discovered_raw_summaries),
+                    "discovered_raw_candidates": discovered_raw_summaries,
+                    "normalized_discovered_candidate_count": len(normalized_discovered_summaries),
+                    "normalized_discovered_candidates": normalized_discovered_summaries,
+                }
+            ),
+        )
+
+    deduped_by_key: Dict[str, Dict[str, Any]] = {}
     for candidate in candidate_sources:
         candidate_key = _candidate_identity(candidate)
-        if candidate_key in seen:
-            continue
-        seen.add(candidate_key)
-        deduped.append(candidate)
+        existing = deduped_by_key.get(candidate_key)
+        if existing is None or _candidate_quality(candidate) > _candidate_quality(existing):
+            deduped_by_key[candidate_key] = candidate
+    deduped = list(deduped_by_key.values())
     return deduped, None
 
 
@@ -484,6 +565,26 @@ def _annotate_predecessor_verification(entries: List[Dict[str, Any]], immutable_
             and candidate.get("payload_hash") is not None
         ]
         current["materialized_candidate_count"] = len(materialized_candidates)
+        if current.get("sequence_num") == 3:
+            logger.info(
+                "replay_predecessor_decision=%s",
+                canonical_json(
+                    {
+                        "chain_id": current.get("chain_id"),
+                        "current_event_id": current.get("event_id"),
+                        "current_sequence_num": current.get("sequence_num"),
+                        "prev_lookup_hash": current.get("prev_lookup_hash"),
+                        "candidate_count": len(candidates),
+                        "materialized_candidate_count": len(materialized_candidates),
+                        "candidate_summaries": [
+                            _summarize_normalized_candidate(candidate) for candidate in candidates
+                        ],
+                        "materialized_candidate_summaries": [
+                            _summarize_normalized_candidate(candidate) for candidate in materialized_candidates
+                        ],
+                    }
+                ),
+            )
         if materialized_candidates and len(materialized_candidates) != len(candidates):
             current.setdefault("errors", []).append(
                 "Some predecessor candidates could not be normalized into replayable entries"
@@ -775,11 +876,13 @@ class TrustedLogAPI:
             if e.code == 409:
                 logger.info("Chain '%s' already initialized, skipping init-chain", chain_id)
                 return None
-            logger.warning("init-chain baseline failed for chain '%s': HTTP %d", chain_id, e.code)
-            return None
+            raise RuntimeError(
+                f"init-chain baseline failed for chain '{chain_id}': HTTP {e.code}"
+            ) from e
         except urllib.error.URLError as e:
-            logger.warning("TruCon unreachable for init-chain baseline: %s", e)
-            return None
+            raise RuntimeError(
+                f"TruCon unreachable for init-chain baseline on chain '{chain_id}': {e}"
+            ) from e
 
         init_token = baseline["init_token"]
         rtmr_value = baseline.get("rtmr_value")
@@ -797,11 +900,13 @@ class TrustedLogAPI:
             if e.code == 409:
                 logger.info("Chain '%s' already initialized during baseline reservation, skipping", chain_id)
                 return None
-            logger.warning("init-chain reservation failed for chain '%s': HTTP %d", chain_id, e.code)
-            return None
+            raise RuntimeError(
+                f"init-chain reservation failed for chain '{chain_id}': HTTP {e.code}"
+            ) from e
         except urllib.error.URLError as e:
-            logger.warning("TruCon unreachable for init-chain reservation: %s", e)
-            return None
+            raise RuntimeError(
+                f"TruCon unreachable for init-chain reservation on chain '{chain_id}': {e}"
+            ) from e
 
         if intent.get("committed"):
             return {
@@ -822,8 +927,9 @@ class TrustedLogAPI:
                 prev_lookup_hash=intent.get("prev_lookup_hash"),
             )
         except Exception as e:
-            logger.warning("Failed to build baseline Sigstore bundle for chain '%s': %s", chain_id, e)
-            return None
+            raise RuntimeError(
+                f"Failed to build baseline Sigstore bundle for chain '{chain_id}': {e}"
+            ) from e
 
         # Phase 2: POST init-chain
         post_payload = {
@@ -850,11 +956,13 @@ class TrustedLogAPI:
             if e.code == 409:
                 logger.info("Chain '%s' already initialized (race), skipping", chain_id)
                 return None
-            logger.warning("init-chain POST failed for chain '%s': HTTP %d", chain_id, e.code)
-            return None
+            raise RuntimeError(
+                f"init-chain POST failed for chain '{chain_id}': HTTP {e.code}"
+            ) from e
         except urllib.error.URLError as e:
-            logger.warning("TruCon unreachable for init-chain POST: %s", e)
-            return None
+            raise RuntimeError(
+                f"TruCon unreachable for init-chain POST on chain '{chain_id}': {e}"
+            ) from e
 
     def _reserve_commit_intent(
         self,

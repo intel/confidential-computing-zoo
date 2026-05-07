@@ -15,6 +15,7 @@ tc-api = "tc_api.main:main"
 tc-trucon = "tc_api.trucon.app:main"
 tc-verify = "tc_api.cli.verify:main"
 tc-oidc-preflight = "tc_api.oidc_preflight:main"
+tc-oidc-verification-code = "tc_api.cli.oidc_verification_code:main"
 tc-client = "tc_api.cli.client:main"
 
 [tool.setuptools]

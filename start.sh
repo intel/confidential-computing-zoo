@@ -16,6 +16,13 @@ TRUCON_PID=""
 DOCKTAP_PID=""
 START_MODE="production"
 COMMAND="start"
+RESET_STATE="false"
+
+TRUCON_QUEUE_DIR="${TRUCON_QUEUE_DIR:-/dev/shm/tc_api_queue}"
+TRUCON_DB_PATH="${COMMIT_QUEUE_DB:-$TRUCON_QUEUE_DIR/queue.db}"
+TRUCON_LEGACY_DB_PATH="/dev/shm/commit_queue.db"
+TRUCON_LOCK_PATH="${TRUCON_LOCK_PATH:-$TRUCON_QUEUE_DIR/trucon.lock}"
+DOCKTAP_WORKLOAD_DB_PATH="${DOCKTAP_WORKLOAD_DB:-/dev/shm/docktap/container_map.db}"
 
 echo "Starting TC API Service..."
 
@@ -25,14 +32,41 @@ Usage:
     ./start.sh
     ./start.sh start [dev]
     ./start.sh stop
-    ./start.sh restart [dev]
+    ./start.sh restart [dev] [--reset-state]
+    ./start.sh reset-state
 
 Examples:
     ./start.sh
     ./start.sh dev
     ./start.sh restart
     ./start.sh restart dev
+    ./start.sh restart --reset-state
+    ./start.sh reset-state
 EOF
+}
+
+remove_state_file_family() {
+    local base_path="$1"
+
+    rm -f "$base_path" "$base_path-shm" "$base_path-wal"
+}
+
+reset_local_state() {
+    echo "Resetting local TruCon and Docktap state..."
+
+    remove_state_file_family "$TRUCON_DB_PATH"
+    if [[ "$TRUCON_LEGACY_DB_PATH" != "$TRUCON_DB_PATH" ]]; then
+        remove_state_file_family "$TRUCON_LEGACY_DB_PATH"
+    fi
+    rm -f "$TRUCON_LOCK_PATH"
+    rmdir "$TRUCON_QUEUE_DIR" 2>/dev/null || true
+
+    remove_state_file_family "$DOCKTAP_WORKLOAD_DB_PATH"
+    if [[ -n "$DOCKTAP_WORKLOAD_DB_PATH" ]]; then
+        rmdir "$(dirname "$DOCKTAP_WORKLOAD_DB_PATH")" 2>/dev/null || true
+    fi
+
+    echo "✓ Local TruCon and Docktap state cleared."
 }
 
 default_python_bin() {
@@ -42,6 +76,49 @@ default_python_bin() {
         echo "$PWD/venv/bin/python"
     else
         echo "python3"
+    fi
+}
+
+startup_baseline_required() {
+    local raw_value="${INIT_DEFAULT_CHAIN_ON_STARTUP:-true}"
+    raw_value="$(printf '%s' "$raw_value" | tr '[:upper:]' '[:lower:]')"
+    [[ "$raw_value" == "1" || "$raw_value" == "true" || "$raw_value" == "yes" || "$raw_value" == "on" ]]
+}
+
+has_reusable_sigstore_token() {
+    "$PYTHON_BIN" - <<'PY'
+from tc_api.sigstore_identity import resolve_sigstore_identity_token
+
+token = resolve_sigstore_identity_token(
+    operation="baseline",
+    allow_interactive=False,
+    require_token=False,
+)
+raise SystemExit(0 if token else 1)
+PY
+}
+
+ensure_startup_sigstore_token() {
+    if ! startup_baseline_required; then
+        return 0
+    fi
+
+    if has_reusable_sigstore_token; then
+        return 0
+    fi
+
+    if [[ ! -t 0 || ! -t 1 ]]; then
+        echo "Error: default-chain baseline startup requires a reusable Sigstore identity token, but no interactive terminal is available." >&2
+        echo "Run '$PYTHON_BIN -m tc_api.cli.oidc_verification_code --operation baseline --format export' first, or set TC_API_REAL_REKOR_IDENTITY_TOKEN." >&2
+        exit 1
+    fi
+
+    echo "No reusable Sigstore identity token found for default-chain baseline startup."
+    "$PYTHON_BIN" -m tc_api.cli.oidc_verification_code --operation baseline --format none
+
+    if ! has_reusable_sigstore_token; then
+        echo "Error: Sigstore identity token acquisition did not produce a reusable token for baseline startup." >&2
+        exit 1
     fi
 }
 
@@ -192,10 +269,28 @@ case "${1:-start}" in
         ;;
     restart)
         COMMAND="restart"
-        if [[ "${2:-}" == "dev" ]]; then
-            START_MODE="dev"
-        elif [[ -n "${2:-}" ]]; then
-            echo "Error: unsupported restart mode '${2}'" >&2
+        shift
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                dev)
+                    START_MODE="dev"
+                    ;;
+                --reset-state)
+                    RESET_STATE="true"
+                    ;;
+                *)
+                    echo "Error: unsupported restart argument '$1'" >&2
+                    usage >&2
+                    exit 1
+                    ;;
+            esac
+            shift
+        done
+        ;;
+    reset-state)
+        COMMAND="reset-state"
+        if [[ $# -gt 1 ]]; then
+            echo "Error: reset-state does not accept extra arguments" >&2
             usage >&2
             exit 1
         fi
@@ -217,8 +312,17 @@ if [[ "$COMMAND" == "stop" ]]; then
     exit 0
 fi
 
+if [[ "$COMMAND" == "reset-state" ]]; then
+    stop_services
+    reset_local_state
+    exit 0
+fi
+
 if [[ "$COMMAND" == "restart" ]]; then
     stop_services
+    if [[ "$RESET_STATE" == "true" ]]; then
+        reset_local_state
+    fi
 fi
 
 # Check if Docker is available
@@ -280,6 +384,8 @@ export TRUCON_AUTH_DISABLED=${TRUCON_AUTH_DISABLED:-false}
 export INIT_DEFAULT_CHAIN_ON_STARTUP=${INIT_DEFAULT_CHAIN_ON_STARTUP:-true}
 export PYTHON_BIN=$(default_python_bin)
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+
+ensure_startup_sigstore_token
 
 if [ "$DOCKTAP_REQUIRE_ATTESTATION" = "1" ]; then
     export DOCKTAP_ATTESTATION_API_URL=${DOCKTAP_ATTESTATION_API_URL:-http://127.0.0.1:${PORT}}
