@@ -427,6 +427,31 @@ class TestRetryAndAcknowledgement:
         assert snapshot[0]["status"] == "retryable"
         assert snapshot[0]["retry_attempts"] == 0
 
+    def test_async_queued_operation_is_processed_by_retry_worker(self):
+        committer = self._make_committer()
+        rec = _make_record(operation={"type": "start"}, container={"id": "abc123"})
+        mock_signing_context, _ = _mock_signing_context()
+
+        with patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
+             patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 1}), \
+             patch("trucon_client.detect_credential", return_value="fake-token"), \
+             patch("trucon_client.IdentityToken", return_value="tok"), \
+             patch("trucon_client.build_signing_context", return_value=mock_signing_context):
+
+            queue_id = committer.enqueue_operation(rec, "start")
+            snapshot = committer.get_retry_snapshot()
+            assert len(snapshot) == 1
+            assert snapshot[0]["event_id"] == queue_id
+            assert snapshot[0]["status"] == "queued"
+
+            committer.process_retry_queue(now=time.monotonic())
+
+        snapshot = committer.get_retry_snapshot()
+        assert len(snapshot) == 1
+        assert snapshot[0]["status"] == "acknowledged"
+        assert snapshot[0]["record_id"] == "rec-1"
+
     def test_retry_reuses_same_idempotency_key(self):
         committer = self._make_committer()
         rec = _make_record(operation={"type": "start"}, container={"id": "abc123"})

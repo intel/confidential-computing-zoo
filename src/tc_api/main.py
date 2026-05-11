@@ -1771,7 +1771,7 @@ async def create_lunks(request: CreateLunksRequest):
         else:
             print("Proxy is unsetted.")
 
-        identity_token = resolve_sigstore_identity_token("create_lunks", logger=logger, allow_interactive=True)
+        identity_token = resolve_sigstore_identity_token("create_lunks", logger=logger, allow_interactive=False)
         tlog_id = None
         if identity_token:
             tlog_status, tlog_id = docker_service.commit_and_save_receipt("create_lunks", '', tlog, record_id, identity_token)
@@ -1836,7 +1836,7 @@ async def create_lunks(request: MountLunksRequest):
         else:
             print("Proxy is unsetted.")
 
-        identity_token = resolve_sigstore_identity_token("mount_lunks", logger=logger, allow_interactive=True)
+        identity_token = resolve_sigstore_identity_token("mount_lunks", logger=logger, allow_interactive=False)
         tlog_id = None
         if identity_token:
             tlog_status, tlog_id = docker_service.commit_and_save_receipt("mount_lunks", '', tlog, record_id, identity_token)
@@ -1903,7 +1903,7 @@ async def create_lunks(request: UnmountLunksRequest):
         else:
             print("Proxy is unsetted.")
 
-        identity_token = resolve_sigstore_identity_token("unmount_lunks", logger=logger, allow_interactive=True)
+        identity_token = resolve_sigstore_identity_token("unmount_lunks", logger=logger, allow_interactive=False)
         tlog_id = None
         if identity_token:
             tlog_status, tlog_id = docker_service.commit_and_save_receipt("unmount_lunks", '', tlog, record_id, identity_token)

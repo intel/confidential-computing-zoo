@@ -239,15 +239,24 @@ def test_handle_client_blocks_submittable_requests_without_attestation_token():
     assert client_socket.closed is True
 
 
-def test_handle_client_returns_503_when_trucon_commit_fails_after_successful_docker_pull():
-    class FailingCommitter:
+def test_handle_client_returns_pull_success_before_async_trucon_submission():
+    class AsyncCommitter:
+        def __init__(self):
+            self.submit_called = False
+            self.enqueued = []
+
         def submit_operation(self, *args, **kwargs):
-            return False
+            self.submit_called = True
+            return True
+
+        def enqueue_operation(self, op_record, operation_type, *, workload_id=None, launch_id=None):
+            self.enqueued.append((op_record, operation_type, workload_id, launch_id))
+            return "queued-pull"
 
     proxy = DockerProxyServer(
         listen_socket_path="/tmp/test-docker-proxy.sock",
         docker_socket_path="/var/run/docker.sock",
-        trucon_committer=FailingCommitter(),
+        trucon_committer=AsyncCommitter(),
     )
     client_socket = FakeClientSocket()
     docker_socket = FakeDockerSocket()
@@ -270,7 +279,212 @@ def test_handle_client_returns_503_when_trucon_commit_fails_after_successful_doc
         proxy.handle_client(client_socket)
 
     assert len(client_socket.sent) == 1
-    assert client_socket.sent[0].startswith(b"HTTP/1.1 503 Service Unavailable")
-    assert b"Trusted log submission failed for docker pull after Docker returned 200" in client_socket.sent[0]
+    assert client_socket.sent[0] == response_data
+    assert proxy._trucon_committer.submit_called is False
+    assert len(proxy._trucon_committer.enqueued) == 1
+    assert proxy._trucon_committer.enqueued[0][1] == "pull"
     enrich_response.assert_called_once_with(op_record, response_data)
     log_operation_json.assert_called_once_with(op_record)
+
+
+def test_handle_client_returns_create_success_before_async_trucon_submission():
+    class AsyncCommitter:
+        def __init__(self):
+            self.submit_called = False
+            self.enqueued = []
+
+        def submit_operation(self, *args, **kwargs):
+            self.submit_called = True
+            return True
+
+        def enqueue_operation(self, op_record, operation_type, *, workload_id=None, launch_id=None):
+            self.enqueued.append((op_record, operation_type, workload_id, launch_id))
+            return "queued-123"
+
+    committer = AsyncCommitter()
+    proxy = DockerProxyServer(
+        listen_socket_path="/tmp/test-docker-proxy.sock",
+        docker_socket_path="/var/run/docker.sock",
+        trucon_committer=committer,
+    )
+    client_socket = FakeClientSocket()
+    docker_socket = FakeDockerSocket()
+    request_data = (
+        b"POST /v1.41/containers/create?name=mycontainer HTTP/1.1\r\n"
+        b"Host: localhost\r\nContent-Type: application/json\r\n\r\n"
+        b'{"Image":"hello-world:latest","Labels":{"io.trucon.workload-id":"demo-workload","io.trucon.launch-id":"launch-1"}}'
+    )
+    response_data = b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\n{}"
+    op_record = OperationRecord(
+        operation={"type": "create", "action": "docker create", "api_path": "/v1.41/containers/create", "method": "POST"},
+        image={"name": "hello-world:latest"},
+        container={"name": "mycontainer", "id": "cid-123"},
+        response={"status": 201},
+    )
+
+    with patch("proxy.docker_proxy.socket.socket", return_value=docker_socket), \
+         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+         patch.object(proxy, "_read_client_request", side_effect=[(request_data, None), (None, "empty")]), \
+         patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
+         patch.object(proxy, "_parse_http_request", return_value=("create", "/v1.41/containers/create", {})), \
+         patch.object(proxy, "_read_docker_response", return_value=response_data), \
+         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("proxy.docker_proxy.log_operation_json") as log_operation_json:
+        proxy.handle_client(client_socket)
+
+    assert client_socket.sent == [response_data]
+    assert committer.submit_called is False
+    assert len(committer.enqueued) == 1
+    assert committer.enqueued[0][1] == "create"
+    assert committer.enqueued[0][2] == "demo-workload"
+    assert committer.enqueued[0][3] == "launch-1"
+    enrich_response.assert_called_once_with(op_record, response_data)
+    log_operation_json.assert_called_once_with(op_record)
+
+
+def test_create_grants_followup_start_without_reusable_token():
+    class AsyncCommitter:
+        def __init__(self):
+            self.enqueued = []
+
+        def submit_operation(self, *args, **kwargs):
+            return True
+
+        def enqueue_operation(self, op_record, operation_type, *, workload_id=None, launch_id=None):
+            self.enqueued.append((op_record, operation_type, workload_id, launch_id))
+            return f"queued-{operation_type}"
+
+    committer = AsyncCommitter()
+    proxy = DockerProxyServer(
+        listen_socket_path="/tmp/test-docker-proxy.sock",
+        docker_socket_path="/var/run/docker.sock",
+        trucon_committer=committer,
+    )
+
+    create_client_socket = FakeClientSocket()
+    create_docker_socket = FakeDockerSocket()
+    create_request = (
+        b"POST /v1.41/containers/create?name=mycontainer HTTP/1.1\r\n"
+        b"Host: localhost\r\nContent-Type: application/json\r\n\r\n"
+        b'{"Image":"hello-world:latest"}'
+    )
+    create_response = b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\n{}"
+    create_record = OperationRecord(
+        operation={"type": "create", "action": "docker create", "api_path": "/v1.41/containers/create", "method": "POST"},
+        image={"name": "hello-world:latest"},
+        container={"name": "mycontainer", "id": "container-1234567890"},
+        response={"status": 201},
+    )
+
+    with patch("proxy.docker_proxy.socket.socket", return_value=create_docker_socket), \
+         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+         patch.object(proxy, "_read_client_request", side_effect=[(create_request, None), (None, "empty")]), \
+         patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=create_record), \
+         patch.object(proxy, "_parse_http_request", return_value=("create", "/v1.41/containers/create", {})), \
+         patch.object(proxy, "_read_docker_response", return_value=create_response), \
+         patch("proxy.docker_proxy.enrich_from_response"), \
+         patch("proxy.docker_proxy.log_operation_json"):
+        proxy.handle_client(create_client_socket)
+
+    start_client_socket = FakeClientSocket()
+    start_docker_socket = FakeDockerSocket()
+    start_request = b"POST /v1.41/containers/container-123456/start HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    start_response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
+    start_record = OperationRecord(
+        operation={"type": "start", "action": "docker start", "api_path": "/v1.41/containers/container-123456/start", "method": "POST"},
+        container={"id": "container-123456"},
+        response={"status": 204},
+    )
+
+    with patch("proxy.docker_proxy.socket.socket", return_value=start_docker_socket), \
+         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
+         patch.object(proxy, "_read_client_request", side_effect=[(start_request, None), (None, "empty")]), \
+         patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=start_record), \
+         patch.object(proxy, "_parse_http_request", return_value=("start", "/v1.41/containers/container-123456/start", {})), \
+         patch.object(proxy, "_read_docker_response", return_value=start_response), \
+         patch("proxy.docker_proxy.enrich_from_response"), \
+         patch("proxy.docker_proxy.log_operation_json"):
+        proxy.handle_client(start_client_socket)
+
+    assert start_docker_socket.sent == [start_request]
+    assert start_client_socket.sent == [start_response]
+    assert [item[1] for item in committer.enqueued] == ["create", "start"]
+
+
+def test_rm_revokes_lifecycle_grant_and_later_stop_requires_token_again():
+    class AsyncCommitter:
+        def __init__(self):
+            self.enqueued = []
+
+        def submit_operation(self, *args, **kwargs):
+            return True
+
+        def enqueue_operation(self, op_record, operation_type, *, workload_id=None, launch_id=None):
+            self.enqueued.append((op_record, operation_type, workload_id, launch_id))
+            return f"queued-{operation_type}"
+
+    committer = AsyncCommitter()
+    proxy = DockerProxyServer(
+        listen_socket_path="/tmp/test-docker-proxy.sock",
+        docker_socket_path="/var/run/docker.sock",
+        trucon_committer=committer,
+    )
+
+    create_record = OperationRecord(
+        operation={"type": "create", "action": "docker create", "api_path": "/v1.41/containers/create", "method": "POST"},
+        image={"name": "hello-world:latest"},
+        container={"name": "mycontainer", "id": "container-abcdef123456"},
+        response={"status": 201},
+    )
+    with patch("proxy.docker_proxy.socket.socket", return_value=FakeDockerSocket()), \
+         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+         patch.object(proxy, "_read_client_request", side_effect=[(b"POST /v1.41/containers/create?name=mycontainer HTTP/1.1\r\nHost: localhost\r\n\r\n", None), (None, "empty")]), \
+         patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=create_record), \
+         patch.object(proxy, "_parse_http_request", return_value=("create", "/v1.41/containers/create", {})), \
+         patch.object(proxy, "_read_docker_response", return_value=b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\n{}"), \
+         patch("proxy.docker_proxy.enrich_from_response"), \
+         patch("proxy.docker_proxy.log_operation_json"):
+        proxy.handle_client(FakeClientSocket())
+
+    rm_client_socket = FakeClientSocket()
+    rm_docker_socket = FakeDockerSocket()
+    rm_request = b"DELETE /v1.41/containers/container-abcdef123456?force=1 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    rm_response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
+    rm_record = OperationRecord(
+        operation={"type": "rm", "action": "docker rm", "api_path": "/v1.41/containers/container-abcdef123456", "method": "DELETE"},
+        container={"id": "container-abcdef123456"},
+        response={"status": 204},
+    )
+
+    with patch("proxy.docker_proxy.socket.socket", return_value=rm_docker_socket), \
+         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
+         patch.object(proxy, "_read_client_request", side_effect=[(rm_request, None), (None, "empty")]), \
+         patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=rm_record), \
+         patch.object(proxy, "_parse_http_request", return_value=("rm", "/v1.41/containers/container-abcdef123456", {})), \
+         patch.object(proxy, "_read_docker_response", return_value=rm_response), \
+         patch("proxy.docker_proxy.enrich_from_response"), \
+         patch("proxy.docker_proxy.log_operation_json"):
+        proxy.handle_client(rm_client_socket)
+
+    assert rm_docker_socket.sent == [rm_request]
+    assert rm_client_socket.sent == [rm_response]
+
+    stop_client_socket = FakeClientSocket()
+    stop_request = b"POST /v1.41/containers/container-abcdef123456/stop HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    stop_record = OperationRecord(
+        operation={"type": "stop", "action": "docker stop", "api_path": "/v1.41/containers/container-abcdef123456/stop", "method": "POST"},
+        container={"id": "container-abcdef123456"},
+    )
+
+    with patch("proxy.docker_proxy.socket.socket") as socket_ctor, \
+         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
+         patch.object(proxy, "_read_client_request", side_effect=[(stop_request, None), (None, "empty")]), \
+         patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=stop_record), \
+         patch.object(proxy, "_parse_http_request", return_value=("stop", "/v1.41/containers/container-abcdef123456/stop", {})), \
+         patch("proxy.docker_proxy.enrich_from_response"), \
+         patch("proxy.docker_proxy.log_operation_json"):
+        proxy.handle_client(stop_client_socket)
+
+    socket_ctor.assert_not_called()
+    assert len(stop_client_socket.sent) == 1
+    assert stop_client_socket.sent[0].startswith(b"HTTP/1.1 428 Precondition Required")

@@ -264,6 +264,56 @@ def test_build_package_returns_interactive_guidance_when_token_missing():
     assert detail["interactive_continue_url"] == "/api/sigstore/interactive-login?operation=build&session_id=sess-123"
 
 
+def test_create_lunks_skips_interactive_sigstore_login_when_token_missing():
+    payload = {
+        "user_id": "test-user",
+        "passwd": "/root/luks-key",
+        "vfs_path": "/root/vfs",
+        "vfs_size": "1G",
+    }
+
+    class DummyTrustedLog:
+        def init_record(self):
+            return SimpleNamespace(record_id="rec-123")
+
+        def add_entry(self, *args, **kwargs):
+            return None
+
+    with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "sigstore.oidc.Issuer.production"
+    ) as mock_production, patch(
+        "tc_api.main.resolve_sigstore_identity_token",
+        return_value=None,
+    ) as resolve_token, patch(
+        "tc_api.main.docker_service.create_lunks_block",
+        return_value=("/dev/mapper/test-user", "/dev/loop0"),
+    ), patch(
+        "tc_api.main.docker_service.commit_and_save_receipt"
+    ) as commit_receipt, patch(
+        "tc_api.main.docker_service.verify_chain_state"
+    ) as verify_chain_state, patch(
+        "tc_api.main.docker_service.update_lunks_status"
+    ) as update_lunks_status:
+        mock_production.return_value.identity_token.return_value = "fake-identity-token"
+        with TestClient(main_mod.app) as client:
+            client.app.state.trusted_log = DummyTrustedLog()
+            response = client.post("/api/create_lunks", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["mapper_dir"] == "/dev/mapper/test-user"
+    assert response.json()["loop_device"] == "/dev/loop0"
+    assert resolve_token.call_args.kwargs["allow_interactive"] is False
+    commit_receipt.assert_not_called()
+    verify_chain_state.assert_not_called()
+    update_lunks_status.assert_called_once_with(
+        "test-user",
+        "create success",
+        step="create_lunks completed successfully",
+        log_id=None,
+        transparencyLog_verify="skipped",
+    )
+
+
 def test_build_package_accepts_missing_app_binary():
     payload = {
         "dockerfile": "FROM busybox\nCMD [\"sh\", \"-c\", \"echo ok\"]\n",

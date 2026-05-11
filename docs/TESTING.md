@@ -441,90 +441,10 @@ If you need both layers during a live debug session, inspect `logs/docktap-lates
 
 For the current OpenClaw `docker pull` path, the runtime event is recorded on the `docktap-runtime` chain rather than `default`.
 
-After a successful pull and TruCon confirmation, prefer the one-shot helper instead of exporting evidence manually:
-
 ```bash
 cd /path/to/tc_api
 
-./scripts/verify_openclaw_pull.sh
-```
-
-That helper now performs the whole operator flow:
-
-- checks that OpenClaw is really wired to Docktap;
-- refreshes the shared Sigstore token interactively when no reusable token is cached yet;
-- runs the `docker pull` through the OpenClaw gateway;
-- waits for Docktap acceptance and TruCon confirmation on `docktap-runtime`;
-- exports attested-head evidence for `docktap-runtime`;
-- runs `tc-verify --evidence` automatically.
-
-If you do not want that full flow, use the standalone verification script instead. It does not do OIDC login, does not trigger a new `docker pull`, and only verifies an already exported evidence package against the expected immutable head.
-
-Minimal verify-only usage:
-
-```bash
-cd /path/to/tc_api
-
-PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_attested_head.py \
-   --evidence /tmp/docktap-runtime-evidence.json
-```
-
-That path is the intended "simple verify" contract:
-
-- you provide the exported evidence JSON;
-- by default the script trusts the `head_log_id` embedded in that evidence package;
-- if you want one more explicit guardrail, add `--expected-head-log-id <head_log_id>` and the script will reject mismatches before it runs the normal evidence-backed verifier.
-
-Use the full `verify_openclaw_pull.sh` helper only when you also want pull execution, token refresh, log waiting, and evidence export bundled together.
-
-Verifier-side replay now explicitly prefers materialized predecessor candidates over hash-only public duplicates when the same Rekor object can be observed in multiple forms.
-
-Operationally, that means:
-
-- `prev_lookup_hash` is still candidate discovery only;
-- if Rekor returns both a public hash-only body and a replayable `attestation-storage` or mirror-backed form for the same `entry_id|payload_hash`, replay keeps the materialized candidate;
-- `immutable_log.traverse()` applies the same preference when it chooses the previous hop, so the main replay chain does not get stuck on a public/unmaterialized duplicate when a replayable predecessor is already available.
-
-If you want structured verifier output, enable JSON mode for the same helper:
-
-```bash
-cd /path/to/tc_api
-
-VERIFY_JSON=1 ./scripts/verify_openclaw_pull.sh
-```
-
-The script writes the exported evidence to `/tmp/docktap-runtime-evidence.json` by default. Override that path if needed:
-
-```bash
-VERIFY_EVIDENCE_PATH=/tmp/my-openclaw-pull-evidence.json ./scripts/verify_openclaw_pull.sh
-```
-
-Only use the manual evidence-export path below when you need to export fresh evidence explicitly before the standalone verify step or when you are debugging the verifier itself:
-
-```bash
-cd /path/to/tc_api
-
-export TRUCON_SERVICE_TOKEN="$(tr '\0' '\n' < /proc/$(cat logs/pids/tc_api.pid)/environ | sed -n 's/^TRUCON_SERVICE_TOKEN=//p')"
-
-./venv/bin/python - <<'PY'
-import json
-import os
-import urllib.request
-
-url = 'http://127.0.0.1:8001/evidence/docktap-runtime'
-request = urllib.request.Request(
-   url,
-   headers={'Authorization': 'Bearer ' + os.environ['TRUCON_SERVICE_TOKEN']},
-)
-with urllib.request.urlopen(request, timeout=30) as response:
-   evidence = json.loads(response.read().decode('utf-8'))
-with open('/tmp/docktap-runtime-evidence.json', 'w', encoding='utf-8') as handle:
-   json.dump(evidence, handle, indent=2)
-print('/tmp/docktap-runtime-evidence.json')
-PY
-
-PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_attested_head.py \
-   --evidence /tmp/docktap-runtime-evidence.json
+PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_current_attested_head.py docktap-runtime
 ```
 
 The current validated result for the OpenClaw `pull` smoke has the following shape:
@@ -1051,3 +971,33 @@ The current implementation uses mock responses for external tools:
 - KBS service calls are mocked
 
 For production testing, consider using actual tool integrations or more sophisticated mocking.
+
+
+### TC_API build -> PUBLISH -> DEPLOY test flow
+
+#### 1. Start tc_api server
+```bash
+./start.sh restart --reset-state dev
+```
+#### 2. Start kbs server(If is alraedy,ignore)
+```bash
+docker run -it --network host --privileged   -v /var/run/docker.sock:/var/run/docker.sock   -v /dev/tdx_guest:/dev/tdx_guest   -v /etc/tdx-attest.conf:/etc/tdx-attest.conf   -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf   -v /etc/hosts:/etc/hosts   -v /sys/kernel/config:/sys/kernel/config   -p 8006:8006 615d05c05f89
+```
+#### 3.1 Test build images(before test,you should edit the build.json)
+```bash
+cd /home/tc_api/src
+
+python -m tc_api.cli.client build --payload-file ../examples/tc-client/build.json
+```
+#### 3.2 Test publish images(before test,you should edit the publish.json)
+```bash
+cd /home/tc_api/src
+
+python -m tc_api.cli.client publish --payload-file ../examples/tc-client/publish.json
+```
+#### 3.3 Test deploy images(before test,you should edit the deploy.json)
+```bash
+cd /home/tc_api/src
+
+python -m tc_api.cli.client deploy --payload-file ../examples/tc-client/deploy.json
+```

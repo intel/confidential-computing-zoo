@@ -25,6 +25,8 @@ LAUNCH_LABEL = "io.trucon.launch-id"
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+DEFAULT_LIFECYCLE_GRANT_TTL_SECONDS = 120
+
 
 class DockerProxyServer:
     """Unix socket proxy server that intercepts Docker CLI operations"""
@@ -45,6 +47,8 @@ class DockerProxyServer:
         self.tracker = OperationTracker()
         self._trucon_committer = trucon_committer
         self._runtime_adapter = DockerRuntimeAdapter(runtime_engine=runtime_engine)
+        self._lifecycle_grants: Dict[str, float] = {}
+        self._lifecycle_grant_lock = threading.Lock()
 
     def set_log_callback(self, callback):
         """Set callback function for logging operations"""
@@ -297,6 +301,72 @@ class DockerProxyServer:
         return os.environ.get("DOCKTAP_REQUIRE_ATTESTATION", "1") == "1"
 
     @staticmethod
+    def _lifecycle_grant_ttl_seconds() -> int:
+        raw_value = os.environ.get("DOCKTAP_LIFECYCLE_GRANT_TTL_SECONDS", "").strip()
+        if not raw_value:
+            return DEFAULT_LIFECYCLE_GRANT_TTL_SECONDS
+        try:
+            return max(0, int(raw_value))
+        except ValueError:
+            return DEFAULT_LIFECYCLE_GRANT_TTL_SECONDS
+
+    def _cleanup_expired_lifecycle_grants(self) -> None:
+        now = time.monotonic()
+        with self._lifecycle_grant_lock:
+            expired = [key for key, expiry in self._lifecycle_grants.items() if expiry <= now]
+            for key in expired:
+                self._lifecycle_grants.pop(key, None)
+
+    def _grant_lifecycle_session(self, container_id: Optional[str], container_name: Optional[str] = None) -> None:
+        ttl_seconds = self._lifecycle_grant_ttl_seconds()
+        if ttl_seconds <= 0:
+            return
+
+        expiry = time.monotonic() + ttl_seconds
+        with self._lifecycle_grant_lock:
+            if container_id:
+                self._lifecycle_grants[container_id] = expiry
+            if container_name:
+                self._lifecycle_grants[container_name] = expiry
+
+    def _resolve_lifecycle_grant(self, container_ref: Optional[str]) -> Optional[str]:
+        if not container_ref:
+            return None
+
+        self._cleanup_expired_lifecycle_grants()
+        with self._lifecycle_grant_lock:
+            if container_ref in self._lifecycle_grants:
+                return container_ref
+            for granted_ref in self._lifecycle_grants:
+                if granted_ref.startswith(container_ref) or container_ref.startswith(granted_ref):
+                    return granted_ref
+        return None
+
+    def _consume_lifecycle_grant(self, container_ref: Optional[str]) -> bool:
+        granted_ref = self._resolve_lifecycle_grant(container_ref)
+        if not granted_ref:
+            return False
+
+        ttl_seconds = self._lifecycle_grant_ttl_seconds()
+        if ttl_seconds > 0:
+            with self._lifecycle_grant_lock:
+                if granted_ref in self._lifecycle_grants:
+                    self._lifecycle_grants[granted_ref] = time.monotonic() + ttl_seconds
+        return True
+
+    def _revoke_lifecycle_grant(self, *container_refs: Optional[str]) -> None:
+        refs = [ref for ref in container_refs if ref]
+        if not refs:
+            return
+
+        with self._lifecycle_grant_lock:
+            for container_ref in refs:
+                self._lifecycle_grants.pop(container_ref, None)
+                for granted_ref in list(self._lifecycle_grants.keys()):
+                    if granted_ref.startswith(container_ref) or container_ref.startswith(granted_ref):
+                        self._lifecycle_grants.pop(granted_ref, None)
+
+    @staticmethod
     def _absolute_url(base_url: str, path: str) -> str:
         return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
 
@@ -456,10 +526,16 @@ class DockerProxyServer:
                     self._log_callback(log_data)
 
                 if operation in SUBMITTABLE_OPERATIONS and self._attestation_gate_enabled() and not has_reusable_identity_token():
-                    response = self._create_attestation_required_response(operation, session_id)
-                    client_socket.sendall(response)
-                    logger.info("Blocked docker %s until attestation login completes", operation)
-                    break
+                    container_ref = None
+                    if operation in {"start", "stop", "rm"}:
+                        container_ref = op_record.container.get("id") or container_name
+
+                    if not (operation in {"start", "stop", "rm"} and self._consume_lifecycle_grant(container_ref)):
+                        response = self._create_attestation_required_response(operation, session_id)
+                        client_socket.sendall(response)
+                        logger.info("Blocked docker %s until attestation login completes", operation)
+                        break
+                    logger.info("Allowed docker %s using lifecycle session grant for container=%s", operation, container_ref)
 
                 docker_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 docker_sock.settimeout(30)
@@ -478,6 +554,7 @@ class DockerProxyServer:
                     log_operation_json(op_record)
 
                     should_delay_success_response = False
+                    async_submission = None
                     if self._trucon_committer is not None:
                         op_type = op_record.operation.get("type")
                         response_status = (op_record.response or {}).get("status")
@@ -494,24 +571,51 @@ class DockerProxyServer:
                                 workload_id = self._extract_workload_id(request_data)
                                 launch_id = self._extract_launch_id(request_data)
 
-                            commit_ok = self._trucon_committer.submit_operation(
-                                op_record,
-                                op_type,
-                                workload_id=workload_id,
-                                launch_id=launch_id,
-                            )
-                            if should_delay_success_response and not commit_ok:
-                                client_socket.sendall(
-                                    self._create_commit_failed_response(op_type, response_status)
-                                )
-                                logger.warning(
-                                    "Returned Docker error to client because TruCon commit failed for %s after Docker status %s",
+                            if should_delay_success_response and op_type in {"pull", "create", "start", "stop", "rm"}:
+                                async_submission = (op_type, workload_id, launch_id)
+                            else:
+                                commit_ok = self._trucon_committer.submit_operation(
+                                    op_record,
                                     op_type,
-                                    response_status,
+                                    workload_id=workload_id,
+                                    launch_id=launch_id,
                                 )
-                                break
+                                if should_delay_success_response and not commit_ok:
+                                    client_socket.sendall(
+                                        self._create_commit_failed_response(op_type, response_status)
+                                    )
+                                    logger.warning(
+                                        "Returned Docker error to client because TruCon commit failed for %s after Docker status %s",
+                                        op_type,
+                                        response_status,
+                                    )
+                                    break
+
+                    op_type = op_record.operation.get("type")
+                    response_status = (op_record.response or {}).get("status")
+                    if op_type == "create" and isinstance(response_status, int) and 200 <= response_status < 400:
+                        self._grant_lifecycle_session(
+                            op_record.container.get("id"),
+                            op_record.container.get("name"),
+                        )
 
                     client_socket.sendall(response)
+                    if async_submission is not None:
+                        op_type, workload_id, launch_id = async_submission
+                        queue_id = self._trucon_committer.enqueue_operation(
+                            op_record,
+                            op_type,
+                            workload_id=workload_id,
+                            launch_id=launch_id,
+                        )
+                        logger.info(
+                            "Queued background TruCon submission for %s after Docker returned %s (queue_id=%s)",
+                            op_type,
+                            response_status,
+                            queue_id,
+                        )
+                    if op_type == "rm" and isinstance(response_status, int) and 200 <= response_status < 400:
+                        self._revoke_lifecycle_grant(op_record.container.get("id"), container_name)
                 else:
                     logger.error("No response from Docker")
                     break

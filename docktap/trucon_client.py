@@ -14,7 +14,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import urllib.request
 import urllib.error
 
@@ -115,6 +115,9 @@ class PendingSubmission:
     record_id: Optional[str] = None
     sequence_num: Optional[int] = None
     resolved_at: Optional[float] = None
+    op_record: Any = None
+    workload_id: Optional[str] = None
+    launch_id: Optional[str] = None
 
 
 class RetryQueuedError(RuntimeError):
@@ -263,11 +266,43 @@ class TruConCommitter:
             due_items = [
                 submission
                 for submission in self._pending_submissions.values()
-                if submission.status == "retryable" and submission.next_attempt_at <= current_time
+                if submission.status == "queued"
+                or (submission.status == "retryable" and submission.next_attempt_at <= current_time)
             ]
 
         for submission in due_items:
+            if submission.status == "queued":
+                self._process_queued_submission(submission)
+                continue
             self._retry_submission(submission, current_time)
+
+    def enqueue_operation(
+        self,
+        op_record,
+        operation_type: str,
+        *,
+        workload_id: Optional[str] = None,
+        launch_id: Optional[str] = None,
+    ) -> str:
+        """Queue a Docker lifecycle operation for asynchronous TruCon submission."""
+        queue_event_id = f"queued-{uuid.uuid4().hex[:12]}"
+        submission = PendingSubmission(
+            operation_type=operation_type,
+            bundle_json="",
+            chain_id="",
+            event_digest="",
+            event_id=queue_event_id,
+            idempotency_key=queue_event_id,
+            instance_id=None,
+            status="queued",
+            op_record=op_record,
+            workload_id=workload_id,
+            launch_id=launch_id,
+        )
+        with self._retry_lock:
+            self._pending_submissions[queue_event_id] = submission
+        logger.info("Queued asynchronous TruCon submission for %s (queue_id=%s)", operation_type, queue_event_id)
+        return queue_event_id
 
     def get_retry_snapshot(self) -> List[Dict[str, Optional[str]]]:
         """Return a serializable snapshot of local retry state for tests and diagnostics."""
@@ -448,6 +483,39 @@ class TruConCommitter:
             submission.operation_type,
             submission.event_id,
         )
+
+    def _process_queued_submission(self, submission: PendingSubmission) -> None:
+        with self._retry_lock:
+            current = self._pending_submissions.get(submission.event_id)
+            if current is not submission:
+                return
+
+        try:
+            self._do_submit(
+                submission.op_record,
+                submission.operation_type,
+                workload_id=submission.workload_id,
+                launch_id=submission.launch_id,
+            )
+        except RetryQueuedError:
+            with self._retry_lock:
+                self._pending_submissions.pop(submission.event_id, None)
+            logger.info(
+                "Queued TruCon submission moved to retryable state for %s (queue_id=%s)",
+                submission.operation_type,
+                submission.event_id,
+            )
+        except Exception as exc:
+            self._mark_terminal(submission, exc)
+            logger.warning(
+                "Queued TruCon submission terminally failed for %s (queue_id=%s): %s",
+                submission.operation_type,
+                submission.event_id,
+                exc,
+            )
+        else:
+            with self._retry_lock:
+                self._pending_submissions.pop(submission.event_id, None)
 
     def _ensure_chain_initialized(self, chain_id: str, identity_token_str: str) -> Optional[Dict[str, object]]:
         try:
