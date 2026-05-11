@@ -215,7 +215,7 @@ def test_sigstore_identity_token_complete_accepts_provider_callback_url():
     assert data["identity_token"] == token
 
 
-def test_build_package_returns_interactive_guidance_when_token_missing():
+def test_build_package_submits_when_token_missing_without_interactive_login():
     payload = {
         "dockerfile": "FROM python:3.11-slim",
         "app_binary": "dGVzdA==",
@@ -223,45 +223,37 @@ def test_build_package_returns_interactive_guidance_when_token_missing():
         "user_id": "test-user",
     }
 
+    fake_ctx = SimpleNamespace(record_id="rec-123")
+
     with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
         "tc_api.main.resolve_sigstore_identity_token",
-        side_effect=MissingSigstoreIdentityTokenError("build"),
-    ), patch(
+        return_value=None,
+    ) as resolve_token, patch(
         "tc_api.main._start_sigstore_login",
-        return_value={
-            "operation": "build",
-            "status": "browser_login_pending",
-            "flow": "copy-url",
-            "session_id": "sess-123",
-            "auth_url": "https://oauth2.sigstore.dev/auth?client_id=sigstore&state=state-123",
-            "state": "state-123",
-            "redirect_uri": "https://oauth2.sigstore.dev/auth/callback",
-            "expires_at": "2026-04-30T00:00:00Z",
-            "message": "Open auth_url and sign in.",
-            "interactive_login_url": "/api/sigstore/interactive-login?operation=build",
-            "callback_url": "/api/sigstore/callback",
-            "sigstore_callback_url": "https://oauth2.sigstore.dev/auth/callback",
-        },
+    ) as start_login, patch(
+        "tc_api.main.build_container_async",
+        return_value=None,
+    ), patch(
+        "tc_api.main.docker_service.generate_uuid",
+        return_value="bld-123",
+    ), patch(
+        "tc_api.main.docker_service.update_build_status",
+        return_value=None,
     ):
         mock_production.return_value.identity_token.return_value = "fake-identity-token"
         with TestClient(main_mod.app) as client:
+            client.app.state.trusted_log.init_record = lambda context=None: fake_ctx
+            client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
             response = client.post("/api/build-package", json=payload)
 
-    assert response.status_code == 400
-    detail = response.json()["detail"]
-    assert detail["interactive_login_url"] == "/api/sigstore/interactive-login?operation=build"
-    assert detail["sigstore_callback_url"] == "https://oauth2.sigstore.dev/auth/callback"
-    assert detail["open_in_browser_url"].startswith("https://oauth2.sigstore.dev/auth")
-    assert detail["after_login_open_url"] == "http://testserver/api/sigstore/interactive-login?operation=build&session_id=sess-123"
-    assert detail["auth_url"].startswith("https://oauth2.sigstore.dev/auth")
-    assert detail["session_id"] == "sess-123"
-    assert detail["redirect_uri"] == "https://oauth2.sigstore.dev/auth/callback"
-    assert detail["login_status"] == "browser_login_pending"
-    assert detail["flow"] == "copy-url"
-    assert detail["complete_login_url"] == "/api/sigstore/identity-token"
-    assert detail["interactive_continue_url"] == "/api/sigstore/interactive-login?operation=build&session_id=sess-123"
+    assert response.status_code == 200
+    data = response.json()
+    assert data["build_id"] == "bld-123"
+    assert data["status"] == "submitted"
+    assert resolve_token.call_args.kwargs["allow_interactive"] is False
+    start_login.assert_not_called()
 
 
 def test_create_lunks_skips_interactive_sigstore_login_when_token_missing():
@@ -346,3 +338,39 @@ def test_build_package_accepts_missing_app_binary():
     data = response.json()
     assert data["build_id"] == "bld-123"
     assert data["status"] == "submitted"
+
+
+def test_build_container_async_skips_transparency_receipt_when_token_missing():
+    request = main_mod.BuildPackageRequest(
+        dockerfile="FROM busybox\nCMD [\"sh\", \"-c\", \"echo ok\"]\n",
+        encrypt=False,
+        user_id="test-user",
+        sign_key="dummy-sign-key",
+        cert="dummy-cert",
+        identity_token=None,
+    )
+
+    tlog = SimpleNamespace(add_entry=lambda *args, **kwargs: None)
+
+    with patch("tc_api.main.docker_service.update_build_status") as update_build_status, patch(
+        "tc_api.main.docker_service.build_image",
+        return_value=True,
+    ), patch(
+        "tc_api.main.docker_service.generate_sbom",
+        return_value="/tmp/bld-123/sbom.json",
+    ), patch(
+        "tc_api.main.docker_service.export_image_to_oci",
+        return_value="oci:./builds/bld-123/test-user-bld-123",
+    ), patch(
+        "tc_api.main.docker_service.commit_and_save_receipt"
+    ) as commit_receipt, patch(
+        "tc_api.main.docker_service.verify_chain_state"
+    ) as verify_chain_state:
+        main_mod.build_container_async(request, "bld-123", tlog, "rec-123")
+
+    commit_receipt.assert_not_called()
+    verify_chain_state.assert_not_called()
+    success_call = update_build_status.call_args_list[-1]
+    assert success_call.args[:3] == ("test-user", "bld-123", "success")
+    assert success_call.kwargs["transparencyLog_verify"] == "skipped"
+    assert success_call.kwargs["log_id"] is None

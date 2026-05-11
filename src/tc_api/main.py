@@ -963,7 +963,13 @@ async def build_package(http_request: Request, request: BuildPackageRequest, bac
     """Build and package a container image"""
     try:
         logger.info(f"Build package request received for user: {request.user_id}")
-        request.identity_token = _resolve_required_sigstore_identity_token("build", request.identity_token, request=http_request)
+        if not request.identity_token:
+            request.identity_token = resolve_sigstore_identity_token(
+                "build",
+                logger=logger,
+                allow_interactive=False,
+                min_ttl_seconds=0,
+            )
         
         # Generate build ID
         build_id = docker_service.generate_uuid(prefix="bld")
@@ -1193,36 +1199,38 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
             )
             return
 
-        # Commit to TruCon and save receipt
-        logger.info("Committing build transparency log")
-        log_proxy_configuration("Build transparency log")
-
         identity_token = request.identity_token
         tlog_id = None
-        tlog_status, tlog_id = docker_service.commit_and_save_receipt("build", build_id, tlog, record_id, identity_token)
-        if tlog_id is not None:
-            docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", build_id)
-        if tlog_status:
-            logger.info("Save build transparency success.")
-        else:
-            logger.info("Save build transparency failed.")
-            docker_service.update_build_status(
-                request.user_id,
-                build_id,
-                "failed",
-                step="Transparency log commit failed",
-                image_id=image_name,
-                image_url=image_name,
-                sbom_url=sbom_path,
-                cert_url=f"/api/artifacts/{build_id}/cosign.crt",
-                transparencyLog_verify="failed",
-                error_message="Build transparency log commit failed",
-            )
-            return
+        if identity_token:
+            logger.info("Committing build transparency log")
+            log_proxy_configuration("Build transparency log")
+            tlog_status, tlog_id = docker_service.commit_and_save_receipt("build", build_id, tlog, record_id, identity_token)
+            if tlog_id is not None:
+                docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", build_id)
+            if tlog_status:
+                logger.info("Save build transparency success.")
+            else:
+                logger.info("Save build transparency failed.")
+                docker_service.update_build_status(
+                    request.user_id,
+                    build_id,
+                    "failed",
+                    step="Transparency log commit failed",
+                    image_id=image_name,
+                    image_url=image_name,
+                    sbom_url=sbom_path,
+                    cert_url=f"/api/artifacts/{build_id}/cosign.crt",
+                    transparencyLog_verify="failed",
+                    error_message="Build transparency log commit failed",
+                )
+                return
 
-        # Verify chain state via TruCon
-        logger.info("Verify chain state")
-        verify_tlog_status = docker_service.verify_chain_state("build", tlog, chain_id=TRANSPARENCY_SERVICE_CHAIN_ID)
+            # Verify chain state via TruCon
+            logger.info("Verify chain state")
+            verify_tlog_status = docker_service.verify_chain_state("build", tlog, chain_id=TRANSPARENCY_SERVICE_CHAIN_ID)
+        else:
+            logger.info("Skipping build transparency log because no reusable Sigstore identity token is available")
+            verify_tlog_status = "skipped"
 
         if image_name.startswith("oci:"):
             published_image_id = image_name
