@@ -119,8 +119,7 @@ def _build_chain_owner_attestation(
     ccel_digest: Optional[str],
     owner_pub_key: str,
 ) -> Dict[str, Any]:
-    if _quote_adapter is None:
-        raise HTTPException(status_code=500, detail="Quote adapter is unavailable")
+    quote_adapter = _get_quote_adapter()
 
     expected_value = compute_owner_attestation_expected_value(
         chain_id=chain_id,
@@ -131,7 +130,7 @@ def _build_chain_owner_attestation(
     )
 
     try:
-        quote_material = _quote_adapter.quote(expected_value)
+        quote_material = quote_adapter.quote(expected_value)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Owner attestation quote acquisition failed: {exc}") from exc
 
@@ -558,6 +557,13 @@ def _load_immutable_adapter(**kwargs):
         return OnChainLogAdapter(**kwargs)
     raise ValueError(f"Unknown immutable backend: {_TC_IMMUTABLE_BACKEND!r}. Supported: rekor, onchain")
 _quote_adapter = None    # Set during lifespan
+
+
+def _get_quote_adapter() -> TdxQuoteAdapter:
+    global _quote_adapter
+    if _quote_adapter is None:
+        _quote_adapter = TdxQuoteAdapter()
+    return _quote_adapter
 
 # RTMR[2] is the default OS/application-layer measurement register in TDX.
 # RTMR[0]/[1] are firmware/boot-locked; RTMR[3] can be used for experiments.
@@ -1542,8 +1548,7 @@ def get_attested_head_evidence(chain_id: str):
         raise HTTPException(status_code=409, detail=f"Chain '{chain_id}' has no confirmed immutable-log head")
     if not confirmed["mr_value"]:
         raise HTTPException(status_code=409, detail=f"Chain '{chain_id}' has no measured confirmed head state")
-    if _quote_adapter is None:
-        raise HTTPException(status_code=500, detail="Quote adapter is unavailable")
+    quote_adapter = _get_quote_adapter()
 
     expected_value = compute_binding_expected_value(
         chain_id=chain_id,
@@ -1553,7 +1558,7 @@ def get_attested_head_evidence(chain_id: str):
     )
 
     try:
-        quote_material = _quote_adapter.quote(expected_value)
+        quote_material = quote_adapter.quote(expected_value)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Quote acquisition failed: {exc}") from exc
 
