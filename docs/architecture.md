@@ -307,6 +307,25 @@ The same testing cycle also established that the local image-encryption path can
 - Later replayable commits still need signed predecessor continuity, but they now also carry owner authorization signed by the corresponding owner private key. Predecessor continuity proves adjacency; owner authorization proves chain-local authority.
 - Current-head attested evidence is intentionally a different contract. It proves the latest confirmed public head and current quote-backed head binding; it does not replace Event Log 0 as the source of truth for owner bootstrap.
 
+**Current verifier use of `pub_key`:**
+- The admission path already treats Event Log 0 `pub_key` as authoritative. TruCon extracts the key from the baseline record and uses it to verify each later record's `owner_authorization` before accepting the write.
+- The live fallback verifier (`GET /verify-chain/{chain_id}`) also uses Event Log 0 `pub_key` to verify `owner_authorization` on confirmed records, so live verification does enforce owner-key continuity.
+- The public immutable replay verifier now enforces the same rule. When Event Log 0 carries `pub_key`, replay verification materializes each later record's published `owner_authorization` from the signed predicate and verifies it under that key.
+- This required the producer contract to publish `owner_authorization` inside the signed predicate so immutable replay can verify writer authority from public material alone, without consulting live TruCon state.
+
+**How `pub_key` should be used during public verification:**
+- Treat Event Log 0 `pub_key` as a trust anchor only when the baseline record also carries valid owner-attestation material and that attestation binds the same `owner_pub_key` together with `chain_id`, `sequence_num=1`, `baseline_rtmr`, and the baseline CCEL facts.
+- For every replayed record after Event Log 0, materialize `owner_authorization` from the signed payload, not from predicate entries.
+- Verify that `owner_authorization` is a valid ECDSA P-384 / SHA-384 signature under Event Log 0 `pub_key` over the same five-field contract enforced at admission time: `chain_id`, `sequence_num`, `prev_event_digest`, `prev_lookup_hash`, and `event_digest`.
+- Fail verification for chains using the single-owner bootstrap contract when a confirmed replayable record is missing `owner_authorization` or carries a signature that does not verify under the baseline key.
+- Keep this check distinct from predecessor proof. Signed predecessor continuity answers "does this record link to the correct predecessor?"; `pub_key` verification answers "was this record authorized by the chain owner declared at origin?"
+
+**Why this matters:**
+- Without `pub_key` verification, public replay can prove ordering and continuity but cannot fully prove writer authority.
+- A verifier would then know that the chain is internally linked, but not that the linked writes were approved by the owner key declared at Event Log 0.
+- Using `pub_key` during verification turns Event Log 0 from descriptive bootstrap metadata into a real authorization anchor.
+- That closes the gap between live TruCon verification and offline/public replay verification, and makes the single-owner model auditable without trusting a live service.
+
 **Rollout and backward-compatibility constraints:**
 - The compatibility boundary is at the reservation-backed producer contract. Any producer that calls `POST /commit-intents/reserve` and then `POST /commit` for replayable records on a chain initialized under the single-owner model must now include `owner_authorization` in addition to the signed predecessor fields.
 - Updated built-in producers already satisfy that requirement: the tc_api-side trusted-log client and workload-chain bootstrap path generate owner authorization automatically from the chain owner key declared at Event Log 0.

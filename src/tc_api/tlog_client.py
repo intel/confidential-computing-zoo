@@ -19,7 +19,7 @@ from sigstore.models import Bundle
 
 from .sigstore_baseline import build_baseline_sigstore_bundle, build_signing_context
 from .sigstore_baseline import get_chain_owner_private_key
-from tc_api.trucon.owner_authorization import sign_owner_authorization
+from tc_api.trucon.owner_authorization import sign_owner_authorization, verify_owner_authorization
 from .tlog.types import (
     RecordContext, Entry, Record, EventLog, CommitResult,
     CommitQueueStatus, LatestState, VerificationResult, SubmitStatus
@@ -218,6 +218,7 @@ def _normalize_verification_entry(entry: Dict[str, Any], index: int, expected_id
         "sequence_num": predicate.get("sequence_num"),
         "digest": predicate.get("digest"),
         "predicate_entries": predicate.get("entries", []),
+        "owner_authorization": predicate.get("owner_authorization") or payload.get("owner_authorization"),
         "created": predicate.get("created"),
         "prev_event_digest": predicate.get("prev_event_digest"),
         "prev_lookup_hash": predicate.get("prev_lookup_hash"),
@@ -237,6 +238,54 @@ def _normalize_verification_entry(entry: Dict[str, Any], index: int, expected_id
         "included": signer_match is not False,
         "errors": errors,
     }
+
+
+def _annotate_owner_verification(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    owner_pub_key = _replay_owner_pub_key(entries)
+    if not owner_pub_key:
+        return [dict(entry) for entry in entries]
+
+    annotated: List[Dict[str, Any]] = []
+    for entry in entries:
+        current = dict(entry)
+        if current.get("event_type") == "chain.init" and current.get("sequence_num") == 1:
+            current["owner_ok"] = True
+            current["owner_status"] = "origin"
+            annotated.append(current)
+            continue
+
+        owner_authorization = current.get("owner_authorization")
+        if owner_authorization is None:
+            current["owner_ok"] = False
+            current["owner_status"] = "missing"
+            current.setdefault("errors", []).append("Owner authorization missing for replayed record")
+            annotated.append(current)
+            continue
+
+        try:
+            owner_ok = verify_owner_authorization(
+                owner_authorization,
+                owner_pub_key_pem=owner_pub_key,
+                chain_id=current.get("chain_id"),
+                sequence_num=current.get("sequence_num"),
+                prev_event_digest=current.get("prev_event_digest"),
+                prev_lookup_hash=current.get("prev_lookup_hash"),
+                event_digest=current.get("digest"),
+            )
+        except Exception as exc:
+            current["owner_ok"] = False
+            current["owner_status"] = "invalid"
+            current.setdefault("errors", []).append(f"Owner authorization invalid: {exc}")
+            annotated.append(current)
+            continue
+
+        current["owner_ok"] = owner_ok
+        current["owner_status"] = "proven" if owner_ok else "invalid"
+        if not owner_ok:
+            current.setdefault("errors", []).append("Owner authorization signature mismatch")
+        annotated.append(current)
+
+    return annotated
 
 
 def _entry_matches_chain(entry: Dict[str, Any], chain_id: str, subject_name: str) -> bool:
@@ -266,6 +315,29 @@ def _entry_has_event_log0_baseline(entry: Dict[str, Any]) -> bool:
     return {"baseline_rtmr", "pub_key"}.issubset(observed) and (
         "ccel_eventlog_b64" in observed or "ccel_digest" in observed
     )
+
+
+def _predicate_entry_value(predicate_entries: List[Dict[str, Any]], key: str) -> Optional[str]:
+    for entry in predicate_entries:
+        if isinstance(entry, dict) and entry.get("key") == key:
+            value = entry.get("value")
+            return value if isinstance(value, str) else None
+    return None
+
+
+def _replay_owner_pub_key(entries: List[Dict[str, Any]]) -> Optional[str]:
+    ordered = sorted(
+        entries,
+        key=lambda entry: (
+            not isinstance(entry.get("sequence_num"), int),
+            entry.get("sequence_num") if isinstance(entry.get("sequence_num"), int) else 1 << 30,
+        ),
+    )
+    for entry in ordered:
+        if entry.get("event_type") != "chain.init":
+            continue
+        return _predicate_entry_value(entry.get("predicate_entries", []), "pub_key")
+    return None
 
 
 def _classify_public_history_status(entry: Dict[str, Any]) -> Optional[str]:
@@ -782,6 +854,19 @@ class TrustedLogAPI:
             "prev_event_digest": reservation.get("prev_event_digest"),
             "prev_lookup_hash": reservation.get("prev_lookup_hash"),
         }
+
+        owner_private_key = get_chain_owner_private_key(chain_id)
+        owner_authorization = None
+        if owner_private_key is not None:
+            owner_authorization = sign_owner_authorization(
+                private_key=owner_private_key,
+                chain_id=chain_id,
+                sequence_num=reservation["sequence_num"],
+                prev_event_digest=reservation.get("prev_event_digest"),
+                prev_lookup_hash=reservation.get("prev_lookup_hash"),
+                event_digest=event_digest,
+            )
+            predicate_payload["owner_authorization"] = owner_authorization
         
         identity_token = IdentityToken(identity_token_str)
 
@@ -811,17 +896,6 @@ class TrustedLogAPI:
             raise
 
         bundle_json = bundle.to_json()
-        owner_private_key = get_chain_owner_private_key(chain_id)
-        owner_authorization = None
-        if owner_private_key is not None:
-            owner_authorization = sign_owner_authorization(
-                private_key=owner_private_key,
-                chain_id=chain_id,
-                sequence_num=reservation["sequence_num"],
-                prev_event_digest=reservation.get("prev_event_digest"),
-                prev_lookup_hash=reservation.get("prev_lookup_hash"),
-                event_digest=event_digest,
-            )
         
         # POST signed bundle to TruCon for sequencing
         trucon_response = self._post_to_trucon(
@@ -1127,16 +1201,39 @@ class TrustedLogAPI:
                 )
 
             matched_entries = _annotate_predecessor_verification(matched_entries, self.immutable_log)
+            matched_entries = _annotate_owner_verification(matched_entries)
 
             predecessor_errors = [
                 entry for entry in matched_entries
                 if entry.get("predecessor_ok") is False
+            ]
+            owner_errors = [
+                entry for entry in matched_entries
+                if entry.get("owner_ok") is False
             ]
 
             if predecessor_errors:
                 return VerificationResult(
                     success=False,
                     errors=["Signed predecessor continuity verification failed"],
+                    details={
+                        "source": "immutable_backend",
+                        "target": target,
+                        "chain_id": chain_id,
+                        "subject": subject_name,
+                        "entries": matched_entries,
+                        "observed_entry_count": len(entries),
+                        "entry_count": len(matched_entries),
+                        "filtered_out_count": len(entries) - len(matched_entries),
+                        "applied_signer_identity": expected_identity,
+                        "expected_entry_count": expected_entry_count,
+                    },
+                )
+
+            if owner_errors:
+                return VerificationResult(
+                    success=False,
+                    errors=["Owner authorization verification failed"],
                     details={
                         "source": "immutable_backend",
                         "target": target,

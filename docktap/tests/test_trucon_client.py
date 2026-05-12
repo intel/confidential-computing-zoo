@@ -7,6 +7,7 @@ import urllib.error
 from unittest.mock import patch, MagicMock
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from trucon_client import (
     TruConCommitter,
@@ -297,6 +298,7 @@ class TestBestEffortFailureHandling:
 
     def test_submit_operation_signs_reservation_backed_predicate(self):
         committer = TruConCommitter()
+        owner_private_key = ec.generate_private_key(ec.SECP384R1())
         rec = _make_record(
             operation={"type": "pull"},
             image={"name": "nginx", "tag": "latest"},
@@ -321,6 +323,7 @@ class TestBestEffortFailureHandling:
              patch("trucon_client.detect_credential", return_value="fake-token"), \
              patch("trucon_client.IdentityToken", return_value="tok"), \
              patch("trucon_client.build_signing_context", return_value=mock_signing_context), \
+                         patch("trucon_client.get_chain_owner_private_key", return_value=owner_private_key), \
              patch.object(committer, "_post_to_trucon", return_value={"record_id": "rec-1", "sequence_num": 7}):
             assert committer.submit_operation(rec, "pull") is True
 
@@ -329,6 +332,7 @@ class TestBestEffortFailureHandling:
         assert predicate["sequence_num"] == 7
         assert predicate["prev_event_digest"] == "sha384:prev"
         assert predicate["prev_lookup_hash"] == "sha256:lookup"
+        assert predicate["owner_authorization"]["algorithm"] == "ecdsa-p384-sha384"
 
     def test_extract_rekor_identifiers_prefers_uuid_and_keeps_log_index(self):
         bundle = MagicMock()

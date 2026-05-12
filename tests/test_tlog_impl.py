@@ -8,12 +8,13 @@ from datetime import datetime, timedelta, timezone
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
 from sigstore.models import Bundle
 from tc_api.trucon.adapters.oci_mirror import OciBundleMirror
 from tc_api.trucon.adapters.sigstore import SigstoreLogAdapter
 from tc_api.tlog_client import TrustedLogAPI, _decode_dsse_payload, _extract_signer_identity
+from tc_api.trucon.owner_authorization import sign_owner_authorization
 
 @pytest.fixture
 def mock_rekor():
@@ -708,6 +709,8 @@ def _make_rekor_entry(
     digest: str | None = None,
     prev_event_digest: str | object = _UNSET,
     prev_lookup_hash: str | object = _UNSET,
+    predicate_entries: list[dict[str, object]] | None = None,
+    owner_authorization: dict[str, object] | None = None,
 ):
     if sequence_num is None:
         sequence_num = 1 if event_id == "evt-1" else 2
@@ -725,12 +728,24 @@ def _make_rekor_entry(
             "event_id": event_id,
             "event_type": event_type,
             "digest": digest,
+            "entries": predicate_entries or [],
             "prev_event_digest": prev_event_digest,
             "prev_lookup_hash": prev_lookup_hash,
         },
     }
+    if owner_authorization is not None:
+        payload["predicate"]["owner_authorization"] = owner_authorization
     enc_payload = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8")
     return {"body": {"spec": {"payload": enc_payload}}}
+
+
+def _make_owner_keypair() -> tuple[ec.EllipticCurvePrivateKey, str]:
+    private_key = ec.generate_private_key(ec.SECP384R1())
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    return private_key, public_key
 
 
 def test_verify_record_returns_structured_entry_details():
@@ -937,6 +952,7 @@ def test_verify_record_marks_mirror_materialization_provenance():
 
 
 def test_verify_record_materializes_attestation_storage_predecessor():
+    owner_private_key, owner_pub_key = _make_owner_keypair()
     predecessor_payload = {
         "subject": [{"name": "trusted-log-chain_default", "digest": {"sha384": "abc"}}],
         "predicate": {
@@ -948,7 +964,7 @@ def test_verify_record_materializes_attestation_storage_predecessor():
             "entries": [
                 {"key": "baseline_rtmr", "value": "11" * 48},
                 {"key": "ccel_digest", "value": "sha384:" + ("22" * 48)},
-                {"key": "pub_key", "value": "pem"},
+                {"key": "pub_key", "value": owner_pub_key},
             ],
             "prev_event_digest": None,
             "prev_lookup_hash": None,
@@ -972,6 +988,14 @@ def test_verify_record_materializes_attestation_storage_predecessor():
         sequence_num=2,
         prev_event_digest="sha384:evt-1",
         prev_lookup_hash=f"sha256:{predecessor_hash}",
+        owner_authorization=sign_owner_authorization(
+            owner_private_key,
+            "default",
+            2,
+            "sha384:evt-1",
+            f"sha256:{predecessor_hash}",
+            "sha384:evt-2",
+        ),
     )
     api = TrustedLogAPI(
         immutable_log=StubImmutableLog(entries=[second_entry], candidates={f"sha256:{predecessor_hash}": [predecessor_entry]})
@@ -1034,6 +1058,7 @@ def test_verify_record_rejects_invalid_attestation_material_without_fallback():
 
 
 def test_verify_record_falls_back_to_mirror_when_attestation_material_is_invalid():
+    owner_private_key, owner_pub_key = _make_owner_keypair()
     predecessor_payload = {
         "subject": [{"name": "trusted-log-chain_default", "digest": {"sha384": "abc"}}],
         "predicate": {
@@ -1045,7 +1070,7 @@ def test_verify_record_falls_back_to_mirror_when_attestation_material_is_invalid
             "entries": [
                 {"key": "baseline_rtmr", "value": "11" * 48},
                 {"key": "ccel_digest", "value": "sha384:" + ("22" * 48)},
-                {"key": "pub_key", "value": "pem"},
+                {"key": "pub_key", "value": owner_pub_key},
             ],
             "prev_event_digest": None,
             "prev_lookup_hash": None,
@@ -1074,6 +1099,14 @@ def test_verify_record_falls_back_to_mirror_when_attestation_material_is_invalid
         sequence_num=2,
         prev_event_digest="sha384:evt-1",
         prev_lookup_hash=f"sha256:{predecessor_hash}",
+        owner_authorization=sign_owner_authorization(
+            owner_private_key,
+            "default",
+            2,
+            "sha384:evt-1",
+            f"sha256:{predecessor_hash}",
+            "sha384:evt-2",
+        ),
     )
     api = TrustedLogAPI(
         immutable_log=StubImmutableLog(
@@ -1087,6 +1120,47 @@ def test_verify_record_falls_back_to_mirror_when_attestation_material_is_invalid
 
     assert result.success is True
     assert result.details["entries"][0]["history_materialization_provenance"] == "mirror"
+
+
+def test_verify_record_fails_on_invalid_owner_authorization():
+    owner_private_key, owner_pub_key = _make_owner_keypair()
+    wrong_private_key, _ = _make_owner_keypair()
+    first_entry = _make_rekor_entry(
+        "evt-1",
+        event_type="chain.init",
+        sequence_num=1,
+        digest="sha384:evt-1",
+        predicate_entries=[
+            {"key": "baseline_rtmr", "value": "11" * 48},
+            {"key": "ccel_digest", "value": "sha384:" + ("22" * 48)},
+            {"key": "pub_key", "value": owner_pub_key},
+        ],
+    )
+    lookup_hash = "sha256:" + hashlib.sha256(base64.b64decode(first_entry["body"]["spec"]["payload"])).hexdigest()
+    second_entry = _make_rekor_entry(
+        "evt-2",
+        sequence_num=2,
+        digest="sha384:evt-2",
+        prev_event_digest="sha384:evt-1",
+        prev_lookup_hash=lookup_hash,
+        owner_authorization=sign_owner_authorization(
+            wrong_private_key,
+            "default",
+            2,
+            "sha384:evt-1",
+            lookup_hash,
+            "sha384:evt-2",
+        ),
+    )
+    api = TrustedLogAPI(immutable_log=StubImmutableLog(entries=[second_entry, first_entry]))
+
+    with patch("tc_api.tlog_client._extract_signer_identity", side_effect=["alice@example.com", "alice@example.com"]):
+        result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
+
+    assert result.success is False
+    assert result.errors == ["Owner authorization verification failed"]
+    assert result.details["entries"][0]["owner_ok"] is False
+    assert result.details["entries"][0]["owner_status"] == "invalid"
 
 
 def test_verify_record_requires_mirror_when_policy_demands_it():

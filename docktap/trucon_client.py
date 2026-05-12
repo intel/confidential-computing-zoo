@@ -665,6 +665,18 @@ class TruConCommitter:
         predicate_payload["sequence_num"] = reservation["sequence_num"]
         predicate_payload["prev_event_digest"] = reservation.get("prev_event_digest")
         predicate_payload["prev_lookup_hash"] = reservation.get("prev_lookup_hash")
+        owner_authorization = None
+        owner_private_key = get_chain_owner_private_key(chain_id)
+        if owner_private_key is not None:
+            owner_authorization = sign_owner_authorization(
+                private_key=owner_private_key,
+                chain_id=chain_id,
+                sequence_num=reservation["sequence_num"],
+                prev_event_digest=reservation.get("prev_event_digest"),
+                prev_lookup_hash=reservation.get("prev_lookup_hash"),
+                event_digest=event_digest,
+            )
+            predicate_payload["owner_authorization"] = owner_authorization
         subject = Subject(
             name=f"trusted-log-chain_{chain_id}",
             digest={"sha384": event_digest.split(":")[1]},
@@ -686,17 +698,6 @@ class TruConCommitter:
 
         bundle_json = bundle.to_json()
         rekor_identifiers = _extract_rekor_identifiers(bundle)
-        owner_authorization = None
-        owner_private_key = get_chain_owner_private_key(chain_id)
-        if owner_private_key is not None:
-            owner_authorization = sign_owner_authorization(
-                private_key=owner_private_key,
-                chain_id=chain_id,
-                sequence_num=reservation["sequence_num"],
-                prev_event_digest=reservation.get("prev_event_digest"),
-                prev_lookup_hash=reservation.get("prev_lookup_hash"),
-                event_digest=event_digest,
-            )
 
         # 7. POST to TruCon /commit
         submission = PendingSubmission(

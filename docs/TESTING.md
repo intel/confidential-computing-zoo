@@ -463,6 +463,18 @@ The exact entry count depends on how many runtime events already exist on `dockt
 - the latest `head_log_id` in evidence matches the immutable replay head;
 - the replay remains continuous back to Event Log 0.
 
+For chains using the single-owner bootstrap contract, there is one more invariant to keep conceptually separate during testing:
+
+- predecessor proof verifies ordered continuity;
+- `pub_key` proof verifies chain-local writer authority.
+
+Current status:
+
+- live TruCon verification (`/verify-chain`) already uses Event Log 0 `pub_key` to verify each confirmed record's `owner_authorization`;
+- public immutable replay verification now does as well, using Event Log 0 `pub_key` to verify each replayed record's published `owner_authorization`.
+
+So a successful public replay result currently proves baseline presence plus signed predecessor continuity, but not yet full owner-key continuity. The missing piece is replay-time materialization of payload-level `owner_authorization` so the verifier can check it against the baseline `pub_key` offline.
+
 The important replay invariant is not "take the first Rekor candidate returned for `prev_lookup_hash`". The verifier now prefers the candidate that is actually replayable. In practice this means an `attestation-storage` or mirror-materialized predecessor can override a public hash-only duplicate with the same `entry_id|payload_hash`, which is what keeps the runtime replay continuous across multi-entry OpenClaw pull validation.
 
 ### Token Expiry Behavior
@@ -794,6 +806,7 @@ Notes:
 - It also includes a lazy non-`default` workload-chain smoke test, where the first workload commit causes TruCon to mint Event Log 0 via the same Sigstore/Rekor path before the triggering event is accepted as `sequence_num=2`.
 - It now includes an opt-in `intoto` round-trip smoke that clears the adapter cache and expects replayable payload fields to be recovered from Rekor attestation storage.
 - It also includes an opt-in `intoto` multi-entry predecessor-proof smoke test that clears the adapter's in-process cache before replay and requires the head record to prove its predecessor through public Rekor plus attestation storage without OCI mirror.
+- Public replay tests now cover owner-key continuity from Event Log 0 `pub_key` through each record's `owner_authorization`, including rejection of invalid owner signatures during immutable replay.
 - A separate DSSE regression smoke remains in place to document the previous public replay limit on canonicalized DSSE bodies.
 - It also includes an opt-in real Rekor + real OCI mirror + real verify multi-chain smoke that requires the head record to re-materialize DSSE payload fields through the mirror after the in-process cache is cleared.
 - Immutable replay now uses signed `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`, with Rekor `payloadHash(sha256)` lookup serving as candidate discovery only.

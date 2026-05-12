@@ -1,6 +1,7 @@
 import base64
 import importlib
 import json
+import struct
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,11 +10,15 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from tc_api.cli.verify import main as verify_main
 from tc_api.tlog.local_mr import LocalMRAdapter
 from tc_api.tlog_client import compute_entry_digest, compute_event_digest
+from tc_api.trucon.evidence import decode_binding_expected_value
 from tc_api.trucon.database import init_db
+from tc_api.trucon.owner_authorization import sign_owner_authorization
 
 trucon_app_mod = importlib.import_module("tc_api.trucon.app")
 trucon_db_mod = importlib.import_module("tc_api.trucon.database")
@@ -43,12 +48,41 @@ class MockQuoteMaterial:
 
 class EchoQuoteAdapter:
     def quote(self, expected_value: str) -> MockQuoteMaterial:
-        return MockQuoteMaterial(quote="base64-simulated-quote", report_data=expected_value)
+        return MockQuoteMaterial(
+            quote=_build_tdx_quote_v4(expected_value, trucon_app_mod._local_mr.read(2)),
+            report_data=expected_value,
+        )
+
+
+def _build_tdx_quote_v4(expected_value: str, rtmr2_hex: str | None) -> str:
+    header = bytearray(48)
+    struct.pack_into("<H", header, 0, 4)
+
+    body = bytearray(584)
+    if expected_value.startswith("sha384:"):
+        expected_bytes = bytes.fromhex(expected_value.removeprefix("sha384:"))
+    else:
+        expected_bytes = decode_binding_expected_value(expected_value)
+    body[0x208:0x208 + len(expected_bytes)] = expected_bytes
+    if rtmr2_hex:
+        body[0x148 + (2 * 48):0x148 + (3 * 48)] = bytes.fromhex(rtmr2_hex)
+
+    return base64.b64encode(bytes(header + body)).decode("ascii")
 
 
 class DummyBundle:
     def __init__(self, source_json: str) -> None:
         self.source_json = source_json
+        payload_b64 = base64.b64encode(source_json.encode("utf-8")).decode("utf-8")
+
+        class _Envelope:
+            def __init__(self, payload: str) -> None:
+                self._payload = payload
+
+            def to_json(self) -> str:
+                return json.dumps({"payload": self._payload})
+
+        self._dsse_envelope = _Envelope(payload_b64)
 
 
 class FakeImmutableBackend:
@@ -130,20 +164,30 @@ def _statement_json(
     digest: Optional[str],
     entries: list[dict[str, Any]],
     created: Optional[str] = None,
+    sequence_num: Optional[int] = None,
+    prev_event_digest: Optional[str] = None,
+    prev_lookup_hash: Optional[str] = None,
 ) -> str:
+    created_value = created or datetime.now(timezone.utc).isoformat()
+    entry_digests = [compute_entry_digest(entry["key"], entry["value"]) for entry in entries]
+    predicate_digest = digest or compute_event_digest(event_id, event_type, created_value, entry_digests)
     statement = {
         "subject": [
             {
                 "name": f"trusted-log-chain_{chain_id}",
-                "digest": {"sha384": (digest or ("00" * 48)).removeprefix("sha384:")},
+                "digest": {"sha384": predicate_digest.removeprefix("sha384:")},
             }
         ],
         "predicate": {
             "event_id": event_id,
             "event_type": event_type,
-            "created": created or datetime.now(timezone.utc).isoformat(),
+            "created": created_value,
             "entries": entries,
-            "digest": digest,
+            "digest": predicate_digest,
+            "chain_id": chain_id,
+            "sequence_num": sequence_num,
+            "prev_event_digest": prev_event_digest,
+            "prev_lookup_hash": prev_lookup_hash,
         },
     }
     return json.dumps(statement)
@@ -200,6 +244,11 @@ def simulated_tdx_harness(tmp_path):
 
 def test_simulated_tdx_e2e_covers_evidence_export_and_verify(simulated_tdx_harness, capsys):
     client, backend, tmp_path = simulated_tdx_harness
+    owner_private_key = ec.generate_private_key(ec.SECP384R1())
+    owner_pub_key = owner_private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
 
     baseline = client.get("/init-chain/default/baseline")
     assert baseline.status_code == 200
@@ -215,48 +264,73 @@ def test_simulated_tdx_e2e_covers_evidence_export_and_verify(simulated_tdx_harne
         entries=[
             {"key": "baseline_rtmr", "value": baseline_rtmr},
             {"key": "ccel_digest", "value": ccel_digest},
-            {"key": "pub_key", "value": "-----BEGIN PUBLIC KEY-----\nsimulated\n-----END PUBLIC KEY-----"},
+            {"key": "pub_key", "value": owner_pub_key},
         ],
+        sequence_num=1,
+        prev_event_digest=None,
+        prev_lookup_hash=None,
     )
-    init_resp = client.post(
-        "/init-chain",
-        json={
-            "chain_id": "default",
-            "init_token": baseline_data["init_token"],
-            "signed_bundle": baseline_bundle,
-            "pub_key": "-----BEGIN PUBLIC KEY-----\nsimulated\n-----END PUBLIC KEY-----",
-        },
+    reserve = client.post(
+        "/commit-intents/reserve",
+        json={"chain_id": "default", "idempotency_key": "init-default", "is_baseline": True},
     )
-    assert init_resp.status_code == 200
-    assert init_resp.json()["sequence_num"] == 1
+    assert reserve.status_code == 200
+    baseline_predicate = json.loads(baseline_bundle)["predicate"]
+    baseline_digest = baseline_predicate["digest"]
+    baseline_lookup_hash = "sha256:" + __import__("hashlib").sha256(baseline_bundle.encode("utf-8")).hexdigest()
+    with patch("tc_api.trucon.app.Bundle.from_json", side_effect=lambda raw: DummyBundle(raw)):
+        init_resp = client.post(
+            "/init-chain",
+            json={
+                "chain_id": "default",
+                "init_token": baseline_data["init_token"],
+                "intent_token": reserve.json()["intent_token"],
+                "signed_bundle": baseline_bundle,
+                "pub_key": owner_pub_key,
+            },
+        )
+        assert init_resp.status_code == 200
+        assert init_resp.json()["sequence_num"] == 1
 
-    created = datetime.now(timezone.utc).isoformat()
-    business_entries = [{"key": "operation_result", "value": "success"}]
-    entry_digests = [compute_entry_digest(entry["key"], entry["value"]) for entry in business_entries]
-    business_digest = compute_event_digest("evt-1", "launch", created, entry_digests)
-    business_bundle = _statement_json(
-        chain_id="default",
-        event_id="evt-1",
-        event_type="launch",
-        digest=business_digest,
-        entries=business_entries,
-        created=created,
-    )
-    commit_resp = client.post(
-        "/commit",
-        json={
-            "bundle": business_bundle,
-            "chain_id": "default",
-            "event_digest": business_digest,
-            "event_id": "evt-1",
-            "idempotency_key": "idem-simulated-e2e",
-        },
-    )
-    assert commit_resp.status_code == 200
-    commit_data = commit_resp.json()
-    assert commit_data["sequence_num"] == 2
+        created = datetime.now(timezone.utc).isoformat()
+        business_entries = [{"key": "operation_result", "value": "success"}]
+        entry_digests = [compute_entry_digest(entry["key"], entry["value"]) for entry in business_entries]
+        business_digest = compute_event_digest("evt-1", "launch", created, entry_digests)
+        business_bundle = _statement_json(
+            chain_id="default",
+            event_id="evt-1",
+            event_type="launch",
+            digest=business_digest,
+            entries=business_entries,
+            created=created,
+            sequence_num=2,
+            prev_event_digest=baseline_digest,
+            prev_lookup_hash=baseline_lookup_hash,
+        )
+        business_payload = json.loads(business_bundle)
+        business_payload["predicate"]["owner_authorization"] = sign_owner_authorization(
+            owner_private_key,
+            "default",
+            2,
+            baseline_digest,
+            baseline_lookup_hash,
+            business_digest,
+        )
+        business_bundle = json.dumps(business_payload)
+        commit_resp = client.post(
+            "/commit",
+            json={
+                "bundle": business_bundle,
+                "chain_id": "default",
+                "event_digest": business_digest,
+                "event_id": "evt-1",
+                "idempotency_key": "idem-simulated-e2e",
+            },
+        )
+        assert commit_resp.status_code == 200
+        commit_data = commit_resp.json()
+        assert commit_data["sequence_num"] == 2
 
-    with patch("sigstore.models.Bundle.from_json", side_effect=lambda raw: DummyBundle(raw)):
         trucon_app_mod._submit_daemon_tick()
 
     evidence_resp = client.get("/evidence/default")
@@ -265,7 +339,8 @@ def test_simulated_tdx_e2e_covers_evidence_export_and_verify(simulated_tdx_harne
     assert evidence["tee_type"] == "tdx"
     assert evidence["sequence_num"] == 2
     assert evidence["head_log_id"] == "fake-log-2"
-    assert evidence["quote"] == "base64-simulated-quote"
+    assert isinstance(evidence["quote"], str)
+    assert evidence["quote"]
 
     evidence_path = Path(tmp_path) / "simulated-evidence.json"
     evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
