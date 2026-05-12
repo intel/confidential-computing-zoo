@@ -338,6 +338,54 @@ def test_handle_client_returns_create_success_before_async_trucon_submission():
     assert committer.enqueued[0][1] == "create"
     assert committer.enqueued[0][2] == "demo-workload"
     assert committer.enqueued[0][3] == "launch-1"
+
+
+def test_handle_client_submits_build_requests_to_trucon_without_background_queueing():
+    class TrackingCommitter:
+        def __init__(self):
+            self.submit_calls = []
+            self.enqueue_calls = []
+
+        def submit_operation(self, *args, **kwargs):
+            self.submit_calls.append((args, kwargs))
+            return True
+
+        def enqueue_operation(self, *args, **kwargs):
+            self.enqueue_calls.append((args, kwargs))
+            return "queued-build"
+
+    committer = TrackingCommitter()
+    proxy = DockerProxyServer(
+        listen_socket_path="/tmp/test-docker-proxy.sock",
+        docker_socket_path="/var/run/docker.sock",
+        trucon_committer=committer,
+    )
+    client_socket = FakeClientSocket()
+    docker_socket = FakeDockerSocket()
+    request_data = (
+        b"POST /v1.41/build?t=demo:latest HTTP/1.1\r\n"
+        b"Host: localhost\r\nContent-Type: application/x-tar\r\n\r\n"
+    )
+    response_data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
+    op_record = OperationRecord(
+        operation={"type": "unknown", "action": "docker build", "api_path": "/v1.41/build", "method": "POST"},
+        response={"status": 200},
+    )
+
+    with patch("proxy.docker_proxy.socket.socket", return_value=docker_socket), \
+         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+         patch.object(proxy, "_read_client_request", side_effect=[(request_data, None), (None, "empty")]), \
+         patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
+         patch.object(proxy, "_parse_http_request", return_value=("build", "/v1.41/build", {})), \
+         patch.object(proxy, "_read_docker_response", return_value=response_data), \
+         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("proxy.docker_proxy.log_operation_json") as log_operation_json:
+        proxy.handle_client(client_socket)
+
+    assert client_socket.sent == [response_data]
+    assert len(committer.submit_calls) == 1
+    assert committer.submit_calls[0][0][1] == "build"
+    assert committer.enqueue_calls == []
     enrich_response.assert_called_once_with(op_record, response_data)
     log_operation_json.assert_called_once_with(op_record)
 

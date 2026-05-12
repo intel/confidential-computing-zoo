@@ -74,6 +74,19 @@ class TestEntryMapping:
         assert "image_digest" not in keys
         assert len(entries) == 5  # operation_type, operation_result, runtime_engine, image_name, image_tag
 
+    def test_build_entries(self):
+        rec = _make_record(
+            operation={"type": "build"},
+            image={"name": "demo", "tag": "latest", "platform": "linux/amd64"},
+        )
+        entries = _build_entries(rec, "build")
+        keys = [e.key for e in entries]
+        assert keys == ["operation_type", "operation_result", "runtime_engine", "image_name", "image_tag", "image_platform"]
+        assert entries[0] == Entry(key="operation_type", value="build")
+        assert entries[3] == Entry(key="image_name", value="demo")
+        assert entries[4] == Entry(key="image_tag", value="latest")
+        assert entries[5] == Entry(key="image_platform", value="linux/amd64")
+
     def test_create_entries(self):
         rec = _make_record(
             operation={"type": "create"},
@@ -154,9 +167,9 @@ class TestEntryMapping:
 
 class TestOperationFiltering:
     def test_submittable_operations(self):
-        assert SUBMITTABLE_OPERATIONS == {"pull", "create", "start", "stop", "rm"}
+        assert SUBMITTABLE_OPERATIONS == {"pull", "build", "create", "start", "stop", "rm"}
 
-    @pytest.mark.parametrize("op", ["pull", "create", "start", "stop", "rm"])
+    @pytest.mark.parametrize("op", ["pull", "build", "create", "start", "stop", "rm"])
     def test_lifecycle_ops_pass(self, op):
         assert op in SUBMITTABLE_OPERATIONS
 

@@ -40,7 +40,7 @@ from sigstore.dsse import StatementBuilder, Subject
 logger = logging.getLogger(__name__)
 
 # Only these Docker operation types trigger a TruCon commit.
-SUBMITTABLE_OPERATIONS = {"pull", "create", "start", "stop", "rm"}
+SUBMITTABLE_OPERATIONS = {"pull", "build", "create", "start", "stop", "rm"}
 DEFAULT_RUNTIME_CHAIN_ID = os.environ.get("DOCKTAP_RUNTIME_CHAIN_ID", "docktap-runtime")
 
 
@@ -167,6 +167,14 @@ def _build_entries(
             entries.append(Entry(key="image_tag", value=op_record.image["tag"]))
         if op_record.image.get("digest"):
             entries.append(Entry(key="image_digest", value=op_record.image["digest"]))
+
+    elif operation_type == "build":
+        if op_record.image.get("name"):
+            entries.append(Entry(key="image_name", value=op_record.image["name"]))
+        if op_record.image.get("tag"):
+            entries.append(Entry(key="image_tag", value=op_record.image["tag"]))
+        if op_record.image.get("platform"):
+            entries.append(Entry(key="image_platform", value=op_record.image["platform"]))
 
     elif operation_type == "create":
         if op_record.image.get("name"):

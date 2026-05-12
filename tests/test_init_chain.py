@@ -457,6 +457,50 @@ class TestPostInitChain:
         assert resp3.status_code == 200
         assert resp3.json()["sequence_num"] == 2
 
+    def test_build_commit_after_init_skips_rtmr_extend_and_preserves_mr(self, trucon_client):
+        class TrackingMRAdapter(MockMRAdapter):
+            def __init__(self):
+                self.extend_calls = []
+
+            def extend(self, index: int, digest: str) -> Tuple[str, str]:
+                self.extend_calls.append((index, digest))
+                return super().extend(index, digest)
+
+        resp1 = trucon_client.get("/init-chain/test-chain/baseline")
+        token = resp1.json()["init_token"]
+        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        assert reserve.status_code == 200
+        resp2 = trucon_client.post("/init-chain", json={
+            "chain_id": "test-chain",
+            "init_token": token,
+            "intent_token": reserve.json()["intent_token"],
+            "signed_bundle": _make_baseline_bundle("test-chain"),
+            "pub_key": "test-key",
+        })
+        assert resp2.status_code == 200
+
+        tracking_mr = TrackingMRAdapter()
+        with patch.object(trucon_app_mod, "_local_mr", tracking_mr):
+            resp3 = trucon_client.post("/commit", json={
+                "bundle": json.dumps({
+                    "event_type": "docker_build",
+                    "entries": [{"key": "operation_type", "value": "build"}],
+                }),
+                "chain_id": "test-chain",
+                "event_digest": "sha384:" + "ab" * 48,
+            })
+
+        assert resp3.status_code == 200
+        assert resp3.json()["sequence_num"] == 2
+        assert resp3.json()["mr_value"] == "aa" * 48
+        assert resp3.json()["prev_mr_value"] == "aa" * 48
+        assert tracking_mr.extend_calls == []
+
+        row = trucon_db_mod.get_record_by_id(resp3.json()["record_id"], db_path=trucon_app_mod.app.state.test_db_path)
+        assert row is not None
+        assert row["rtmr_extended"] == 1
+        assert row["mr_value"] == "aa" * 48
+
     def test_init_chain_non_tee_mode(self, trucon_client_no_tee):
         """Init chain works in non-TEE mode with null RTMR."""
         resp1 = trucon_client_no_tee.get("/init-chain/test-chain/baseline")

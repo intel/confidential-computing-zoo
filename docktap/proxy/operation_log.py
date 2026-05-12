@@ -380,6 +380,8 @@ def get_operation_type(method: str, path: str) -> str:
         return "exec_start"
     elif normalized == "/images/create":
         return "pull"
+    elif normalized == "/build":
+        return "build"
     elif normalized == "/containers/create":
         return "create"
     elif re.match(r'^/containers/[^/]+/start$', normalized):
@@ -423,6 +425,14 @@ def parse_operation_metadata(
         },
         params=params
     )
+
+    def _split_image_ref(image_ref: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+        if not image_ref:
+            return None, None
+        repository, _, tag = image_ref.rpartition(":")
+        if repository and "/" not in tag:
+            return repository, tag
+        return image_ref, None
     
     if "/images/create" in path:
         image = params.get("fromImage", body_json.get("Image"))
@@ -432,6 +442,15 @@ def parse_operation_metadata(
             "tag": tag,
             "digest": None,
             "platform": body_json.get("platform")
+        }
+
+    elif "/build" in path:
+        image_name, image_tag = _split_image_ref(params.get("t"))
+        op.image = {
+            "name": image_name,
+            "tag": image_tag,
+            "digest": None,
+            "platform": params.get("platform") or body_json.get("platform"),
         }
     
     elif "/containers/create" in path:

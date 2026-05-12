@@ -179,6 +179,33 @@ def _extract_bundle_predicate(bundle_json: str) -> Dict[str, Any]:
     return predicate
 
 
+def _get_predicate_operation_type(predicate: Dict[str, Any]) -> Optional[str]:
+    event_type = predicate.get("event_type")
+    if isinstance(event_type, str):
+        if event_type == "build" or event_type.endswith("_build"):
+            return "build"
+
+    entries = predicate.get("entries")
+    if not isinstance(entries, list):
+        return None
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("key") != "operation_type":
+            continue
+        value = entry.get("value")
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _should_extend_rtmr(predicate: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(predicate, dict):
+        return True
+    return _get_predicate_operation_type(predicate) != "build"
+
+
 def _compute_bundle_payload_hash(bundle_json: str) -> str:
     bundle = Bundle.from_json(bundle_json)
     envelope = bundle._dsse_envelope
@@ -1319,8 +1346,10 @@ def commit(req: CommitRequest, request: Request):
                 if not owner_ok:
                     raise HTTPException(status_code=400, detail="Owner authorization signature mismatch")
 
-            mr_value, prev_mr_value = None, None
-            if _local_mr:
+            should_extend_measurement = _should_extend_rtmr(predicate)
+            current_mr_value = state["mr_value"] if state else None
+            mr_value, prev_mr_value = current_mr_value, current_mr_value
+            if _local_mr and should_extend_measurement:
                 try:
                     mr_value, prev_mr_value = _local_mr.extend(RTMR_INDEX, req.event_digest)
                 except Exception as e:
@@ -1339,6 +1368,8 @@ def commit(req: CommitRequest, request: Request):
                 },
                 status="PENDING",
                 chain_id=req.chain_id,
+                # Keep the record on the durable chain even when this event type
+                # intentionally preserves the prior MR value instead of extending.
                 rtmr_extended=True,
                 prev_log_id=prev_log_id,
                 prev_event_digest=intent["prev_event_digest"],
@@ -1398,9 +1429,17 @@ def commit(req: CommitRequest, request: Request):
             prev_log_id = None
             sequence_num = 1
 
+        predicate = None
+        try:
+            predicate = _extract_bundle_predicate(req.bundle)
+        except Exception:
+            predicate = None
+
         # 2. RTMR extend
-        mr_value, prev_mr_value = None, None
-        if _local_mr:
+        should_extend_measurement = _should_extend_rtmr(predicate)
+        current_mr_value = state['mr_value'] if state else None
+        mr_value, prev_mr_value = current_mr_value, current_mr_value
+        if _local_mr and should_extend_measurement:
             try:
                 mr_value, prev_mr_value = _local_mr.extend(RTMR_INDEX, req.event_digest)
             except Exception as e:
@@ -1419,6 +1458,8 @@ def commit(req: CommitRequest, request: Request):
             },
             status="PENDING",
             chain_id=req.chain_id,
+            # Keep the record on the durable chain even when this event type
+            # intentionally preserves the prior MR value instead of extending.
             rtmr_extended=True,
             prev_log_id=prev_log_id,
             mr_value=mr_value,

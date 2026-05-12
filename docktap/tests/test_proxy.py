@@ -112,7 +112,7 @@ def test_operation_mapping():
         ("/v1.41/containers/abc", "DELETE", "rm"),
         ("/v1.41/images/push", "POST", "unknown"),
         ("/v1.41/images/tag", "POST", "unknown"),
-        ("/v1.41/build", "POST", "unknown"),
+        ("/v1.41/build", "POST", "build"),
     ]
     
     all_passed = True
