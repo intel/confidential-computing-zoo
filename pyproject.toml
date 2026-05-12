@@ -9,6 +9,8 @@ description = "Trusted Container Build and Publish Service"
 readme = "README.md"
 requires-python = ">=3.11"
 dynamic = ["dependencies"]
+# tlog and tlog-rekor are installed as editable local packages
+# (pip install -e tlog/ -e tlog-rekor/)
 
 [project.scripts]
 tc-api = "tc_api.main:main"

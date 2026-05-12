@@ -6,7 +6,7 @@ import time
 import ctypes
 from tc_api.trucon.database import init_db, insert_record, get_pending_records, delete_record
 from tc_api.tlog_client import TrustedLogAPI
-from tc_api.tlog.local_mr import LocalMRAdapter
+from tlog.local_mr import LocalMRAdapter
 from typing import Tuple
 
 class MockMRAdapter(LocalMRAdapter):

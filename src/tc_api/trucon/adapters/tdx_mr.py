@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Tuple
 
-from tc_api.tlog.local_mr import LocalMRAdapter
+from tlog.local_mr import LocalMRAdapter
 
 logger = logging.getLogger(__name__)
 

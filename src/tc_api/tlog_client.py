@@ -20,25 +20,17 @@ from sigstore.models import Bundle
 from .sigstore_baseline import build_baseline_sigstore_bundle, build_signing_context
 from .sigstore_baseline import get_chain_owner_private_key
 from tc_api.trucon.owner_authorization import sign_owner_authorization, verify_owner_authorization
-from .tlog.types import (
+from tlog.types import (
     RecordContext, Entry, Record, EventLog, CommitResult,
     CommitQueueStatus, LatestState, VerificationResult, SubmitStatus
 )
-from .tlog.errors import RecordNotFoundError, BackendSubmitError, VerificationError
+from tlog.errors import RecordNotFoundError, BackendSubmitError, VerificationError
 from .trucon.database import get_chain_state
 from .trucon.internal_transport import request_json
 
+from tlog.digest import canonical_json, compute_entry_digest, compute_event_digest
+
 logger = logging.getLogger(__name__)
-
-def canonical_json(data: Any) -> str:
-    """Return a highly deterministic JSON serialization for hashing."""
-    return json.dumps(data, separators=(',', ':'), sort_keys=True, ensure_ascii=False)
-
-
-def compute_entry_digest(key: str, value: Any) -> str:
-    """Compute SHA-384 digest of a single entry: SHA384(canonical({"key": k, "value": v}))."""
-    payload = canonical_json({"key": key, "value": value})
-    return "sha384:" + hashlib.sha384(payload.encode("utf-8")).hexdigest()
 
 
 def _decode_rekor_body(entry: Dict[str, Any]) -> Dict[str, Any]:
@@ -348,17 +340,6 @@ def _classify_public_history_status(entry: Dict[str, Any]) -> Optional[str]:
     if not _entry_has_event_log0_baseline(entry):
         return "baseline-missing"
     return None
-
-
-def compute_event_digest(event_id: str, event_type: str, created_iso: str, entry_digests: List[str]) -> str:
-    """Compute SHA-384 event digest over metadata + entry digests (two-level algorithm)."""
-    payload = canonical_json({
-        "created": created_iso,
-        "entry_digests": entry_digests,
-        "event_id": event_id,
-        "event_type": event_type,
-    })
-    return "sha384:" + hashlib.sha384(payload.encode("utf-8")).hexdigest()
 
 
 def _candidate_identity(candidate: Dict[str, Any]) -> str:

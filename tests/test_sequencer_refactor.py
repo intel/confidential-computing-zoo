@@ -39,7 +39,7 @@ from tc_api.trucon.database import (
     update_record_confirmed,
     update_status,
 )
-from tc_api.tlog.local_mr import LocalMRAdapter
+from tlog.local_mr import LocalMRAdapter
 
 
 # ---------------------------------------------------------------------------

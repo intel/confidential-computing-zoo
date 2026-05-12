@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from tlog.digest import canonical_json
+
 
 REQUIRED_OWNER_BOUND_FIELDS = (
     "chain_id",
@@ -14,10 +16,6 @@ REQUIRED_OWNER_BOUND_FIELDS = (
     "owner_pub_key",
 )
 OWNER_BINDING_ALGORITHM = "sha384"
-
-
-def canonical_json(data: Any) -> str:
-    return json.dumps(data, separators=(",", ":"), sort_keys=True, ensure_ascii=False)
 
 
 class OwnerReportDataBinding(BaseModel):

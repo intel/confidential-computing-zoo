@@ -14,11 +14,11 @@ from sigstore.oidc import IdentityToken as SigstoreIdentityToken
 
 from tc_api import sigstore_baseline as sigstore_baseline_mod
 from tc_api.sigstore_baseline import build_baseline_sigstore_bundle
-from tc_api.tlog.types import Entry
-from tc_api.tlog.local_mr import LocalMRAdapter
+from tlog.types import Entry
+from tlog.local_mr import LocalMRAdapter
 from tc_api import tlog_client as tlog_client_mod
 from tc_api.tlog_client import TrustedLogAPI
-from tc_api.trucon.adapters.sigstore import SigstoreLogAdapter
+from tlog_rekor.adapter import SigstoreLogAdapter
 from tc_api.trucon.adapters.oci_mirror import OciBundleMirror
 from tc_api.trucon.database import init_db
 from tc_api.cli.verify import main as verify_main

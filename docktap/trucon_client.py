@@ -18,12 +18,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import urllib.request
 import urllib.error
 
-from tc_api.tlog.types import Entry
-from tc_api.tlog_client import (
-    canonical_json,
-    compute_entry_digest,
-    compute_event_digest,
-)
+from tlog.types import Entry
+from tlog.digest import canonical_json, compute_entry_digest, compute_event_digest
 from tc_api.sigstore_identity import resolve_sigstore_identity_token
 from tc_api.sigstore_baseline import (
     build_baseline_sigstore_bundle,

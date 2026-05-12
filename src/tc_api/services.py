@@ -19,7 +19,7 @@ from sigstore.verify import policy
 from sigstore.models import Bundle
 from sigstore import hashes as sigstore_hashes
 from .tlog_client import TrustedLogAPI
-from .tlog.types import Entry
+from tlog.types import Entry
 from pathlib import Path
 from sigstore.verify import policy
 
@@ -2169,7 +2169,7 @@ class DockerService:
     def commit_and_save_receipt(self, api_type, build_id, tlog: TrustedLogAPI, record_id: str, identity_token_str: str):
         """Commit the accumulated entries via TrustedLogAPI and save a receipt file."""
         try:
-            from .tlog.types import CommitResult
+            from tlog.types import CommitResult
             result = tlog.commit_record(
                 record_id=record_id,
                 event_type=api_type,

@@ -45,7 +45,7 @@ from tc_api.config import ENABLE_TDX
 from tc_api.sigstore_identity import resolve_sigstore_identity_token
 from tc_api.tlog_client import TrustedLogAPI
 from tc_api.trucon.adapters.ccel import read_ccel_eventlog_used_binary
-from tc_api.trucon.adapters.sigstore import SigstoreLogAdapter
+from tlog_rekor.adapter import SigstoreLogAdapter
 from tc_api.trucon.internal_transport import request_json, resolve_trucon_url
 
 

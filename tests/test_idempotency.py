@@ -28,7 +28,7 @@ from tc_api.trucon.database import (
     update_status,
 )
 from tc_api.tlog_client import TrustedLogAPI
-from tc_api.tlog.local_mr import LocalMRAdapter
+from tlog.local_mr import LocalMRAdapter
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ class TestClientIdempotencyKeyGeneration:
         api = TrustedLogAPI(local_mr=None, immutable_log=None, trucon_url="http://localhost:9999")
 
         ctx = api.init_record()
-        from tc_api.tlog.types import Entry
+        from tlog.types import Entry
         api.add_entry(ctx.record_id, Entry(key="test", value="data"))
 
         captured_payload = {}
@@ -356,7 +356,7 @@ class TestClientIdempotencyKeyGeneration:
         api = TrustedLogAPI(local_mr=None, immutable_log=None, trucon_url="http://localhost:9999")
 
         ctx = api.init_record()
-        from tc_api.tlog.types import Entry
+        from tlog.types import Entry
         api.add_entry(ctx.record_id, Entry(key="test", value="data"))
 
         captured_payload = {}

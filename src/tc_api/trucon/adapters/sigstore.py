@@ -14,8 +14,8 @@ from cryptography.hazmat.primitives.serialization import Encoding
 from sigstore.models import LogEntry
 from sigstore.models import Bundle
 
-from tc_api.tlog.immutable import ImmutableLogAdapter
-from tc_api.trucon.adapters.oci_mirror import OciBundleMirror
+from tlog.immutable import ImmutableLogAdapter
+from tlog_rekor.oci_mirror import OciBundleMirror
 
 logger = logging.getLogger(__name__)
 

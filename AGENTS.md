@@ -13,7 +13,11 @@
 - Data contracts: `src/tc_api/models.py` contains request/response and status models.
 - Service layer: `src/tc_api/services.py` encapsulates build/publish/launch workflows and external CLI calls.
 - KBS integration: `src/tc_api/kbs_service.py` wraps key registration/lookup behavior.
-- Transparency logging: `src/tc_api/trusted_container_log/tlog_chain.py` provides chained log entry handling.
+- Trusted-log shared types: `tlog/` is a standalone package (zero deps) with domain types, ABCs, errors, and digest functions.
+- Rekor backend adapter: `tlog-rekor/` is a standalone package with `SigstoreLogAdapter` and `OciBundleMirror`.
+- On-chain backend adapter: `tlog-onchain/` is a scaffold package with `OnChainLogAdapter` stub.
+- Trusted-log client: `src/tc_api/tlog_client.py` wraps DSSE signing and TruCon communication.
+- TruCon service: `src/tc_api/trucon/` contains the sequencer, SQLite queue, and platform adapters.
 - Runtime config: `src/tc_api/config.py` centralizes environment-driven settings (paths, commands, registry, KBS).
 - Tests: `tests/` contains all test files (`test_unit.py`, `test_api.py`, `test_runner.py`, etc.).
 - Scripts: `scripts/` contains VFS lifecycle, Windows platform scripts, and container entrypoint helpers.

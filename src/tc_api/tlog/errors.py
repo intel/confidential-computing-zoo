@@ -1,19 +1,2 @@
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
-
-@dataclass
-class TrustedLogError(Exception):
-    code: str
-    message: str
-    stage: str
-    retryable: bool
-    details: Optional[Dict[str, Any]] = None
-
-class RecordNotFoundError(TrustedLogError):
-    pass
-
-class BackendSubmitError(TrustedLogError):
-    pass
-
-class VerificationError(TrustedLogError):
-    pass
+"""Compatibility shim — re-exports from standalone tlog package."""
+from tlog.errors import *  # noqa: F401,F403

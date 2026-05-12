@@ -28,6 +28,24 @@ The project contains three primary runtime domains:
 - Maintains workload/instance mapping.
 - Provides query and verification-facing state.
 
+### 2.1 Package Structure
+
+Trusted-log code is organized into independently installable packages:
+
+| Package | Location | Purpose | Dependencies |
+|---|---|---|---|
+| `tlog` | `tlog/` | Shared domain types, ABCs, errors, digest functions | stdlib only |
+| `tlog-rekor` | `tlog-rekor/` | Rekor/Sigstore backend adapter (`SigstoreLogAdapter`, `OciBundleMirror`) | tlog, sigstore, sigstore-rekor-types, cryptography, requests |
+| `tlog-onchain` | `tlog-onchain/` | On-chain backend adapter scaffold (`OnChainLogAdapter` stub) | tlog |
+| `tc-api` | `.` (root) | REST API, TruCon service, tlog_client | tlog, tlog-rekor, FastAPI, etc. |
+
+Key layout conventions:
+- `tlog/src/tlog/`: `types.py` (Entry, Record, SubmitStatus, etc.), `errors.py`, `immutable.py` (ImmutableLogAdapter ABC), `local_mr.py` (LocalMRAdapter ABC), `digest.py` (canonical_json, compute_entry_digest, compute_event_digest)
+- `tlog-rekor/src/tlog_rekor/`: `adapter.py` (SigstoreLogAdapter), `oci_mirror.py` (OciBundleMirror)
+- `src/tc_api/tlog_client.py`: TrustedLogAPI — DSSE signing and TruCon communication
+- `src/tc_api/trucon/`: Sequencer service with platform-specific adapters (`adapters/tdx_mr.py`, `adapters/ccel.py`)
+- `src/tc_api/trucon/app.py`: Loads immutable backend at runtime via `TC_IMMUTABLE_BACKEND` env var (default: `rekor`)
+
 ## 3. High-Level Topology
 
 **Current implementation status:** REST API, TruCon, and Docktap are fully implemented and deployed. Docktap runs as an independent service (Unix socket proxy) alongside tc_api and TruCon.
@@ -229,7 +247,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Captures Docker runtime events: `pull`, `create`, `start`, `stop`, `rm`.
 - Submits each operation as an independent signed DSSE commit to TruCon `POST /commit`.
 - Shares tc_api's OIDC signing infrastructure (`sigstore.oidc.detect_credential()`); token re-acquired per commit.
-- Uses `Entry(key, value)` objects imported from `tc_api.tlog.types` for event data (same types as tc_api). Values are native JSON-compatible types (not stringified).
+- Uses `Entry(key, value)` objects imported from `tlog.types` for event data (same types as tc_api). Values are native JSON-compatible types (not stringified).
 - Routes events to per-workload chains via `io.trucon.workload-id` container label; containers without the label default to `"default"` chain.
 - The first event routed to a previously unseen non-`default` chain is now preceded by an explicit Event Log 0 bootstrap through the same tc_api trusted-log client. Direct business/runtime commits to an uninitialized non-default chain are rejected.
 - Workload baseline bootstrap uses the same reservation-backed Sigstore flow as the `default` chain: reserve baseline intent, sign Event Log 0 with signed `sequence_num=1` and null predecessor fields, then commit via `intent_token`.
@@ -358,7 +376,7 @@ In this model, `baseline_rtmr` and `ccel_digest` are acquired from TruCon's base
 For non-`default` workload chains, the same bootstrap contract applies before the first business or runtime commit is accepted. The tc_api-side trusted-log client performs that baseline bootstrap automatically; direct commits to an uninitialized workload chain are rejected instead of creating an implicit unsigned baseline.
 
 **Planned (not yet implemented):**
-- On-chain backend adapter (GAP-07, blocked by target chain selection).
+- On-chain backend adapter (GAP-07, blocked by target chain selection). Scaffold exists in `tlog-onchain/` with `OnChainLogAdapter` stub raising `NotImplementedError`.
 
 For implementation details, see [trusted-log/architecture.md](trusted-log/architecture.md).
 

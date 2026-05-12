@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from tc_api.tlog.types import Entry
+from tlog.types import Entry
 from tc_api.tlog_client import TrustedLogAPI
 
 

@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
 from sigstore.models import Bundle
 from tc_api.trucon.adapters.oci_mirror import OciBundleMirror
-from tc_api.trucon.adapters.sigstore import SigstoreLogAdapter
+from tlog_rekor.adapter import SigstoreLogAdapter
 from tc_api.tlog_client import TrustedLogAPI, _decode_dsse_payload, _extract_signer_identity
 from tc_api.trucon.owner_authorization import sign_owner_authorization
 
@@ -394,7 +394,7 @@ def test_sigstore_adapter_merges_attestation_from_raw_rekor_response(mock_rekor)
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    with patch("tc_api.trucon.adapters.sigstore.urllib.request.urlopen", return_value=_Response()):
+    with patch("tlog_rekor.adapter.urllib.request.urlopen", return_value=_Response()):
         entry = adapter.get_entry("log-id-raw-123")
 
     assert entry["attestation"]["data"] == base64.b64encode(payload_bytes).decode("utf-8")
@@ -451,7 +451,7 @@ def test_sigstore_adapter_retries_raw_rekor_attestation_until_available(mock_rek
     with patch.object(adapter, "_fetch_raw_rekor_entry", side_effect=[
         SigstoreLogAdapter._normalize_raw_entry_response(raw_without_attestation),
         SigstoreLogAdapter._normalize_raw_entry_response(raw_with_attestation),
-    ]) as fetch_raw, patch("tc_api.trucon.adapters.sigstore.time.sleep") as sleep_mock:
+    ]) as fetch_raw, patch("tlog_rekor.adapter.time.sleep") as sleep_mock:
         entry = adapter.get_entry("log-id-retry-123")
 
     assert fetch_raw.call_count == 2
@@ -800,7 +800,7 @@ def test_sigstore_payload_hash_lookup_keeps_mirror_candidate_when_public_lookup_
 
     adapter = SigstoreLogAdapter(bundle_mirror=_Mirror())
 
-    with patch("tc_api.trucon.adapters.sigstore.urllib.request.urlopen", return_value=_Response()):
+    with patch("tlog_rekor.adapter.urllib.request.urlopen", return_value=_Response()):
         with patch.object(adapter, "get_entry", return_value=public_entry):
             candidates = adapter.find_entries_by_payload_hash(payload_hash)
 

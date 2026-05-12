@@ -16,7 +16,7 @@ from trucon_client import (
     _extract_rekor_identifiers,
     _resolve_identity_token_str,
 )
-from tc_api.tlog.types import Entry
+from tlog.types import Entry
 from proxy.operation_log import OperationRecord
 
 
@@ -373,7 +373,7 @@ class TestBestEffortFailureHandling:
 class TestDSSEConstruction:
     def test_predicate_type_and_digest_format(self):
         """Verify predicate type, digest prefix, and subject format match tc_api conventions."""
-        from tc_api.tlog_client import compute_entry_digest, compute_event_digest
+        from tlog.digest import compute_entry_digest, compute_event_digest
 
         rec = _make_record(
             operation={"type": "pull"},

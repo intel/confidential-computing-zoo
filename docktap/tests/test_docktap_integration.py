@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tc_api.tlog.local_mr import LocalMRAdapter
-from tc_api.tlog_client import compute_entry_digest, compute_event_digest
+from tlog.local_mr import LocalMRAdapter
+from tlog.digest import compute_entry_digest, compute_event_digest
 from tc_api.trucon.database import get_chain_state, get_pending_records, init_db
 
 

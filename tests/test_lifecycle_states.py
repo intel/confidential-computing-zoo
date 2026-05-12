@@ -18,7 +18,7 @@ from typing import Tuple
 
 import pytest
 
-from tc_api.tlog.types import SubmitStatus
+from tlog.types import SubmitStatus
 from tc_api.trucon.database import (
     get_failed_by_chain,
     get_pending_by_chain,

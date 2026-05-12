@@ -15,6 +15,7 @@ from sigstore.oidc import IdentityToken
 from sigstore.sign import SigningContext
 from .config import OWNER_KEY_DIR
 from .sigstore_identity import resolve_sigstore_identity_token_object
+from tlog.digest import canonical_json as _canonical_json, compute_entry_digest as _compute_entry_digest, compute_event_digest as _compute_event_digest
 
 
 _OWNER_KEY_LOCK = Lock()
@@ -73,27 +74,6 @@ def _get_or_create_chain_owner_private_key(chain_id: str) -> ec.EllipticCurvePri
 
         _CHAIN_OWNER_PRIVATE_KEYS[chain_id] = private_key
         return private_key
-
-
-def _canonical_json(data: Any) -> str:
-    return json.dumps(data, separators=(",", ":"), sort_keys=True, ensure_ascii=False)
-
-
-def _compute_entry_digest(key: str, value: Any) -> str:
-    payload = _canonical_json({"key": key, "value": value})
-    return "sha384:" + hashlib.sha384(payload.encode("utf-8")).hexdigest()
-
-
-def _compute_event_digest(event_id: str, event_type: str, created_iso: str, entry_digests: list[str]) -> str:
-    payload = _canonical_json(
-        {
-            "created": created_iso,
-            "entry_digests": entry_digests,
-            "event_id": event_id,
-            "event_type": event_type,
-        }
-    )
-    return "sha384:" + hashlib.sha384(payload.encode("utf-8")).hexdigest()
 
 
 def _resolve_identity_token(identity_token_str: Optional[str] = None) -> IdentityToken:

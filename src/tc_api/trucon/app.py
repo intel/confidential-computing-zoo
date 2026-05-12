@@ -66,8 +66,8 @@ from .database import (
     update_status,
 )
 from tc_api.sigstore_baseline import build_baseline_sigstore_bundle
-from .adapters.oci_mirror import OciBundleMirror, build_mirror_annotations
-from .adapters.sigstore import SigstoreLogAdapter
+from tlog_rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
+from tlog_rekor.adapter import SigstoreLogAdapter
 from .adapters.ccel import compute_ccel_digest, read_ccel_eventlog_b64
 from .adapters.tdx_quote import TdxQuoteAdapter
 from .internal_transport import (
@@ -544,6 +544,19 @@ def release_instance_lock():
 _sequencer_lock = threading.Lock()
 _local_mr = None       # Set during lifespan
 _immutable_log = None   # Set during lifespan
+
+_TC_IMMUTABLE_BACKEND = os.environ.get("TC_IMMUTABLE_BACKEND", "rekor").strip().lower()
+
+
+def _load_immutable_adapter(**kwargs):
+    """Load the configured immutable-log backend adapter."""
+    if _TC_IMMUTABLE_BACKEND == "rekor":
+        from tlog_rekor.adapter import SigstoreLogAdapter
+        return SigstoreLogAdapter(**kwargs)
+    elif _TC_IMMUTABLE_BACKEND == "onchain":
+        from tlog_onchain.adapter import OnChainLogAdapter
+        return OnChainLogAdapter(**kwargs)
+    raise ValueError(f"Unknown immutable backend: {_TC_IMMUTABLE_BACKEND!r}. Supported: rekor, onchain")
 _quote_adapter = None    # Set during lifespan
 
 # RTMR[2] is the default OS/application-layer measurement register in TDX.
@@ -788,11 +801,8 @@ def _submit_daemon_tick():
             t_submit = time.perf_counter()
 
             try:
-                from sigstore.models import Bundle
-                bundle = Bundle.from_json(bundle_json)
-
                 if _immutable_log:
-                    log_id, status, _receipt = _immutable_log.submit_bundle(bundle)
+                    log_id, status, _receipt = _immutable_log.submit_bundle(bundle_json)
                     if status == "confirmed":
                         confirmed_rekor = _extract_confirmed_rekor_identifiers(log_id, _receipt)
                         update_record_confirmed(record_id, log_id)
@@ -909,7 +919,7 @@ async def lifespan(app: FastAPI):
         or os.environ.get("TRUCON_BUNDLE_MIRROR_DIR")
     )
     _bundle_mirror = OciBundleMirror(mirror_location) if mirror_location else None
-    _immutable_log = SigstoreLogAdapter(bundle_mirror=_bundle_mirror)
+    _immutable_log = _load_immutable_adapter(bundle_mirror=_bundle_mirror)
     _quote_adapter = TdxQuoteAdapter()
 
     if _TRUCON_UDS_PATH:

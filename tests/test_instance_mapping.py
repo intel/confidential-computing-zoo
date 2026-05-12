@@ -28,7 +28,7 @@ from tc_api.trucon.database import (
     insert_record,
     get_db_connection,
 )
-from tc_api.tlog.local_mr import LocalMRAdapter
+from tlog.local_mr import LocalMRAdapter
 
 # Get the actual module object (not the FastAPI app variable)
 import importlib

@@ -14,8 +14,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from tc_api.cli.verify import main as verify_main
-from tc_api.tlog.local_mr import LocalMRAdapter
-from tc_api.tlog_client import compute_entry_digest, compute_event_digest
+from tlog.local_mr import LocalMRAdapter
+from tlog.digest import compute_entry_digest, compute_event_digest
 from tc_api.trucon.evidence import decode_binding_expected_value
 from tc_api.trucon.database import init_db
 from tc_api.trucon.owner_authorization import sign_owner_authorization
@@ -91,15 +91,16 @@ class FakeImmutableBackend:
         self._entries_by_log_id: dict[str, dict[str, Any]] = {}
         self._counter = 0
 
-    def submit_bundle(self, bundle: DummyBundle, prev_log_id: Optional[str] = None):
-        statement = json.loads(bundle.source_json)
+    def submit_bundle(self, bundle, prev_log_id: Optional[str] = None):
+        source_json = bundle if isinstance(bundle, str) else bundle.source_json
+        statement = json.loads(source_json)
         subject = (statement.get("subject") or [{}])[0]
         subject_name = subject.get("name", "trusted-log-chain_default")
         chain_id = subject_name.removeprefix("trusted-log-chain_")
 
         self._counter += 1
         log_id = f"fake-log-{self._counter}"
-        payload_b64 = base64.b64encode(bundle.source_json.encode("utf-8")).decode("utf-8")
+        payload_b64 = base64.b64encode(source_json.encode("utf-8")).decode("utf-8")
         entry = {
             "log_id": log_id,
             "body": {

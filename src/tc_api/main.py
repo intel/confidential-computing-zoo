@@ -19,7 +19,7 @@ import requests
 import urllib.parse
 from pydantic import BaseModel
 from .tlog_client import TrustedLogAPI
-from .tlog.types import Entry
+from tlog.types import Entry
 from .models import *
 from .services import DockerService
 from .kbs_service import KBSService
@@ -558,7 +558,7 @@ def _resolve_required_sigstore_identity_token(
 async def lifespan(app: FastAPI):
     # Startup logic
     from .tlog_client import TrustedLogAPI
-    from .trucon.adapters.sigstore import SigstoreLogAdapter
+    from tlog_rekor.adapter import SigstoreLogAdapter
     
     # tc_api is stateless for the commit path — RTMR extend is TruCon's job.
     # local_mr is no longer used here.

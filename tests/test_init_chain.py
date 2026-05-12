@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 
 from fastapi.testclient import TestClient
-from tc_api.tlog.local_mr import LocalMRAdapter
+from tlog.local_mr import LocalMRAdapter
 from tc_api.trucon.database import init_db
 from tc_api.trucon.owner_authorization import sign_owner_authorization
 

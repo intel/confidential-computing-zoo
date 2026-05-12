@@ -20,14 +20,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tc_api.tlog_client import (
-    TrustedLogAPI,
-    canonical_json,
-    compute_entry_digest,
-    compute_event_digest,
-)
-from tc_api.tlog.types import Entry, SubmitStatus
-from tc_api.tlog.local_mr import LocalMRAdapter
+from tc_api.tlog_client import TrustedLogAPI
+from tlog.digest import canonical_json, compute_entry_digest, compute_event_digest
+from tlog.types import Entry, SubmitStatus
+from tlog.local_mr import LocalMRAdapter
 
 
 # ---------------------------------------------------------------------------
