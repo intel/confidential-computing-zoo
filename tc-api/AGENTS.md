@@ -1,12 +1,19 @@
 # Project Guidelines
 
 ## Build and Test
-- Setup environment: `bash setup.sh` (creates `venv`, installs the package in editable mode, initializes directories).
-- Start service: `bash start.sh` (recommended; validates tool availability and runs `uvicorn`).
+- Setup environment: `cd tc-api && bash setup.sh` (creates `venv`, installs tlog/tlog-rekor/tc-api in editable mode).
+- Start service: `cd tc-api && bash start.sh` (validates tool availability and runs `uvicorn`).
 - Alternate start: `python -m tc_api.main`.
-- Run all tests: `bash run_tests.sh`.
+- Run all tests: `cd tc-api && bash run_tests.sh`.
 - Run manual API checks: `python -m tests.test_api` (or `python -m tests.test_api health|build|publish|register`).
 - Run automated tests: `pytest tests/test_unit.py -v`.
+- Docker build: `docker-compose build` (from repo root; Dockerfile is at repo root).
+
+## Repository Layout
+- This file lives in `tc-api/`, one of several top-level packages in the monorepo.
+- Standalone packages at repo root: `tlog/`, `tlog-rekor/`, `tlog-onchain/`.
+- Trust service: `trust-service/` (attestation agent/CDH).
+- System-level files at repo root: `Dockerfile`, `docker-compose.yml`, `deploy/`, `scripts/dev-up.sh`.
 
 ## Architecture
 - API layer: `src/tc_api/main.py` defines FastAPI endpoints and request flow.

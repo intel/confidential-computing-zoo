@@ -75,9 +75,11 @@ recreate_venv_if_needed
 
 VENV_PYTHON="$VENV_DIR/bin/python"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Install package and dependencies
 "$VENV_PYTHON" -m pip install --upgrade pip
-"$VENV_PYTHON" -m pip install -e .
+"$VENV_PYTHON" -m pip install -e "$SCRIPT_DIR/../tlog" -e "$SCRIPT_DIR/../tlog-rekor" -e .
 
 # Create necessary directories
 mkdir -p uploads builds logs

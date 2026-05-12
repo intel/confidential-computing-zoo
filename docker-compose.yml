@@ -31,9 +31,9 @@ services:
       - HTTPS_PROXY=${HTTPS_PROXY:-}
       - NO_PROXY=${NO_PROXY:-}
     volumes:
-      - ./uploads:/app/uploads
-      - ./builds:/app/builds
-      - ./logs:/app/logs
+      - ./tc-api/uploads:/app/tc-api/uploads
+      - ./tc-api/builds:/app/tc-api/builds
+      - ./tc-api/logs:/app/tc-api/logs
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for building images
       - /var/run/trucon:/var/run/trucon
     tmpfs:
@@ -66,7 +66,7 @@ services:
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-}
     volumes:
-      - ./logs:/app/logs
+      - ./tc-api/logs:/app/tc-api/logs
       - /var/run/trucon:/var/run/trucon
     tmpfs:
       - /dev/shm
@@ -102,7 +102,7 @@ services:
       - /var/run/docker.sock:/var/run/docker-daemon.sock
       - /var/run/docktap:/var/run/docktap
       - /var/run/trucon:/var/run/trucon
-      - ./logs:/app/logs
+      - ./tc-api/logs:/app/tc-api/logs
     tmpfs:
       - /dev/shm
     mem_swappiness: 0

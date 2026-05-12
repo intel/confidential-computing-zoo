@@ -8,7 +8,7 @@ Define the requirements for the trusted-log package layout and the boundaries be
 The codebase SHALL organize trusted-log related code into three distinct layers: a standalone `tlog` package (independent project), a TruCon service package (`trucon/` within `tc-api`), and a tc_api-side client module (`tlog_client.py` within `tc-api`). The `tlog` package is a separate installable project, not a sub-package of `tc_api`.
 
 #### Scenario: tlog/ is a standalone project with its own pyproject.toml
-- **WHEN** inspecting the `tlog/` directory at the monorepo root (or `agent-cc/core/tlog/`)
+- **WHEN** inspecting the `tlog/` directory at the monorepo root
 - **THEN** it SHALL have its own `pyproject.toml` and be installable independently via `pip install -e tlog/`
 
 #### Scenario: tlog/ contains only shared contracts and digest computation
@@ -24,10 +24,13 @@ The codebase SHALL organize trusted-log related code into three distinct layers:
 - **WHEN** inspecting `tc-api/src/tc_api/tlog_client.py`
 - **THEN** it SHALL contain the `TrustedLogAPI` class that performs DSSE signing and communicates with TruCon, importing domain types from the standalone `tlog` package
 
-#### Scenario: src/tc_api/tlog/ contains no shim files
-- **WHEN** inspecting `src/tc_api/tlog/`
-- **THEN** it SHALL contain only `__init__.py` with a tombstone notice directing users to the standalone `tlog` package
-- **AND** it SHALL NOT contain `types.py`, `errors.py`, `immutable.py`, or `local_mr.py`
+#### Scenario: src/tc_api/tlog/ tombstone is removed
+- **WHEN** inspecting `tc-api/src/tc_api/`
+- **THEN** there SHALL be no `tlog/` subdirectory
+
+#### Scenario: setup.sh installs sibling tlog packages
+- **WHEN** running `tc-api/setup.sh`
+- **THEN** it SHALL install `tlog` and `tlog-rekor` from sibling directories (`../tlog`, `../tlog-rekor`) in editable mode alongside the tc-api package itself
 
 ### Requirement: Import path conventions
 Each layer SHALL use import paths consistent with its package location. The tc_api business layer (`main.py`, `services.py`) SHALL import shared types from `tlog` (standalone package) and the client from `tc_api.tlog_client`. TruCon internals SHALL import shared types from `tlog` and platform adapter implementations from `tc_api.trucon.adapters`. Immutable-log backend adapters SHALL be imported from their own packages (`tlog_rekor`, `tlog_onchain`).

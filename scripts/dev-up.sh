@@ -70,12 +70,12 @@ wait_for_tcp_port "$KBS_HOST" "$KBS_PORT" "KBS" "${KBS_READY_TIMEOUT_SECONDS:-60
 case "$TRUST_SERVICE_BUILD" in
 	always)
 		echo "Building trust-service image ${TRUST_SERVICE_IMAGE}"
-		docker build -f "$REPO_ROOT/aa_asr_cdh/Dockerfile" -t "$TRUST_SERVICE_IMAGE" "$REPO_ROOT/aa_asr_cdh"
+		docker build -f "$REPO_ROOT/trust-service/Dockerfile" -t "$TRUST_SERVICE_IMAGE" "$REPO_ROOT/trust-service"
 		;;
 	missing)
 		if ! docker_image_exists "$TRUST_SERVICE_IMAGE"; then
 			echo "Building trust-service image ${TRUST_SERVICE_IMAGE}"
-			docker build -f "$REPO_ROOT/aa_asr_cdh/Dockerfile" -t "$TRUST_SERVICE_IMAGE" "$REPO_ROOT/aa_asr_cdh"
+			docker build -f "$REPO_ROOT/trust-service/Dockerfile" -t "$TRUST_SERVICE_IMAGE" "$REPO_ROOT/trust-service"
 		fi
 		;;
 	never)
@@ -130,6 +130,6 @@ fi
 
 echo "Starting tc-api stack via start.sh"
 cd "$REPO_ROOT"
-./start.sh "$@" &
+./tc-api/start.sh "$@" &
 main_pid=$!
 wait "$main_pid"

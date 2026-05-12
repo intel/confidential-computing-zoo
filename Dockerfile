@@ -49,12 +49,15 @@ RUN wget https://github.com/anchore/syft/releases/download/v0.96.0/syft_0.96.0_l
 RUN apt-get update && apt-get install -y skopeo \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy repository contents into the image build context.
-COPY . /app/
+# Copy packages into the image (targeted, not the entire repo).
+COPY tlog/    /app/tlog/
+COPY tlog-rekor/ /app/tlog-rekor/
+COPY tc-api/  /app/tc-api/
+
 # Todo libtdx_attest.so source
 RUN if [ "$ENABLE_TDX" = "true" ]; then \ 
-        if ls /app/libtdx_attest.so* >/dev/null 2>&1; then \
-            mv /app/libtdx_attest.so* /usr/lib/x86_64-linux-gnu/ && \
+        if ls /app/tc-api/libtdx_attest.so* >/dev/null 2>&1; then \
+            mv /app/tc-api/libtdx_attest.so* /usr/lib/x86_64-linux-gnu/ && \
             ln -sf /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1.21.100.3 /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1 && \
             ln -sf /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1 /usr/lib/x86_64-linux-gnu/libtdx_attest.so; \
         else \
@@ -65,18 +68,16 @@ RUN if [ "$ENABLE_TDX" = "true" ]; then \
         echo "ENABLE_TDX=false, skipping TDX extension setup"; \
     fi
 
+WORKDIR /app/tc-api
+
 RUN python -m venv /app/venv
-RUN if [ -f "pyproject.toml" ]; then \
-        /app/venv/bin/pip install --no-cache-dir .; \
-    elif [ -f "requirements.txt" ]; then \
-        /app/venv/bin/pip install --no-cache-dir -r requirements.txt; \
-    fi
+RUN /app/venv/bin/pip install --no-cache-dir \
+    -e /app/tlog \
+    -e /app/tlog-rekor \
+    .
 
 # Create necessary directories
-RUN mkdir -p /app/uploads /app/builds /app/logs /app/certs
-
-# Copy aa/asr/cdh binary
-COPY ./certs /app/certs/
+RUN mkdir -p /app/tc-api/uploads /app/tc-api/builds /app/tc-api/logs /app/tc-api/certs
 
 # Expose port
 EXPOSE 8000 8001 8002 8006
@@ -84,14 +85,14 @@ EXPOSE 8000 8001 8002 8006
 # Set environment variables
 ENV HOST=0.0.0.0
 ENV PORT=8000
-ENV UPLOAD_DIR=/app/uploads
-ENV BUILD_DIR=/app/builds
-ENV LOGS_DIR=/app/logs
+ENV UPLOAD_DIR=/app/tc-api/uploads
+ENV BUILD_DIR=/app/tc-api/builds
+ENV LOGS_DIR=/app/tc-api/logs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
 #Run the application
-RUN chmod +x start.sh
-ENTRYPOINT ["bash","start.sh"]
+RUN chmod +x /app/tc-api/start.sh
+ENTRYPOINT ["bash","/app/tc-api/start.sh"]
