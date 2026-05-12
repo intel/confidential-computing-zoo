@@ -5,10 +5,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from proxy.docker_proxy import DockerProxyServer, WORKLOAD_LABEL, LAUNCH_LABEL
-from trucon_client import TruConCommitter
-from proxy.operation_log import OperationRecord
-from workload_store import WorkloadStore
+from tc_api.docktap.proxy.docker_proxy import DockerProxyServer, WORKLOAD_LABEL, LAUNCH_LABEL
+from tc_api.docktap.trucon_client import TruConCommitter
+from tc_api.docktap.proxy.operation_log import OperationRecord
+from tc_api.docktap.workload_store import WorkloadStore
 
 
 # ---------------------------------------------------------------------------

@@ -353,7 +353,7 @@ def test_exec_docktap_with_identity_token_uses_expected_execvpe(monkeypatch):
     assert captured["argv"] == [
         "/venv/bin/python",
         "-m",
-        "docktap.main",
+        "tc_api.docktap.main",
         "--socket-path",
         "/tmp/docker-proxy.sock",
         "--docker-socket-path",

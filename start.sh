@@ -221,7 +221,7 @@ stop_services() {
     stop_pid_from_file "TruCon" "$TRUCON_PID_FILE"
 
     stop_matching_processes "TC API" "tc_api.main:app" "--port ${PORT:-8000}"
-    stop_matching_processes "Docktap" "docktap.main" "${DOCKTAP_SOCKET:-/var/run/docktap/docker.sock}"
+    stop_matching_processes "Docktap" "tc_api.docktap.main" "${DOCKTAP_SOCKET:-/var/run/docktap/docker.sock}"
     stop_matching_processes "TruCon" "tc_api.trucon.app:app" "--port ${TRUCON_PORT:-8001}"
 }
 
@@ -428,7 +428,7 @@ echo "  TruCon log file: $TRUCON_LOG_FILE"
 echo "Starting Docktap (Docker proxy sidecar) on $DOCKTAP_SOCKET..."
 mkdir -p "$(dirname "$DOCKTAP_LOG_FILE")"
 : > "$DOCKTAP_LOG_FILE"
-"$PYTHON_BIN" -m docktap.main --socket-path "$DOCKTAP_SOCKET" --docker-socket-path /var/run/docker.sock >> "$DOCKTAP_LOG_FILE" 2>&1 &
+"$PYTHON_BIN" -m tc_api.docktap.main --socket-path "$DOCKTAP_SOCKET" --docker-socket-path /var/run/docker.sock >> "$DOCKTAP_LOG_FILE" 2>&1 &
 DOCKTAP_PID=$!
 echo "$DOCKTAP_PID" > "$DOCKTAP_PID_FILE"
 

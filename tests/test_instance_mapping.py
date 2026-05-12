@@ -415,9 +415,8 @@ class TestDocktapInstanceId:
     def test_container_event_includes_instance_id(self):
         """Container lifecycle events (create/start/stop/rm) include instance_id."""
         import sys
-        sys.path.insert(0, "docktap")
-        from trucon_client import TruConCommitter
-        from proxy.operation_log import OperationRecord
+        from tc_api.docktap.trucon_client import TruConCommitter
+        from tc_api.docktap.proxy.operation_log import OperationRecord
 
         committer = TruConCommitter(trucon_url="http://localhost:8001")
 
@@ -428,9 +427,9 @@ class TestDocktapInstanceId:
                 container={"id": "a" * 64, "name": "mycontainer"},
             )
             with patch.object(committer, "_post_to_trucon") as mock_post, \
-                 patch("trucon_client.detect_credential", return_value="fake-token"), \
-                 patch("trucon_client.IdentityToken") as mock_id_token, \
-                 patch("trucon_client.SigningContext") as mock_ctx:
+                 patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
+                 patch("tc_api.docktap.trucon_client.IdentityToken") as mock_id_token, \
+                 patch("tc_api.docktap.trucon_client.SigningContext") as mock_ctx:
                 mock_id_token.return_value = MagicMock()
                 mock_signer = MagicMock()
                 mock_bundle = MagicMock()
@@ -450,9 +449,8 @@ class TestDocktapInstanceId:
     def test_pull_event_has_null_instance_id(self):
         """Pull operations have instance_id=None."""
         import sys
-        sys.path.insert(0, "docktap")
-        from trucon_client import TruConCommitter
-        from proxy.operation_log import OperationRecord
+        from tc_api.docktap.trucon_client import TruConCommitter
+        from tc_api.docktap.proxy.operation_log import OperationRecord
 
         committer = TruConCommitter(trucon_url="http://localhost:8001")
 
@@ -462,9 +460,9 @@ class TestDocktapInstanceId:
             container={},
         )
         with patch.object(committer, "_post_to_trucon") as mock_post, \
-             patch("trucon_client.detect_credential", return_value="fake-token"), \
-             patch("trucon_client.IdentityToken") as mock_id_token, \
-             patch("trucon_client.SigningContext") as mock_ctx:
+             patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
+             patch("tc_api.docktap.trucon_client.IdentityToken") as mock_id_token, \
+             patch("tc_api.docktap.trucon_client.SigningContext") as mock_ctx:
             mock_id_token.return_value = MagicMock()
             mock_signer = MagicMock()
             mock_bundle = MagicMock()

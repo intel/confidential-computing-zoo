@@ -2,7 +2,7 @@
 
 import pytest
 
-from workload_store import WorkloadStore
+from tc_api.docktap.workload_store import WorkloadStore
 
 
 @pytest.fixture

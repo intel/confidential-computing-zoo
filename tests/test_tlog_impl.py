@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
 from sigstore.models import Bundle
-from tc_api.trucon.adapters.oci_mirror import OciBundleMirror
+from tlog_rekor.oci_mirror import OciBundleMirror
 from tlog_rekor.adapter import SigstoreLogAdapter
 from tc_api.tlog_client import TrustedLogAPI, _decode_dsse_payload, _extract_signer_identity
 from tc_api.trucon.owner_authorization import sign_owner_authorization

@@ -17,7 +17,7 @@ from .operation_log import (
     is_streaming_endpoint,
 )
 from .runtime_adapter import DEFAULT_RUNTIME_ENGINE, DockerRuntimeAdapter
-from trucon_client import SUBMITTABLE_OPERATIONS, has_reusable_identity_token
+from ..trucon_client import SUBMITTABLE_OPERATIONS, has_reusable_identity_token
 
 WORKLOAD_LABEL = "io.trucon.workload-id"
 LAUNCH_LABEL = "io.trucon.launch-id"

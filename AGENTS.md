@@ -18,6 +18,7 @@
 - On-chain backend adapter: `tlog-onchain/` is a scaffold package with `OnChainLogAdapter` stub.
 - Trusted-log client: `src/tc_api/tlog_client.py` wraps DSSE signing and TruCon communication.
 - TruCon service: `src/tc_api/trucon/` contains the sequencer, SQLite queue, and platform adapters.
+- Docktap sidecar: `src/tc_api/docktap/` is the Docker operation interception proxy (sub-package of tc_api). Entry point: `tc-docktap` CLI or `python -m tc_api.docktap.main`.
 - Runtime config: `src/tc_api/config.py` centralizes environment-driven settings (paths, commands, registry, KBS).
 - Tests: `tests/` contains all test files (`test_unit.py`, `test_api.py`, `test_runner.py`, etc.).
 - Scripts: `scripts/` contains VFS lifecycle, Windows platform scripts, and container entrypoint helpers.

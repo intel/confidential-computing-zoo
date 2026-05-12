@@ -19,7 +19,7 @@ from tlog.local_mr import LocalMRAdapter
 from tc_api import tlog_client as tlog_client_mod
 from tc_api.tlog_client import TrustedLogAPI
 from tlog_rekor.adapter import SigstoreLogAdapter
-from tc_api.trucon.adapters.oci_mirror import OciBundleMirror
+from tlog_rekor.oci_mirror import OciBundleMirror
 from tc_api.trucon.database import init_db
 from tc_api.cli.verify import main as verify_main
 from tests.test_real_oci_mirror_integration import real_oci_registry_runtime

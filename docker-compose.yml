@@ -86,7 +86,7 @@ services:
         - http_proxy=${http_proxy:-}
         - https_proxy=${https_proxy:-}
         - no_proxy=${no_proxy:-}
-    command: ["/app/venv/bin/python", "-m", "docktap.main", "--socket-path", "/var/run/docktap/docker.sock", "--docker-socket-path", "/var/run/docker-daemon.sock"]
+    command: ["/app/venv/bin/python", "-m", "tc_api.docktap.main", "--socket-path", "/var/run/docktap/docker.sock", "--docker-socket-path", "/var/run/docker-daemon.sock"]
     ports:
       - "8002:8002"
     environment:

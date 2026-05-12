@@ -8,9 +8,7 @@ Concurrency and per-request handling are implemented in
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from proxy.docker_proxy import DockerProxyServer
+from .proxy.docker_proxy import DockerProxyServer
 
 
 SOCKET_PATH = "/tmp/test-stream.sock"

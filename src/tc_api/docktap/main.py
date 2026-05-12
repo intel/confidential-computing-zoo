@@ -18,12 +18,10 @@ import threading
 from dataclasses import dataclass
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from proxy.docker_proxy import DockerProxyServer
-from proxy.operation_log import log_event
-from trucon_client import TruConCommitter
-from workload_store import WorkloadStore
+from .proxy.docker_proxy import DockerProxyServer
+from .proxy.operation_log import log_event
+from .trucon_client import TruConCommitter
+from .workload_store import WorkloadStore
 
 
 logging.basicConfig(

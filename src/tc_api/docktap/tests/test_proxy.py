@@ -14,10 +14,8 @@ import threading
 import subprocess
 from datetime import datetime
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from proxy.docker_proxy import DockerProxyServer
-from proxy.operation_log import log_event
+from tc_api.docktap.proxy.docker_proxy import DockerProxyServer
+from tc_api.docktap.proxy.operation_log import log_event
 
 
 def test_proxy_start_stop():
@@ -131,7 +129,7 @@ def test_logger():
     """Test the trusted log logger"""
     print("\n=== Test: Logger ===")
     
-    from proxy.operation_log import log_operation
+    from tc_api.docktap.proxy.operation_log import log_operation
     
     test_cases = [
         {"operation": "pull", "image": "nginx", "tag": "latest"},

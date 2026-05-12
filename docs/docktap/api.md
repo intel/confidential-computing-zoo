@@ -11,12 +11,12 @@ This document does not redefine the runtime engine API itself. Docktap primarily
 
 Recommended Docktap module boundaries:
 
-- `docktap.main`: sidecar bootstrap, retention config, health server, process lifecycle.
-- `docktap.proxy.docker_proxy`: Unix socket proxy server and Docker request forwarding.
-- `docktap.proxy.runtime_adapter`: runtime-engine normalization boundary and engine identifier helpers.
-- `docktap.proxy.operation_log`: operation datamodel, parsing helpers, relationship tracking, JSON logging.
-- `docktap.trucon_client`: TruCon commit client, DSSE construction, retry bookkeeping, workload-chain resolution.
-- `docktap.workload_store`: persisted `container_id -> workload_id` mapping store.
+- `tc_api.docktap.main`: sidecar bootstrap, retention config, health server, process lifecycle.
+- `tc_api.docktap.proxy.docker_proxy`: Unix socket proxy server and Docker request forwarding.
+- `tc_api.docktap.proxy.runtime_adapter`: runtime-engine normalization boundary and engine identifier helpers.
+- `tc_api.docktap.proxy.operation_log`: operation datamodel, parsing helpers, relationship tracking, JSON logging.
+- `tc_api.docktap.trucon_client`: TruCon commit client, DSSE construction, retry bookkeeping, workload-chain resolution.
+- `tc_api.docktap.workload_store`: persisted `container_id -> workload_id` mapping store.
 
 ## Core Types
 
@@ -733,7 +733,7 @@ This endpoint is intended for process supervision and container orchestration he
 ## Lifecycle (Python Caller)
 
 ```python
-from docktap.main import SockBridge
+from tc_api.docktap.main import SockBridge
 
 app = SockBridge(
     socket_path="/tmp/docker-proxy.sock",
@@ -755,9 +755,9 @@ app.stop()
 For lower-level test or embedding scenarios:
 
 ```python
-from docktap.proxy.docker_proxy import DockerProxyServer
-from docktap.trucon_client import TruConCommitter
-from docktap.workload_store import WorkloadStore
+from tc_api.docktap.proxy.docker_proxy import DockerProxyServer
+from tc_api.docktap.trucon_client import TruConCommitter
+from tc_api.docktap.workload_store import WorkloadStore
 
 store = WorkloadStore(db_path="/tmp/map.db")
 store.init_db()

@@ -4,8 +4,8 @@ import time
 
 import pytest
 
-from proxy.docker_proxy import DockerProxyServer
-from proxy.operation_log import enrich_from_response, get_operation_type, is_streaming_endpoint, parse_operation_metadata
+from tc_api.docktap.proxy.docker_proxy import DockerProxyServer
+from tc_api.docktap.proxy.operation_log import enrich_from_response, get_operation_type, is_streaming_endpoint, parse_operation_metadata
 
 
 def _send_fragments(sock: socket.socket, fragments, delay: float = 0.03) -> None:

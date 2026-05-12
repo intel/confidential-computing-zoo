@@ -3,8 +3,8 @@ import os
 import socket
 from unittest.mock import patch
 
-from proxy.docker_proxy import DockerProxyServer
-from proxy.operation_log import OperationRecord
+from tc_api.docktap.proxy.docker_proxy import DockerProxyServer
+from tc_api.docktap.proxy.operation_log import OperationRecord
 
 
 class FakeClientSocket:
@@ -67,14 +67,14 @@ def test_handle_client_uses_shared_response_reader_and_half_closes_non_streaming
         container={"id": "demo"},
     )
 
-    with patch("proxy.docker_proxy.socket.socket", return_value=docker_socket), \
-            patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", return_value=docker_socket), \
+            patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
             patch.object(proxy, "_read_client_request", side_effect=[(request_data, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
          patch.object(proxy, "_parse_http_request", return_value=("stop", "/v1.41/containers/demo/stop", {})), \
          patch.object(proxy, "_read_docker_response", return_value=response_data) as read_response, \
-         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
-         patch("proxy.docker_proxy.log_operation_json") as log_operation_json:
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json") as log_operation_json:
         proxy.handle_client(client_socket)
 
     assert docker_socket.timeout == 30
@@ -103,14 +103,14 @@ def test_handle_client_keeps_streaming_upstream_socket_open_for_pull_requests():
         image={"name": "hello-world"},
     )
 
-    with patch("proxy.docker_proxy.socket.socket", return_value=docker_socket), \
-            patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", return_value=docker_socket), \
+            patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
             patch.object(proxy, "_read_client_request", side_effect=[(request_data, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
          patch.object(proxy, "_parse_http_request", return_value=("pull", "/v1.41/images/create", {})), \
          patch.object(proxy, "_read_docker_response", return_value=response_data) as read_response, \
-         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
-         patch("proxy.docker_proxy.log_operation_json") as log_operation_json:
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json") as log_operation_json:
         proxy.handle_client(client_socket)
 
     assert docker_socket.sent == [request_data]
@@ -136,14 +136,14 @@ def test_handle_client_records_no_response_when_shared_reader_returns_empty_byte
         container={"id": "demo"},
     )
 
-    with patch("proxy.docker_proxy.socket.socket", return_value=docker_socket), \
-            patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", return_value=docker_socket), \
+            patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
             patch.object(proxy, "_read_client_request", side_effect=[(request_data, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
          patch.object(proxy, "_parse_http_request", return_value=("stop", "/v1.41/containers/demo/stop", {})), \
          patch.object(proxy, "_read_docker_response", return_value=b""), \
-         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
-         patch("proxy.docker_proxy.log_operation_json") as log_operation_json:
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json") as log_operation_json:
         proxy.handle_client(client_socket)
 
     assert client_socket.sent == []
@@ -172,13 +172,13 @@ def test_handle_client_processes_multiple_requests_on_one_client_connection():
         operation={"type": "preflight_info", "action": "docker preflight_info", "api_path": "/v1.41/info", "method": "GET"},
     )
 
-    with patch("proxy.docker_proxy.socket.socket", side_effect=[first_docker_socket, second_docker_socket]), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", side_effect=[first_docker_socket, second_docker_socket]), \
          patch.object(proxy, "_read_client_request", side_effect=[(first_request, None), (second_request, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", side_effect=[first_record, second_record]), \
          patch.object(proxy, "_parse_http_request", side_effect=[("preflight_ping", "/_ping", {}), ("preflight_info", "/v1.41/info", {})]), \
          patch.object(proxy, "_read_docker_response", side_effect=[first_response, second_response]), \
-         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
-         patch("proxy.docker_proxy.log_operation_json") as log_operation_json:
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json") as log_operation_json:
         proxy.handle_client(client_socket)
 
     assert first_docker_socket.sent == [first_request]
@@ -208,13 +208,13 @@ def test_handle_client_blocks_submittable_requests_without_attestation_token():
         "DOCKTAP_ATTESTATION_API_URL": "http://127.0.0.1:8000",
         "DOCKTAP_ATTESTATION_BROWSER_BASE_URL": "http://127.0.0.1:8000",
     }, clear=False), \
-         patch("proxy.docker_proxy.socket.socket") as socket_ctor, \
-         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
+         patch("tc_api.docktap.proxy.docker_proxy.socket.socket") as socket_ctor, \
+         patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
          patch.object(proxy, "_read_client_request", side_effect=[(request_data, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
          patch.object(proxy, "_parse_http_request", return_value=("pull", "/v1.41/images/create", {"fromImage": ["hello-world"], "tag": ["latest"]})), \
-         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
-         patch("proxy.docker_proxy.log_operation_json") as log_operation_json:
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json") as log_operation_json:
         proxy.handle_client(client_socket)
 
     socket_ctor.assert_not_called()
@@ -268,14 +268,14 @@ def test_handle_client_returns_pull_success_before_async_trucon_submission():
         response={"status": 200},
     )
 
-    with patch("proxy.docker_proxy.socket.socket", return_value=docker_socket), \
-         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", return_value=docker_socket), \
+         patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
          patch.object(proxy, "_read_client_request", side_effect=[(request_data, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
          patch.object(proxy, "_parse_http_request", return_value=("pull", "/v1.41/images/create", {})), \
          patch.object(proxy, "_read_docker_response", return_value=response_data), \
-         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
-         patch("proxy.docker_proxy.log_operation_json") as log_operation_json:
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json") as log_operation_json:
         proxy.handle_client(client_socket)
 
     assert len(client_socket.sent) == 1
@@ -322,14 +322,14 @@ def test_handle_client_returns_create_success_before_async_trucon_submission():
         response={"status": 201},
     )
 
-    with patch("proxy.docker_proxy.socket.socket", return_value=docker_socket), \
-         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", return_value=docker_socket), \
+         patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
          patch.object(proxy, "_read_client_request", side_effect=[(request_data, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
          patch.object(proxy, "_parse_http_request", return_value=("create", "/v1.41/containers/create", {})), \
          patch.object(proxy, "_read_docker_response", return_value=response_data), \
-         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
-         patch("proxy.docker_proxy.log_operation_json") as log_operation_json:
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json") as log_operation_json:
         proxy.handle_client(client_socket)
 
     assert client_socket.sent == [response_data]
@@ -372,14 +372,14 @@ def test_handle_client_submits_build_requests_to_trucon_without_background_queue
         response={"status": 200},
     )
 
-    with patch("proxy.docker_proxy.socket.socket", return_value=docker_socket), \
-         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", return_value=docker_socket), \
+         patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
          patch.object(proxy, "_read_client_request", side_effect=[(request_data, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
          patch.object(proxy, "_parse_http_request", return_value=("build", "/v1.41/build", {})), \
          patch.object(proxy, "_read_docker_response", return_value=response_data), \
-         patch("proxy.docker_proxy.enrich_from_response") as enrich_response, \
-         patch("proxy.docker_proxy.log_operation_json") as log_operation_json:
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response") as enrich_response, \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json") as log_operation_json:
         proxy.handle_client(client_socket)
 
     assert client_socket.sent == [response_data]
@@ -424,14 +424,14 @@ def test_create_grants_followup_start_without_reusable_token():
         response={"status": 201},
     )
 
-    with patch("proxy.docker_proxy.socket.socket", return_value=create_docker_socket), \
-         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", return_value=create_docker_socket), \
+         patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
          patch.object(proxy, "_read_client_request", side_effect=[(create_request, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=create_record), \
          patch.object(proxy, "_parse_http_request", return_value=("create", "/v1.41/containers/create", {})), \
          patch.object(proxy, "_read_docker_response", return_value=create_response), \
-         patch("proxy.docker_proxy.enrich_from_response"), \
-         patch("proxy.docker_proxy.log_operation_json"):
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response"), \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json"):
         proxy.handle_client(create_client_socket)
 
     start_client_socket = FakeClientSocket()
@@ -444,14 +444,14 @@ def test_create_grants_followup_start_without_reusable_token():
         response={"status": 204},
     )
 
-    with patch("proxy.docker_proxy.socket.socket", return_value=start_docker_socket), \
-         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", return_value=start_docker_socket), \
+         patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
          patch.object(proxy, "_read_client_request", side_effect=[(start_request, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=start_record), \
          patch.object(proxy, "_parse_http_request", return_value=("start", "/v1.41/containers/container-123456/start", {})), \
          patch.object(proxy, "_read_docker_response", return_value=start_response), \
-         patch("proxy.docker_proxy.enrich_from_response"), \
-         patch("proxy.docker_proxy.log_operation_json"):
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response"), \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json"):
         proxy.handle_client(start_client_socket)
 
     assert start_docker_socket.sent == [start_request]
@@ -484,14 +484,14 @@ def test_rm_revokes_lifecycle_grant_and_later_stop_requires_token_again():
         container={"name": "mycontainer", "id": "container-abcdef123456"},
         response={"status": 201},
     )
-    with patch("proxy.docker_proxy.socket.socket", return_value=FakeDockerSocket()), \
-         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", return_value=FakeDockerSocket()), \
+         patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=True), \
          patch.object(proxy, "_read_client_request", side_effect=[(b"POST /v1.41/containers/create?name=mycontainer HTTP/1.1\r\nHost: localhost\r\n\r\n", None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=create_record), \
          patch.object(proxy, "_parse_http_request", return_value=("create", "/v1.41/containers/create", {})), \
          patch.object(proxy, "_read_docker_response", return_value=b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\n{}"), \
-         patch("proxy.docker_proxy.enrich_from_response"), \
-         patch("proxy.docker_proxy.log_operation_json"):
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response"), \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json"):
         proxy.handle_client(FakeClientSocket())
 
     rm_client_socket = FakeClientSocket()
@@ -504,14 +504,14 @@ def test_rm_revokes_lifecycle_grant_and_later_stop_requires_token_again():
         response={"status": 204},
     )
 
-    with patch("proxy.docker_proxy.socket.socket", return_value=rm_docker_socket), \
-         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket", return_value=rm_docker_socket), \
+         patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
          patch.object(proxy, "_read_client_request", side_effect=[(rm_request, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=rm_record), \
          patch.object(proxy, "_parse_http_request", return_value=("rm", "/v1.41/containers/container-abcdef123456", {})), \
          patch.object(proxy, "_read_docker_response", return_value=rm_response), \
-         patch("proxy.docker_proxy.enrich_from_response"), \
-         patch("proxy.docker_proxy.log_operation_json"):
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response"), \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json"):
         proxy.handle_client(rm_client_socket)
 
     assert rm_docker_socket.sent == [rm_request]
@@ -524,13 +524,13 @@ def test_rm_revokes_lifecycle_grant_and_later_stop_requires_token_again():
         container={"id": "container-abcdef123456"},
     )
 
-    with patch("proxy.docker_proxy.socket.socket") as socket_ctor, \
-         patch("proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
+    with patch("tc_api.docktap.proxy.docker_proxy.socket.socket") as socket_ctor, \
+         patch("tc_api.docktap.proxy.docker_proxy.has_reusable_identity_token", return_value=False), \
          patch.object(proxy, "_read_client_request", side_effect=[(stop_request, None), (None, "empty")]), \
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=stop_record), \
          patch.object(proxy, "_parse_http_request", return_value=("stop", "/v1.41/containers/container-abcdef123456/stop", {})), \
-         patch("proxy.docker_proxy.enrich_from_response"), \
-         patch("proxy.docker_proxy.log_operation_json"):
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response"), \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json"):
         proxy.handle_client(stop_client_socket)
 
     socket_ctor.assert_not_called()

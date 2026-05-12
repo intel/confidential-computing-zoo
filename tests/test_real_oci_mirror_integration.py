@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import docker
 import pytest
 
-from tc_api.trucon.adapters.oci_mirror import OciBundleMirror, build_mirror_annotations
+from tlog_rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
 
 
 ENV_RUN = "TC_API_RUN_REAL_OCI_MIRROR_TESTS"

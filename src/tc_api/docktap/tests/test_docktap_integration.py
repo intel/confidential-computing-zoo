@@ -203,8 +203,8 @@ class TestEndToEndDocktapFlow:
         client, db_path = trucon_client
         trucon_url = str(client.base_url)  # e.g. http://testserver
 
-        from proxy.operation_log import OperationRecord
-        from trucon_client import TruConCommitter
+        from tc_api.docktap.proxy.operation_log import OperationRecord
+        from tc_api.docktap.trucon_client import TruConCommitter
 
         rec = OperationRecord(
             operation={"type": "pull"},
@@ -214,9 +214,9 @@ class TestEndToEndDocktapFlow:
         # Mock signing + HTTP to go through TestClient instead of real HTTP
         committer = TruConCommitter(trucon_url=trucon_url)
 
-        with patch("trucon_client.detect_credential", return_value="fake-token"), \
-             patch("trucon_client.IdentityToken") as mock_id_token, \
-             patch("trucon_client.SigningContext") as mock_ctx:
+        with patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
+             patch("tc_api.docktap.trucon_client.IdentityToken") as mock_id_token, \
+             patch("tc_api.docktap.trucon_client.SigningContext") as mock_ctx:
             mock_signer = MagicMock()
             mock_bundle = MagicMock()
             mock_bundle.to_json.return_value = _make_fake_bundle("evt-test", "sha384:fake")
@@ -235,7 +235,7 @@ class TestEndToEndDocktapFlow:
                 )
                 return resp.json()
 
-            with patch("trucon_client.request_json", side_effect=fake_request_json):
+            with patch("tc_api.docktap.trucon_client.request_json", side_effect=fake_request_json):
                 result = committer.submit_operation(rec, "pull")
 
         assert result is True

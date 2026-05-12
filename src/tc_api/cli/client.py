@@ -342,7 +342,7 @@ def _exec_docktap_with_identity_token(
     env = os.environ.copy()
     env[env_var] = identity_token
 
-    argv = [sys.executable, "-m", "docktap.main", "--socket-path", socket_path, "--docker-socket-path", docker_socket_path]
+    argv = [sys.executable, "-m", "tc_api.docktap.main", "--socket-path", socket_path, "--docker-socket-path", docker_socket_path]
     if debug:
         argv.append("--debug")
 

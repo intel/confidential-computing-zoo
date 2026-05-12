@@ -87,7 +87,7 @@ def iter_docktap_pids(socket_path: str) -> list[int]:
         except OSError:
             continue
         cmdline = raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore")
-        if "docktap.main" in cmdline and socket_path in cmdline:
+        if "tc_api.docktap.main" in cmdline and socket_path in cmdline:
             pids.append(int(entry.name))
     return pids
 
@@ -233,7 +233,7 @@ class DocktapProcess:
         argv = [
             str(venv_python(self.root)),
             "-m",
-            "docktap.main",
+            "tc_api.docktap.main",
             "--socket-path",
             self.args.socket_path,
             "--docker-socket-path",

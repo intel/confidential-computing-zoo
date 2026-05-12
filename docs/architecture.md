@@ -37,14 +37,16 @@ Trusted-log code is organized into independently installable packages:
 | `tlog` | `tlog/` | Shared domain types, ABCs, errors, digest functions | stdlib only |
 | `tlog-rekor` | `tlog-rekor/` | Rekor/Sigstore backend adapter (`SigstoreLogAdapter`, `OciBundleMirror`) | tlog, sigstore, sigstore-rekor-types, cryptography, requests |
 | `tlog-onchain` | `tlog-onchain/` | On-chain backend adapter scaffold (`OnChainLogAdapter` stub) | tlog |
-| `tc-api` | `.` (root) | REST API, TruCon service, tlog_client | tlog, tlog-rekor, FastAPI, etc. |
+| `tc-api` | `.` (root) | REST API, TruCon service, Docktap sidecar, tlog_client | tlog, tlog-rekor, FastAPI, etc. |
 
 Key layout conventions:
 - `tlog/src/tlog/`: `types.py` (Entry, Record, SubmitStatus, etc.), `errors.py`, `immutable.py` (ImmutableLogAdapter ABC), `local_mr.py` (LocalMRAdapter ABC), `digest.py` (canonical_json, compute_entry_digest, compute_event_digest)
 - `tlog-rekor/src/tlog_rekor/`: `adapter.py` (SigstoreLogAdapter), `oci_mirror.py` (OciBundleMirror)
 - `src/tc_api/tlog_client.py`: TrustedLogAPI — DSSE signing and TruCon communication
-- `src/tc_api/trucon/`: Sequencer service with platform-specific adapters (`adapters/tdx_mr.py`, `adapters/ccel.py`)
+- `src/tc_api/tlog/`: Tombstone `__init__.py` only — shim files removed; all imports use standalone `tlog` package
+- `src/tc_api/trucon/`: Sequencer service with platform-specific adapters (`adapters/tdx_mr.py`, `adapters/ccel.py`); `adapters/` does not contain `sigstore.py` or `oci_mirror.py` (those live in `tlog-rekor`)
 - `src/tc_api/trucon/app.py`: Loads immutable backend at runtime via `TC_IMMUTABLE_BACKEND` env var (default: `rekor`)
+- `src/tc_api/docktap/`: Docker operation interception sidecar — `main.py` (entry point), `proxy/` (socket proxy, operation log, runtime adapter), `trucon_client.py` (DSSE signing and TruCon commit), `workload_store.py` (container→workload mapping). Uses relative imports internally; `tc-docktap` CLI entry point registered in `pyproject.toml`
 
 ## 3. High-Level Topology
 
@@ -542,7 +544,7 @@ See GAP-12 in `docs/overview_tasks.md`.
 - REST API deployed with multiple workers/processes (uvicorn `--workers N`).
 - TruCon deployed as single-instance service (`--workers 1`) to preserve lock-based serialization.
 - Submission daemon runs as an embedded thread inside TruCon.
-- Docktap deployed as an independent container (Docker Compose) or background process (`start.sh`). Shares the same Docker image as tc_api and TruCon with a different command override. Exposes proxy socket via bind-mount (`/var/run/docktap/`) and health endpoint on port 8002.
+- Docktap deployed as an independent container (Docker Compose) or background process (`start.sh`). Shares the same Docker image as tc_api and TruCon with a different command override (`python -m tc_api.docktap.main`). Also available as the `tc-docktap` CLI entry point. Exposes proxy socket via bind-mount (`/var/run/docktap/`) and health endpoint on port 8002.
 - AA/CDH/ASR deployed as a dedicated trust-service container (or their own entrypoint) rather than being folded into `start.sh`; the repository now provides `scripts/dev-up.sh` as a wrapper for single-host startup convenience.
 - KBS remains an external dependency. The wrapper verifies KBS reachability but does not claim ownership of its lifecycle.
 - Docktap also owns a periodic local-state sweeper that bounds in-memory operation state, removed-container mappings, and resolved retry bookkeeping via environment-configured retention windows.
