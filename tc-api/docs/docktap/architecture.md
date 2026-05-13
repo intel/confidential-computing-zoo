@@ -175,6 +175,65 @@ For the lifecycle operations that Docktap submits to TruCon (`pull`, `create`, `
 
 This contract lets `tc-verify` distinguish successful versus failed runtime actions, keep one `docktap-runtime` profile across engines, and correlate REST launch intent with observed container creation/start evidence.
 
+## Session Delegation
+
+Session delegation solves the 1-minute OIDC token expiry problem for Docktap runtime operations. Instead of requiring a fresh OIDC token per Docker operation, the user authenticates once and creates a delegation event that authorizes subsequent operations for a configurable time window.
+
+### Delegation Flow
+
+1. User calls `POST /api/docktap/delegate` with a valid OIDC token and optional `chain_id`.
+2. tc_api creates a `session.delegation` chain event signed via Fulcio (consuming the OIDC token).
+3. The delegation record is stored in the existing SQLite database at `/dev/shm/tc_api_queue/queue.db`.
+4. The endpoint returns `delegation_id` and `expires_at`.
+5. Subsequent Docker operations on the delegated chain use the owner key signing path instead of Fulcio.
+
+### Signing Path Selection
+
+When Docktap submits a trusted event, the signing path is selected as follows:
+
+1. **OIDC token available** → Fulcio signing (existing behavior, preferred).
+2. **No OIDC token + active delegation** → Owner key signing:
+   - The DSSE envelope is signed with the chain owner key (ECDSA P-384 + SHA-256).
+   - An `intoto` v0.0.2 proposed entry is constructed with the raw owner public key PEM.
+   - The entry is submitted to Rekor via `POST /api/v1/log/entries`.
+   - The predicate includes `delegation_id` referencing the active delegation.
+3. **No OIDC token + no delegation + `DOCKTAP_REQUIRE_ATTESTATION=1`** → HTTP 428 attestation gate.
+
+### Delegation Storage
+
+Delegations are stored in the `delegations` table alongside the existing `commit_queue` and `chain_state` tables:
+
+| Column | Type | Description |
+|---|---|---|
+| `delegation_id` | TEXT PK | Unique delegation identifier |
+| `chain_id` | TEXT | Target chain |
+| `scope` | TEXT (JSON) | Allowed operation types |
+| `expires_at` | TEXT | ISO 8601 expiry timestamp |
+| `created_at` | TEXT | Creation timestamp |
+| `signer_identity` | TEXT | Fulcio SAN from the delegation event |
+| `sequence_num` | INTEGER | Chain sequence number of the delegation event |
+
+### TTL and Scope
+
+- Default TTL: 4 hours (14400 seconds).
+- Configurable via `DOCKTAP_DELEGATION_TTL_SECONDS` environment variable.
+- Scope: list of allowed operation types (subset of `pull`, `create`, `start`, `stop`, `rm`).
+- Operations outside scope or beyond TTL are rejected at the attestation gate.
+- Expired delegations are cleaned up periodically by `cleanup_expired_delegations()`.
+
+### Verification
+
+Chain verification annotates each event with an independent `delegation_status` field:
+
+- `origin` — the event is a `session.delegation` event itself.
+- `proven` — the event references a valid delegation within scope and TTL.
+- `expired` — the event references a delegation but exceeds `expires_at`.
+- `scope_violation` — the event's operation type is not in the delegation's scope.
+- `missing` — the event has no Fulcio SAN and no `delegation_id`.
+- `n/a` — the event has a Fulcio SAN (standard signing path, delegation not applicable).
+
+This is independent of the existing `owner_status` annotation.
+
 ## Logging Semantics
 
 Docktap and TruCon now expose two different Rekor-observability layers on purpose:

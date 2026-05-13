@@ -10,6 +10,7 @@ from sigstore._internal.rekor.client import RekorClient
 from sigstore._internal.trust import TrustedRoot
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import hashes
 from sigstore.dsse import StatementBuilder, Subject
 from sigstore.oidc import IdentityToken
 from sigstore.sign import SigningContext
@@ -102,6 +103,38 @@ def generate_chain_owner_pub_key_pem(chain_id: str) -> str:
 
 def get_chain_owner_private_key(chain_id: str) -> Optional[ec.EllipticCurvePrivateKey]:
     return _get_or_create_chain_owner_private_key(chain_id)
+
+
+def sign_dsse_with_owner_key(
+    statement_json: str,
+    private_key: ec.EllipticCurvePrivateKey,
+) -> dict:
+    """Sign an In-Toto Statement as a DSSE envelope using the owner key.
+
+    Uses ECDSA P-384 + SHA-256 (Rekor server verification constraint).
+    Returns the DSSE envelope dict with payloadType, payload (base64), and
+    signatures (list with one entry containing 'sig' in base64).
+    """
+    import base64
+
+    payload_type = "application/vnd.in-toto+json"
+    statement_bytes = statement_json.encode("utf-8")
+    payload_b64 = base64.b64encode(statement_bytes).decode("utf-8")
+
+    # DSSE Pre-Authentication Encoding (PAE)
+    pae = (
+        f"DSSEv1 {len(payload_type)} {payload_type} "
+        f"{len(statement_bytes)} {statement_json}"
+    ).encode("utf-8")
+
+    signature_der = private_key.sign(pae, ec.ECDSA(hashes.SHA256()))
+    signature_b64 = base64.b64encode(signature_der).decode("utf-8")
+
+    return {
+        "payloadType": payload_type,
+        "payload": payload_b64,
+        "signatures": [{"sig": signature_b64}],
+    }
 
 
 def build_signing_context(rekor_url: Optional[str] = None) -> SigningContext:

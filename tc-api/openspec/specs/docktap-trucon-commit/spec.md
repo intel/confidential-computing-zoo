@@ -32,11 +32,19 @@ Docktap SHALL submit signed DSSE bundles to TruCon `POST /commit` for each Docke
 - **THEN** Docktap SHALL NOT submit any commit to TruCon for that operation
 
 ### Requirement: Signing uses shared OIDC credentials
-Docktap SHALL use the same OIDC credential acquisition mechanism as tc_api (`sigstore.oidc.detect_credential()`) to sign DSSE bundles. The OIDC token SHALL be acquired fresh on each commit call. The DSSE predicate format, entry digest computation, and event digest computation SHALL be identical to tc_api's existing signing path.
+Docktap SHALL use the same OIDC credential acquisition mechanism as tc_api (`sigstore.oidc.detect_credential()`) to sign DSSE bundles. When a valid OIDC token is available, the token SHALL be used for Fulcio signing (existing behavior). When no OIDC token is available but a valid session delegation exists for the target chain, Docktap SHALL sign the DSSE bundle using the chain owner key and include `delegation_id` in the predicate. The DSSE predicate format, entry digest computation, and event digest computation SHALL be identical regardless of signing path.
 
 #### Scenario: DSSE bundle format matches tc_api
 - **WHEN** Docktap constructs a DSSE bundle for a Docker operation
 - **THEN** the bundle uses predicate type `https://trusted-log.dev/v1`, two-level SHA-384 digest computation, and Sigstore offline signing — identical to tc_api's `TrustedLogAPI.commit_record()`
+
+#### Scenario: Owner key signing when delegation active and no OIDC token
+- **WHEN** Docktap constructs a DSSE bundle, no OIDC token is available, and a valid delegation exists for the target chain
+- **THEN** Docktap SHALL sign the DSSE envelope using the chain owner key (ECDSA P-384 + SHA-256), include `delegation_id` in the predicate, and submit the signed intoto entry to Rekor with the owner public key PEM as verifier
+
+#### Scenario: Predicate includes delegation_id when delegation-signed
+- **WHEN** a Docker operation is signed via delegation (owner key path)
+- **THEN** the DSSE predicate SHALL include a `delegation_id` field referencing the active delegation's identifier
 
 ### Requirement: Best-effort submission semantics
 TruCon submission failures SHALL NOT block or delay Docker API responses. Docktap SHALL return the Docker daemon response to the CLI before any retry processing begins. If the initial TruCon commit attempt fails due to a transient transport or server-side error, Docktap SHALL enqueue the submission for bounded asynchronous retry using the same logical commit intent and idempotency key until TruCon acknowledges the `/commit` request or the retry policy is exhausted. Acknowledgement SHALL mean a successful TruCon `/commit` response accepting the event into TruCon's queue; immutable-backend confirmation is out of scope for Docktap. If retry attempts are exhausted, Docktap SHALL mark the submission as terminally failed in its local retry state and log the failure for operators, without retroactively failing the already-completed Docker API response.

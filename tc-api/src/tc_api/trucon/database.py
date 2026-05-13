@@ -105,6 +105,19 @@ def _migrate_legacy_schema(conn: sqlite3.Connection):
     conn.execute('CREATE INDEX IF NOT EXISTS idx_mirror_publish_queue_status ON mirror_publish_queue(status, updated_at)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_mirror_publish_queue_payload_hash ON mirror_publish_queue(payload_hash)')
 
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS delegations (
+            delegation_id TEXT PRIMARY KEY,
+            chain_id TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            signer_identity TEXT,
+            sequence_num INTEGER NOT NULL
+        )
+    ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_delegations_chain_expires ON delegations(chain_id, expires_at)')
+
     conn.commit()
 
 def init_db(db_path: str = DB_PATH):
@@ -193,6 +206,21 @@ def init_db(db_path: str = DB_PATH):
                 updated_at TEXT NOT NULL
             )
         ''')
+
+        # Create delegations table for session delegation
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS delegations (
+                delegation_id TEXT PRIMARY KEY,
+                chain_id TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                signer_identity TEXT,
+                sequence_num INTEGER NOT NULL
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_delegations_chain_expires ON delegations(chain_id, expires_at)')
+
         conn.commit()
 
 @contextmanager
@@ -702,3 +730,60 @@ def get_events_for_workload(chain_id: str, db_path: str = DB_PATH) -> List[Dict[
             ORDER BY sequence_num ASC
         ''', (chain_id,))
         return [dict(row) for row in cursor.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Delegation CRUD
+# ---------------------------------------------------------------------------
+
+def insert_delegation(
+    delegation_id: str,
+    chain_id: str,
+    scope: List[str],
+    expires_at: str,
+    signer_identity: Optional[str],
+    sequence_num: int,
+    db_path: str = DB_PATH,
+) -> None:
+    """Insert a new delegation record."""
+    now = datetime.utcnow().isoformat()
+    with get_db_connection(db_path) as conn:
+        conn.execute(
+            '''INSERT INTO delegations
+               (delegation_id, chain_id, scope, expires_at, created_at, signer_identity, sequence_num)
+               VALUES (?, ?, ?, ?, ?, ?, ?)''',
+            (delegation_id, chain_id, json.dumps(scope), expires_at, now, signer_identity, sequence_num),
+        )
+        conn.commit()
+
+
+def get_active_delegation(chain_id: str, db_path: str = DB_PATH) -> Optional[Dict[str, Any]]:
+    """Return the most recent non-expired delegation for *chain_id*, or None."""
+    now = datetime.utcnow().isoformat()
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute(
+            '''SELECT delegation_id, chain_id, scope, expires_at, created_at, signer_identity, sequence_num
+               FROM delegations
+               WHERE chain_id = ? AND expires_at > ?
+               ORDER BY created_at DESC
+               LIMIT 1''',
+            (chain_id, now),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["scope"] = json.loads(d["scope"])
+        return d
+
+
+def cleanup_expired_delegations(db_path: str = DB_PATH) -> int:
+    """Delete all expired delegations. Returns count of deleted rows."""
+    now = datetime.utcnow().isoformat()
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute(
+            'DELETE FROM delegations WHERE expires_at <= ?',
+            (now,),
+        )
+        conn.commit()
+        return cursor.rowcount

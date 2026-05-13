@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from contextlib import asynccontextmanager
 from html import escape
-from typing import Any, Optional
+from typing import Any, List, Optional
 import os
 import uuid
 import asyncio
@@ -1972,6 +1972,67 @@ def main() -> None:
     import uvicorn
 
     uvicorn.run(app, host=HOST, port=PORT, log_level="debug")
+
+
+# ---------------------------------------------------------------------------
+# Docktap session delegation
+# ---------------------------------------------------------------------------
+
+class DelegateRequest(BaseModel):
+    chain_id: str
+    identity_token: Optional[str] = None
+    scope: Optional[List[str]] = None
+    ttl_seconds: Optional[int] = None
+
+
+class DelegateResponse(BaseModel):
+    delegation_id: str
+    expires_at: str
+    chain_id: str
+    scope: List[str]
+
+
+@app.post("/api/docktap/delegate", response_model=DelegateResponse)
+async def docktap_delegate(request: DelegateRequest):
+    """Create a session delegation for a Docktap chain.
+
+    Consumes the OIDC identity token to create a Fulcio-signed delegation
+    event on the chain, then stores the delegation in SQLite so that
+    subsequent Docker operations can use the owner key signing path.
+    """
+    identity_token_str = request.identity_token
+    if not identity_token_str:
+        identity_token_str = resolve_sigstore_identity_token(
+            "docktap",
+            logger=logger,
+            allow_interactive=False,
+            require_token=False,
+        )
+    if not identity_token_str:
+        raise HTTPException(
+            status_code=401,
+            detail="No OIDC identity token available. Please log in first.",
+        )
+
+    from tc_api.docktap.trucon_client import TruConCommitter
+
+    committer = TruConCommitter(
+        trucon_url=TRUCON_URL,
+        start_retry_worker=False,
+    )
+
+    try:
+        result = committer.submit_delegation(
+            chain_id=request.chain_id,
+            identity_token_str=identity_token_str,
+            scope=request.scope,
+            ttl_seconds=request.ttl_seconds,
+        )
+    except Exception as exc:
+        logger.error("Delegation creation failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return DelegateResponse(**result)
 
 
 if __name__ == "__main__":

@@ -280,6 +280,86 @@ def _annotate_owner_verification(entries: List[Dict[str, Any]]) -> List[Dict[str
     return annotated
 
 
+def _annotate_delegation_verification(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Annotate each entry with delegation_status.
+
+    Delegation events (event_type ``session.delegation``) are marked as
+    ``origin``.  Subsequent events referencing a ``delegation_id`` are
+    validated against the delegation's scope and expiry.  Events with no
+    delegation context are marked ``not_applicable``.
+    """
+    from datetime import datetime
+
+    # Build a map of delegation_id → delegation metadata from delegation events
+    delegation_map: Dict[str, Dict[str, Any]] = {}
+    for entry in entries:
+        if entry.get("event_type") == "session.delegation":
+            did = entry.get("delegation_id")
+            if did:
+                delegation_map[did] = {
+                    "scope": entry.get("scope", []),
+                    "expires_at": entry.get("expires_at"),
+                    "signer_identity": entry.get("signer_identity"),
+                }
+
+    annotated: List[Dict[str, Any]] = []
+    for entry in entries:
+        current = dict(entry)
+
+        if current.get("event_type") == "session.delegation":
+            current["delegation_status"] = "origin"
+            annotated.append(current)
+            continue
+
+        delegation_id = current.get("delegation_id")
+        if not delegation_id:
+            current["delegation_status"] = "not_applicable"
+            annotated.append(current)
+            continue
+
+        deleg = delegation_map.get(delegation_id)
+        if deleg is None:
+            current["delegation_status"] = "missing"
+            current.setdefault("errors", []).append(
+                f"Referenced delegation_id '{delegation_id}' not found in chain"
+            )
+            annotated.append(current)
+            continue
+
+        # Check TTL
+        expires_at_str = deleg.get("expires_at")
+        event_created = current.get("created")
+        if expires_at_str and event_created:
+            try:
+                if event_created > expires_at_str:
+                    current["delegation_status"] = "expired"
+                    current.setdefault("errors", []).append(
+                        f"Event created after delegation expiry ({expires_at_str})"
+                    )
+                    annotated.append(current)
+                    continue
+            except Exception:
+                pass
+
+        # Check scope
+        scope = deleg.get("scope", [])
+        event_type = current.get("event_type", "")
+        # Extract operation from event_type like "docker_pull" → "pull"
+        op = event_type.split("_", 1)[1] if "_" in event_type else event_type
+        if scope and op not in scope:
+            current["delegation_status"] = "scope_violation"
+            current.setdefault("errors", []).append(
+                f"Operation '{op}' not in delegation scope {scope}"
+            )
+            annotated.append(current)
+            continue
+
+        current["delegation_status"] = "proven"
+        annotated.append(current)
+
+    return annotated
+
+
 def _entry_matches_chain(entry: Dict[str, Any], chain_id: str, subject_name: str) -> bool:
     if entry.get("chain_id") == chain_id:
         return True
@@ -1155,6 +1235,8 @@ class TrustedLogAPI:
                     continue
                 if expected_identity:
                     cert_identity = normalized_entry["signer_identity"]
+                    # Allow delegation-authorized events (signer_identity is None
+                    # because they are signed by owner key, not Fulcio)
                     if cert_identity and cert_identity != expected_identity:
                         logger.warning("Discarding entry with mismatched signer identity: %s", cert_identity)
                         continue
@@ -1183,6 +1265,7 @@ class TrustedLogAPI:
 
             matched_entries = _annotate_predecessor_verification(matched_entries, self.immutable_log)
             matched_entries = _annotate_owner_verification(matched_entries)
+            matched_entries = _annotate_delegation_verification(matched_entries)
 
             predecessor_errors = [
                 entry for entry in matched_entries

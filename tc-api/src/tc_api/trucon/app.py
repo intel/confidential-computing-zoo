@@ -159,6 +159,15 @@ def _build_chain_owner_attestation(
 
 
 def _extract_bundle_payload(bundle_json: str) -> Dict[str, Any]:
+    parsed = json.loads(bundle_json)
+    if isinstance(parsed, dict) and parsed.get("_owner_key_signed"):
+        # Owner-key-signed bundle — envelope is stored directly
+        envelope = parsed.get("envelope", {})
+        payload_b64 = envelope.get("payload")
+        if not isinstance(payload_b64, str):
+            raise ValueError("Owner-key-signed bundle missing payload")
+        return json.loads(base64.b64decode(payload_b64).decode("utf-8"))
+
     bundle = Bundle.from_json(bundle_json)
     envelope = bundle._dsse_envelope
     if envelope is None:
@@ -206,6 +215,15 @@ def _should_extend_rtmr(predicate: Optional[Dict[str, Any]]) -> bool:
 
 
 def _compute_bundle_payload_hash(bundle_json: str) -> str:
+    parsed = json.loads(bundle_json)
+    if isinstance(parsed, dict) and parsed.get("_owner_key_signed"):
+        envelope = parsed.get("envelope", {})
+        payload_b64 = envelope.get("payload")
+        if not isinstance(payload_b64, str):
+            raise ValueError("Owner-key-signed bundle missing payload")
+        payload_bytes = base64.b64decode(payload_b64)
+        return "sha256:" + hashlib.sha256(payload_bytes).hexdigest()
+
     bundle = Bundle.from_json(bundle_json)
     envelope = bundle._dsse_envelope
     if envelope is None:

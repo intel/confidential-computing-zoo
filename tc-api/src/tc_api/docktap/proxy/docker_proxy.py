@@ -17,7 +17,16 @@ from .operation_log import (
     is_streaming_endpoint,
 )
 from .runtime_adapter import DEFAULT_RUNTIME_ENGINE, DockerRuntimeAdapter
-from ..trucon_client import SUBMITTABLE_OPERATIONS, has_reusable_identity_token
+from ..trucon_client import SUBMITTABLE_OPERATIONS, has_reusable_identity_token, has_active_delegation
+
+
+def _has_active_delegation_for_chain(chain_id: str) -> bool:
+    """Check if there is an active delegation for the given chain."""
+    try:
+        from tc_api.trucon.database import get_active_delegation
+        return get_active_delegation(chain_id) is not None
+    except Exception:
+        return False
 
 WORKLOAD_LABEL = "io.trucon.workload-id"
 LAUNCH_LABEL = "io.trucon.launch-id"
@@ -525,7 +534,7 @@ class DockerProxyServer:
                         log_data['tag'] = params['tag']
                     self._log_callback(log_data)
 
-                if operation in SUBMITTABLE_OPERATIONS and self._attestation_gate_enabled() and not has_reusable_identity_token():
+                if operation in SUBMITTABLE_OPERATIONS and self._attestation_gate_enabled() and not has_reusable_identity_token() and not has_active_delegation():
                     container_ref = None
                     if operation in {"start", "stop", "rm"}:
                         container_ref = op_record.container.get("id") or container_name

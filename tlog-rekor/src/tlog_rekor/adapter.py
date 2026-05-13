@@ -177,6 +177,50 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
         return self._dsse_entry_from_bundle(bundle)
 
     @staticmethod
+    def build_intoto_entry_from_owner_key(
+        envelope: dict,
+        pub_key_pem: str,
+    ) -> rekor_types.Intoto:
+        """Build an intoto v0.0.2 proposed entry from an owner-key-signed DSSE envelope.
+
+        *envelope* is a dict with keys payloadType, payload (base64), signatures.
+        *pub_key_pem* is the PEM-encoded public key string.
+        """
+        envelope_json = json.dumps(envelope)
+        envelope_bytes = envelope_json.encode("utf-8")
+
+        pub_pem_b64 = base64.b64encode(pub_key_pem.encode("utf-8")).decode("utf-8")
+
+        intoto_signatures = []
+        for sig_entry in envelope["signatures"]:
+            sig_b64 = sig_entry["sig"]
+            intoto_signatures.append({
+                "keyid": sig_entry.get("keyid", ""),
+                "sig": base64.b64encode(sig_b64.encode("utf-8")).decode("utf-8"),
+                "publicKey": pub_pem_b64,
+            })
+
+        payload_b64 = envelope["payload"]
+        intoto_payload = base64.b64encode(payload_b64.encode("utf-8")).decode("utf-8")
+
+        return rekor_types.Intoto(
+            api_version="0.0.2",
+            spec=rekor_types.intoto.IntotoV002Schema(
+                content={
+                    "envelope": {
+                        "payloadType": envelope.get("payloadType", "application/vnd.in-toto+json"),
+                        "payload": intoto_payload,
+                        "signatures": intoto_signatures,
+                    },
+                    "hash": {
+                        "algorithm": "sha256",
+                        "value": hashlib.sha256(envelope_bytes).hexdigest(),
+                    },
+                }
+            ),
+        )
+
+    @staticmethod
     def _entry_to_dict(entry: Any) -> Any:
         if not isinstance(entry, LogEntry):
             return entry
@@ -670,6 +714,40 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
         except Exception as e:
             logger.error(f"Failed to submit bundle to Rekor: {e}")
             raise
+
+    def submit_owner_signed_entry(
+        self,
+        envelope: dict,
+        pub_key_pem: str,
+    ) -> Tuple[str, int, dict]:
+        """Submit an owner-key-signed DSSE envelope to Rekor as intoto v0.0.2.
+
+        Returns (uuid, log_index, entry_dict).
+        """
+        proposed = self.build_intoto_entry_from_owner_key(envelope, pub_key_pem)
+        payload = proposed.model_dump(mode="json", by_alias=True)
+
+        url = f"{self.rekor_url}/api/v1/log/entries"
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            error_body = exc.read().decode("utf-8", errors="replace")[:500]
+            raise RuntimeError(
+                f"Rekor submit_owner_signed_entry failed: HTTP {exc.code} — {error_body}"
+            ) from exc
+
+        uuid = next(iter(result))
+        entry = result[uuid]
+        log_index = entry.get("logIndex", -1)
+        return uuid, log_index, entry
 
     def get_entry(self, log_id: str) -> Any:
         try:

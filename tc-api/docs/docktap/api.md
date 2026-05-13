@@ -622,6 +622,24 @@ class TruConCommitter:
 
     def cleanup_resolved_submissions(self, now: Optional[float] = None) -> int:
         ...
+
+    def submit_delegation(self, chain_id: str = "default") -> Dict:
+        """Create a session delegation event on the specified chain.
+
+        Consumes a valid OIDC token to sign a session.delegation chain event
+        via Fulcio, stores the delegation in SQLite, and returns delegation
+        metadata including delegation_id and expires_at.
+        """
+        ...
+
+
+def has_active_delegation(chain_id: Optional[str] = None) -> bool:
+    """Check whether a non-expired delegation exists for the given chain.
+
+    Returns True if the delegations table contains at least one row
+    for chain_id (or any chain if None) whose expires_at is in the future.
+    """
+    ...
 ```
 
 ### TruConCommitter Behavioral Requirements
@@ -634,6 +652,14 @@ class TruConCommitter:
 - `instance_id` is the Docker `container_id` for container lifecycle operations and `None` for `pull`.
 - Initial retryable TruCon failures may be queued for asynchronous retry after the Docker response has already been returned.
 - Retry bookkeeping is local and bounded; authoritative commit confirmation remains TruCon's responsibility.
+
+### Session Delegation Behavioral Requirements
+
+- `submit_delegation()` creates a `session.delegation` chain event signed via Fulcio, storing the delegation in the `delegations` table. It returns a dict with `delegation_id`, `expires_at`, and `chain_id`.
+- `has_active_delegation()` checks the SQLite `delegations` table for non-expired rows. It is called by the attestation gate and the signing path selector.
+- When `_do_submit()` detects no OIDC token but finds an active delegation via `has_active_delegation()`, it switches to the owner key signing path: signs the DSSE envelope with `sign_dsse_with_owner_key()`, constructs an `intoto` v0.0.2 entry via `build_intoto_entry_from_owner_key()`, submits to Rekor via `submit_owner_signed_entry()`, and posts the result to TruCon.
+- The delegation-signed predicate includes a `delegation_id` field referencing the active delegation's identifier.
+- The attestation gate in `docker_proxy.py` checks both `has_reusable_identity_token()` and `has_active_delegation()` before blocking operations with HTTP 428.
 
 ### Submission Payload Contract
 
@@ -649,6 +675,49 @@ For `SUBMITTABLE_OPERATIONS`, Docktap emits DSSE predicates with the following m
 - `container_name`, `container_id` for container-oriented operations
 
 This trusted lifecycle `operation_result` field is separate from the local `response.outcome` field used on selected read-only probe observations. `response.outcome` does not widen `SUBMITTABLE_OPERATIONS` and is not part of the TruCon submission contract.
+
+## Session Delegation REST Endpoint
+
+`tc_api.main` exposes the delegation endpoint for Docktap session management.
+
+### `POST /api/docktap/delegate`
+
+Creates a session delegation event that authorizes subsequent Docker operations on the specified chain without requiring per-operation OIDC tokens.
+
+**Request body:**
+
+```json
+{
+  "chain_id": "default",
+  "scope": ["pull", "create", "start", "stop", "rm"]
+}
+```
+
+- `chain_id` (optional, default `"default"`): target chain for the delegation.
+- `scope` (optional, default all submittable operations): allowed operation types.
+
+**Response (200):**
+
+```json
+{
+  "delegation_id": "deleg-xxxxxxxx",
+  "chain_id": "default",
+  "expires_at": "2025-05-13T18:00:00+00:00"
+}
+```
+
+**Error responses:**
+
+- `401 Unauthorized`: no valid OIDC token available.
+- `500 Internal Server Error`: delegation event creation failed.
+
+**Behavioral notes:**
+
+- The endpoint consumes a valid ambient OIDC token to sign the delegation event via Fulcio.
+- The delegation event is recorded on-chain with `event_type: "session.delegation"`.
+- The delegation record is stored in the `delegations` table in `/dev/shm/tc_api_queue/queue.db`.
+- Default TTL is 4 hours (14400 seconds), configurable via `DOCKTAP_DELEGATION_TTL_SECONDS`.
+- Each delegation is scoped to exactly one chain; delegations on chain A do not authorize operations on chain B.
 
 ## Sidecar Bootstrap API
 

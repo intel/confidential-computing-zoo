@@ -197,7 +197,7 @@ So the short answer is: tc_api build/publish receipts land on `tc-api-service`, 
 
 ### 3.4.1 Owner Key Persistence
 
-Reservation-backed commits rely on the chain owner's long-term ECDSA P-384 key. Event Log 0 anchors that key by storing its public half as `pub_key` in the chain baseline.
+Reservation-backed commits rely on the chain owner's long-term ECDSA P-384 key. Event Log 0 anchors that key by storing its public half as `pub_key` in the chain baseline. The owner key serves two purposes: (1) signing `owner_authorization` fields (ECDSA P-384 + SHA-384) to prove chain ownership on each commit, and (2) signing DSSE envelopes (ECDSA P-384 + SHA-256) for delegation-authorized operations submitted to Rekor with the raw owner public key as verifier.
 
 Because later `/commit` requests must present `owner_authorization` signed by the matching private key, tc_api now persists chain owner keys under `OWNER_KEY_DIR` instead of keeping them only in process memory.
 
@@ -259,6 +259,10 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - When `DOCKTAP_REQUIRE_ATTESTATION=1` and no reusable Sigstore identity token is available, Docktap blocks submittable Docker operations before they reach Docker and returns an HTTP `428 Precondition Required` challenge instead.
 - For Docker CLI users, that challenge is surfaced as a normal daemon-style CLI error message containing the interactive login URL, so the user experience is "login, then retry the same Docker command" rather than silent best-effort attestation failure.
 - Docktap itself does not own an independent browser or account flow. The recovery path is delegated to tc_api's Sigstore login endpoints, which refresh the shared token cache consumed by later Docktap operations.
+- Session delegation allows a single OIDC login to authorize multiple subsequent Docker operations without requiring per-operation identity tokens. The user calls `POST /api/docktap/delegate` with a valid OIDC token; tc_api creates a `session.delegation` chain event (signed via Fulcio), stores the delegation in the existing `/dev/shm` SQLite database, and returns a `delegation_id` with TTL-based expiry (default 4 hours, configurable via `DOCKTAP_DELEGATION_TTL_SECONDS`).
+- When `DOCKTAP_REQUIRE_ATTESTATION=1` and no reusable OIDC token is available, Docktap checks for an active delegation on the target chain. If a valid delegation exists, Docktap signs the DSSE envelope using the chain owner key (ECDSA P-384 + SHA-256) instead of Fulcio, constructs an `intoto` v0.0.2 proposed entry with the raw owner public key, and submits to Rekor. The signed predicate includes a `delegation_id` field referencing the active delegation.
+- Delegation is per-chain and scope-constrained: each delegation specifies allowed operation types (subset of `pull`, `create`, `start`, `stop`, `rm`). Operations outside scope or beyond TTL are rejected.
+- The signing path selection is: (1) if a valid OIDC token exists, prefer Fulcio signing; (2) if no OIDC token but a valid delegation exists, use owner key signing with delegation reference.
 
 ### 4.3 Trust-Service Wrapper
 
@@ -469,6 +473,7 @@ Launch-oriented verification additionally uses `launch_id` as the v1 launch-atte
 - `tc-verify` uses exported evidence as its supported operator input and keeps live `chain_id`-based TruCon verification only as an explicit internal troubleshooting path for tightly coupled or in-CVM workflows.
 - For remote verification, the exported evidence binds the current chain head (`chain_id`, `head_log_id`, `sequence_num`) and `mr_value` to attested TEE state via quote-backed report-data binding, rather than requiring the verifier to trust TruCon's live internal state directly.
 - `tc-verify` now reports independent profile verdicts for `build`, `publish`, `launch`, and `docktap-runtime`, using shared verdict states `verified`, `warning`, `incomplete`, and `failed`.
+- Chain verification is delegation-aware: events signed via the owner key (delegation path) are verified by tracing their `delegation_id` back to the corresponding `session.delegation` event. If the delegation event's Fulcio SAN matches the authorized identity policy, the business event is marked `delegation_status: "proven"`. Events outside delegation scope or TTL are flagged as violations. The `delegation_status` annotation is independent of the existing `owner_status` annotation.
 - Launch verification evaluates the latest workload-scoped launch attempt by `launch_id`, preserving auditability even when a launch fails before any concrete container instance exists.
 - Detailed verification result models, evidence-package format, and replay rules belong in the trusted-log design documents rather than this top-level architecture overview.
 
@@ -583,4 +588,7 @@ Rollback principle:
 - [trusted-log/api.md](trusted-log/api.md) — Python API signatures, type contracts, caller lifecycle.
 - [trusted-log/README.md](trusted-log/README.md) — Module overview and core concepts.
 - [docktap/api.md](docktap/api.md) — Docktap Python-side APIs, runtime surfaces, proxy lifecycle, and TruCon commit client behavior.
+- openspec/specs/session-delegation/ — Session delegation mechanism specification.
+- openspec/specs/owner-key-dsse-signing/ — Owner key DSSE signing and Rekor intoto entry specification.
+- openspec/specs/delegation-verification/ — Delegation-aware chain verification specification.
 - openspec/changes/introduce-trucon-event-orchestrator/ — Upstream TruCon vision (proposal, design, specs).

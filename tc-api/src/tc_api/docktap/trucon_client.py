@@ -24,10 +24,13 @@ from tc_api.sigstore_identity import resolve_sigstore_identity_token
 from tc_api.sigstore_baseline import (
     build_baseline_sigstore_bundle,
     build_signing_context,
+    generate_chain_owner_pub_key_pem,
     get_chain_owner_private_key,
+    sign_dsse_with_owner_key,
 )
 from tc_api.trucon.internal_transport import request_json
 from tc_api.trucon.owner_authorization import sign_owner_authorization
+from tlog_rekor.adapter import SigstoreLogAdapter
 
 from sigstore.oidc import IdentityToken, detect_credential
 from sigstore.sign import SigningContext
@@ -73,6 +76,16 @@ def _resolve_identity_token_str() -> Optional[str]:
 
 def has_reusable_identity_token() -> bool:
     return _resolve_identity_token_str() is not None
+
+
+def has_active_delegation(chain_id: Optional[str] = None) -> bool:
+    """Check if there is an active delegation for the given chain (or default runtime chain)."""
+    from tc_api.trucon.database import get_active_delegation
+    resolved_chain = chain_id or DEFAULT_RUNTIME_CHAIN_ID
+    try:
+        return get_active_delegation(resolved_chain) is not None
+    except Exception:
+        return False
 
 
 def _extract_rekor_identifiers(bundle) -> Dict[str, Optional[str]]:
@@ -631,14 +644,24 @@ class TruConCommitter:
             "digest": event_digest,
         }
 
-        # 4. Acquire OIDC identity token
+        # 4. Acquire OIDC identity token (or fall back to delegation)
         identity_token_str = _resolve_identity_token_str()
+        delegation = None
         if not identity_token_str:
-            raise MissingIdentityTokenError(
-                f"No reusable Sigstore identity token is available for docker {operation_type}"
-            )
+            from tc_api.trucon.database import get_active_delegation
+            delegation = get_active_delegation(chain_id)
+            if delegation is None:
+                raise MissingIdentityTokenError(
+                    f"No reusable Sigstore identity token is available for docker {operation_type}"
+                )
+            # Check scope
+            if operation_type not in delegation["scope"]:
+                raise MissingIdentityTokenError(
+                    f"Active delegation does not include '{operation_type}' in scope"
+                )
 
-        self._ensure_chain_initialized(chain_id, identity_token_str)
+        if identity_token_str:
+            self._ensure_chain_initialized(chain_id, identity_token_str)
 
         idempotency_key = f"idk-{uuid.uuid4().hex[:12]}"
         reservation = self._reserve_commit_intent(
@@ -654,13 +677,15 @@ class TruConCommitter:
             )
             return True
 
-        identity_token = IdentityToken(identity_token_str)
-
         # 5. Build DSSE statement
         predicate_payload["chain_id"] = chain_id
         predicate_payload["sequence_num"] = reservation["sequence_num"]
         predicate_payload["prev_event_digest"] = reservation.get("prev_event_digest")
         predicate_payload["prev_lookup_hash"] = reservation.get("prev_lookup_hash")
+
+        if delegation is not None:
+            predicate_payload["delegation_id"] = delegation["delegation_id"]
+
         owner_authorization = None
         owner_private_key = get_chain_owner_private_key(chain_id)
         if owner_private_key is not None:
@@ -673,27 +698,62 @@ class TruConCommitter:
                 event_digest=event_digest,
             )
             predicate_payload["owner_authorization"] = owner_authorization
-        subject = Subject(
-            name=f"trusted-log-chain_{chain_id}",
-            digest={"sha384": event_digest.split(":")[1]},
-        )
-        statement = (
-            StatementBuilder()
-            .subjects([subject])
-            .predicate_type("https://trusted-log.dev/v1")
-            .predicate(predicate_payload)
-            .build()
-        )
 
-        # 6. Sign with the shared Sigstore context builder instead of mutating
-        # private Rekor state, which breaks DSSE finalization in newer sigstore releases.
-        signing_context = build_signing_context()
+        statement_json = json.dumps({
+            "_type": "https://in-toto.io/Statement/v0.1",
+            "subject": [
+                {
+                    "name": f"trusted-log-chain_{chain_id}",
+                    "digest": {"sha384": event_digest.split(":")[1]},
+                }
+            ],
+            "predicateType": "https://trusted-log.dev/v1",
+            "predicate": predicate_payload,
+        })
 
-        with signing_context.signer(identity_token, cache=True) as signer:
-            bundle = signer.sign_dsse(statement)
+        if delegation is not None and not identity_token_str:
+            # --- Owner key signing path (delegation active, no OIDC token) ---
+            envelope = sign_dsse_with_owner_key(statement_json, owner_private_key)
+            pub_key_pem = generate_chain_owner_pub_key_pem(chain_id)
 
-        bundle_json = bundle.to_json()
-        rekor_identifiers = _extract_rekor_identifiers(bundle)
+            adapter = SigstoreLogAdapter()
+            rekor_uuid, rekor_log_index, rekor_entry = adapter.submit_owner_signed_entry(
+                envelope, pub_key_pem,
+            )
+
+            bundle_json = json.dumps({
+                "_owner_key_signed": True,
+                "envelope": envelope,
+                "pub_key_pem": pub_key_pem,
+                "rekor_uuid": rekor_uuid,
+                "rekor_log_index": rekor_log_index,
+            })
+            rekor_identifiers = {
+                "initial_bundle_rekor_uuid": rekor_uuid,
+                "initial_bundle_rekor_log_index": rekor_log_index,
+            }
+        else:
+            # --- Fulcio signing path (OIDC token available) ---
+            identity_token = IdentityToken(identity_token_str)
+
+            subject = Subject(
+                name=f"trusted-log-chain_{chain_id}",
+                digest={"sha384": event_digest.split(":")[1]},
+            )
+            statement = (
+                StatementBuilder()
+                .subjects([subject])
+                .predicate_type("https://trusted-log.dev/v1")
+                .predicate(predicate_payload)
+                .build()
+            )
+
+            signing_context = build_signing_context()
+            with signing_context.signer(identity_token, cache=True) as signer:
+                bundle = signer.sign_dsse(statement)
+
+            bundle_json = bundle.to_json()
+            rekor_identifiers = _extract_rekor_identifiers(bundle)
 
         # 7. POST to TruCon /commit
         submission = PendingSubmission(
@@ -736,6 +796,97 @@ class TruConCommitter:
             rekor_identifiers["initial_bundle_rekor_log_index"],
         )
         return True
+
+    def submit_delegation(
+        self,
+        chain_id: str,
+        identity_token_str: str,
+        scope: Optional[List[str]] = None,
+        ttl_seconds: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Create a delegation chain event using the provided OIDC token.
+
+        Returns dict with ``delegation_id`` and ``expires_at`` on success.
+        Raises on failure.
+        """
+        from tc_api.docktap.delegation import build_delegation_predicate
+        from tc_api.trucon.database import insert_delegation
+
+        self._ensure_chain_initialized(chain_id, identity_token_str)
+
+        idempotency_key = f"idk-del-{uuid.uuid4().hex[:12]}"
+        reservation = self._reserve_commit_intent(
+            chain_id=chain_id,
+            idempotency_key=idempotency_key,
+        )
+        if reservation.get("committed"):
+            raise RuntimeError("Commit intent already fulfilled for delegation")
+
+        predicate_payload, event_digest, delegation_id, expires_at = build_delegation_predicate(
+            chain_id=chain_id,
+            sequence_num=reservation["sequence_num"],
+            prev_event_digest=reservation.get("prev_event_digest"),
+            prev_lookup_hash=reservation.get("prev_lookup_hash"),
+            scope=scope,
+            ttl_seconds=ttl_seconds,
+        )
+
+        identity_token = IdentityToken(identity_token_str)
+        signer_identity = identity_token.identity
+
+        subject = Subject(
+            name=f"trusted-log-chain_{chain_id}",
+            digest={"sha384": event_digest.split(":")[1]},
+        )
+        statement = (
+            StatementBuilder()
+            .subjects([subject])
+            .predicate_type("https://trusted-log.dev/v1")
+            .predicate(predicate_payload)
+            .build()
+        )
+
+        signing_context = build_signing_context()
+        with signing_context.signer(identity_token, cache=True) as signer:
+            bundle = signer.sign_dsse(statement)
+
+        bundle_json = bundle.to_json()
+
+        self._post_to_trucon(
+            bundle_json=bundle_json,
+            chain_id=chain_id,
+            event_digest=event_digest,
+            event_id=predicate_payload["event_id"],
+            intent_token=reservation.get("intent_token"),
+            idempotency_key=idempotency_key,
+            instance_id=None,
+            owner_authorization=predicate_payload.get("owner_authorization"),
+        )
+
+        resolved_scope = predicate_payload.get("scope", ["pull", "create", "start", "stop", "rm"])
+        insert_delegation(
+            delegation_id=delegation_id,
+            chain_id=chain_id,
+            scope=resolved_scope,
+            expires_at=expires_at,
+            signer_identity=signer_identity,
+            sequence_num=reservation["sequence_num"],
+        )
+
+        logger.info(
+            "Delegation created: delegation_id=%s, chain_id=%s, expires_at=%s, signer=%s",
+            delegation_id,
+            chain_id,
+            expires_at,
+            signer_identity,
+        )
+
+        return {
+            "delegation_id": delegation_id,
+            "expires_at": expires_at,
+            "chain_id": chain_id,
+            "scope": resolved_scope,
+        }
 
     def _post_to_trucon(
         self,
