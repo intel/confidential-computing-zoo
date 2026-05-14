@@ -7,8 +7,12 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-import tc_api.services as services
-from tc_api.main import app
+import tc_api.services.base as base_services
+import tc_api.services.build as build_services
+import tc_api.services.launch as launch_services
+import tc_api.services.publish as publish_services
+import tc_api.services.build as services
+from tc_api.api.app import app
 from tc_api.services import DockerService
 
 
@@ -30,7 +34,7 @@ class DummyTlog:
 
 @pytest.fixture
 def docker_service(tmp_path, monkeypatch):
-    monkeypatch.setattr(services, "BUILD_DIR", str(tmp_path / "builds"))
+    monkeypatch.setattr(build_services, "BUILD_DIR", str(tmp_path / "builds"))
     return DockerService()
 
 
@@ -38,7 +42,7 @@ def test_build_image_success_path(docker_service):
     tlog = DummyTlog()
     result = SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
-    with patch("tc_api.services.subprocess.run", return_value=result):
+    with patch("tc_api.services.build.subprocess.run", return_value=result):
         success = docker_service.build_image("FROM python:3.11-slim", "bld-1234", "alice", tlog, "rec-1")
 
     assert success is True
@@ -49,7 +53,7 @@ def test_build_image_nonzero_exit(docker_service):
     tlog = DummyTlog()
     result = SimpleNamespace(returncode=1, stdout="", stderr="docker build failed")
 
-    with patch("tc_api.services.subprocess.run", return_value=result):
+    with patch("tc_api.services.build.subprocess.run", return_value=result):
         success = docker_service.build_image("FROM python:3.11-slim", "bld-1235", "alice", tlog, "rec-1")
 
     assert success is False
@@ -59,7 +63,7 @@ def test_build_image_nonzero_exit(docker_service):
 def test_build_image_missing_docker_binary(docker_service):
     tlog = DummyTlog()
 
-    with patch("tc_api.services.subprocess.run", side_effect=FileNotFoundError):
+    with patch("tc_api.services.build.subprocess.run", side_effect=FileNotFoundError):
         success = docker_service.build_image("FROM python:3.11-slim", "bld-1236", "alice", tlog, "rec-1")
 
     assert success is False
@@ -69,7 +73,7 @@ def test_build_image_timeout(docker_service):
     tlog = DummyTlog()
 
     with patch(
-        "tc_api.services.subprocess.run",
+        "tc_api.services.build.subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="docker build", timeout=600),
     ):
         success = docker_service.build_image("FROM python:3.11-slim", "bld-1237", "alice", tlog, "rec-1")
@@ -80,7 +84,7 @@ def test_build_image_timeout(docker_service):
 def test_generate_sbom_missing_syft(docker_service):
     tlog = DummyTlog()
 
-    with patch("tc_api.services.subprocess.run", side_effect=FileNotFoundError):
+    with patch("tc_api.services.build.subprocess.run", side_effect=FileNotFoundError):
         sbom_path = docker_service.generate_sbom("alice-bld-1238:latest", "bld-1238", tlog, "rec-1")
 
     assert sbom_path is None
@@ -90,7 +94,7 @@ def test_generate_sbom_timeout(docker_service):
     tlog = DummyTlog()
 
     with patch(
-        "tc_api.services.subprocess.run",
+        "tc_api.services.build.subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="syft", timeout=300),
     ):
         sbom_path = docker_service.generate_sbom("alice-bld-1239:latest", "bld-1239", tlog, "rec-1")
@@ -109,17 +113,18 @@ def test_build_result_shows_failed_when_build_step_fails():
         "identity_token": "token-123",
     }
 
-    with TestClient(app) as client:
-        with patch("tc_api.main.docker_service.build_image", return_value=False):
-            submit_response = client.post("/api/build-package", json=payload)
-            assert submit_response.status_code == 200
-            build_id = submit_response.json()["build_id"]
+    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None):
+        with TestClient(app) as client:
+            with patch("tc_api.api.workflows.docker_service.build_image", return_value=False):
+                submit_response = client.post("/api/build-package", json=payload)
+                assert submit_response.status_code == 200
+                build_id = submit_response.json()["build_id"]
 
-        result_response = client.get(f"/api/build-result/{build_id}")
-        assert result_response.status_code == 200
-        result_payload = result_response.json()
-        assert result_payload["status"] == "failed"
-        assert result_payload["current_step"] == "Container build failed"
+            result_response = client.get(f"/api/build-result/{build_id}")
+            assert result_response.status_code == 200
+            result_payload = result_response.json()
+            assert result_payload["status"] == "failed"
+            assert result_payload["current_step"] == "Container build failed"
 
 
 def test_verify_sbom_accepts_local_oci_layout(docker_service, tmp_path):
@@ -140,7 +145,7 @@ def test_verify_sbom_logs_cosign_failure_reason(docker_service, caplog):
     tlog = DummyTlog()
     failure = SimpleNamespace(returncode=1, stdout="", stderr="signature mismatch")
 
-    with patch("tc_api.services.subprocess.run", return_value=failure):
+    with patch("tc_api.services.publish.subprocess.run", return_value=failure):
         with caplog.at_level("WARNING"):
             verified = docker_service.verify_sbom(
                 "docker.io/trustedzoo/plain:latest-encrypted",
@@ -164,7 +169,7 @@ def test_encrypt_image_prefers_docker_daemon_transport(docker_service, tmp_path)
     ]
 
     with patch.dict(os.environ, {"DOCKER_API_VERSION": "1.24"}, clear=False):
-        with patch("tc_api.services.subprocess.run", side_effect=results) as run_mock:
+        with patch("tc_api.services.build.subprocess.run", side_effect=results) as run_mock:
             encrypted = docker_service.encrypt_image("alice-bld-1:latest", "bld-1", str(public_key), tlog, "rec-1")
 
     assert encrypted == f"oci:{tmp_path / 'builds' / 'bld-1' / 'alice-bld-1'}"
@@ -190,7 +195,7 @@ def test_encrypt_image_falls_back_to_docker_archive_on_transport_error(docker_se
     ]
 
     with patch.dict(os.environ, {"DOCKER_API_VERSION": "1.24"}, clear=False):
-        with patch("tc_api.services.subprocess.run", side_effect=results) as run_mock:
+        with patch("tc_api.services.build.subprocess.run", side_effect=results) as run_mock:
             encrypted = docker_service.encrypt_image("alice-bld-2:latest", "bld-2", str(public_key), tlog, "rec-2")
 
     assert encrypted == f"oci:{tmp_path / 'builds' / 'bld-2' / 'alice-bld-2'}"
@@ -212,7 +217,7 @@ def test_encrypt_image_logs_invalid_public_key_before_skopeo(docker_service, tmp
     public_key.write_text("not-a-public-key", encoding="utf-8")
     validation_failure = SimpleNamespace(returncode=1, stdout="", stderr="Could not read key of Public Key from file")
 
-    with patch("tc_api.services.subprocess.run", return_value=validation_failure) as run_mock:
+    with patch("tc_api.services.build.subprocess.run", return_value=validation_failure) as run_mock:
         with caplog.at_level("ERROR"):
             encrypted = docker_service.encrypt_image("alice-bld-3:latest", "bld-3", str(public_key), tlog, "rec-3")
 
@@ -225,8 +230,8 @@ def test_download_kbs_artifact_retries_transient_connection_failures(docker_serv
     destination = tmp_path / "openssl.pub"
     attempts = {"count": 0}
 
-    monkeypatch.setattr(services, "KBS_FETCH_RETRIES", 3)
-    monkeypatch.setattr(services, "KBS_FETCH_RETRY_DELAY_SECONDS", 0.01)
+    monkeypatch.setattr(base_services, "KBS_FETCH_RETRIES", 3)
+    monkeypatch.setattr(base_services, "KBS_FETCH_RETRY_DELAY_SECONDS", 0.01)
 
     def fake_run(cmd, capture_output=True, text=True, timeout=None, env=None):
         attempts["count"] += 1
@@ -236,8 +241,8 @@ def test_download_kbs_artifact_retries_transient_connection_failures(docker_serv
         destination.write_text("PUBLIC", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
-    with patch("tc_api.services.subprocess.run", side_effect=fake_run) as run_mock:
-        with patch("tc_api.services.time.sleep") as sleep_mock:
+    with patch("tc_api.services.base.subprocess.run", side_effect=fake_run) as run_mock:
+        with patch("tc_api.services.base.time.sleep") as sleep_mock:
             ok, detail = docker_service._download_kbs_artifact("http://127.0.0.1:8006/openssl.pub", str(destination))
 
     assert ok is True
@@ -282,7 +287,7 @@ def test_get_pubkey_from_kbs_derives_public_key_from_key_pem(docker_service, tmp
 
         raise AssertionError(f"Unexpected command: {cmd}")
 
-    with patch("tc_api.services.subprocess.run", side_effect=fake_run):
+    with patch("tc_api.services.base.subprocess.run", side_effect=fake_run):
         attestation_result, key_dict = docker_service.get_pubKey_from_KBS(tlog, "rec-kbs")
 
     assert attestation_result == "trusted"
@@ -303,7 +308,7 @@ async def test_launch_containers_normalizes_local_oci_image_id(docker_service, t
         SimpleNamespace(returncode=0, stdout="running\n", stderr=""),
     ]
 
-    with patch("tc_api.services.subprocess.run", side_effect=results) as run_mock:
+    with patch("tc_api.services.launch.subprocess.run", side_effect=results) as run_mock:
         launched = await docker_service.launch_containers(
             tlog,
             "rec-1",

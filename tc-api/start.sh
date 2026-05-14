@@ -4,8 +4,10 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/common.sh"
+tc_api_cd_repo_root
+SCRIPT_DIR="$TC_API_REPO_ROOT"
 
 PID_DIR="$SCRIPT_DIR/logs/pids"
 TC_API_PID_FILE="$PID_DIR/tc_api.pid"
@@ -69,16 +71,6 @@ reset_local_state() {
     echo "✓ Local TruCon and Docktap state cleared."
 }
 
-default_python_bin() {
-    if [ -n "${PYTHON_BIN:-}" ]; then
-        echo "$PYTHON_BIN"
-    elif [ -x "$PWD/venv/bin/python" ]; then
-        echo "$PWD/venv/bin/python"
-    else
-        echo "python3"
-    fi
-}
-
 startup_baseline_required() {
     local raw_value="${INIT_DEFAULT_CHAIN_ON_STARTUP:-true}"
     raw_value="$(printf '%s' "$raw_value" | tr '[:upper:]' '[:lower:]')"
@@ -87,7 +79,7 @@ startup_baseline_required() {
 
 has_reusable_sigstore_token() {
     "$PYTHON_BIN" - <<'PY'
-from tc_api.sigstore_identity import resolve_sigstore_identity_token
+from tc_api.identity.sigstore_identity import resolve_sigstore_identity_token
 
 token = resolve_sigstore_identity_token(
     operation="baseline",
@@ -220,7 +212,7 @@ stop_services() {
     stop_pid_from_file "Docktap" "$DOCKTAP_PID_FILE"
     stop_pid_from_file "TruCon" "$TRUCON_PID_FILE"
 
-    stop_matching_processes "TC API" "tc_api.main:app" "--port ${PORT:-8000}"
+    stop_matching_processes "TC API" "tc_api.api.app:app" "--port ${PORT:-8000}"
     stop_matching_processes "Docktap" "tc_api.docktap.main" "${DOCKTAP_SOCKET:-/var/run/docktap/docker.sock}"
     stop_matching_processes "TruCon" "tc_api.trucon.app:app" "--port ${TRUCON_PORT:-8001}"
 }
@@ -382,8 +374,8 @@ export DEBUG=${DEBUG:-false}
 export ENABLE_TDX=${ENABLE_TDX:-true}
 export TRUCON_AUTH_DISABLED=${TRUCON_AUTH_DISABLED:-false}
 export INIT_DEFAULT_CHAIN_ON_STARTUP=${INIT_DEFAULT_CHAIN_ON_STARTUP:-true}
-export PYTHON_BIN=$(default_python_bin)
-export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHON_BIN=$(tc_api_default_python_bin)
+tc_api_prepend_src_to_pythonpath
 
 ensure_startup_sigstore_token
 
@@ -460,10 +452,10 @@ echo "Debug mode: $DEBUG"
 # Start the FastAPI application
 if [[ "$START_MODE" == "dev" ]]; then
     echo "Starting in development mode with auto-reload..."
-    "$PYTHON_BIN" -m uvicorn tc_api.main:app --host $HOST --port $PORT --reload &
+    "$PYTHON_BIN" -m uvicorn tc_api.api.app:app --host $HOST --port $PORT --reload &
 else
     echo "Starting in production mode..."
-    "$PYTHON_BIN" -m uvicorn tc_api.main:app --host $HOST --port $PORT --workers "$TC_API_WORKERS" &
+    "$PYTHON_BIN" -m uvicorn tc_api.api.app:app --host $HOST --port $PORT --workers "$TC_API_WORKERS" &
 fi
 
 TC_API_PID=$!

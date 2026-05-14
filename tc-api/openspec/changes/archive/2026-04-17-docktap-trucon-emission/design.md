@@ -28,7 +28,7 @@ Key existing code:
 
 ### 1. Shared signing code via direct import
 
-**Decision**: Docktap imports signing utilities directly from `tc_api.tlog_client` (specifically `compute_entry_digest`, `compute_event_digest`, `canonical_json`) and uses `sigstore` library directly for DSSE construction and signing.
+**Decision**: Docktap imports digest utilities from `tlog.digest` and uses tc_api trust/identity helpers plus `sigstore` directly for DSSE construction and signing.
 
 **Alternatives considered**:
 - *Copy the signing code into Docktap*: Leads to drift between two signing implementations. Rejected.
@@ -95,6 +95,6 @@ All values are JSON-encoded strings (consistent with tc_api's existing conventio
 
 - **[Sigstore availability]** → If the OIDC credential source is unavailable, every commit fails silently. Mitigation: best-effort + warning logging. Operators monitor for sustained warning patterns.
 - **[TruCon availability]** → If TruCon is down, Docker operations continue but trust events are lost. Mitigation: This is the accepted v1 trade-off. Local buffering deferred to a future enhancement.
-- **[Import coupling]** → Docktap imports from `tc_api.tlog_client`. If that module's API changes, Docktap breaks. Mitigation: The imported functions (`compute_entry_digest`, `compute_event_digest`, `canonical_json`) are stable utility functions. Pin to specific function signatures, not internal classes.
+- **[Import coupling]** → Docktap imports from `tlog.digest` and tc_api trust/identity helpers. If those APIs change, Docktap breaks. Mitigation: The imported digest functions (`compute_entry_digest`, `compute_event_digest`, `canonical_json`) are stable utility functions. Pin to specific function signatures, not internal classes.
 - **[Thread-per-connection + synchronous HTTP]** → Each Docker operation's handler thread blocks on the TruCon HTTP call. With thread-per-connection model this is fine for typical Docker workloads. High-concurrency scenarios could exhaust threads. Mitigation: TruCon calls have a short timeout (5s). Acceptable for v1 — async can be considered if thread exhaustion is observed.
 - **[Lost events on crash]** → If Docktap crashes between Docker response and TruCon commit, the event is lost. Mitigation: Acceptable for v1 — the Docker response was already returned successfully. Crash recovery is out of scope.

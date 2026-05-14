@@ -40,10 +40,10 @@ DEFAULT_TRUCON_UDS_PATH = "/var/run/trucon/trucon.sock"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from tc_api.sigstore_baseline import build_baseline_sigstore_bundle
+from tc_api.identity.sigstore_baseline import build_baseline_sigstore_bundle
 from tc_api.config import ENABLE_TDX
-from tc_api.sigstore_identity import resolve_sigstore_identity_token
-from tc_api.tlog_client import TrustedLogAPI
+from tc_api.identity.sigstore_identity import resolve_sigstore_identity_token
+from tc_api.trust.commit_client import TrustedLogAPI
 from tc_api.trucon.adapters.ccel import read_ccel_eventlog_used_binary
 from tlog_rekor.adapter import SigstoreLogAdapter
 from tc_api.trucon.internal_transport import request_json, resolve_trucon_url
@@ -262,7 +262,7 @@ def run_baseline_chain_smoke(args: argparse.Namespace) -> Dict[str, Any]:
     if not identity_token:
         raise SmokeTestError(
             "No reusable Sigstore identity token is available for baseline smoke. "
-            "Run tc_api.oidc_preflight --fetch --force-oob or set TC_API_REAL_REKOR_IDENTITY_TOKEN."
+            "Run tc_api.identity.oidc_preflight --fetch --force-oob or set TC_API_REAL_REKOR_IDENTITY_TOKEN."
         )
 
     local_ccel_bytes = read_ccel_eventlog_used_binary()
@@ -675,7 +675,7 @@ def main() -> int:
             if not stage_identity_token:
                 raise SmokeTestError(
                     "No reusable Sigstore identity token is available for build/publish transparency logging. "
-                    "Run tc_api.oidc_preflight --fetch --force-oob immediately before the smoke test."
+                    "Run tc_api.identity.oidc_preflight --fetch --force-oob immediately before the smoke test."
                 )
 
         build_result = run_build(session, base_url, args, user_id, identity_token=stage_identity_token)
@@ -729,7 +729,7 @@ def main() -> int:
         if not deploy_identity_token:
             raise SmokeTestError(
                 "No reusable Sigstore identity token is available for deploy transparency logging. "
-                "Run tc_api.oidc_preflight --fetch --force-oob immediately before the smoke test."
+                "Run tc_api.identity.oidc_preflight --fetch --force-oob immediately before the smoke test."
             )
 
         launch_result = run_deploy(

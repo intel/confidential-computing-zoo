@@ -20,4 +20,4 @@
 ## 4. Test Remediation
 
 - [x] 4.1 In `test_tlog_impl.py` or `test_tlog_refactored.py`, remove any mocked invocations of `start_submission_daemon` or adapt `time.sleep` assumptions if they previously relied on the thread fetching records.
-- [x] 4.2 Verify and adjust `test_unit.py` testing lifecycles asserting the missing daemon thread mechanics.
+- [x] 4.2 Verify and adjust focused unit coverage for daemon-thread mechanics rather than relying on a catch-all legacy test module.

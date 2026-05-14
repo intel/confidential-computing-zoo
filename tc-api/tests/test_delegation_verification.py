@@ -1,7 +1,7 @@
 """Tests for _annotate_delegation_verification in tlog_client.py."""
 import pytest
 
-from tc_api.tlog_client import _annotate_delegation_verification
+from tc_api.trust.verification import _annotate_delegation_verification
 
 
 def _make_delegation_event(delegation_id="del-1", scope=None, expires_at="2099-01-01T00:00:00"):

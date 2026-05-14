@@ -32,7 +32,7 @@ KBS_FETCH_RETRIES = config("KBS_FETCH_RETRIES", default=5, cast=int)
 KBS_FETCH_RETRY_DELAY_SECONDS = config("KBS_FETCH_RETRY_DELAY_SECONDS", default=1.0, cast=float)
 
 # Sigstore author Configuration
-GIT_EMAIL = config("GIT_EMAIL", default="qingchengx.zeng@intel.com")
+GIT_EMAIL = config("GIT_EMAIL", default="")
 
 # Runtime feature flags
 ENABLE_TDX = config("ENABLE_TDX", default=True, cast=bool)

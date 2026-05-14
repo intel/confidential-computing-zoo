@@ -678,7 +678,7 @@ This trusted lifecycle `operation_result` field is separate from the local `resp
 
 ## Session Delegation REST Endpoint
 
-`tc_api.main` exposes the delegation endpoint for Docktap session management.
+`tc_api.api.app` exposes the delegation endpoint for Docktap session management.
 
 ### `POST /api/docktap/delegate`
 

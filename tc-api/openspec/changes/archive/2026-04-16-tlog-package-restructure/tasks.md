@@ -46,6 +46,6 @@
 
 ## 10. Validate and fix tests
 
-- [x] 10.1 Update test imports in `tests/test_tlog_impl.py`, `tests/test_tlog_refactored.py`, and `tests/test_unit.py` to use new paths
-- [x] 10.2 Run `pytest tests/test_unit.py -v` and fix any import or runtime errors
+- [x] 10.1 Update test imports in `tests/test_tlog_impl.py`, `tests/test_tlog_refactored.py`, and focused unit modules such as `tests/test_tdx_mr_adapter.py`
+- [x] 10.2 Run focused unit coverage (`pytest tests/test_tdx_mr_adapter.py -v`) and fix any import or runtime errors
 - [x] 10.3 Run `bash run_tests.sh` for full validation

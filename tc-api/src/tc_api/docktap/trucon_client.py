@@ -20,8 +20,8 @@ import urllib.error
 
 from tlog.types import Entry
 from tlog.digest import canonical_json, compute_entry_digest, compute_event_digest
-from tc_api.sigstore_identity import resolve_sigstore_identity_token
-from tc_api.sigstore_baseline import (
+from tc_api.identity.sigstore_identity import resolve_sigstore_identity_token
+from tc_api.identity.sigstore_baseline import (
     build_baseline_sigstore_bundle,
     build_signing_context,
     generate_chain_owner_pub_key_pem,
@@ -49,7 +49,7 @@ def _resolve_identity_token_str() -> Optional[str]:
     Precedence:
     1. ``DOCKTAP_SIGSTORE_IDENTITY_TOKEN`` for sidecar-specific injection.
     2. ``SIGSTORE_IDENTITY_TOKEN`` for generic Sigstore-compatible tooling.
-    3. Shared cached token resolution via ``tc_api.sigstore_identity``.
+    3. Shared cached token resolution via ``tc_api.identity.sigstore_identity``.
     4. Ambient credential detection via ``sigstore.oidc.detect_credential()``.
     """
     for env_var in ("DOCKTAP_SIGSTORE_IDENTITY_TOKEN", "SIGSTORE_IDENTITY_TOKEN"):

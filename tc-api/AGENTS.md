@@ -2,11 +2,11 @@
 
 ## Build and Test
 - Setup environment: `cd tc-api && bash setup.sh` (creates `venv`, installs tlog/tlog-rekor/tc-api in editable mode).
-- Start service: `cd tc-api && bash start.sh` (validates tool availability and runs `uvicorn`).
-- Alternate start: `python -m tc_api.main`.
-- Run all tests: `cd tc-api && bash run_tests.sh`.
+- Start service: `cd tc-api && ./start.sh restart` (preferred local lifecycle entrypoint for tc_api, TruCon, and Docktap).
+- Alternate start: `python -m tc_api.api.app`.
+- Run all tests: `cd tc-api && ./run_tests.sh --type all --verbose`.
 - Run manual API checks: `python -m tests.test_api` (or `python -m tests.test_api health|build|publish|register`).
-- Run automated tests: `pytest tests/test_unit.py -v`.
+- Run automated tests: `pytest tests/test_subprocess_unit.py tests/test_tdx_mr_adapter.py -v`.
 - Docker build: `docker-compose build` (from repo root; Dockerfile is at repo root).
 
 ## Repository Layout
@@ -27,8 +27,8 @@
 - TruCon service: `src/tc_api/trucon/` contains the sequencer, SQLite queue, and platform adapters.
 - Docktap sidecar: `src/tc_api/docktap/` is the Docker operation interception proxy (sub-package of tc_api). Entry point: `tc-docktap` CLI or `python -m tc_api.docktap.main`.
 - Runtime config: `src/tc_api/config.py` centralizes environment-driven settings (paths, commands, registry, KBS).
-- Tests: `tests/` contains all test files (`test_unit.py`, `test_api.py`, `test_runner.py`, etc.).
-- Scripts: `scripts/` contains VFS lifecycle, Windows platform scripts, and container entrypoint helpers.
+- Tests: `tests/` contains pytest modules and manual runners (`test_subprocess_unit.py`, `test_tdx_mr_adapter.py`, `test_api.py`, `test_runner.py`, etc.).
+- Scripts: `scripts/` contains operator helpers such as `run_docktap_oob_atomic.py`, `verify_current_attested_head.py`, and `tdvm_smoke_test.py`.
 - Docs: `docs/` contains architecture documentation and trusted-log module docs.
 
 ## Conventions

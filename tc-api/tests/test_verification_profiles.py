@@ -2,7 +2,9 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from tc_api.main import _normalize_local_oci_reference, launch_container_async
+from tc_api.api.workflows import _normalize_local_oci_reference, launch_container_async
+import tc_api.services.build as build_services
+import tc_api.services.publish as publish_services
 from tc_api.services import DockerService
 from tc_api.verification_profiles import evaluate_profiles
 
@@ -183,7 +185,7 @@ def test_build_image_emits_profile_fields(tmp_path):
     tlog = _RecordingTlog()
     service = DockerService()
 
-    with patch("tc_api.services.BUILD_DIR", str(tmp_path)), patch("tc_api.services.subprocess.run") as mock_run:
+    with patch("tc_api.services.build.BUILD_DIR", str(tmp_path)), patch("tc_api.services.build.subprocess.run") as mock_run:
         mock_run.return_value = SimpleNamespace(returncode=0, stdout="built", stderr="")
         with patch.object(service, "_resolve_image_digest", side_effect=lambda image_ref: f"sha384:{image_ref}"):
             assert service.build_image("FROM python:3.11\nRUN echo hi\n", "bld-123", "alice", tlog, "rec-1") is True
@@ -200,7 +202,7 @@ def test_push_image_emits_publish_profile_fields(tmp_path):
     tlog = _RecordingTlog()
     service = DockerService()
 
-    with patch("tc_api.services.subprocess.run") as mock_run:
+    with patch("tc_api.services.publish.subprocess.run") as mock_run:
         mock_run.return_value = SimpleNamespace(returncode=0, stdout="pushed", stderr="")
         with patch.object(service, "_resolve_image_digest", return_value="sha256:pushed"):
             assert service.push_image("oci:/tmp/build/image", "docker://registry/repo:tag", tlog, "rec-1") is True
@@ -230,14 +232,14 @@ def test_launch_async_emits_launch_profile_fields(tmp_path):
         },
     )
 
-    with patch("tc_api.main.docker_service._resolve_image_digest", return_value="sha256:launch"), \
-            patch("tc_api.main.docker_service.pull_image", return_value=True), \
-         patch("tc_api.main.docker_service.launch_containers", return_value=[{"container_ID": "container-1", "container_Status": "running"}]), \
-         patch("tc_api.main.docker_service.commit_and_save_receipt", return_value=(True, "log-1")), \
-         patch("tc_api.main.docker_service.verify_chain_state", return_value="success"), \
-            patch("tc_api.main.docker_service.update_launch_status"), \
-         patch("tc_api.main.docker_service.update_transparencylog_status"), \
-         patch("sigstore.oidc.Issuer.production") as mock_production:
+    with patch("tc_api.api.workflows.docker_service._resolve_image_digest", return_value="sha256:launch"), \
+        patch("tc_api.api.workflows.docker_service.pull_image", return_value=True), \
+        patch("tc_api.api.workflows.docker_service.launch_containers", return_value=[{"container_ID": "container-1", "container_Status": "running"}]), \
+        patch("tc_api.api.workflows.docker_service.commit_and_save_receipt", return_value=(True, "log-1")), \
+        patch("tc_api.api.workflows.docker_service.verify_chain_state", return_value="success"), \
+        patch("tc_api.api.workflows.docker_service.update_launch_status"), \
+        patch("tc_api.api.workflows.docker_service.update_transparencylog_status"), \
+        patch("sigstore.oidc.Issuer.production") as mock_production:
         mock_production.return_value.identity_token.return_value = "token"
         asyncio.run(
             launch_container_async(

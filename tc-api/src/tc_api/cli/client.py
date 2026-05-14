@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 import requests
 from tc_api.cli.oidc_verification_code import acquire_sigstore_token_via_oob
-from tc_api.sigstore_identity import cache_sigstore_identity_token
+from tc_api.identity.sigstore_identity import cache_sigstore_identity_token
 
 
 DEFAULT_BASE_URL = os.environ.get("TC_API_BASE_URL", "http://localhost:8000")

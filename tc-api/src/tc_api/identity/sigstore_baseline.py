@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives import hashes
 from sigstore.dsse import StatementBuilder, Subject
 from sigstore.oidc import IdentityToken
 from sigstore.sign import SigningContext
-from .config import OWNER_KEY_DIR
+from ..config import OWNER_KEY_DIR
 from .sigstore_identity import resolve_sigstore_identity_token_object
 from tlog.digest import canonical_json as _canonical_json, compute_entry_digest as _compute_entry_digest, compute_event_digest as _compute_event_digest
 

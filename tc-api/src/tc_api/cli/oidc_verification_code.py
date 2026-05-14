@@ -6,7 +6,7 @@ from typing import Optional
 
 from sigstore.oidc import IdentityToken, Issuer
 
-from tc_api.sigstore_identity import cache_sigstore_identity_token
+from tc_api.identity.sigstore_identity import cache_sigstore_identity_token
 
 
 DEFAULT_CLIENT_ID = os.environ.get("TC_API_SIGSTORE_OIDC_CLIENT_ID", "sigstore")

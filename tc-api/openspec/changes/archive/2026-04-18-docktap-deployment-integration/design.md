@@ -33,7 +33,7 @@ Docktap runs as a third `docker-compose` service using the same Docker image as 
 
 **Alternative considered**: Same container as tc_api with a third process. Rejected because it couples failure domains and complicates process management inside a single container.
 
-**Alternative considered**: Separate Dockerfile/image for Docktap. Rejected because Docktap imports `tc_api.tlog.types` and `tc_api.tlog_client`, requiring the `tc_api` package. Using the same image is simpler and images are deduplicated on the same host.
+**Alternative considered**: Separate Dockerfile/image for Docktap. Rejected because Docktap imports `tlog.types` plus tc_api trust/identity helpers, requiring the `tc_api` package and sibling `tlog` package. Using the same image is simpler and images are deduplicated on the same host.
 
 ### D2: Proxy socket via bind-mount directory
 

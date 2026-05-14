@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tc_api.tlog_client import TrustedLogAPI
+from tc_api.trust.commit_client import TrustedLogAPI
 from tlog.digest import canonical_json, compute_entry_digest, compute_event_digest
 from tlog.types import Entry, SubmitStatus
 from tlog.local_mr import LocalMRAdapter
@@ -158,8 +158,8 @@ class TestTwoLevelDiffers:
 class TestCommitRecordPredicate:
     """Test that commit_record() builds the predicate with two-level digest."""
 
-    @patch("tc_api.tlog_client.IdentityToken")
-    @patch("tc_api.tlog_client.build_signing_context")
+    @patch("tc_api.trust.commit_client.IdentityToken")
+    @patch("tc_api.trust.commit_client.build_signing_context")
     def test_predicate_contains_entries_and_entry_digests(self, mock_build_signing_context, mock_identity_token):
         """commit_record() predicate has entries, entry_digests, and digest keys."""
         # Capture the predicate passed to StatementBuilder
@@ -221,7 +221,12 @@ class TestCommitRecordPredicate:
             def build(self):
                 return MagicMock()
 
-        with patch("tc_api.tlog_client.StatementBuilder", CapturingBuilder):
+        with patch("tc_api.trust.commit_client.StatementBuilder", CapturingBuilder), patch.object(
+            TrustedLogAPI,
+            "init_chain",
+            autospec=True,
+            return_value={"record_id": "baseline", "sequence_num": 1},
+        ):
             ctx = api.init_record(context={"chain_ref": "test-chain"})
             api.add_entry(ctx.record_id, Entry(key="image_hash", value="sha256:abc"))
             api.add_entry(ctx.record_id, Entry(key="sbom_format", value="spdx"))

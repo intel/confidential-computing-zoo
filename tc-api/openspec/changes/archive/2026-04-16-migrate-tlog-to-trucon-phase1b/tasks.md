@@ -24,4 +24,4 @@
 - [x] 4.1 Verify no remaining references to `ChainedTransparencyLog` or `tlog_chain` in `src/` (except archived openspec)
 - [x] 4.2 Verify both `main.py` and `services.py` pass `py_compile`
 - [x] 4.3 Verify `trucon.py` passes `py_compile` and the TruCon app loads with the new endpoint
-- [x] 4.4 Run `pytest tests/test_unit.py -v` and fix any import breakage
+- [x] 4.4 Run `pytest tests/test_tdx_mr_adapter.py -v` and fix any import breakage

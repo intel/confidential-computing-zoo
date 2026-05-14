@@ -9,7 +9,7 @@ from tlog.digest import (
     compute_event_digest,
 )
 from ..trucon.owner_authorization import sign_owner_authorization
-from ..sigstore_baseline import get_chain_owner_private_key
+from ..identity.sigstore_baseline import get_chain_owner_private_key
 
 
 DOCKTAP_DELEGATION_TTL_SECONDS = int(

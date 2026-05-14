@@ -112,7 +112,7 @@ class TestDelegationE2EFlow:
             mock_adapter_cls.return_value.submit_owner_signed_entry.assert_called_once()
 
         # 4. Verify delegation verification annotations
-        from tc_api.tlog_client import _annotate_delegation_verification
+        from tc_api.trust.verification import _annotate_delegation_verification
         chain_events = [
             {"event_type": "chain.init", "sequence_num": 1},
             {
@@ -177,7 +177,7 @@ class TestDelegationTTLExpiry:
         assert active["delegation_id"] == "del-renewed"
 
         # 6. Verify delegation verification catches expiry in chain replay
-        from tc_api.tlog_client import _annotate_delegation_verification
+        from tc_api.trust.verification import _annotate_delegation_verification
         chain_events = [
             {
                 "event_type": "session.delegation",

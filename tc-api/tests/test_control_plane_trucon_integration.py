@@ -5,8 +5,10 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-import tc_api.main as main_mod
-import tc_api.services as services_mod
+import tc_api.api.runtime as runtime_mod
+import tc_api.api.workflows as workflow_mod
+import tc_api.services.build as services_mod
+from tc_api.api.app import app
 
 
 class ControlPlaneHarness:
@@ -20,83 +22,94 @@ class ControlPlaneHarness:
         self._upload_dir.mkdir(parents=True, exist_ok=True)
         self._logs_dir.mkdir(parents=True, exist_ok=True)
 
-        self._monkeypatch.setattr(main_mod, "BUILD_DIR", str(self._build_dir))
-        self._monkeypatch.setattr(main_mod, "UPLOAD_DIR", str(self._upload_dir))
-        self._monkeypatch.setattr(main_mod, "LOGS_DIR", str(self._logs_dir))
+        self._monkeypatch.setattr(runtime_mod, "BUILD_DIR", str(self._build_dir))
+        self._monkeypatch.setattr(runtime_mod, "UPLOAD_DIR", str(self._upload_dir))
+        self._monkeypatch.setattr(runtime_mod, "LOGS_DIR", str(self._logs_dir))
+        self._monkeypatch.setattr(workflow_mod, "BUILD_DIR", str(self._build_dir))
         self._monkeypatch.setattr(services_mod, "BUILD_DIR", str(self._build_dir))
 
-        main_mod.docker_service.builds.clear()
-        main_mod.docker_service.publishs.clear()
-        main_mod.docker_service.launchs.clear()
-        main_mod.docker_service.transparencyLog.clear()
+        workflow_mod.docker_service.builds.clear()
+        workflow_mod.docker_service.publishs.clear()
+        workflow_mod.docker_service.launchs.clear()
+        workflow_mod.docker_service.transparencyLog.clear()
 
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "generate_uuid",
             lambda prefix="bld": f"{prefix}-test123",
         )
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "cleanup_build_artifacts",
             lambda *args, **kwargs: True,
         )
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "update_transparencylog_status",
             lambda *args, **kwargs: None,
         )
+        self._monkeypatch.setattr(
+            workflow_mod,
+            "resolve_sigstore_identity_token",
+            lambda *args, **kwargs: "fake-identity-token",
+        )
+        self._monkeypatch.setattr(
+            workflow_mod,
+            "_resolve_required_sigstore_identity_token",
+            lambda operation, supplied_token, request=None: supplied_token or "fake-identity-token",
+        )
 
     def client(self) -> TestClient:
-        return TestClient(main_mod.app)
+        return TestClient(app)
 
     def patch_trucon(self, *, commit_success: bool, verify_status: str) -> None:
         record_id = "rec-123" if commit_success else None
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "commit_and_save_receipt",
             lambda *args, **kwargs: (commit_success, record_id),
         )
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "verify_chain_state",
             lambda *args, **kwargs: verify_status,
         )
 
     def patch_build_success(self) -> None:
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "build_image",
             lambda *args, **kwargs: True,
         )
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "export_image_to_oci",
             lambda *args, **kwargs: "oci:/tmp/builds/bld-test123/plain",
         )
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "generate_sbom",
             lambda *args, **kwargs: str(self._build_dir / "bld-test123" / "bld-test123-sbom.json"),
         )
 
     def patch_publish_success(self) -> None:
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "push_image",
             lambda *args, **kwargs: True,
         )
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "get_pubKey_from_KBS",
             lambda *args, **kwargs: ("trusted", {"cosignKey": "/tmp/fake-cosign.key"}),
         )
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "sign_image",
             lambda *args, **kwargs: True,
         )
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "create_sbom_attestation",
             lambda *args, **kwargs: True,
         )
@@ -106,12 +119,12 @@ class ControlPlaneHarness:
             return ["container-1"]
 
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "pull_image",
             lambda *args, **kwargs: True,
         )
         self._monkeypatch.setattr(
-            main_mod.docker_service,
+            workflow_mod.docker_service,
             "launch_containers",
             _launch_containers,
         )
@@ -124,7 +137,7 @@ def harness(monkeypatch, tmp_path):
 
 @pytest.fixture
 def patched_lifespan():
-    with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production:
         mock_production.return_value.identity_token.return_value = "fake-identity-token"
@@ -194,7 +207,7 @@ def test_build_flow_fails_when_transparency_commit_fails(harness, patched_lifesp
     harness.patch_build_success()
     harness.patch_trucon(commit_success=False, verify_status="degraded")
     monkeypatch.setattr(
-        main_mod.docker_service,
+        workflow_mod.docker_service,
         "verify_chain_state",
         lambda *args, **kwargs: pytest.fail("verify_chain_state should not run when build commit fails"),
     )

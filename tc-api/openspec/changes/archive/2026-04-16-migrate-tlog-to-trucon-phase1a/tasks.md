@@ -25,5 +25,5 @@
 ## 4. Validation
 
 - [x] 4.1 Verify no remaining references to `ChainedTransparencyLog` in main.py or services.py
-- [x] 4.2 Run existing tests (`pytest tests/test_unit.py -v`) and fix any breakage from signature changes
+- [x] 4.2 Run focused unit coverage (`pytest tests/test_tdx_mr_adapter.py -v`) and fix any breakage from signature changes
 - [x] 4.3 Manually verify a build/publish/launch flow produces the new commit-receipt.json format

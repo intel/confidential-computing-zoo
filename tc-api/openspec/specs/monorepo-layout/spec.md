@@ -41,7 +41,7 @@ System-level orchestration scripts SHALL remain at `scripts/` in the repository 
 
 #### Scenario: tc-api scripts are in tc-api/scripts/
 - **WHEN** inspecting `tc-api/scripts/`
-- **THEN** it SHALL contain tc-api-specific scripts including `probe_tdx_rtmr.py`, `run_docktap_oob_atomic.py`, `show_attested_head.py`, `show_rekor_entry.py`, `verify_attested_head.py`, `verify_current_attested_head.py`, `setup.bat`, `start.ps1`, and `run_tests.ps1`
+- **THEN** it SHALL contain tc-api-specific operator helpers including `run_docktap_oob_atomic.py`, `verify_current_attested_head.py`, and `tdvm_smoke_test.py`
 
 ### Requirement: Dockerfile uses targeted COPY commands
 The Dockerfile SHALL explicitly COPY only the packages needed for the container image, rather than copying the entire repository.
@@ -87,4 +87,4 @@ After the restructure, no dead code, tombstone packages, or orphaned directories
 
 #### Scenario: No stray test files at root
 - **WHEN** inspecting the repository root
-- **THEN** `tdvm_smoke_test.py` SHALL NOT exist at the root (it SHALL be in `tc-api/tests/`)
+- **THEN** `tdvm_smoke_test.py` SHALL NOT exist at the root (it SHALL be in `tc-api/scripts/`)

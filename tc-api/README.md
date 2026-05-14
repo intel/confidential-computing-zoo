@@ -31,7 +31,7 @@ python -m tests.test_runner --type manual --name health
 For the opt-in public Rekor smoke test, prefer the just-in-time helper flow so the short-lived OIDC token is fetched and consumed immediately:
 
 ```shell
-python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke
+python -m tc_api.identity.oidc_preflight --fetch --run-real-rekor-smoke
 ```
 
 In the normal `--fetch` path, the helper now explicitly tries to open a browser for the OIDC login step and falls back to printing the login URL if automatic browser launch is unavailable.
@@ -39,19 +39,19 @@ In the normal `--fetch` path, the helper now explicitly tries to open a browser 
 If you already have a real OIDC token and want to enter it interactively instead of exporting it, use:
 
 ```shell
-python -m tc_api.oidc_preflight --prompt-token --json
+python -m tc_api.identity.oidc_preflight --prompt-token --json
 ```
 
 If you also want to enter the expected signer identity interactively, use:
 
 ```shell
-python -m tc_api.oidc_preflight --prompt-token --prompt-expected-identity --json
+python -m tc_api.identity.oidc_preflight --prompt-token --prompt-expected-identity --json
 ```
 
 For the combined real Rekor + real OCI mirror + real verify multi-chain smoke path, use:
 
 ```shell
-python -m tc_api.oidc_preflight --fetch --run-real-rekor-smoke --run-real-rekor-oci-multi-chain-smoke
+python -m tc_api.identity.oidc_preflight --fetch --run-real-rekor-smoke --run-real-rekor-oci-multi-chain-smoke
 ```
 
 That helper flow opens a browser for Sigstore OIDC login when possible, fetches a fresh short-lived token, enables both real-Rekor and real-OCI opt-in gates, and immediately runs the end-to-end smoke before the token expires.
@@ -556,133 +556,50 @@ Under `start.sh`, the default runtime log files are:
 
 ### Run Service
 
+The supported local entrypoint is:
+
 ```bash
-python -m tc_api.main
+./start.sh restart
 ```
 
-The service will start at http://localhost:8000.
-
-### TD VM Acceptance Steps
-
-Use this sequence as the standard acceptance path on a real TD VM.
-
-1. Install `pytest` if the VM does not already provide it:
+For development or direct API-only work, you can still run:
 
 ```bash
-sudo apt-get update && sudo apt-get install -y python3-pytest
+python -m tc_api.api.app
 ```
 
-2. Verify the repository's current TDX quote adapter can obtain a real quote on this VM:
+### TD VM Acceptance
+
+Use the smallest supported acceptance flow on a real TD VM:
 
 ```bash
-PYTHONPATH=/home/siyuan/tc_api/src python3 tests/check_real_tdx_quote.py
+PYTHONPATH=$PWD/src python tests/check_real_tdx_quote.py
+./start.sh restart
+PYTHONPATH=$PWD/src python scripts/tdvm_smoke_test.py --summary-file /tmp/tdvm-smoke-summary.json
 ```
 
-Expected result:
-- `repo_adapter.ok` is `true`
-- `libtdx_probe.ok` is `true`
+Notes:
 
-3. Run the TD VM smoke test. The smoke runner now executes the quote check automatically unless `--skip-quote-check` is passed:
+- `tests/check_real_tdx_quote.py` verifies real quote acquisition on the current VM.
+- `scripts/tdvm_smoke_test.py` is the supported smoke runner for service-backed TDVM validation.
+- For a shorter run, add `--skip-publish` or `--skip-deploy` to `scripts/tdvm_smoke_test.py`.
+- More detailed TDVM guidance lives in `docs/TESTING.md`.
 
-```bash
-PYTHONPATH=/home/siyuan/tc_api/src python3 tdvm_smoke_test.py --summary-file /tmp/tdvm-smoke-summary.json
-```
+### Containers
 
-If you only want to validate quote acquisition without starting the service, run the dedicated checker from step 2. The smoke runner still expects the TC API service to be reachable because it continues into health, build, and later stages after the quote check succeeds.
-
-If you want a shorter service-backed smoke run after the quote check, you can stop after build with:
+Current supported container entrypoints are:
 
 ```bash
-PYTHONPATH=/home/siyuan/tc_api/src python3 tdvm_smoke_test.py --skip-publish --summary-file /tmp/tdvm-build-summary.json
-```
-
-### Deploy with Docker
-
-### Build image & start service in container
-1. Build tc_api image
-
-```bash
-# Non-TDX build (default)
-docker build --build-arg ENABLE_TDX=false -t {image_name:image_tag} .
-
-# TDX build (requires TDX libs in build context)
-docker build --build-arg ENABLE_TDX=true -t {image_name:image_tag} .
-
-# Build with external proxy configuration
-docker build \
-  --build-arg ENABLE_TDX=false \
-  --build-arg http_proxy=$http_proxy \
-  --build-arg https_proxy=$https_proxy \
-  --build-arg no_proxy=$no_proxy \
-  --build-arg HTTP_PROXY=$HTTP_PROXY \
-  --build-arg HTTPS_PROXY=$HTTPS_PROXY \
-  --build-arg NO_PROXY=$NO_PROXY \
-  -t {image_name:image_tag} .
-
-# Run container
-docker run -it --network host --privileged \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -p 8001:8001 -p 8006:8006 -p 8000:8000 \
-  {image_name:image_tag}
-
-# If running with TDX mode, add TDX mounts and env
-docker run -it --network host --privileged \
-  -e ENABLE_TDX=true \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /dev/tdx_guest:/dev/tdx_guest \
-  -v /etc/tdx-attest.conf:/etc/tdx-attest.conf \
-  -p 8001:8001 -p 8006:8006 -p 8000:8000 \
-  {image_name:image_tag}
-```
-
-##### Notice: Check the port in Dockerfile to ensure the ports are not in use. 
-
-### Deploy with Docker Compose
-
-Docker Compose deploys three services: `tc-api`, `trucon`, and `docktap`.
-
-This compose file intentionally does not embed the AA/CDH/ASR trust stack or KBS. For single-host development, use `scripts/dev-up.sh` when you want a unified entrypoint while keeping those lifecycle boundaries explicit.
-
-1. Generate a service token and start all services:
-
-```bash
-# Generate shared service token
-export TRUCON_SERVICE_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-echo "TRUCON_SERVICE_TOKEN=$TRUCON_SERVICE_TOKEN" >> .env
-
-# Create Docktap proxy socket directory on host
-sudo mkdir -p /var/run/docktap
-
-# Create TruCon shared socket directory on host
-sudo mkdir -p /var/run/trucon
-
-# Start all services
 docker compose up -d
 ```
 
-2. Configure Docker CLI to route through Docktap proxy:
+or, for single-host development that also manages the trust-service wrapper:
 
 ```bash
-export DOCKER_HOST=unix:///var/run/docktap/docker.sock
+../scripts/dev-up.sh
 ```
 
-To make this permanent for all users on the TD VM:
-
-```bash
-echo 'export DOCKER_HOST=unix:///var/run/docktap/docker.sock' | sudo tee /etc/profile.d/docktap.sh
-sudo chmod +x /etc/profile.d/docktap.sh
-```
-
-3. Verify all services are healthy:
-
-```bash
-docker compose ps
-curl http://localhost:8000/        # tc-api health
-curl -H "Authorization: Bearer $TRUCON_SERVICE_TOKEN" http://localhost:8001/status   # trucon compatibility HTTP health
-curl http://localhost:8002/healthz  # docktap health
-```
-
-TruCon internal callers now prefer the shared Unix socket at `/var/run/trucon/trucon.sock`. The HTTP endpoint remains available as a compatibility path during migration, but it is no longer the preferred same-machine transport for tc_api and Docktap.
+Docker Compose brings up `tc-api`, `trucon`, and `docktap`. Detailed environment and health-check guidance belongs in `docs/architecture.md` and `docs/TESTING.md` rather than this README.
 
 ### Docktap Environment Variables
 
@@ -725,59 +642,51 @@ The service depends on the following external tools, please ensure they are prop
 ## Project Structure
 
 ```
-tc_api/
+tc-api/
 ├── src/
-│   └── tc_api/       # Application package
-│       ├── main.py       # FastAPI application main file
-│       ├── trucon.py     # TruCon sequencer service
-│       ├── models.py     # Pydantic data models
-│       ├── services.py   # Docker related services
-│       ├── kbs_service.py# KBS client service
-│       ├── config.py     # Configuration file
-│       └── trusted_container_log/
-├── tests/            # Test suites and test runner
-├── scripts/          # VFS, platform, and container helper scripts
-├── deploy/           # Deployment-specific assets such as nginx config
-├── docs/             # System and component architecture docs
-├── pyproject.toml    # Packaging and src-layout configuration
-├── requirements.txt  # Python dependencies
-├── Dockerfile        # Docker build file
-└── README.md         # Project documentation
+│   └── tc_api/                  # Application package
+│       ├── main.py              # FastAPI application entry and API routes
+│       ├── services.py          # Build/publish/launch workflow logic
+│       ├── models.py            # Pydantic request/response models
+│       ├── config.py            # Environment-driven runtime settings
+│       ├── kbs_service.py       # KBS integration helpers
+│       ├── tlog_client.py       # Trusted-log client and verification helpers
+│       ├── docktap/             # Docker interception sidecar package
+│       ├── trucon/              # TruCon sequencer service package
+│       └── cli/                 # CLI entrypoints such as tc-client and tc-verify
+├── tests/                       # Focused pytest modules and manual checks
+├── scripts/                     # Operator helpers such as tdvm_smoke_test.py
+├── docs/                        # Architecture and testing docs
+├── pyproject.toml               # Packaging and entrypoints
+├── setup.sh                     # Local development environment setup
+├── start.sh                     # Local service orchestration
+└── run_tests.sh                 # Backward-compatible test wrapper
 ```
 
 ## Testing
 
-The project includes comprehensive test suites for all API endpoints.
-
-### Test Files
-
-- `tests/test_api.py` - Manual integration tests with detailed output
-- `tests/test_unit.py` - Automated unit and integration tests using pytest
-- `docs/TESTING.md` - Detailed testing documentation
-
-### Quick Test Commands
+Use the single entrypoint for everyday testing:
 
 ```bash
-# Run all tests through a single entrypoint
 python -m tests.test_runner --type all
-
-# Run deterministic unit coverage
-python -m tests.test_runner --type unit --no-service-management --verbose
-
-# Run specific manual test
-python -m tests.test_runner --type manual --name health
-
-# Manual test against a non-default endpoint
-TC_API_BASE_URL=http://localhost:18000 python -m tests.test_runner --type manual --name health
-
-# Wait up to 90s for manual endpoint readiness
-python -m tests.test_runner --type manual --name health --base-url http://localhost:18000 --manual-ready-timeout 90
-
-# Backward-compatible wrappers
-./run_tests.sh --type all --verbose
-./scripts/run_tests.ps1 --type unit --verbose
 ```
 
-See `docs/TESTING.md` for complete testing documentation and `docs/architecture.md` for system design.
+Useful current variants:
+
+```bash
+python -m tests.test_runner --type unit
+python -m tests.test_runner --type manual --name health
+python -m tests.test_runner --type manual --base-url http://localhost:18000 --manual-ready-timeout 90
+./run_tests.sh --type all --verbose
+```
+
+Current focused automated slices are:
+
+- `tests/test_subprocess_unit.py`
+- `tests/test_tdx_mr_adapter.py`
+
+Manual API checks live in `tests/test_api.py`.
+
+See `docs/TESTING.md` for the full matrix and `docs/architecture.md` for system design.
 
 Docktap-specific design details are in `docs/docktap/architecture.md`.

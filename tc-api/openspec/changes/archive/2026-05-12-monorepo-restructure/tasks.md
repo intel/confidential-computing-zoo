@@ -2,7 +2,7 @@
 
 - [x] 1.1 Remove `docktap/` pycache remnants at repo root (`rm -rf docktap/`)
 - [x] 1.2 Remove `src/tc_api/tlog/` tombstone package (`git rm -r src/tc_api/tlog/`)
-- [x] 1.3 Move `tdvm_smoke_test.py` into `tests/` (`git mv tdvm_smoke_test.py tests/`)
+- [x] 1.3 Move `tdvm_smoke_test.py` into `scripts/` as an operator helper (`git mv tdvm_smoke_test.py scripts/`)
 
 ## 2. Create tc-api Subdirectory and Move Files
 
@@ -10,7 +10,7 @@
 - [x] 2.2 Move core package files: `git mv src/ tests/ docs/ examples/ openspec/ pyproject.toml requirements.txt AGENTS.md README.md .env.example` into `tc-api/`
 - [x] 2.3 Move shell scripts: `git mv setup.sh start.sh run_tests.sh` into `tc-api/`
 - [x] 2.4 Move tooling directories: `git mv .github/ .vscode/` into `tc-api/`
-- [x] 2.5 Move tc-api-specific scripts from `scripts/` to `tc-api/scripts/` (probe_tdx_rtmr.py, run_docktap_oob_atomic.py, show_attested_head.py, show_rekor_entry.py, verify_attested_head.py, verify_current_attested_head.py, setup.bat, start.ps1, run_tests.ps1)
+- [x] 2.5 Keep tc-api-specific operator helpers under `tc-api/scripts/` (`run_docktap_oob_atomic.py`, `verify_current_attested_head.py`, `tdvm_smoke_test.py`)
 
 ## 3. Rename Trust Service
 

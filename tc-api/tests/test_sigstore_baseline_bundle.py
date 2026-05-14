@@ -1,10 +1,10 @@
 from unittest.mock import MagicMock, patch
 
-from tc_api.sigstore_baseline import build_baseline_sigstore_bundle
+from tc_api.identity.sigstore_baseline import build_baseline_sigstore_bundle
 
 
-@patch("tc_api.sigstore_baseline.IdentityToken")
-@patch("tc_api.sigstore_baseline.SigningContext")
+@patch("tc_api.identity.sigstore_baseline.IdentityToken")
+@patch("tc_api.identity.sigstore_baseline.SigningContext")
 def test_build_baseline_sigstore_bundle_contains_replay_fields(mock_signing_ctx, mock_identity_token):
     captured_predicate = {}
 
@@ -36,7 +36,7 @@ def test_build_baseline_sigstore_bundle_contains_replay_fields(mock_signing_ctx,
         def build(self):
             return MagicMock()
 
-    with patch("tc_api.sigstore_baseline.StatementBuilder", CapturingBuilder):
+    with patch("tc_api.identity.sigstore_baseline.StatementBuilder", CapturingBuilder):
         bundle_json, pub_key_pem, event_digest = build_baseline_sigstore_bundle(
             chain_id="default",
             rtmr_value="11" * 48,

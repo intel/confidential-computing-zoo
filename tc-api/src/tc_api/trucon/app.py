@@ -65,7 +65,7 @@ from .database import (
     update_record_confirmed,
     update_status,
 )
-from tc_api.sigstore_baseline import build_baseline_sigstore_bundle
+from tc_api.identity.sigstore_baseline import build_baseline_sigstore_bundle
 from tlog_rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
 from tlog_rekor.adapter import SigstoreLogAdapter
 from .adapters.ccel import compute_ccel_digest, read_ccel_eventlog_b64

@@ -33,18 +33,18 @@ The codebase SHALL organize trusted-log related code into three distinct layers:
 - **THEN** it SHALL install `tlog` and `tlog-rekor` from sibling directories (`../tlog`, `../tlog-rekor`) in editable mode alongside the tc-api package itself
 
 ### Requirement: Import path conventions
-Each layer SHALL use import paths consistent with its package location. The tc_api business layer (`main.py`, `services.py`) SHALL import shared types from `tlog` (standalone package) and the client from `tc_api.tlog_client`. TruCon internals SHALL import shared types from `tlog` and platform adapter implementations from `tc_api.trucon.adapters`. Immutable-log backend adapters SHALL be imported from their own packages (`tlog_rekor`, `tlog_onchain`).
+Each layer SHALL use import paths consistent with its package location. The tc_api business layer (`api/_legacy.py`, `services/*`) SHALL import shared types from `tlog` (standalone package) and the client from `tc_api.trust.commit_client`. TruCon internals SHALL import shared types from `tlog` and platform adapter implementations from `tc_api.trucon.adapters`. Immutable-log backend adapters SHALL be imported from their own packages (`tlog_rekor`, `tlog_onchain`).
 
-#### Scenario: main.py imports from standalone tlog
-- **WHEN** `main.py` imports trusted-log types and client
-- **THEN** it SHALL use `from tlog.types import Entry` and `from tc_api.tlog_client import TrustedLogAPI`
+#### Scenario: api/_legacy.py imports from standalone tlog
+- **WHEN** `api/_legacy.py` imports trusted-log types and client
+- **THEN** it SHALL use `from tlog.types import Entry` and `from tc_api.trust.commit_client import TrustedLogAPI`
 
 #### Scenario: trucon/app.py imports from correct layers
 - **WHEN** `trucon/app.py` imports database and adapters
 - **THEN** it SHALL use `from .database import ...` for queue operations and `from tlog.immutable import ImmutableLogAdapter` for the adapter ABC
 
 ### Requirement: No upward imports from trucon to tc_api
-The `trucon/` package SHALL NOT import from `tc_api.config`, `tc_api.main`, `tc_api.services`, or `tc_api.models`. Configuration values (such as database path) SHALL be injected via module-level defaults or environment variables.
+The `trucon/` package SHALL NOT import from `tc_api.config`, `tc_api.api`, `tc_api.services`, or `tc_api.models`. Configuration values (such as database path) SHALL be injected via module-level defaults or environment variables.
 
 #### Scenario: trucon/database.py does not import tc_api.config
 - **WHEN** `trucon/database.py` needs the database file path

@@ -2,30 +2,15 @@
 
 set -euo pipefail
 
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/common.sh"
+tc_api_cd_repo_root
+
 # TC API Development Setup Script
 
 echo "Setting up TC API development environment..."
 
-VENV_DIR="venv"
-
-find_python() {
-	if [[ -n "${PYTHON_BIN:-}" ]]; then
-		echo "$PYTHON_BIN"
-		return 0
-	fi
-
-	if command -v python3.11 >/dev/null 2>&1; then
-		echo "python3.11"
-		return 0
-	fi
-
-	if command -v python3 >/dev/null 2>&1; then
-		echo "python3"
-		return 0
-	fi
-
-	return 1
-}
+VENV_DIR="$TC_API_VENV_DIR"
 
 check_python_version() {
 	local python_bin="$1"
@@ -41,7 +26,7 @@ if sys.version_info < (3, 11):
 PY
 }
 
-PYTHON_BIN="$(find_python)" || {
+PYTHON_BIN="$(tc_api_find_python)" || {
 	echo "ERROR: No Python 3 interpreter found. Install Python 3.11 and retry."
 	exit 1
 }
@@ -75,11 +60,10 @@ recreate_venv_if_needed
 
 VENV_PYTHON="$VENV_DIR/bin/python"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Install package and dependencies
 "$VENV_PYTHON" -m pip install --upgrade pip
-"$VENV_PYTHON" -m pip install -e "$SCRIPT_DIR/../tlog" -e "$SCRIPT_DIR/../tlog-rekor" -e .
+"$VENV_PYTHON" -m pip install -e "$TC_API_REPO_ROOT/../tlog" -e "$TC_API_REPO_ROOT/../tlog-rekor" -e "$TC_API_REPO_ROOT"
+"$VENV_PYTHON" -m pip install -r "$TC_API_REPO_ROOT/requirements-dev.txt"
 
 # Create necessary directories
 mkdir -p uploads builds logs
@@ -91,9 +75,11 @@ fi
 
 echo "Setup complete!"
 echo ""
-echo "To run the service:"
+echo "Current local entrypoints:"
 echo "1. Activate virtual environment: source $VENV_DIR/bin/activate"
-echo "2. Start the service: python -m tc_api.main"
+echo "2. Start the full local stack: ./start.sh restart"
+echo "3. For direct API-only development: python -m tc_api.api.app"
+echo "4. Run tests: ./run_tests.sh --type all"
 echo ""
 echo "API will be available at: http://localhost:8000"
 echo "API documentation: http://localhost:8000/docs"

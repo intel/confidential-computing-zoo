@@ -218,7 +218,7 @@ class TestClientMapping:
     def test_client_maps_new_fields(self):
         """get_commit_queue_status should map new field names and populate next_record_id."""
         from tlog.types import CommitQueueStatus
-        from tc_api.tlog_client import TrustedLogAPI
+        from tc_api.trust.commit_client import TrustedLogAPI
 
         mock_response_data = json.dumps({
             "has_queued_records": True,
@@ -248,7 +248,7 @@ class TestClientMapping:
     def test_client_handles_null_next_record_id(self):
         """next_record_id=null should be properly handled."""
         from tlog.types import CommitQueueStatus
-        from tc_api.tlog_client import TrustedLogAPI
+        from tc_api.trust.commit_client import TrustedLogAPI
 
         mock_response_data = json.dumps({
             "has_queued_records": False,

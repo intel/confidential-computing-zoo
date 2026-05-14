@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tc_api.config import TRUCON_SERVICE_TOKEN, TRUCON_URL
-from tc_api.tlog_client import TrustedLogAPI
+from tc_api.trust.commit_client import TrustedLogAPI
 from tlog_rekor.adapter import SigstoreLogAdapter
 from tc_api.trucon.evidence import (
     compute_binding_expected_value,

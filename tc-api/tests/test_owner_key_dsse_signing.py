@@ -7,7 +7,7 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from tc_api.sigstore_baseline import sign_dsse_with_owner_key
+from tc_api.identity.sigstore_baseline import sign_dsse_with_owner_key
 
 
 @pytest.fixture()

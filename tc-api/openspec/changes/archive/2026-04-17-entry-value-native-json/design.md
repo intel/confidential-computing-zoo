@@ -50,5 +50,5 @@ Docktap already runs in the same CVM where tc_api is installed in editable mode.
 ## Risks / Trade-offs
 
 - **[Risk] Callers pass non-JSON-serializable objects** → `canonical_json()` raises `TypeError` at commit time. This is a clear, early failure at the system boundary. No additional validation needed.
-- **[Risk] Existing tests hardcode digest values** → Tests must be updated to expect new digest outputs (native value encoding ≠ double-encoded string). Identified test files: `test_two_level_digest.py`, `test_unit.py`, Docktap tests.
+- **[Risk] Existing tests hardcode digest values** → Tests must be updated to expect new digest outputs (native value encoding ≠ double-encoded string). Identified test files: `test_two_level_digest.py`, focused unit modules such as `test_tdx_mr_adapter.py`, and Docktap tests.
 - **[Trade-off] `value: Any` loses static type checking** → Accepted. The real contract is JSON-serializability, which is a runtime property. Type narrowing would be cosmetic.

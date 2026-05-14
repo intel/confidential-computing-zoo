@@ -2,6 +2,8 @@
 
 This document is the design reference for the docktap sidecar.
 
+Concrete operator commands for local startup, smoke validation, and test execution are intentionally documented in `docs/TESTING.md` and the top-level `README.md`. This document keeps the Docktap runtime model, contracts, and internal boundaries.
+
 ## Overview
 
 Docktap is a Unix socket proxy for container-runtime API traffic that:
@@ -592,20 +594,13 @@ Common socket defaults:
 
 ## Test Strategy
 
-Use one entrypoint:
+Docktap validation is split across three layers:
 
-```bash
-cd docktap
-python test_suite.py all
-```
+- repository-level service and smoke validation documented in `docs/TESTING.md`
+- focused Docktap proxy and lifecycle scenarios exercised through the Docktap test harness in `src/tc_api/docktap/test_suite.py`
+- architecture-level mixed-trace interpretation captured in this document and the related analysis references
 
-Representative modes:
-
-- `lifecycle`
-- `parallel-images`
-- `multi-container`
-- `mixed`
-- `session`
+This document does not duplicate concrete test commands. Use `docs/TESTING.md` as the supported operator entrypoint.
 
 ## Operational Notes
 

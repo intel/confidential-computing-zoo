@@ -16,7 +16,7 @@ The codebase SHALL organize trusted-log related code into three distinct layers:
 - **THEN** it SHALL contain the `TrustedLogAPI` class that performs DSSE signing and REST calls to TruCon, previously located at `trusted_container_log/api.py`
 
 ### Requirement: Import path conventions
-Each layer SHALL use import paths consistent with its package location. The tc_api business layer (`main.py`, `services.py`) SHALL import shared types from `tc_api.tlog` and the client from `tc_api.tlog_client`. TruCon internals SHALL import shared types from `tc_api.tlog` and adapter implementations from `tc_api.trucon.adapters`.
+Each layer SHALL use import paths consistent with its package location. The tc_api business layer (`api/_legacy.py`, `services/*`) SHALL import shared types from `tlog` and the client from `tc_api.trust.commit_client`. TruCon internals SHALL import shared types from `tlog` and adapter implementations from `tc_api.trucon.adapters`.
 
 #### Scenario: main.py imports from correct layers
 - **WHEN** `main.py` imports trusted-log types and client
@@ -27,7 +27,7 @@ Each layer SHALL use import paths consistent with its package location. The tc_a
 - **THEN** it SHALL use `from .database import ...` for queue operations and `from .adapters.sigstore import SigstoreLogAdapter` for adapter implementations
 
 ### Requirement: No upward imports from trucon to tc_api
-The `trucon/` package SHALL NOT import from `tc_api.config`, `tc_api.main`, `tc_api.services`, or `tc_api.models`. Configuration values (such as database path) SHALL be injected via module-level defaults or environment variables.
+The `trucon/` package SHALL NOT import from `tc_api.config`, `tc_api.api`, `tc_api.services`, or `tc_api.models`. Configuration values (such as database path) SHALL be injected via module-level defaults or environment variables.
 
 #### Scenario: trucon/database.py does not import tc_api.config
 - **WHEN** `trucon/database.py` needs the database file path

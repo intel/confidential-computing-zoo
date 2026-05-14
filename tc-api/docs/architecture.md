@@ -10,6 +10,8 @@ This document defines the full-project architecture for tc-api with the followin
 
 This architecture keeps user-facing behavior stable while improving multi-process safety, trust-log consistency, and operational reliability.
 
+Exact operator entrypoints for local startup, TDVM acceptance, and smoke validation are intentionally documented in `README.md` and `docs/TESTING.md`. This document focuses on runtime boundaries, trust contracts, and deployment shape.
+
 ## 2. System Scope
 
 The project contains three primary runtime domains:
@@ -242,7 +244,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 
 ### 4.2 Docktap Service
 
-> **Status: Implemented.** Deployed as independent container/process with health endpoint, per-workload chain routing, and service auth.
+> **Status: Implemented.** Deployed as independent container/process with health endpoint, per-workload chain routing, and service auth. Exact local startup and validation commands are kept in `README.md` and `docs/TESTING.md`.
 
 - Runs as a separate process (Unix socket proxy) with independent lifecycle.
 - Deployed as an independent container (Docker Compose) or background process (`start.sh`).
@@ -266,7 +268,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 
 ### 4.3 Trust-Service Wrapper
 
-> **Status: Implemented.** `scripts/dev-up.sh` is the preferred single-host wrapper when operators want one command to start the local development stack without collapsing service boundaries.
+> **Status: Implemented.** The repository provides a single-host wrapper for local development convenience without collapsing service boundaries. Exact invocation belongs in `README.md`.
 
 - Runs above the existing process entrypoints instead of replacing them.
 - Verifies KBS reachability first because KBS remains an external dependency, not a child process of the tc_api stack.
@@ -310,7 +312,7 @@ That lifetime is not something tc_api can extend client-side. The practical miti
 - reuse the token while its remaining lifetime stays above a safety margin;
 - prefer non-interactive reuse during build / publish / launch rather than forcing each step to call `Issuer.production().identity_token()` independently.
 
-For remote SSH sessions, the preferred human login path is the out-of-band helper flow (`tc_api.oidc_preflight --fetch --force-oob`) rather than relying on a remote-machine `localhost:<port>` callback.
+For remote SSH sessions, the preferred human login path is the out-of-band helper flow documented in `docs/TESTING.md`, rather than relying on a remote-machine `localhost:<port>` callback.
 
 This does not change the issuer's short token lifetime. It does change tc_api's operational behavior from "login per signing site" to "fetch once, reuse until near expiry, refresh only when necessary".
 
@@ -523,7 +525,7 @@ Runtime log semantics are also split deliberately across the two layers:
 TruCon authenticates all incoming HTTP requests via Bearer token:
 
 - A single shared `TRUCON_SERVICE_TOKEN` environment variable is used by both tc_api and Docktap.
-- Token is generated at CVM startup by `start.sh` using `secrets.token_urlsafe(32)` and inherited by all child processes.
+- Token is generated at local stack startup using `secrets.token_urlsafe(32)` and inherited by all child processes.
 - A FastAPI middleware validates the `Authorization: Bearer <token>` header on every request using `hmac.compare_digest` (constant-time).
 - Unauthenticated requests receive `401 Unauthorized` with a descriptive JSON body.
 - A development-mode bypass (`TRUCON_AUTH_DISABLED=true`) skips authentication with a prominent startup warning.
@@ -549,8 +551,8 @@ See GAP-12 in `docs/overview_tasks.md`.
 - REST API deployed with multiple workers/processes (uvicorn `--workers N`).
 - TruCon deployed as single-instance service (`--workers 1`) to preserve lock-based serialization.
 - Submission daemon runs as an embedded thread inside TruCon.
-- Docktap deployed as an independent container (Docker Compose) or background process (`start.sh`). Shares the same Docker image as tc_api and TruCon with a different command override (`python -m tc_api.docktap.main`). Also available as the `tc-docktap` CLI entry point. Exposes proxy socket via bind-mount (`/var/run/docktap/`) and health endpoint on port 8002.
-- AA/CDH/ASR deployed as a dedicated trust-service container (or their own entrypoint) rather than being folded into `start.sh`; the repository now provides `scripts/dev-up.sh` as a wrapper for single-host startup convenience.
+- Docktap deployed as an independent container or background process. Shares the same Docker image as tc_api and TruCon with a different command override (`python -m tc_api.docktap.main`). Also available as the `tc-docktap` CLI entry point. Exposes proxy socket via bind-mount (`/var/run/docktap/`) and health endpoint on port 8002. Local operator entrypoints are documented in `README.md`.
+- AA/CDH/ASR deployed as a dedicated trust-service container (or their own entrypoint) rather than being folded into the application stack. The repository keeps a wrapper for single-host startup convenience, but that invocation is documented in `README.md` rather than repeated here.
 - KBS remains an external dependency. The wrapper verifies KBS reachability but does not claim ownership of its lifecycle.
 - Docktap also owns a periodic local-state sweeper that bounds in-memory operation state, removed-container mappings, and resolved retry bookkeeping via environment-configured retention windows.
 - SQLite commit queue stored in ephemeral tmpfs (`/dev/shm/`) for confidential computing compliance.

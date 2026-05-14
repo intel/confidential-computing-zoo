@@ -9,7 +9,7 @@
 - [x] 1.7 Update `start.sh`: rename uvicorn target from `trust_api:app` to `trucon:app`, update `TRUST_API_URL` export to `TRUCON_URL`
 - [x] 1.8 Update `test_sequencer_refactor.py`: rename all references from `trust_api` to `trucon`
 - [x] 1.9 Update `test_tlog_refactored.py`: rename any references from `trust_api_url` to `trucon_url`
-- [x] 1.10 Run all tests (`pytest test_unit.py test_sequencer_refactor.py test_tlog_refactored.py -v`) and verify they pass
+- [x] 1.10 Run all tests (`pytest test_tdx_mr_adapter.py test_sequencer_refactor.py test_tlog_refactored.py -v`) and verify they pass
 
 ## 2. Top-Level Architecture Document
 

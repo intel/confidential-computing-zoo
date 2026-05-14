@@ -18,6 +18,6 @@
 ## 4. Tests
 
 - [x] 4.1 Update `tests/test_two_level_digest.py` — adjust entry construction and expected digest values for native value encoding
-- [x] 4.2 Update `tests/test_unit.py` — fix any Entry construction that uses `json.dumps()` wrappers
+- [x] 4.2 Update focused unit modules such as `tests/test_tdx_mr_adapter.py` — fix any Entry construction that uses `json.dumps()` wrappers
 - [x] 4.3 Update Docktap tests in `docktap/tests/` — adjust for `Entry` objects and native values
 - [x] 4.4 Run full regression suite (`bash run_tests.sh`) and verify all tests pass

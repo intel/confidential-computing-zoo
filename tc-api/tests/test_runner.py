@@ -36,7 +36,7 @@ def check_service(url: str = "http://localhost:8000/") -> bool:
 
 def start_service() -> Optional[subprocess.Popen]:
     process = subprocess.Popen(
-        [sys.executable, "-m", "tc_api.main"],
+        [sys.executable, "-m", "tc_api.api.app"],
         cwd=PROJECT_ROOT,
         env=build_runtime_env(),
     )
@@ -67,18 +67,20 @@ def run_command(command: List[str], label: str, stop_on_fail: bool, env: Optiona
 
 def build_command(test_type: str, verbose: bool) -> List[str]:
     if test_type == "unit":
-        cmd = [sys.executable, "-m", "pytest", os.path.join(TESTS_DIR, "test_subprocess_unit.py")]
-    elif test_type == "integration":
-        cmd = [sys.executable, "-m", "pytest", os.path.join(TESTS_DIR, "test_unit.py") + "::TestIntegration"]
-    elif test_type == "performance":
-        cmd = [sys.executable, "-m", "pytest", os.path.join(TESTS_DIR, "test_unit.py") + "::TestPerformance"]
+        cmd = [
+            sys.executable,
+            "-m",
+            "pytest",
+            os.path.join(TESTS_DIR, "test_subprocess_unit.py"),
+            os.path.join(TESTS_DIR, "test_tdx_mr_adapter.py"),
+        ]
     else:
         cmd = [
             sys.executable,
             "-m",
             "pytest",
             os.path.join(TESTS_DIR, "test_subprocess_unit.py"),
-            os.path.join(TESTS_DIR, "test_unit.py"),
+            os.path.join(TESTS_DIR, "test_tdx_mr_adapter.py"),
         ]
 
     if verbose:
@@ -93,7 +95,7 @@ def main() -> int:
         "-t",
         "--type",
         default="all",
-        choices=["all", "manual", "unit", "integration", "performance"],
+        choices=["all", "manual", "unit"],
         help="Test type to run",
     )
     parser.add_argument(
@@ -157,7 +159,7 @@ def main() -> int:
             manual_env = os.environ.copy()
             manual_env["TC_API_BASE_URL"] = args.base_url
             exit_code = run_command(command, "Running manual integration tests...", args.stop_on_fail, env=manual_env)
-        elif args.type in {"unit", "integration", "performance"}:
+        elif args.type == "unit":
             command = build_command(args.type, args.verbose)
             exit_code = run_command(command, f"Running {args.type} tests...", args.stop_on_fail)
         else:

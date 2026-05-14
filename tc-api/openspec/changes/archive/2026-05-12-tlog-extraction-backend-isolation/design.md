@@ -6,8 +6,8 @@ Current dependency structure:
 
 ```
 tc_api.tlog/             ← types, ABCs (imports sigstore.models.Bundle in immutable.py)
-tc_api.tlog_client       ← TrustedLogAPI (digest functions, DSSE signing, TruCon orchestration)
-tc_api.sigstore_baseline ← Event Log 0 baseline bundle (digest functions duplicated)
+tc_api.trust.commit_client           ← TrustedLogAPI (digest functions, DSSE signing, TruCon orchestration)
+tc_api.identity.sigstore_baseline    ← Event Log 0 baseline bundle (digest functions duplicated)
 tc_api.trucon/           ← sequencer, database, adapters/, evidence
 tc_api.trucon/adapters/  ← SigstoreLogAdapter, OciBundleMirror, TdxMR, TdxQuote, CCEL
 tc_api.cli/verify        ← imports SigstoreLogAdapter directly

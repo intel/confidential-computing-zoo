@@ -7,9 +7,12 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-import tc_api.main as main_mod
-from tc_api.main import _missing_sigstore_identity_detail, _resolve_required_sigstore_identity_token
-from tc_api.sigstore_identity import MissingSigstoreIdentityTokenError
+import tc_api.api.lunks_support as lunks_mod
+import tc_api.api.runtime as runtime_mod
+import tc_api.api.workflows as workflow_mod
+from tc_api.api.sigstore_support import _missing_sigstore_identity_detail, _resolve_required_sigstore_identity_token
+from tc_api.api.app import app
+from tc_api.identity.sigstore_identity import MissingSigstoreIdentityTokenError
 
 
 def _jwt(payload: dict) -> str:
@@ -27,18 +30,18 @@ def test_required_sigstore_identity_uses_request_token():
 
 
 def test_startup_fails_when_default_chain_baseline_is_required_and_init_fails():
-    with patch("tc_api.main.INIT_DEFAULT_CHAIN_ON_STARTUP", True), patch(
-        "tc_api.tlog_client.TrustedLogAPI.init_chain",
+    with patch("tc_api.api.runtime.INIT_DEFAULT_CHAIN_ON_STARTUP", True), patch(
+        "tc_api.trust.commit_client.TrustedLogAPI.init_chain",
         side_effect=RuntimeError("missing baseline token"),
     ):
         with pytest.raises(RuntimeError, match="Default-chain baseline initialization failed during startup"):
-            with TestClient(main_mod.app):
+            with TestClient(app):
                 pass
 
 
 def test_required_sigstore_identity_returns_http_400_when_missing():
     with patch(
-        "tc_api.main.resolve_sigstore_identity_token",
+        "tc_api.api.sigstore_support.resolve_sigstore_identity_token",
         side_effect=MissingSigstoreIdentityTokenError("build"),
     ):
         with pytest.raises(HTTPException) as exc_info:
@@ -61,10 +64,10 @@ def test_missing_sigstore_identity_detail_includes_interactive_urls():
 
 
 def test_sigstore_identity_token_start_endpoint_returns_auth_url():
-    with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
-        "tc_api.main._start_sigstore_login",
+        "tc_api.api.sigstore_support._start_sigstore_login",
         return_value={
             "operation": "build",
             "status": "browser_login_pending",
@@ -82,7 +85,7 @@ def test_sigstore_identity_token_start_endpoint_returns_auth_url():
         },
     ):
         mock_production.return_value.identity_token.return_value = "fake-identity-token"
-        with TestClient(main_mod.app) as client:
+        with TestClient(app) as client:
             response = client.get("/api/sigstore/identity-token?operation=build&flow=copy-url")
 
     assert response.status_code == 200
@@ -107,13 +110,13 @@ def test_sigstore_callback_page_returns_token_metadata():
         "exp": 1_700_000_300,
     })
 
-    with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
-        "tc_api.main._get_sigstore_login_session_by_state",
+        "tc_api.api.sigstore_support._get_sigstore_login_session_by_state",
         return_value={"operation": "build", "session_id": "sess-123"},
     ), patch(
-        "tc_api.main._exchange_sigstore_verification_code",
+        "tc_api.api.sigstore_support._exchange_sigstore_verification_code",
         return_value={
             "operation": "build",
             "status": "token_ready",
@@ -127,7 +130,7 @@ def test_sigstore_callback_page_returns_token_metadata():
         },
     ):
         mock_production.return_value.identity_token.return_value = token
-        with TestClient(main_mod.app) as client:
+        with TestClient(app) as client:
             response = client.get("/api/sigstore/callback?code=code-123&state=state-123")
 
     assert response.status_code == 200
@@ -137,11 +140,11 @@ def test_sigstore_callback_page_returns_token_metadata():
 
 
 def test_sigstore_interactive_login_page_references_token_endpoint():
-    with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production:
         mock_production.return_value.identity_token.return_value = "fake-identity-token"
-        with TestClient(main_mod.app) as client:
+        with TestClient(app) as client:
             response = client.get("/api/sigstore/interactive-login?operation=launch")
 
     assert response.status_code == 200
@@ -153,10 +156,10 @@ def test_sigstore_interactive_login_page_references_token_endpoint():
 
 
 def test_sigstore_interactive_login_page_can_continue_existing_session():
-    with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
-        "tc_api.main._get_sigstore_login_session",
+        "tc_api.api.sigstore_support._get_sigstore_login_session",
         return_value={
             "session_id": "sess-123",
             "operation": "build",
@@ -165,7 +168,7 @@ def test_sigstore_interactive_login_page_can_continue_existing_session():
         },
     ):
         mock_production.return_value.identity_token.return_value = "fake-identity-token"
-        with TestClient(main_mod.app) as client:
+        with TestClient(app) as client:
             response = client.get("/api/sigstore/interactive-login?operation=build&session_id=sess-123")
 
     assert response.status_code == 200
@@ -182,10 +185,10 @@ def test_sigstore_identity_token_complete_accepts_provider_callback_url():
         "exp": 1_700_000_300,
     })
 
-    with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
-        "tc_api.main._complete_sigstore_login_from_redirect_url",
+        "tc_api.api.sigstore_support._complete_sigstore_login_from_redirect_url",
         return_value={
             "operation": "build",
             "status": "token_ready",
@@ -199,7 +202,7 @@ def test_sigstore_identity_token_complete_accepts_provider_callback_url():
         },
     ):
         mock_production.return_value.identity_token.return_value = token
-        with TestClient(main_mod.app) as client:
+        with TestClient(app) as client:
             response = client.post(
                 "/api/sigstore/identity-token",
                 json={
@@ -225,25 +228,25 @@ def test_build_package_submits_when_token_missing_without_interactive_login():
 
     fake_ctx = SimpleNamespace(record_id="rec-123")
 
-    with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
-        "tc_api.main.resolve_sigstore_identity_token",
+        "tc_api.api.workflows.resolve_sigstore_identity_token",
         return_value=None,
     ) as resolve_token, patch(
-        "tc_api.main._start_sigstore_login",
+        "tc_api.api.sigstore_support._start_sigstore_login",
     ) as start_login, patch(
-        "tc_api.main.build_container_async",
+        "tc_api.api.workflows.build_container_async",
         return_value=None,
     ), patch(
-        "tc_api.main.docker_service.generate_uuid",
+        "tc_api.api.workflows.docker_service.generate_uuid",
         return_value="bld-123",
     ), patch(
-        "tc_api.main.docker_service.update_build_status",
+        "tc_api.api.workflows.docker_service.update_build_status",
         return_value=None,
     ):
         mock_production.return_value.identity_token.return_value = "fake-identity-token"
-        with TestClient(main_mod.app) as client:
+        with TestClient(app) as client:
             client.app.state.trusted_log.init_record = lambda context=None: fake_ctx
             client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
             response = client.post("/api/build-package", json=payload)
@@ -271,23 +274,23 @@ def test_create_lunks_skips_interactive_sigstore_login_when_token_missing():
         def add_entry(self, *args, **kwargs):
             return None
 
-    with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
-        "tc_api.main.resolve_sigstore_identity_token",
+        "tc_api.api.lunks_support.resolve_sigstore_identity_token",
         return_value=None,
     ) as resolve_token, patch(
-        "tc_api.main.docker_service.create_lunks_block",
+        "tc_api.api.lunks_support.docker_service.create_lunks_block",
         return_value=("/dev/mapper/test-user", "/dev/loop0"),
     ), patch(
-        "tc_api.main.docker_service.commit_and_save_receipt"
+        "tc_api.api.lunks_support.docker_service.commit_and_save_receipt"
     ) as commit_receipt, patch(
-        "tc_api.main.docker_service.verify_chain_state"
+        "tc_api.api.lunks_support.docker_service.verify_chain_state"
     ) as verify_chain_state, patch(
-        "tc_api.main.docker_service.update_lunks_status"
+        "tc_api.api.lunks_support.docker_service.update_lunks_status"
     ) as update_lunks_status:
         mock_production.return_value.identity_token.return_value = "fake-identity-token"
-        with TestClient(main_mod.app) as client:
+        with TestClient(app) as client:
             client.app.state.trusted_log = DummyTrustedLog()
             response = client.post("/api/create_lunks", json=payload)
 
@@ -316,20 +319,20 @@ def test_build_package_accepts_missing_app_binary():
 
     fake_ctx = SimpleNamespace(record_id="rec-123")
 
-    with patch("tc_api.tlog_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
-        "tc_api.main.build_container_async",
+        "tc_api.api.workflows.build_container_async",
         return_value=None,
     ), patch(
-        "tc_api.main.docker_service.generate_uuid",
+        "tc_api.api.workflows.docker_service.generate_uuid",
         return_value="bld-123",
     ), patch(
-        "tc_api.main.docker_service.update_build_status",
+        "tc_api.api.workflows.docker_service.update_build_status",
         return_value=None,
     ):
         mock_production.return_value.identity_token.return_value = "fake-identity-token"
-        with TestClient(main_mod.app) as client:
+        with TestClient(app) as client:
             client.app.state.trusted_log.init_record = lambda context=None: fake_ctx
             client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
             response = client.post("/api/build-package", json=payload)
@@ -341,7 +344,7 @@ def test_build_package_accepts_missing_app_binary():
 
 
 def test_build_container_async_skips_transparency_receipt_when_token_missing():
-    request = main_mod.BuildPackageRequest(
+    request = workflow_mod.BuildPackageRequest(
         dockerfile="FROM busybox\nCMD [\"sh\", \"-c\", \"echo ok\"]\n",
         encrypt=False,
         user_id="test-user",
@@ -352,21 +355,21 @@ def test_build_container_async_skips_transparency_receipt_when_token_missing():
 
     tlog = SimpleNamespace(add_entry=lambda *args, **kwargs: None)
 
-    with patch("tc_api.main.docker_service.update_build_status") as update_build_status, patch(
-        "tc_api.main.docker_service.build_image",
+    with patch("tc_api.api.workflows.docker_service.update_build_status") as update_build_status, patch(
+        "tc_api.api.workflows.docker_service.build_image",
         return_value=True,
     ), patch(
-        "tc_api.main.docker_service.generate_sbom",
+        "tc_api.api.workflows.docker_service.generate_sbom",
         return_value="/tmp/bld-123/sbom.json",
     ), patch(
-        "tc_api.main.docker_service.export_image_to_oci",
+        "tc_api.api.workflows.docker_service.export_image_to_oci",
         return_value="oci:./builds/bld-123/test-user-bld-123",
     ), patch(
-        "tc_api.main.docker_service.commit_and_save_receipt"
+        "tc_api.api.workflows.docker_service.commit_and_save_receipt"
     ) as commit_receipt, patch(
-        "tc_api.main.docker_service.verify_chain_state"
+        "tc_api.api.workflows.docker_service.verify_chain_state"
     ) as verify_chain_state:
-        main_mod.build_container_async(request, "bld-123", tlog, "rec-123")
+        workflow_mod.build_container_async(request, "bld-123", tlog, "rec-123")
 
     commit_receipt.assert_not_called()
     verify_chain_state.assert_not_called()

@@ -25,5 +25,5 @@
 - **Digest**: `src/tc_api/tlog_client.py` — `compute_entry_digest()` input handling, `commit_record()` predicate construction.
 - **REST callers**: `src/tc_api/main.py`, `src/tc_api/services.py` — remove `json.dumps()` wrappers on all `add_entry()` calls.
 - **Docktap**: `docktap/trucon_client.py` — replace `(key, value)` tuples with `Entry` imports, remove `json.dumps()` wrappers.
-- **Tests**: `tests/test_two_level_digest.py`, `tests/test_unit.py`, `docktap/tests/` — update entry construction and expected digest values.
+- **Tests**: `tests/test_two_level_digest.py`, focused unit modules such as `tests/test_tdx_mr_adapter.py`, and `docktap/tests/` — update entry construction and expected digest values.
 - **No backward compatibility concern**: no production data exists in the current format.

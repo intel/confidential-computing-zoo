@@ -2,7 +2,7 @@
 
 - [x] 1.1 Create `docktap/trucon_client.py` with `TruConCommitter` class that takes a TruCon URL and provides a `submit_operation(op_record, operation_type)` method
 - [x] 1.2 Implement Entry mapping logic: convert `OperationRecord` fields to `Entry(key, value)` pairs per operation type (pull, create, start, stop, rm) as defined in design decision #4
-- [x] 1.3 Implement DSSE signing: import digest functions from `tc_api.tlog_client`, build In-Toto statement, sign with Sigstore using `detect_credential()`
+- [x] 1.3 Implement DSSE signing: import digest functions from `tlog.digest` and signing/orchestration helpers from `tc_api.trust`, build In-Toto statement, sign with Sigstore using `detect_credential()`
 - [x] 1.4 Implement HTTP POST to TruCon `/commit` with `chain_id="default"`, event_digest, event_id, and idempotency_key; 5-second timeout
 - [x] 1.5 Implement best-effort error handling: catch all exceptions (network, signing, HTTP errors), log warning with operation type and error details, return failure indicator without raising
 
