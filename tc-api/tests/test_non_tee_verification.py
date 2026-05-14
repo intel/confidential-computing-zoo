@@ -18,7 +18,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from tc_api.trucon.app import _compute_record_lookup_hash
+from tc_api.trucon.bundles import compute_record_lookup_hash as _compute_record_lookup_hash
 from tc_api.trucon.database import (
     get_chain_records,
     init_db,
@@ -102,7 +102,7 @@ class TestPredecessorVerification:
 
         records = get_chain_records("default", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("default")
 
         assert resp.valid is True
@@ -128,7 +128,7 @@ class TestPredecessorVerification:
 
         records = get_chain_records("default", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("default")
 
         assert resp.valid is False
@@ -159,7 +159,7 @@ class TestPredecessorVerification:
 
         records = get_chain_records("default", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("default")
 
         assert resp.entries[0].predecessor_ok is True
@@ -187,7 +187,7 @@ class TestPredecessorVerification:
 
         records = get_chain_records("default", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("default")
 
         assert resp.rtmr_available is True
@@ -211,7 +211,7 @@ class TestPredecessorVerification:
 
         records = get_chain_records("default", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("default")
 
         assert resp.entries[1].predecessor_status == "unverifiable"
@@ -248,7 +248,7 @@ class TestPredecessorVerification:
 
         records = get_chain_records("default", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("default")
 
         assert resp.valid is False
@@ -306,7 +306,7 @@ class TestPredecessorVerification:
 
         records = get_chain_records("default", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("default")
 
         assert resp.rtmr_available is True
@@ -346,7 +346,7 @@ class TestPredecessorVerification:
 
         records = get_chain_records("workload-a", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("workload-a")
 
         assert resp.valid is True
@@ -435,7 +435,7 @@ class TestOwnerAuthorizationVerification:
 
         records = get_chain_records("workload-owner-ok", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("workload-owner-ok")
 
         assert resp.valid is True
@@ -481,7 +481,7 @@ class TestOwnerAuthorizationVerification:
 
         records = get_chain_records("workload-owner-bad", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("workload-owner-bad")
 
         assert resp.valid is False
@@ -528,7 +528,7 @@ class TestOwnerAuthorizationVerification:
 
         records = get_chain_records("workload-owner-pending", db)
         from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.app.get_chain_records", return_value=records):
+        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
             resp = verify_chain("workload-owner-pending")
 
         assert resp.entries[1].owner_ok is None

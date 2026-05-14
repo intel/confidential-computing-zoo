@@ -39,16 +39,21 @@ Trusted-log code is organized into independently installable packages:
 | `tlog` | `tlog/` | Shared domain types, ABCs, errors, digest functions | stdlib only |
 | `tlog-rekor` | `tlog-rekor/` | Rekor/Sigstore backend adapter (`SigstoreLogAdapter`, `OciBundleMirror`) | tlog, sigstore, sigstore-rekor-types, cryptography, requests |
 | `tlog-onchain` | `tlog-onchain/` | On-chain backend adapter scaffold (`OnChainLogAdapter` stub) | tlog |
-| `tc-api` | `.` (root) | REST API, TruCon service, Docktap sidecar, tlog_client | tlog, tlog-rekor, FastAPI, etc. |
+| `tc-api` | `.` (root) | REST API, TruCon service, Docktap sidecar, trust commit client | tlog, tlog-rekor, FastAPI, etc. |
 
 Key layout conventions:
 - `tlog/src/tlog/`: `types.py` (Entry, Record, SubmitStatus, etc.), `errors.py`, `immutable.py` (ImmutableLogAdapter ABC), `local_mr.py` (LocalMRAdapter ABC), `digest.py` (canonical_json, compute_entry_digest, compute_event_digest)
 - `tlog-rekor/src/tlog_rekor/`: `adapter.py` (SigstoreLogAdapter), `oci_mirror.py` (OciBundleMirror)
-- `src/tc_api/tlog_client.py`: TrustedLogAPI — DSSE signing and TruCon communication
+- `src/tc_api/api/app.py`: REST API entry point and router registration
+- `src/tc_api/api/workflows.py`: REST-facing build/publish/launch orchestration helpers
+- `src/tc_api/services/`: Docker, SBOM, publish, launch, and LUKS encrypted-VFS service mixins
+- `src/tc_api/transparency/commit_client.py`: TrustedLogAPI — TruCon reservation/commit communication for tc_api workflows
+- `src/tc_api/transparency/dsse_builder.py`: Shared trusted-event DSSE predicate, owner-authorization, and statement construction used by tc_api and Docktap committers
 - `src/tc_api/tlog/`: Tombstone `__init__.py` only — shim files removed; all imports use standalone `tlog` package
-- `src/tc_api/trucon/`: Sequencer service with platform-specific adapters (`adapters/tdx_mr.py`, `adapters/ccel.py`); `adapters/` does not contain `sigstore.py` or `oci_mirror.py` (those live in `tlog-rekor`)
-- `src/tc_api/trucon/app.py`: Loads immutable backend at runtime via `TC_IMMUTABLE_BACKEND` env var (default: `rekor`)
-- `src/tc_api/docktap/`: Docker operation interception sidecar — `main.py` (entry point), `proxy/` (socket proxy, operation log, runtime adapter), `trucon_client.py` (DSSE signing and TruCon commit), `workload_store.py` (container→workload mapping). Uses relative imports internally; `tc-docktap` CLI entry point registered in `pyproject.toml`
+- `src/tc_api/trucon/`: Sequencer service with Pydantic schemas (`schemas.py`), caller authorization helpers (`auth.py`), platform-specific adapters (`adapters/tdx_mr.py`, `adapters/ccel.py`), evidence, owner attestation, and queue/database logic; `adapters/` does not contain `sigstore.py` or `oci_mirror.py` (those live in `tlog-rekor`)
+- `src/tc_api/trucon/app.py`: FastAPI routes, lifecycle wiring, submit daemon orchestration, and immutable backend loading via `TC_IMMUTABLE_BACKEND` env var (default: `rekor`)
+- `src/tc_api/identity/sigstore_oauth.py`: Sigstore OAuth/OIDC constants, issuer selection, PKCE, and login-flow normalization helpers used by the API layer
+- `src/tc_api/docktap/`: Docker operation interception sidecar — `main.py` (entry point), `proxy/` (socket proxy, operation log, runtime adapter), `trucon_client.py` (DSSE signing and TruCon commit), `workload_store.py` (container-to-workload mapping). Uses relative imports internally; `tc-docktap` CLI entry point registered in `pyproject.toml`
 
 ## 3. High-Level Topology
 

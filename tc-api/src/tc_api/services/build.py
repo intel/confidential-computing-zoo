@@ -1,4 +1,21 @@
-from ._shared import *
+import json
+import logging
+import os
+import subprocess
+from typing import Optional, Tuple
+
+from ..config import (
+    BUILD_DIR,
+    COSIGN_CMD,
+    DOCKER_CMD,
+    SKOPEO_CMD,
+    SYFT_CMD,
+)
+from ..transparency.commit_client import TrustedLogAPI
+from ..transparency.events import EventEntryKey, build_identity_entries
+from tlog.types import Entry
+
+logger = logging.getLogger(__name__)
 
 
 class BuildServiceMixin:
@@ -46,14 +63,21 @@ class BuildServiceMixin:
             dockerfile_digest = self._file_sha384_digest(dockerfile_path)
             build_context_digest = self._directory_sha384_digest(build_path)
             base_image_digests = [self._resolve_image_digest(ref) for ref in self._extract_base_images(dockerfile_content)]
-            tlog.add_entry(record_id, Entry(key="dockerfile_digest", value=dockerfile_digest))
-            tlog.add_entry(record_id, Entry(key="build_context_digest", value=build_context_digest))
-            tlog.add_entry(record_id, Entry(key="base_image_digests", value=base_image_digests))
-            tlog.add_entry(record_id, Entry(key="build_status", value=build_log["status"]))
 
             if result.returncode == 0:
                 logger.info(f"Successfully built image {image_name}")
-                tlog.add_entry(record_id, Entry(key="output_image_digest", value=self._resolve_image_digest(image_name)))
+                output_image_digest = self._resolve_image_digest(image_name)
+                self.add_tlog_entries(
+                    tlog,
+                    record_id,
+                    build_identity_entries(
+                        output_image_digest=output_image_digest,
+                        dockerfile_digest=dockerfile_digest,
+                        build_context_digest=build_context_digest,
+                        base_image_digests=base_image_digests,
+                        build_status=build_log["status"],
+                    ),
+                )
                 
                 # Save build logs
                 log_path = os.path.join(build_path, f"{build_id}-build.log")
@@ -64,6 +88,17 @@ class BuildServiceMixin:
                 return True
             else:
                 logger.error(f"Failed to build image: {result.stderr}")
+                self.add_tlog_entries(
+                    tlog,
+                    record_id,
+                    build_identity_entries(
+                        output_image_digest=None,
+                        dockerfile_digest=dockerfile_digest,
+                        build_context_digest=build_context_digest,
+                        base_image_digests=base_image_digests,
+                        build_status=build_log["status"],
+                    ),
+                )
                 
                 # Save error logs
                 error_log_path = os.path.join(build_path, f"{build_id}-error.log")
@@ -134,7 +169,7 @@ class BuildServiceMixin:
                         "status": "success"
                 }
                 tlog.add_entry(record_id, Entry(key="sbom_generation", value=sbom_log))
-                tlog.add_entry(record_id, Entry(key="sbom_digest", value=self._file_sha384_digest(sbom_path)))
+                tlog.add_entry(record_id, Entry(key=EventEntryKey.sbom_digest.value, value=self._file_sha384_digest(sbom_path)))
 
                 return sbom_path
             else:

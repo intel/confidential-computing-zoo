@@ -16,9 +16,10 @@ The `docktap` module SHALL be located at `src/tc_api/docktap/` and be installabl
 - **THEN** intra-package references SHALL use relative imports (e.g., `from .trucon_client import ...`, `from .proxy.docker_proxy import ...`)
 - **AND** no file SHALL contain `sys.path.insert` or `sys.path.append` calls
 
-#### Scenario: docktap tests use package imports
-- **WHEN** inspecting import statements in `src/tc_api/docktap/tests/*.py`
-- **THEN** imports of docktap modules SHALL use either relative imports or absolute `tc_api.docktap.*` imports
+#### Scenario: docktap tests live outside the runtime package
+- **WHEN** inspecting Docktap pytest files
+- **THEN** they SHALL live under `tests/docktap/` rather than `src/tc_api/docktap/tests/`
+- **AND** imports of docktap modules SHALL use absolute `tc_api.docktap.*` imports
 - **AND** `conftest.py` SHALL NOT manipulate `sys.path`
 
 ### Requirement: tc-docktap CLI entry point

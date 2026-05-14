@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 
 from . import runtime
-from .routers import build, delegation, launch, lunks, publish, results, sigstore
+from .routers import build, delegation, launch, luks, publish, results, sigstore
 
 
 app = FastAPI(
@@ -20,7 +20,7 @@ app.include_router(build.router)
 app.include_router(publish.router)
 app.include_router(launch.router)
 app.include_router(results.router)
-app.include_router(lunks.router)
+app.include_router(luks.router)
 app.include_router(delegation.router)
 
 

@@ -19,7 +19,7 @@ import urllib.request
 import urllib.error
 
 from tlog.types import Entry
-from tlog.digest import canonical_json, compute_entry_digest, compute_event_digest
+from tlog.digest import canonical_json
 from tc_api.identity.sigstore_identity import resolve_sigstore_identity_token
 from tc_api.identity.sigstore_baseline import (
     build_baseline_sigstore_bundle,
@@ -29,18 +29,22 @@ from tc_api.identity.sigstore_baseline import (
     sign_dsse_with_owner_key,
 )
 from tc_api.trucon.internal_transport import request_json
-from tc_api.trucon.owner_authorization import sign_owner_authorization
+from tc_api.transparency.events import runtime_operation_entries
+from tc_api.transparency.dsse_builder import attach_commit_context, build_event_predicate, build_statement, build_statement_json
+from tc_api.transparency.trucon_submitter import post_commit_to_trucon, reserve_commit_intent
 from tlog_rekor.adapter import SigstoreLogAdapter
 
 from sigstore.oidc import IdentityToken, detect_credential
 from sigstore.sign import SigningContext
 from sigstore.dsse import StatementBuilder, Subject
 
+from . import config as _cfg
+
 logger = logging.getLogger(__name__)
 
 # Only these Docker operation types trigger a TruCon commit.
 SUBMITTABLE_OPERATIONS = {"pull", "build", "create", "start", "stop", "rm"}
-DEFAULT_RUNTIME_CHAIN_ID = os.environ.get("DOCKTAP_RUNTIME_CHAIN_ID", "docktap-runtime")
+DEFAULT_RUNTIME_CHAIN_ID = _cfg.RUNTIME_CHAIN_ID
 
 
 def _resolve_identity_token_str() -> Optional[str]:
@@ -158,46 +162,16 @@ def _build_entries(
     Values are native Python objects (not JSON-encoded strings).
     Missing fields are omitted.
     """
-    entries: List[Entry] = []
-    entries.append(Entry(key="operation_type", value=operation_type))
-    entries.append(Entry(key="operation_result", value=operation_result or _infer_operation_result(op_record)))
-    entries.append(Entry(key="runtime_engine", value=_resolve_runtime_engine(op_record)))
-    if workload_id:
-        entries.append(Entry(key="workload_id", value=workload_id))
-    if launch_id:
-        entries.append(Entry(key="launch_id", value=launch_id))
-    if instance_id:
-        entries.append(Entry(key="instance_id", value=instance_id))
-
-    if operation_type == "pull":
-        if op_record.image.get("name"):
-            entries.append(Entry(key="image_name", value=op_record.image["name"]))
-        if op_record.image.get("tag"):
-            entries.append(Entry(key="image_tag", value=op_record.image["tag"]))
-        if op_record.image.get("digest"):
-            entries.append(Entry(key="image_digest", value=op_record.image["digest"]))
-
-    elif operation_type == "build":
-        if op_record.image.get("name"):
-            entries.append(Entry(key="image_name", value=op_record.image["name"]))
-        if op_record.image.get("tag"):
-            entries.append(Entry(key="image_tag", value=op_record.image["tag"]))
-        if op_record.image.get("platform"):
-            entries.append(Entry(key="image_platform", value=op_record.image["platform"]))
-
-    elif operation_type == "create":
-        if op_record.image.get("name"):
-            entries.append(Entry(key="image_name", value=op_record.image["name"]))
-        if op_record.container.get("name"):
-            entries.append(Entry(key="container_name", value=op_record.container["name"]))
-        if op_record.container.get("id"):
-            entries.append(Entry(key="container_id", value=op_record.container["id"]))
-
-    elif operation_type in ("start", "stop", "rm"):
-        if op_record.container.get("id"):
-            entries.append(Entry(key="container_id", value=op_record.container["id"]))
-
-    return entries
+    return runtime_operation_entries(
+        operation_type,
+        operation_result=operation_result or _infer_operation_result(op_record),
+        runtime_engine=_resolve_runtime_engine(op_record),
+        workload_id=workload_id,
+        launch_id=launch_id,
+        instance_id=instance_id,
+        image=getattr(op_record, "image", {}),
+        container=getattr(op_record, "container", {}),
+    )
 
 
 class TruConCommitter:
@@ -216,29 +190,21 @@ class TruConCommitter:
         terminal_retention_hours: Optional[float] = None,
         start_retry_worker: bool = True,
     ) -> None:
-        self._trucon_url = trucon_url or os.environ.get(
-            "TRUCON_URL", "http://127.0.0.1:8001"
-        )
-        self._runtime_chain_id = os.environ.get("DOCKTAP_RUNTIME_CHAIN_ID", DEFAULT_RUNTIME_CHAIN_ID)
+        self._trucon_url = trucon_url or _cfg.TRUCON_URL
+        self._runtime_chain_id = _cfg.RUNTIME_CHAIN_ID
         self._workload_store = workload_store
-        self._max_retry_attempts = max_retry_attempts if max_retry_attempts is not None else int(
-            os.environ.get("DOCKTAP_TRUCON_MAX_RETRY_ATTEMPTS", "3")
-        )
-        self._retry_base_delay = retry_base_delay if retry_base_delay is not None else float(
-            os.environ.get("DOCKTAP_TRUCON_RETRY_BASE_DELAY", "1.0")
-        )
-        self._retry_max_delay = retry_max_delay if retry_max_delay is not None else float(
-            os.environ.get("DOCKTAP_TRUCON_RETRY_MAX_DELAY", "30.0")
-        )
+        self._max_retry_attempts = max_retry_attempts if max_retry_attempts is not None else _cfg.TRUCON_MAX_RETRY_ATTEMPTS
+        self._retry_base_delay = retry_base_delay if retry_base_delay is not None else _cfg.TRUCON_RETRY_BASE_DELAY
+        self._retry_max_delay = retry_max_delay if retry_max_delay is not None else _cfg.TRUCON_RETRY_MAX_DELAY
         self._acknowledged_retention_hours = (
             acknowledged_retention_hours
             if acknowledged_retention_hours is not None
-            else float(os.environ.get("DOCKTAP_ACKED_RETRY_RETENTION_HOURS", "24"))
+            else _cfg.ACKED_RETRY_RETENTION_HOURS
         )
         self._terminal_retention_hours = (
             terminal_retention_hours
             if terminal_retention_hours is not None
-            else float(os.environ.get("DOCKTAP_TERMINAL_RETRY_RETENTION_HOURS", "168"))
+            else _cfg.TERMINAL_RETRY_RETENTION_HOURS
         )
         self._retry_poll_interval = retry_poll_interval
         self._retry_lock = threading.Lock()
@@ -596,17 +562,12 @@ class TruConCommitter:
         idempotency_key: Optional[str] = None,
         is_baseline: bool = False,
     ) -> Dict[str, object]:
-        return request_json(
-            "POST",
-            "/commit-intents/reserve",
-            json_body={
-                "chain_id": chain_id,
-                "idempotency_key": idempotency_key,
-                "is_baseline": is_baseline,
-            },
-            caller_service="docktap",
-            timeout=30,
+        return reserve_commit_intent(
             trucon_url=self._trucon_url,
+            caller_service="docktap",
+            chain_id=chain_id,
+            idempotency_key=idempotency_key,
+            is_baseline=is_baseline,
         )
 
     def _do_submit(self, op_record, operation_type: str, *, workload_id: Optional[str] = None, launch_id: Optional[str] = None) -> bool:
@@ -626,30 +587,20 @@ class TruConCommitter:
             instance_id=instance_id,
         )
 
-        # 2. Compute digests (two-level algorithm)
-        entry_digests = [compute_entry_digest(e.key, e.value) for e in entry_list]
         event_id = f"evt-{uuid.uuid4().hex[:8]}"
         runtime_engine = _resolve_runtime_engine(op_record)
         event_type = f"{runtime_engine}_{operation_type}"
-        created_iso = datetime.utcnow().isoformat()
-        event_digest = compute_event_digest(event_id, event_type, created_iso, entry_digests)
-
-        # 3. Build DSSE predicate
-        predicate_payload = {
-            "event_id": event_id,
-            "event_type": event_type,
-            "created": created_iso,
-            "entries": [{"key": e.key, "value": e.value} for e in entry_list],
-            "entry_digests": entry_digests,
-            "digest": event_digest,
-        }
+        predicate_payload, event_digest = build_event_predicate(entry_list, event_id=event_id, event_type=event_type)
 
         # 4. Acquire OIDC identity token (or fall back to delegation)
         identity_token_str = _resolve_identity_token_str()
         delegation = None
         if not identity_token_str:
             from tc_api.trucon.database import get_active_delegation
-            delegation = get_active_delegation(chain_id)
+            try:
+                delegation = get_active_delegation(chain_id)
+            except Exception:
+                delegation = None
             if delegation is None:
                 raise MissingIdentityTokenError(
                     f"No reusable Sigstore identity token is available for docker {operation_type}"
@@ -677,39 +628,17 @@ class TruConCommitter:
             )
             return True
 
-        # 5. Build DSSE statement
-        predicate_payload["chain_id"] = chain_id
-        predicate_payload["sequence_num"] = reservation["sequence_num"]
-        predicate_payload["prev_event_digest"] = reservation.get("prev_event_digest")
-        predicate_payload["prev_lookup_hash"] = reservation.get("prev_lookup_hash")
-
-        if delegation is not None:
-            predicate_payload["delegation_id"] = delegation["delegation_id"]
-
-        owner_authorization = None
         owner_private_key = get_chain_owner_private_key(chain_id)
-        if owner_private_key is not None:
-            owner_authorization = sign_owner_authorization(
-                private_key=owner_private_key,
-                chain_id=chain_id,
-                sequence_num=reservation["sequence_num"],
-                prev_event_digest=reservation.get("prev_event_digest"),
-                prev_lookup_hash=reservation.get("prev_lookup_hash"),
-                event_digest=event_digest,
-            )
-            predicate_payload["owner_authorization"] = owner_authorization
+        owner_authorization = attach_commit_context(
+            predicate_payload,
+            chain_id=chain_id,
+            reservation=reservation,
+            event_digest=event_digest,
+            owner_private_key=owner_private_key,
+            delegation_id=delegation["delegation_id"] if delegation is not None else None,
+        )
 
-        statement_json = json.dumps({
-            "_type": "https://in-toto.io/Statement/v0.1",
-            "subject": [
-                {
-                    "name": f"trusted-log-chain_{chain_id}",
-                    "digest": {"sha384": event_digest.split(":")[1]},
-                }
-            ],
-            "predicateType": "https://trusted-log.dev/v1",
-            "predicate": predicate_payload,
-        })
+        statement_json = build_statement_json(chain_id, event_digest, predicate_payload)
 
         if delegation is not None and not identity_token_str:
             # --- Owner key signing path (delegation active, no OIDC token) ---
@@ -736,17 +665,7 @@ class TruConCommitter:
             # --- Fulcio signing path (OIDC token available) ---
             identity_token = IdentityToken(identity_token_str)
 
-            subject = Subject(
-                name=f"trusted-log-chain_{chain_id}",
-                digest={"sha384": event_digest.split(":")[1]},
-            )
-            statement = (
-                StatementBuilder()
-                .subjects([subject])
-                .predicate_type("https://trusted-log.dev/v1")
-                .predicate(predicate_payload)
-                .build()
-            )
+            statement = build_statement(chain_id, event_digest, predicate_payload)
 
             signing_context = build_signing_context()
             with signing_context.signer(identity_token, cache=True) as signer:
@@ -899,21 +818,16 @@ class TruConCommitter:
         instance_id: Optional[str] = None,
         owner_authorization: Optional[Dict[str, object]] = None,
     ) -> Dict:
-        payload = {
-            "bundle": bundle_json,
-            "chain_id": chain_id,
-            "event_digest": event_digest,
-            "event_id": event_id,
-            "intent_token": intent_token,
-            "idempotency_key": idempotency_key,
-            "instance_id": instance_id,
-            "owner_authorization": owner_authorization,
-        }
-        return request_json(
-            "POST",
-            "/commit",
-            json_body=payload,
-            caller_service="docktap",
-            timeout=5,
+        return post_commit_to_trucon(
             trucon_url=self._trucon_url,
+            caller_service="docktap",
+            bundle_json=bundle_json,
+            chain_id=chain_id,
+            event_digest=event_digest,
+            event_id=event_id,
+            intent_token=intent_token,
+            idempotency_key=idempotency_key,
+            instance_id=instance_id,
+            owner_authorization=owner_authorization,
+            timeout=5,
         )

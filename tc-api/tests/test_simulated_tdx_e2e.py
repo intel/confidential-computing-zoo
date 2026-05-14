@@ -279,7 +279,7 @@ def test_simulated_tdx_e2e_covers_evidence_export_and_verify(simulated_tdx_harne
     baseline_predicate = json.loads(baseline_bundle)["predicate"]
     baseline_digest = baseline_predicate["digest"]
     baseline_lookup_hash = "sha256:" + __import__("hashlib").sha256(baseline_bundle.encode("utf-8")).hexdigest()
-    with patch("tc_api.trucon.app.Bundle.from_json", side_effect=lambda raw: DummyBundle(raw)):
+    with patch("tc_api.trucon.bundles.Bundle.from_json", side_effect=lambda raw: DummyBundle(raw)):
         init_resp = client.post(
             "/init-chain",
             json={

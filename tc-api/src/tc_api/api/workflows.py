@@ -23,7 +23,8 @@ from ..models import (
     PublishPackageResponse,
     PublishResult,
 )
-from ..trust.commit_client import TrustedLogAPI
+from ..transparency.commit_client import TrustedLogAPI
+from ..transparency.events import EventEntryKey, launch_security_entries
 from . import runtime
 from .sigstore_support import _resolve_required_sigstore_identity_token
 
@@ -536,15 +537,12 @@ async def launch_container_async(
                 "security_projection": security_projection,
             }
         )
-        tlog.add_entry(record_id, Entry(key="image_digest", value=image_digest))
-        tlog.add_entry(record_id, Entry(key="launch_config_digest", value=launch_config_digest))
-        tlog.add_entry(record_id, Entry(key="privileged", value=security_projection["privileged"]))
-        tlog.add_entry(record_id, Entry(key="network_mode", value=security_projection["network_mode"]))
-        tlog.add_entry(record_id, Entry(key="mounts", value=security_projection["mounts"]))
-        tlog.add_entry(record_id, Entry(key="devices", value=security_projection["devices"]))
-        tlog.add_entry(record_id, Entry(key="capabilities", value=security_projection["capabilities"]))
-        tlog.add_entry(record_id, Entry(key="launch_env_keys", value=security_projection["launch_env_keys"]))
-        tlog.add_entry(record_id, Entry(key="launch_env_digest", value=security_projection["launch_env_digest"]))
+        for entry in launch_security_entries(
+            security_projection,
+            image_digest=image_digest,
+            launch_config_digest=launch_config_digest,
+        ):
+            tlog.add_entry(record_id, entry)
 
         attestation_result = "trusted"
         decryption_key = None
@@ -578,7 +576,7 @@ async def launch_container_async(
         )
         if not pull_success:
             docker_service.update_launch_status(request.user_id, launch_id, "failed", error_message="Image pull failed")
-            tlog.add_entry(record_id, Entry(key="launch_result", value="failed"))
+            tlog.add_entry(record_id, Entry(key=EventEntryKey.launch_result.value, value="failed"))
             return
 
         if request.sbom_url:
@@ -600,7 +598,7 @@ async def launch_container_async(
             if not sbom_valid:
                 docker_service.update_launch_status(request.user_id, launch_id, "failed", error_message="SBOM verification failed")
                 tlog.add_entry(record_id, Entry(key="sbom_verify", value={"sbom_verify": sbom_valid}))
-                tlog.add_entry(record_id, Entry(key="launch_result", value="failed"))
+                tlog.add_entry(record_id, Entry(key=EventEntryKey.launch_result.value, value="failed"))
                 return
 
         instance_ids = await docker_service.launch_containers(
@@ -615,7 +613,7 @@ async def launch_container_async(
         tlog.add_entry(record_id, Entry(key="launch_instance_ids", value={"launch_instance_ids": instance_ids}))
         if not instance_ids:
             docker_service.update_launch_status(request.user_id, launch_id, "failed", error_message="Container launch failed")
-            tlog.add_entry(record_id, Entry(key="launch_result", value={"launch_result": "failed"}))
+            tlog.add_entry(record_id, Entry(key=EventEntryKey.launch_result.value, value={EventEntryKey.launch_result.value: "failed"}))
             return
 
         evidences = {

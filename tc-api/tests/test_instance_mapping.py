@@ -178,7 +178,7 @@ class TestCommitInstanceId:
                  patch.object(trucon_app_mod, "init_db"), \
                  patch.object(trucon_app_mod, "SigstoreLogAdapter"), \
                  patch.object(trucon_app_mod, "insert_record", side_effect=patched_insert), \
-                 patch.object(trucon_app_mod, "get_chain_state", return_value=None), \
+                 patch.object(trucon_app_mod, "get_chain_state", return_value={"head_log_id": "log0", "sequence_num": 1, "mr_value": "00" * 48}), \
                  patch.object(trucon_app_mod, "update_chain_state"):
                 client = TestClient(trucon_app_mod.app, raise_server_exceptions=False)
                 resp = client.post("/commit", json={
@@ -222,7 +222,7 @@ class TestCommitInstanceId:
                  patch.object(trucon_app_mod, "init_db"), \
                  patch.object(trucon_app_mod, "SigstoreLogAdapter"), \
                  patch.object(trucon_app_mod, "insert_record", side_effect=patched_insert), \
-                 patch.object(trucon_app_mod, "get_chain_state", return_value=None), \
+                 patch.object(trucon_app_mod, "get_chain_state", return_value={"head_log_id": "log0", "sequence_num": 1, "mr_value": "00" * 48}), \
                  patch.object(trucon_app_mod, "update_chain_state"):
                 client = TestClient(trucon_app_mod.app, raise_server_exceptions=False)
                 resp = client.post("/commit", json={
@@ -295,7 +295,7 @@ class TestListWorkloadInstances:
                  patch.object(trucon_app_mod, "_crash_recovery"), \
                  patch.object(trucon_app_mod, "init_db"), \
                  patch.object(trucon_app_mod, "SigstoreLogAdapter"), \
-                 patch.object(trucon_app_mod, "get_instances_for_workload", return_value=mock_data):
+                 patch.object(trucon_db_mod, "get_instances_for_workload", return_value=mock_data):
                 client = TestClient(trucon_app_mod.app, raise_server_exceptions=False)
                 resp = client.get("/workloads/my-app/instances")
             assert resp.status_code == 200
@@ -344,7 +344,7 @@ class TestListInstanceEvents:
                  patch.object(trucon_app_mod, "_crash_recovery"), \
                  patch.object(trucon_app_mod, "init_db"), \
                  patch.object(trucon_app_mod, "SigstoreLogAdapter"), \
-                 patch.object(trucon_app_mod, "get_events_for_instance", return_value=mock_data):
+                 patch.object(trucon_db_mod, "get_events_for_instance", return_value=mock_data):
                 client = TestClient(trucon_app_mod.app, raise_server_exceptions=False)
                 resp = client.get(f"/instances/{'g' * 64}/events")
             assert resp.status_code == 200
@@ -397,7 +397,7 @@ class TestListWorkloadEvents:
                  patch.object(trucon_app_mod, "_crash_recovery"), \
                  patch.object(trucon_app_mod, "init_db"), \
                  patch.object(trucon_app_mod, "SigstoreLogAdapter"), \
-                 patch.object(trucon_app_mod, "get_events_for_workload", return_value=mock_data):
+                 patch.object(trucon_db_mod, "get_events_for_workload", return_value=mock_data):
                 client = TestClient(trucon_app_mod.app, raise_server_exceptions=False)
                 resp = client.get("/workloads/my-app/events")
             assert resp.status_code == 200
@@ -427,17 +427,19 @@ class TestDocktapInstanceId:
                 container={"id": "a" * 64, "name": "mycontainer"},
             )
             with patch.object(committer, "_post_to_trucon") as mock_post, \
+                 patch.object(committer, "_ensure_chain_initialized"), \
+                  patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 2, "prev_event_digest": None, "prev_lookup_hash": None, "committed": False}), \
                  patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
                  patch("tc_api.docktap.trucon_client.IdentityToken") as mock_id_token, \
-                 patch("tc_api.docktap.trucon_client.SigningContext") as mock_ctx:
+                 patch("tc_api.docktap.trucon_client.build_signing_context") as mock_ctx:
                 mock_id_token.return_value = MagicMock()
                 mock_signer = MagicMock()
                 mock_bundle = MagicMock()
                 mock_bundle.to_json.return_value = '{"fake": "bundle"}'
                 mock_signer.sign_dsse.return_value = mock_bundle
-                mock_ctx.production.return_value._rekor = None
-                mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
-                mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+                mock_ctx.return_value._rekor = None
+                mock_ctx.return_value.signer.return_value.__enter__ = lambda s: mock_signer
+                mock_ctx.return_value.signer.return_value.__exit__ = lambda s, *a: None
                 mock_post.return_value = {"record_id": "rec-1", "sequence_num": 1}
 
                 committer._do_submit(rec, op_type)
@@ -448,7 +450,6 @@ class TestDocktapInstanceId:
 
     def test_pull_event_has_null_instance_id(self):
         """Pull operations have instance_id=None."""
-        import sys
         from tc_api.docktap.trucon_client import TruConCommitter
         from tc_api.docktap.proxy.operation_log import OperationRecord
 
@@ -460,17 +461,19 @@ class TestDocktapInstanceId:
             container={},
         )
         with patch.object(committer, "_post_to_trucon") as mock_post, \
+             patch.object(committer, "_ensure_chain_initialized"), \
+               patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 2, "prev_event_digest": None, "prev_lookup_hash": None, "committed": False}), \
              patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
              patch("tc_api.docktap.trucon_client.IdentityToken") as mock_id_token, \
-             patch("tc_api.docktap.trucon_client.SigningContext") as mock_ctx:
+             patch("tc_api.docktap.trucon_client.build_signing_context") as mock_ctx:
             mock_id_token.return_value = MagicMock()
             mock_signer = MagicMock()
             mock_bundle = MagicMock()
             mock_bundle.to_json.return_value = '{"fake": "bundle"}'
             mock_signer.sign_dsse.return_value = mock_bundle
-            mock_ctx.production.return_value._rekor = None
-            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
-            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+            mock_ctx.return_value._rekor = None
+            mock_ctx.return_value.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_ctx.return_value.signer.return_value.__exit__ = lambda s, *a: None
             mock_post.return_value = {"record_id": "rec-1", "sequence_num": 1}
 
             committer._do_submit(rec, "pull")

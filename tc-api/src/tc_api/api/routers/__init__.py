@@ -2,7 +2,7 @@ __all__ = [
     "build",
     "delegation",
     "launch",
-    "lunks",
+    "luks",
     "publish",
     "results",
     "sigstore",

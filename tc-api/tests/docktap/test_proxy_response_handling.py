@@ -368,7 +368,7 @@ def test_handle_client_submits_build_requests_to_trucon_without_background_queue
     )
     response_data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
     op_record = OperationRecord(
-        operation={"type": "unknown", "action": "docker build", "api_path": "/v1.41/build", "method": "POST"},
+        operation={"type": "build", "action": "docker build", "api_path": "/v1.41/build", "method": "POST"},
         response={"status": 200},
     )
 

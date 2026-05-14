@@ -59,7 +59,7 @@ def ensure_runtime_dirs() -> None:
 async def lifespan(app: FastAPI):
     from tlog_rekor.adapter import SigstoreLogAdapter
 
-    from ..trust.commit_client import TrustedLogAPI
+    from ..transparency.commit_client import TrustedLogAPI
 
     app.state.trusted_log = TrustedLogAPI(
         local_mr=None,

@@ -33,11 +33,11 @@ The codebase SHALL organize trusted-log related code into three distinct layers:
 - **THEN** it SHALL install `tlog` and `tlog-rekor` from sibling directories (`../tlog`, `../tlog-rekor`) in editable mode alongside the tc-api package itself
 
 ### Requirement: Import path conventions
-Each layer SHALL use import paths consistent with its package location. The tc_api business layer (`api/_legacy.py`, `services/*`) SHALL import shared types from `tlog` (standalone package) and the client from `tc_api.trust.commit_client`. TruCon internals SHALL import shared types from `tlog` and platform adapter implementations from `tc_api.trucon.adapters`. Immutable-log backend adapters SHALL be imported from their own packages (`tlog_rekor`, `tlog_onchain`).
+Each layer SHALL use import paths consistent with its package location. The tc_api business layer (`api/_legacy.py`, `services/*`) SHALL import shared types from `tlog` (standalone package) and the client from `tc_api.transparency.commit_client`. TruCon internals SHALL import shared types from `tlog` and platform adapter implementations from `tc_api.trucon.adapters`. Immutable-log backend adapters SHALL be imported from their own packages (`tlog_rekor`, `tlog_onchain`).
 
 #### Scenario: api/_legacy.py imports from standalone tlog
 - **WHEN** `api/_legacy.py` imports trusted-log types and client
-- **THEN** it SHALL use `from tlog.types import Entry` and `from tc_api.trust.commit_client import TrustedLogAPI`
+- **THEN** it SHALL use `from tlog.types import Entry` and `from tc_api.transparency.commit_client import TrustedLogAPI`
 
 #### Scenario: trucon/app.py imports from correct layers
 - **WHEN** `trucon/app.py` imports database and adapters
@@ -62,4 +62,4 @@ The `trusted_container_log/` directory SHALL be completely removed after restruc
 
 #### Scenario: No trusted_container_log directory exists
 - **WHEN** the restructure is complete
-- **THEN** `src/tc_api/trusted_container_log/` SHALL NOT exist as a directory
+- **THEN** `src/tc_api/transparencyed_container_log/` SHALL NOT exist as a directory

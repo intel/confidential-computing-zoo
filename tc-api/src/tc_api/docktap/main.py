@@ -41,12 +41,19 @@ class DocktapRetentionConfig:
 
     @classmethod
     def from_env(cls) -> "DocktapRetentionConfig":
+        from .config import (
+            GC_INTERVAL_SECONDS,
+            OPERATION_RETENTION_HOURS,
+            REMOVED_CONTAINER_RETENTION_HOURS,
+            ACKED_RETRY_RETENTION_HOURS,
+            TERMINAL_RETRY_RETENTION_HOURS,
+        )
         return cls(
-            gc_interval_seconds=float(os.environ.get("DOCKTAP_GC_INTERVAL_SECONDS", "300")),
-            operation_retention_hours=float(os.environ.get("DOCKTAP_OPERATION_RETENTION_HOURS", "24")),
-            removed_container_retention_hours=float(os.environ.get("DOCKTAP_REMOVED_CONTAINER_RETENTION_HOURS", "24")),
-            acknowledged_retry_retention_hours=float(os.environ.get("DOCKTAP_ACKED_RETRY_RETENTION_HOURS", "24")),
-            terminal_retry_retention_hours=float(os.environ.get("DOCKTAP_TERMINAL_RETRY_RETENTION_HOURS", "168")),
+            gc_interval_seconds=GC_INTERVAL_SECONDS,
+            operation_retention_hours=OPERATION_RETENTION_HOURS,
+            removed_container_retention_hours=REMOVED_CONTAINER_RETENTION_HOURS,
+            acknowledged_retry_retention_hours=ACKED_RETRY_RETENTION_HOURS,
+            terminal_retry_retention_hours=TERMINAL_RETRY_RETENTION_HOURS,
         )
 
 
@@ -133,8 +140,8 @@ class SockBridge:
         logger.info("Starting docktap...")
 
         # Start health endpoint before proxy accept loop
-        health_port = int(os.environ.get("DOCKTAP_HEALTH_PORT", "8002"))
-        start_health_server(health_port)
+        from .config import HEALTH_PORT
+        start_health_server(HEALTH_PORT)
 
         self.proxy = DockerProxyServer(
             listen_socket_path=self.socket_path,
@@ -179,12 +186,12 @@ def parse_args():
     )
     parser.add_argument(
         '--socket-path',
-        default=os.environ.get('SOCK_BRIDGE_SOCKET', '/tmp/docker-proxy.sock'),
+        default=None,
         help='Path for the proxy socket (default: /tmp/docker-proxy.sock)'
     )
     parser.add_argument(
         '--docker-socket-path',
-        default=os.environ.get('DOCKER_SOCKET', '/var/run/docker.sock'),
+        default=None,
         help='Path to Docker daemon socket (default: /var/run/docker.sock)'
     )
     parser.add_argument(
@@ -197,14 +204,15 @@ def parse_args():
 
 def main():
     """Main entry point"""
+    from .config import SOCK_BRIDGE_SOCKET, DOCKER_SOCKET
     args = parse_args()
     
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
     
     app = SockBridge(
-        socket_path=args.socket_path,
-        docker_socket_path=args.docker_socket_path
+        socket_path=args.socket_path or SOCK_BRIDGE_SOCKET,
+        docker_socket_path=args.docker_socket_path or DOCKER_SOCKET,
     )
     
     def signal_handler(signum, frame):

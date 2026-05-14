@@ -1,34 +1,8 @@
-import hashlib
-import json
 import logging
-import os
-import threading
-import uuid
-import time
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
-import urllib.request
-import urllib.error
+from typing import Any, Dict, List, Optional
 
-from cryptography import x509
-from cryptography.x509.oid import NameOID
-from sigstore.sign import SigningContext
-from sigstore.oidc import IdentityToken
-from sigstore.dsse import StatementBuilder, Subject
-from sigstore.models import Bundle
-
-from ..identity.sigstore_baseline import build_baseline_sigstore_bundle, build_signing_context
-from ..identity.sigstore_baseline import get_chain_owner_private_key
-from ..trucon.owner_authorization import sign_owner_authorization, verify_owner_authorization
-from tlog.types import (
-    RecordContext, Entry, Record, EventLog, CommitResult,
-    CommitQueueStatus, LatestState, VerificationResult, SubmitStatus
-)
-from tlog.errors import RecordNotFoundError, BackendSubmitError, VerificationError
-from ..trucon.database import get_chain_state
-from ..trucon.internal_transport import request_json
-
-from tlog.digest import canonical_json, compute_entry_digest, compute_event_digest
+from ..trucon.owner_authorization import verify_owner_authorization
+from tlog.digest import canonical_json
 
 logger = logging.getLogger(__name__)
 
@@ -39,142 +13,14 @@ from .baseline import (
     _predicate_entry_value,
     _replay_owner_pub_key,
 )
+from .rekor_decode import (
+    _decode_attestation_payload,
+    _decode_dsse_payload,
+    _decode_rekor_body,
+    _extract_committed_payload_hash,
+    _extract_signer_identity,
+)
 
-def _decode_rekor_body(entry: Dict[str, Any]) -> Dict[str, Any]:
-    body = entry.get("body", {})
-    if isinstance(body, dict):
-        return body
-    if isinstance(body, str):
-        try:
-            return json.loads(body)
-        except json.JSONDecodeError:
-            try:
-                import base64
-
-                return json.loads(base64.b64decode(body).decode("utf-8"))
-            except Exception:
-                return {}
-    return {}
-def _decode_dsse_payload(body: Dict[str, Any]) -> Dict[str, Any]:
-    spec = body.get("spec", {})
-
-    payload = spec.get("payload")
-    if isinstance(payload, dict):
-        return payload
-    if isinstance(payload, str):
-        try:
-            import base64
-
-            return json.loads(base64.b64decode(payload).decode("utf-8"))
-        except Exception:
-            return {}
-
-    proposed_content = spec.get("proposedContent", {})
-    if isinstance(proposed_content, dict):
-        envelope = proposed_content.get("envelope")
-        if isinstance(envelope, str):
-            try:
-                envelope_json = json.loads(envelope)
-                envelope_payload = envelope_json.get("payload")
-                if isinstance(envelope_payload, str):
-                    import base64
-
-                    return json.loads(base64.b64decode(envelope_payload).decode("utf-8"))
-            except Exception:
-                return {}
-
-    content = spec.get("content", {})
-    if isinstance(content, dict):
-        envelope = content.get("envelope")
-        if isinstance(envelope, dict):
-            envelope_payload = envelope.get("payload")
-            if isinstance(envelope_payload, str):
-                try:
-                    import base64
-
-                    return json.loads(base64.b64decode(envelope_payload).decode("utf-8"))
-                except Exception:
-                    return {}
-    return {}
-def _extract_committed_payload_hash(body: Dict[str, Any]) -> Optional[str]:
-    spec = body.get("spec", {}) if isinstance(body, dict) else {}
-    if not isinstance(spec, dict):
-        return None
-
-    for payload_hash in (spec.get("payloadHash"), (spec.get("content") or {}).get("payloadHash") if isinstance(spec.get("content"), dict) else None):
-        if isinstance(payload_hash, dict):
-            algorithm = payload_hash.get("algorithm")
-            value = payload_hash.get("value")
-            if isinstance(algorithm, str) and isinstance(value, str):
-                return f"{algorithm}:{value}"
-
-    encoded_payload = spec.get("payload")
-    if not isinstance(encoded_payload, str):
-        content = spec.get("content")
-        if isinstance(content, dict):
-            envelope = content.get("envelope")
-            if isinstance(envelope, dict):
-                encoded_payload = envelope.get("payload")
-    if not isinstance(encoded_payload, str):
-        return None
-    try:
-        import base64
-
-        return "sha256:" + hashlib.sha256(base64.b64decode(encoded_payload)).hexdigest()
-    except Exception:
-        return None
-def _decode_attestation_payload(entry: Dict[str, Any], expected_payload_hash: Optional[str]) -> tuple[Dict[str, Any], Optional[str]]:
-    attestation = entry.get("attestation")
-    if attestation is None:
-        return {}, None
-
-    attestation_bytes: Optional[bytes] = None
-    if isinstance(attestation, dict):
-        for key in ("payload", "data"):
-            value = attestation.get(key)
-            if isinstance(value, str):
-                try:
-                    import base64
-
-                    attestation_bytes = base64.b64decode(value)
-                except Exception:
-                    attestation_bytes = value.encode("utf-8")
-                break
-        if attestation_bytes is None:
-            envelope = attestation.get("envelope")
-            if isinstance(envelope, dict) and isinstance(envelope.get("payload"), str):
-                try:
-                    import base64
-
-                    attestation_bytes = base64.b64decode(envelope["payload"])
-                except Exception:
-                    attestation_bytes = envelope["payload"].encode("utf-8")
-        if attestation_bytes is None:
-            try:
-                attestation_bytes = canonical_json(attestation).encode("utf-8")
-            except Exception:
-                return {}, "Attestation payload could not be decoded"
-    elif isinstance(attestation, str):
-        try:
-            import base64
-
-            attestation_bytes = base64.b64decode(attestation)
-        except Exception:
-            attestation_bytes = attestation.encode("utf-8")
-    else:
-        return {}, "Attestation payload could not be decoded"
-
-    if not attestation_bytes:
-        return {}, "Attestation payload could not be decoded"
-
-    observed_hash = "sha256:" + hashlib.sha256(attestation_bytes).hexdigest()
-    if expected_payload_hash and observed_hash != expected_payload_hash:
-        return {}, "Attestation payload hash mismatch"
-
-    try:
-        return json.loads(attestation_bytes.decode("utf-8")), None
-    except Exception:
-        return {}, "Attestation payload could not be decoded"
 def _normalize_verification_entry(entry: Dict[str, Any], index: int, expected_identity: Optional[str]) -> Dict[str, Any]:
     body = _decode_rekor_body(entry)
     payload = _decode_dsse_payload(body)
@@ -732,77 +578,4 @@ def _annotate_predecessor_verification(entries: List[Dict[str, Any]], immutable_
         annotated.append(current)
 
     return annotated
-def _extract_signer_identity(entry: dict) -> Optional[str]:
-    """Extract the Fulcio certificate identity from a Rekor log entry."""
-    try:
-        import base64
-        body = entry.get("body", {})
-        if isinstance(body, str):
-            body = json.loads(base64.b64decode(body).decode("utf-8"))
-
-        # Navigate to the certificate in DSSE/intoto-style entries.
-        spec = body.get("spec", {})
-        cert_b64_candidates = []
-
-        signatures = spec.get("signatures", []) or []
-        for signature in signatures:
-            if not isinstance(signature, dict):
-                continue
-            verifier = signature.get("verifier")
-            if verifier:
-                cert_b64_candidates.append(verifier)
-            public_key = signature.get("publicKey")
-            if isinstance(public_key, dict):
-                content = public_key.get("content")
-                if content:
-                    cert_b64_candidates.append(content)
-            elif public_key:
-                cert_b64_candidates.append(public_key)
-
-        proposed_content = spec.get("proposedContent", {})
-        if isinstance(proposed_content, dict):
-            verifiers = proposed_content.get("verifiers", []) or []
-            cert_b64_candidates.extend(v for v in verifiers if isinstance(v, str) and v)
-
-        content = spec.get("content", {})
-        if isinstance(content, dict):
-            envelope = content.get("envelope", {})
-            if isinstance(envelope, dict):
-                signatures = envelope.get("signatures", []) or []
-                for signature in signatures:
-                    if not isinstance(signature, dict):
-                        continue
-                    public_key = signature.get("publicKey") or signature.get("public_key")
-                    if isinstance(public_key, dict):
-                        content_value = public_key.get("content")
-                        if content_value:
-                            cert_b64_candidates.append(content_value)
-                    elif public_key:
-                        cert_b64_candidates.append(public_key)
-
-        for cert_b64 in cert_b64_candidates:
-            if cert_b64:
-                cert_bytes = base64.b64decode(cert_b64)
-                try:
-                    cert = x509.load_pem_x509_certificate(cert_bytes)
-                except ValueError:
-                    cert = x509.load_der_x509_certificate(cert_bytes)
-
-                try:
-                    san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
-                    emails = san.get_values_for_type(x509.RFC822Name)
-                    if emails:
-                        return emails[0]
-                    uris = san.get_values_for_type(x509.UniformResourceIdentifier)
-                    if uris:
-                        return uris[0]
-                except x509.ExtensionNotFound:
-                    pass
-
-                subject_emails = cert.subject.get_attributes_for_oid(NameOID.EMAIL_ADDRESS)
-                if subject_emails:
-                    return subject_emails[0].value
-    except Exception as e:
-        logger.debug("Could not extract signer identity: %s", e)
-    return None
 __all__ = ['_decode_rekor_body', '_decode_dsse_payload', '_extract_committed_payload_hash', '_decode_attestation_payload', '_normalize_verification_entry', '_annotate_owner_verification', '_annotate_delegation_verification', '_entry_matches_chain', '_classify_public_history_status', '_candidate_identity', '_summarize_replay_candidate', '_summarize_normalized_candidate', '_candidate_quality', '_matched_predecessor_contract', '_has_signed_predecessor_contract', '_classify_replay_boundary', '_materialize_predecessor_candidates', '_annotate_predecessor_verification', '_extract_signer_identity']

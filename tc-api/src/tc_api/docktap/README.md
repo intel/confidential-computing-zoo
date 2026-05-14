@@ -27,6 +27,8 @@ docker pull nginx:alpine
 
 ## Testing
 
+Pytest unit and integration tests live under `tests/docktap/` so they are collected with the rest of the project tests and are not packaged with the runtime module.
+
 Single test entrypoint:
 
 ```bash

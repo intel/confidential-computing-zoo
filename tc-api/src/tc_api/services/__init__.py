@@ -1,7 +1,7 @@
-from .base import BaseDockerService, save_file_async, validate_filenames
+from .base import BaseDockerService
 from .build import BuildServiceMixin
 from .launch import LaunchServiceMixin
-from .lunks import LunksServiceMixin
+from .luks import LuksServiceMixin
 from .publish import PublishServiceMixin
 
 
@@ -9,10 +9,10 @@ class DockerService(
     BuildServiceMixin,
     PublishServiceMixin,
     LaunchServiceMixin,
-    LunksServiceMixin,
+    LuksServiceMixin,
     BaseDockerService,
 ):
     pass
 
 
-__all__ = ["DockerService", "save_file_async", "validate_filenames"]
+__all__ = ["DockerService"]

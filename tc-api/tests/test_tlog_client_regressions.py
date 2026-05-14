@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 from tlog.types import Entry
-from tc_api.trust.commit_client import TrustedLogAPI
+from tc_api.transparency.commit_client import TrustedLogAPI
 
 
 def test_commit_record_lazily_initializes_default_chain_before_reserving_intent():
@@ -11,7 +11,7 @@ def test_commit_record_lazily_initializes_default_chain_before_reserving_intent(
 
     calls = []
 
-    with patch("tc_api.trust.commit_client.get_chain_state", return_value=None), patch.object(
+    with patch("tc_api.transparency.commit_client.get_chain_state", return_value=None), patch.object(
         TrustedLogAPI,
         "init_chain",
         autospec=True,

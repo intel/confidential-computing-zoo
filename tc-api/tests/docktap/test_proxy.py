@@ -37,10 +37,9 @@ def test_proxy_start_stop():
     try:
         proxy.start()
         print("✓ Proxy started and stopped successfully")
-        return True
     except Exception as e:
         print(f"✗ Proxy failed: {e}")
-        return False
+        raise
 
 
 def test_http_parsing():
@@ -85,7 +84,7 @@ def test_http_parsing():
         else:
             print(f"✓ {operation}: {path}")
     
-    return all_passed
+    assert all_passed
 
 
 def test_operation_mapping():
@@ -122,7 +121,7 @@ def test_operation_mapping():
             print(f"✗ {path}: got {operation}, expected {expected_op}")
             all_passed = False
     
-    return all_passed
+    assert all_passed
 
 
 def test_logger():
@@ -143,7 +142,6 @@ def test_logger():
         log_operation(**params)
     
     print("✓ Logger test complete")
-    return True
 
 
 def run_all_tests():

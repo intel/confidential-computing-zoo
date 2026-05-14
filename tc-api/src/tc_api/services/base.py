@@ -1,13 +1,34 @@
-from ._shared import *
+import hashlib
+import json
+import logging
+import os
+import subprocess
+import time
+import uuid
+from datetime import datetime
+from typing import Any, Dict, Optional, Tuple
+
+from ..config import (
+    BUILD_DIR,
+    DOCKER_CMD,
+    KBS_FETCH_RETRIES,
+    KBS_FETCH_RETRY_DELAY_SECONDS,
+    KBS_URL,
+)
+from ..models import BuildResult, LaunchResult, LuksResult, PublishResult, TransparencyResult
+from ..transparency.commit_client import TrustedLogAPI
+from tlog.types import Entry
+
+logger = logging.getLogger(__name__)
 
 
 class BaseDockerService:
     def __init__(self):
         self.builds: Dict[str, BuildResult] = {}
-        self.launchs: Dict[str, LaunchResult] = {}
-        self.publishs: Dict[str, PublishResult] = {}
-        self.transparencyLog: Dict[str, TransparencyResult] = {}
-        self.lunks: Dict[str, LunksResult] = {}
+        self.launches: Dict[str, LaunchResult] = {}
+        self.publish_results: Dict[str, PublishResult] = {}
+        self.transparency_logs: Dict[str, TransparencyResult] = {}
+        self.luks: Dict[str, LuksResult] = {}
 
     def generate_uuid(self, prefix: str = "bld") -> str:
         """
@@ -151,6 +172,10 @@ class BaseDockerService:
 
     def _json_sha384_digest(self, payload: Any) -> str:
         return self._sha384_digest(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
+
+    def add_tlog_entries(self, tlog: TrustedLogAPI, record_id: str, entries) -> None:
+        for entry in entries:
+            tlog.add_entry(record_id, entry)
 
     def _file_sha384_digest(self, file_path: str) -> str:
         with open(file_path, "rb") as handle:
@@ -512,13 +537,13 @@ class BaseDockerService:
                        "launch": f"{json.dumps(launch_content,indent=2)}"
                        }
             #logger.info(f"Workflow transparency log: {json.dumps(summary, indent=2)}")
-            respone = {"build_id": build_id, "launch_id": launch_id, "log_id": logids, "transparencylog": summary}
+            response = {"build_id": build_id, "launch_id": launch_id, "log_id": logids, "transparencylog": summary}
 
-            #logger.info(f"Workflow transparency log: {json.dumps(respone, indent=2)}")
-            return respone
+            #logger.info(f"Workflow transparency log: {json.dumps(response, indent=2)}")
+            return response
         except Exception as e:
             logger.error(f"Get Workflow transparency log failed")
             return None
 
 
-__all__ = ['BaseDockerService', 'save_file_async', 'validate_filenames']
+__all__ = ['BaseDockerService']

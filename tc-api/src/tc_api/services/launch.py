@@ -1,4 +1,24 @@
-from ._shared import *
+import json
+import logging
+import os
+import subprocess
+import time
+import uuid
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+from ..config import (
+    BUILD_DIR,
+    DOCKER_CMD,
+    ENABLE_TDX,
+    SKOPEO_CMD,
+)
+from ..models import LaunchResult, TransparencyResult
+from ..transparency.commit_client import TrustedLogAPI
+from ..transparency.events import EventEntryKey
+from tlog.types import Entry
+
+logger = logging.getLogger(__name__)
 
 
 class LaunchServiceMixin:
@@ -186,8 +206,8 @@ class LaunchServiceMixin:
     def update_launch_status(self,user_id: str, launch_id: str, status: str, **kwargs):
 
         try:
-            if launch_id in self.launchs:
-                launch_result = self.launchs[launch_id]
+            if launch_id in self.launches:
+                launch_result = self.launches[launch_id]
                 old_status = launch_result.status
                 launch_result.status = status
                 launch_result.updated_at = datetime.now()
@@ -205,7 +225,7 @@ class LaunchServiceMixin:
             else:
                 # Create new launch result
                 logger.info(f"Creating new launch status for {launch_id}: {status}")
-                self.launchs[launch_id] = LaunchResult(
+                self.launches[launch_id] = LaunchResult(
                     user_id=user_id,
                     launch_id=launch_id,
                     status=status,
@@ -219,8 +239,8 @@ class LaunchServiceMixin:
     def update_transparencylog_status(self,user_id: str, log_id: str, status: str, build_id: str, **kwargs):
 
         try:
-            if log_id in self.transparencyLog:
-                tlog_result = self.transparencyLog[log_id]
+            if log_id in self.transparency_logs:
+                tlog_result = self.transparency_logs[log_id]
                 old_status = tlog_result.status
                 tlog_result.status = status
 
@@ -251,7 +271,7 @@ class LaunchServiceMixin:
                 else:
                     logger.debug(f"Transparency log not found.")
                 #print("CEHCK______",type(json.dumps(data,indent=4)))
-                self.transparencyLog[log_id] = TransparencyResult(
+                self.transparency_logs[log_id] = TransparencyResult(
                     user_id=user_id,
                     build_id=build_id,
                     log_id=str(log_id),
@@ -265,11 +285,11 @@ class LaunchServiceMixin:
 
     def get_transparencyLog_status(self, log_id: str) -> Optional[TransparencyResult]:
         """Get transparency log status by log_id"""
-        return self.transparencyLog.get(log_id)
+        return self.transparency_logs.get(log_id)
 
     def get_launch_status(self, launch_id: str) -> Optional[LaunchResult]:
         """Get launch status by launch_id"""
-        return self.launchs.get(launch_id)
+        return self.launches.get(launch_id)
 
     async def launch_containers(self, tlog, record_id, image_url, image_id, launch_pth, workload_id: Optional[str] = None, launch_id: Optional[str] = None):
         image_dir = 'oci:' + os.path.join(launch_pth,'encrypted')
@@ -357,13 +377,13 @@ class LaunchServiceMixin:
                                      "launch_status": "success",
                                      "launch_stdout": dockerRUn.stdout,
                                      }))
-                tlog.add_entry(record_id, Entry(key="launch_result", value="success"))
+                tlog.add_entry(record_id, Entry(key=EventEntryKey.launch_result.value, value="success"))
             else:
                 logger.info("Failed run image.")
                 logger.debug(f"CMD: {' '.join(docker_cmd)}")
                 tlog.add_entry(record_id, Entry(key="launch_status", value={"launch_status": "failed",
                                      "launch_stderr": dockerRUn.stderr}))
-                tlog.add_entry(record_id, Entry(key="launch_result", value="failed"))
+                tlog.add_entry(record_id, Entry(key=EventEntryKey.launch_result.value, value="failed"))
                 return False
 
             # docker ps -q --latest
@@ -376,7 +396,7 @@ class LaunchServiceMixin:
                                      "getContainerID_status": "success",
                                      "getID_stdout": containerID
                                      }))
-                tlog.add_entry(record_id, Entry(key="instance_id", value=containerID))
+                tlog.add_entry(record_id, Entry(key=EventEntryKey.instance_id.value, value=containerID))
             else:
                 logger.info("Failed get container ID.")
                 tlog.add_entry(record_id, Entry(key="getContainerID_status", value={"getContainerID_status": "failed",

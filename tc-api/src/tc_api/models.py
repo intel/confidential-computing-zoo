@@ -1,6 +1,54 @@
+from enum import Enum
 from typing import Optional, Dict, List, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
+
+
+class BuildStatus(str, Enum):
+    pending = "pending"
+    submitted = "submitted"
+    preparing = "preparing"
+    building = "building"
+    generating_sbom = "generating_sbom"
+    encrypting = "encrypting"
+    pushing = "pushing"
+    signing = "signing"
+    success = "success"
+    failed = "failed"
+
+
+class PublishStatus(str, Enum):
+    publishing = "publishing"
+    pushing = "pushing"
+    signing = "signing"
+    success = "success"
+    failed = "failed"
+
+
+class LaunchStatus(str, Enum):
+    pending = "pending"
+    launching = "launching"
+    success = "success"
+    failed = "failed"
+
+
+class EncryptedVfsStatus(str, Enum):
+    creating = "creating"
+    mounting = "mounting"
+    unmounting = "unmounting"
+    success = "success"
+    failed = "failed"
+
+
+class BaseResult(BaseModel):
+    """Common fields shared by all operation result models."""
+    user_id: str
+    status: str
+    log_id: Optional[str] = None
+    transparencyLog_verify: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
 class BuildPackageRequest(BaseModel):
     dockerfile: str  # Base64 encoded or file content
@@ -39,7 +87,6 @@ class PublishPackageResponse(BaseModel):
     image_url: str
     user_id: str
     image_id: str
-    image_url: str
     sbom_url: Optional[str] = None
     log_id: Optional[str] = None
     transparencyLog_verify: str
@@ -47,20 +94,14 @@ class PublishPackageResponse(BaseModel):
 
 
 
-class BuildResult(BaseModel):
-    user_id: str
+class BuildResult(BaseResult):
     build_id: str
-    status: str = "pending"  # pending, preparing, building, generating_sbom, encrypting, pushing, signing, success, failed
-    current_step: Optional[str] = None  # Detailed description of current operation
+    status: str = "pending"
+    current_step: Optional[str] = None
     image_id: Optional[str] = None
     sbom_url: Optional[str] = None
     image_url: Optional[str] = None
     cert_url: Optional[str] = None
-    log_id: Optional[str] = None
-    transparencyLog_verify: Optional[str] = None
-    error_message: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
 
 class LaunchRequest(BaseModel):
     image_id: str
@@ -79,8 +120,7 @@ class LaunchResponse(BaseModel):
     transparencyLog_verify: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
-class PublishResult(BaseModel):
-    user_id: str
+class PublishResult(BaseResult):
     publish_id: str
     build_id: str
     status: str = "publishing"
@@ -89,25 +129,13 @@ class PublishResult(BaseModel):
     sbom_url: Optional[str] = None
     image_url: Optional[str] = None
     cert_url: Optional[str] = None
-    log_id: Optional[str] = None
-    transparencyLog_verify: Optional[str] = None
-    error_message: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
 
-class LaunchResult(BaseModel):
-    user_id: str
+class LaunchResult(BaseResult):
     launch_id: str
-    status: str
     validation: Optional[str] = None
     attestation: Optional[str] = None
-    log_id: Optional[str] = None
-    instance_ids: List[Any] = []
-    transparencyLog_verify: Optional[str] = None
-    evidence: Dict[str, Any] = {}
-    error_message: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime = Field(default_factory=datetime.now)
+    instance_ids: List[Any] = Field(default_factory=list)
+    evidence: Dict[str, Any] = Field(default_factory=dict)
 
 class VerifyTlogRequest(BaseModel):
     raw_file: Dict[str, str]
@@ -130,7 +158,7 @@ class TransparencyResult(BaseModel):
     transparencyLog_verify: Optional[str] = None
     error_message: Optional[str] = None
 
-class SummaryTransparencyRespone(BaseModel):
+class SummaryTransparencyResponse(BaseModel):
     build_id: str
     launch_id: str
     log_id: Dict[str, str]
@@ -141,14 +169,14 @@ class GetTransparencyRequest(BaseModel):
     build_id: str
     launch_id: str
 
-class CreateLunksRequest(BaseModel):
+class CreateLuksRequest(BaseModel):
     user_id: str
     vfs_path: str
     vfs_size: str
     passwd: str
 
 
-class CreateLunksRespone(BaseModel):
+class CreateLuksResponse(BaseModel):
     user_id: str
     passwd: str
     vfs_path: str
@@ -156,23 +184,18 @@ class CreateLunksRespone(BaseModel):
     mapper_dir: str
     loop_device: str
 
-class LunksResult(BaseModel):
-    user_id: str
-    log_id: Optional[str] = None
+
+class LuksResult(BaseResult):
     status: str = "creating"
     step: Optional[str] = None
-    transparencyLog_verify: Optional[str] = None
-    error_message: Optional[str] = None
     passwd: Optional[str] = None
     mapper_dir: Optional[str] = None
     vfs_path: Optional[str] = None
     vfs_size: Optional[str] = None
     loop_device: Optional[str] = None
     mount_path: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
 
-class MountLunksRequest(BaseModel):
+class MountLuksRequest(BaseModel):
     user_id: str
     passwd: str
     vfs_path: str
@@ -181,7 +204,7 @@ class MountLunksRequest(BaseModel):
     mount_path: str
 
 
-class MountLunksRespone(BaseModel):
+class MountLuksResponse(BaseModel):
     user_id: str
     passwd: str
     vfs_path: str
@@ -189,13 +212,14 @@ class MountLunksRespone(BaseModel):
     mapper_dir: str
     mount_path: str
 
-class UnmountLunksRequest(BaseModel):
+
+class UnmountLuksRequest(BaseModel):
     user_id: str
     mapper_dir: str
     loop_device: str
     mount_path: str
 
-class UnmountLunksRespone(BaseModel):
+class UnmountLuksResponse(BaseModel):
     user_id: str
     mapper_dir: str
     loop_device: str

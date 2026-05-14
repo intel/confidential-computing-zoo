@@ -29,9 +29,9 @@ class ControlPlaneHarness:
         self._monkeypatch.setattr(services_mod, "BUILD_DIR", str(self._build_dir))
 
         workflow_mod.docker_service.builds.clear()
-        workflow_mod.docker_service.publishs.clear()
-        workflow_mod.docker_service.launchs.clear()
-        workflow_mod.docker_service.transparencyLog.clear()
+        workflow_mod.docker_service.publish_results.clear()
+        workflow_mod.docker_service.launches.clear()
+        workflow_mod.docker_service.transparency_logs.clear()
 
         self._monkeypatch.setattr(
             workflow_mod.docker_service,
@@ -137,7 +137,7 @@ def harness(monkeypatch, tmp_path):
 
 @pytest.fixture
 def patched_lifespan():
-    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production:
         mock_production.return_value.identity_token.return_value = "fake-identity-token"

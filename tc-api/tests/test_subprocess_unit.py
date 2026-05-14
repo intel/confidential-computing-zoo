@@ -113,7 +113,7 @@ def test_build_result_shows_failed_when_build_step_fails():
         "identity_token": "token-123",
     }
 
-    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None):
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None):
         with TestClient(app) as client:
             with patch("tc_api.api.workflows.docker_service.build_image", return_value=False):
                 submit_response = client.post("/api/build-package", json=payload)

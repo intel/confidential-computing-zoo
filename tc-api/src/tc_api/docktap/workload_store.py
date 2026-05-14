@@ -11,9 +11,9 @@ import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-_DEFAULT_DB_PATH = os.environ.get(
-    "DOCKTAP_WORKLOAD_DB", "/dev/shm/docktap/container_map.db"
-)
+from .config import WORKLOAD_DB
+
+_DEFAULT_DB_PATH = WORKLOAD_DB
 
 WORKLOAD_LABEL = "io.trucon.workload-id"
 LAUNCH_LABEL = "io.trucon.launch-id"

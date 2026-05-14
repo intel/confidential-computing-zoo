@@ -18,7 +18,7 @@ import pytest
 
 from tlog.local_mr import LocalMRAdapter
 from tlog.digest import compute_entry_digest, compute_event_digest
-from tc_api.trucon.database import get_chain_state, get_pending_records, init_db
+from tc_api.trucon.database import get_chain_state, get_pending_records, init_db, update_chain_state
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +90,8 @@ def trucon_client(tmp_path):
     importlib.reload(app_mod)
 
     init_db(db_path)
+    update_chain_state("default", "baseline-default", 0, mr_value="aa" * 48, head_log_id="log0-default", db_path=db_path)
+    update_chain_state("docktap-runtime", "baseline-docktap-runtime", 0, mr_value="aa" * 48, head_log_id="log0-docktap-runtime", db_path=db_path)
 
     old_mr = app_mod._local_mr
     app_mod._local_mr = MockMRAdapter()
@@ -215,32 +217,41 @@ class TestEndToEndDocktapFlow:
         committer = TruConCommitter(trucon_url=trucon_url)
 
         with patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
-             patch("tc_api.docktap.trucon_client.IdentityToken") as mock_id_token, \
-             patch("tc_api.docktap.trucon_client.SigningContext") as mock_ctx:
+             patch("tc_api.docktap.trucon_client.IdentityToken"), \
+             patch("tc_api.docktap.trucon_client.build_signing_context") as mock_build_signing_context:
             mock_signer = MagicMock()
             mock_bundle = MagicMock()
             mock_bundle.to_json.return_value = _make_fake_bundle("evt-test", "sha384:fake")
             mock_signer.sign_dsse.return_value = mock_bundle
-            mock_ctx.production.return_value._rekor = None
-            mock_ctx.production.return_value.signer.return_value.__enter__ = lambda s: mock_signer
-            mock_ctx.production.return_value.signer.return_value.__exit__ = lambda s, *a: None
+            mock_signing_context = MagicMock()
+            mock_signing_context.signer.return_value.__enter__ = lambda s: mock_signer
+            mock_signing_context.signer.return_value.__exit__ = lambda s, *a: None
+            mock_build_signing_context.return_value = mock_signing_context
 
-            def fake_request_json(method, path, **kwargs):
-                assert method == "POST"
-                assert path == "/commit"
+            def fake_post_to_trucon(**kwargs):
                 resp = client.post(
                     "/commit",
-                    json=kwargs["json_body"],
+                    json={
+                        "bundle": kwargs["bundle_json"],
+                        "chain_id": kwargs["chain_id"],
+                        "event_digest": kwargs["event_digest"],
+                        "event_id": kwargs["event_id"],
+                        "idempotency_key": kwargs.get("idempotency_key"),
+                        "instance_id": kwargs.get("instance_id"),
+                    },
                     headers={"Authorization": "Bearer compat-token", "X-TruCon-Caller-Service": "docktap"},
                 )
+                assert resp.status_code == 200, resp.text
                 return resp.json()
 
-            with patch("tc_api.docktap.trucon_client.request_json", side_effect=fake_request_json):
+            with patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+                 patch.object(committer, "_reserve_commit_intent", return_value={"sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None, "intent_token": None}), \
+                 patch.object(committer, "_post_to_trucon", side_effect=fake_post_to_trucon):
                 result = committer.submit_operation(rec, "pull")
 
         assert result is True
 
         # Verify record landed in the queue
-        state = get_chain_state("default", db_path=db_path)
+        state = get_chain_state(committer._runtime_chain_id, db_path=db_path)
         assert state is not None
         assert state["sequence_num"] >= 1

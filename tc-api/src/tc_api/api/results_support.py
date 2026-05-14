@@ -2,7 +2,7 @@ from datetime import datetime
 
 from fastapi import HTTPException
 
-from ..models import GetTransparencyRequest, SummaryTransparencyRespone, TransparencyResult
+from ..models import GetTransparencyRequest, SummaryTransparencyResponse, TransparencyResult
 from .runtime import docker_service, logger
 
 
@@ -36,7 +36,7 @@ async def get_summary_transparencylog(request: GetTransparencyRequest):
 
 
 __all__ = [
-    "SummaryTransparencyRespone",
+    "SummaryTransparencyResponse",
     "TransparencyResult",
     "get_summary_transparencylog",
     "get_transparency_log",

@@ -16,5 +16,5 @@ router.add_api_route(
     "/api/get-summaryTransparencylog",
     results_support.get_summary_transparencylog,
     methods=["POST"],
-    response_model=results_support.SummaryTransparencyRespone,
+    response_model=results_support.SummaryTransparencyResponse,
 )

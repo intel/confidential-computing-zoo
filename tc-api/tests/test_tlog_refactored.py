@@ -5,7 +5,7 @@ import json
 import time
 import ctypes
 from tc_api.trucon.database import init_db, insert_record, get_pending_records, delete_record
-from tc_api.trust.commit_client import TrustedLogAPI
+from tc_api.transparency.commit_client import TrustedLogAPI
 from tlog.local_mr import LocalMRAdapter
 from typing import Tuple
 

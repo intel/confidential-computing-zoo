@@ -1,48 +1,34 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse
-from contextlib import asynccontextmanager
+from fastapi import HTTPException, Request
+from fastapi.responses import HTMLResponse
 from html import escape
-from typing import Any, List, Optional
-import os
-import uuid
-import asyncio
-import tempfile
-import base64
+from typing import Any, Optional
 import threading
 from datetime import datetime
 import json
-import shutil
 import logging
-import hashlib
-import pickle
 import requests
 import urllib.parse
 from pydantic import BaseModel
-from ..trust.commit_client import TrustedLogAPI
-from tlog.types import Entry
-from ..models import *
-from ..services import DockerService
-from ..kbs_service import KBSService
 from ..identity.oidc_preflight import inspect_identity_token
-from ..identity.sigstore_identity import MissingSigstoreIdentityTokenError, cache_sigstore_identity_token, resolve_sigstore_identity_token
-from ..config import (
-    HOST, PORT, DEBUG, UPLOAD_DIR, BUILD_DIR, LOGS_DIR,
-    DOCKER_REGISTRY, DOCKER_REPOSITORY, ENABLE_TDX, TRUCON_URL,
-    INIT_DEFAULT_CHAIN_ON_STARTUP,
-    TRANSPARENCY_SERVICE_CHAIN_ID,
-    TRANSPARENCY_WORKLOAD_CHAIN_PREFIX,
+from ..identity.sigstore_oauth import (
+    SIGSTORE_OIDC_CLIENT_ID,
+    SIGSTORE_OIDC_CLIENT_SECRET,
+    SIGSTORE_OIDC_ISSUER_URL,
+    SIGSTORE_OIDC_SESSION_TTL_SECONDS,
+    SIGSTORE_OOB_REDIRECT_URI,
+    build_sigstore_pkce_pair as _build_sigstore_pkce_pair,
+    get_sigstore_issuer as _get_sigstore_issuer,
+    normalize_sigstore_login_flow as _normalize_sigstore_login_flow,
+    sigstore_provider_callback_base_url as _sigstore_provider_callback_base_url,
 )
+from ..identity.sigstore_identity import MissingSigstoreIdentityTokenError, cache_sigstore_identity_token, resolve_sigstore_identity_token
+from .sigstore_templates import render_callback_page, render_interactive_login_page
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger("tuf.api._payload").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-SIGSTORE_OIDC_ISSUER_URL = os.environ.get("TC_API_SIGSTORE_OIDC_ISSUER", "https://oauth2.sigstore.dev/auth")
-SIGSTORE_OIDC_CLIENT_ID = os.environ.get("TC_API_SIGSTORE_OIDC_CLIENT_ID", "sigstore")
-SIGSTORE_OIDC_CLIENT_SECRET = os.environ.get("TC_API_SIGSTORE_OIDC_CLIENT_SECRET", "")
-SIGSTORE_OIDC_SESSION_TTL_SECONDS = max(60, int(os.environ.get("TC_API_SIGSTORE_OIDC_SESSION_TTL_SECONDS", "600")))
-SIGSTORE_OOB_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
 _sigstore_login_sessions: dict[str, dict[str, Any]] = {}
 _sigstore_login_results: dict[str, dict[str, Any]] = {}
 _sigstore_login_sessions_lock = threading.Lock()
@@ -69,9 +55,6 @@ def _sigstore_callback_path() -> str:
 
 def _sigstore_login_status_path(session_id: str) -> str:
     return f"/api/sigstore/login-status/{urllib.parse.quote(session_id)}"
-
-def _sigstore_provider_callback_base_url() -> str:
-    return urllib.parse.urljoin(SIGSTORE_OIDC_ISSUER_URL.rstrip("/") + "/", "callback")
 
 def _sigstore_login_flow_query(flow: str) -> str:
     return urllib.parse.urlencode({"flow": flow})
@@ -101,38 +84,6 @@ def _prune_sigstore_login_sessions(now_epoch: Optional[int] = None) -> None:
     ]
     for session_id in expired_result_ids:
         _sigstore_login_results.pop(session_id, None)
-
-def _get_sigstore_issuer():
-    from sigstore.oidc import Issuer
-
-    production = getattr(Issuer, "production", None)
-    if callable(production):
-        return production()
-    return Issuer(SIGSTORE_OIDC_ISSUER_URL)
-
-def _build_sigstore_pkce_pair() -> tuple[str, str]:
-    code_verifier = base64.urlsafe_b64encode(os.urandom(32)).rstrip(b"=").decode("utf-8")
-    code_challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(code_verifier.encode("utf-8")).digest()
-    ).rstrip(b"=").decode("utf-8")
-    return code_verifier, code_challenge
-
-def _normalize_sigstore_login_flow(flow: Optional[str]) -> str:
-    normalized = (flow or "copy-url").strip().lower()
-    if normalized in {"copy-url", "copy_url", "remote", "ssh", "provider-callback"}:
-        return "copy-url"
-    if normalized in {"server-callback", "server_callback", "callback", "direct"}:
-        return "server-callback"
-    if normalized in {"oob", "verification-code", "verification_code", "device"}:
-        return "oob"
-    raise HTTPException(
-        status_code=400,
-        detail={
-            "error": "Unsupported Sigstore login flow.",
-            "supported_flows": ["copy-url", "server-callback", "oob"],
-            "received": flow,
-        },
-    )
 
 def _sigstore_redirect_uri_for_flow(request: Request, flow: str, force_oob: bool = False) -> str:
     if force_oob or flow == "oob":
@@ -568,202 +519,20 @@ async def sigstore_interactive_login(operation: str = "build", session_id: Optio
         quote=False,
     )
     return HTMLResponse(
-        content=f"""
-<!DOCTYPE html>
-<html lang=\"en\">
-<head>
-    <meta charset=\"utf-8\" />
-    <title>Sigstore OIDC Login</title>
-    <style>
-        body {{ font-family: sans-serif; margin: 2rem auto; max-width: 860px; line-height: 1.5; }}
-        textarea, pre {{ width: 100%; box-sizing: border-box; }}
-        textarea {{ min-height: 12rem; }}
-        <button type="button" onclick="startLogin('server-callback')">Start Direct Callback Login</button>
-        button {{ margin-right: 0.75rem; margin-bottom: 0.75rem; padding: 0.6rem 1rem; }}
-    <h2>Status</h2>
-    <pre id="status">{escape(initial_status, quote=False)}</pre>
-<body>
-    <pre id="auth_url">{escape(initial_auth_url, quote=False)}</pre>
-    <p>This page helps you obtain a short-lived OIDC token for the <strong>{safe_operation}</strong> operation without setting any environment variables.</p>
-    <p>If you came here from a missing-token API response, this page can continue the same login session without making you assemble a JSON request manually.</p>
-    <p>Choose the login mode that matches your environment. Use SSH/Remote Mode when your browser cannot reach this server directly after login. Use Direct Callback Mode only when your browser can open this server's callback URL.</p>
-    <p>
-        <button type=\"button\" onclick=\"startLogin('copy-url')\">Start SSH/Remote Login</button>
-    <pre id="status">{escape(initial_status, quote=False)}</pre>
-    <p>
-    <pre id="auth_url">{escape(initial_auth_url, quote=False)}</pre>
-        <button type="button" onclick="startLogin('oob')">Start OOB Login</button>
-    <pre id=\"status\">Idle</pre>
-    <h2>Login URL</h2>
-    <pre id=\"auth_url\">Not started</pre>
-    <h2>Final Browser URL</h2>
-    <textarea id=\"redirect_url\" spellcheck=\"false\" placeholder=\"For SSH/Remote Mode: after login, paste the final browser URL that starts with https://oauth2.sigstore.dev/auth/callback here\"></textarea>
-    <p>
-        <button type=\"button\" onclick=\"completeRemoteLogin()\">Submit Final URL</button>
-    </p>
-    <h2>Identity Token</h2>
-    <textarea id=\"token\" spellcheck=\"false\" placeholder=\"Token will appear here after login completes\"></textarea>
-    <h2>Verification Code</h2>
-    <textarea id="verification_code" spellcheck="false" placeholder="For OOB Mode: paste the verification code shown by Sigstore here"></textarea>
-    <p>
-        <button type="button" onclick="completeOobLogin()">Submit Verification Code</button>
-    </p>
-    <h2>Retry Example</h2>
-    <pre id=\"retry\">curl -X POST \"http://127.0.0.1:8000/api/build-package\" -H \"Content-Type: application/json\" -d '{sample_payload}'</pre>
-    <script>
-        let pendingSessionId = {json.dumps(initial_session_id or None)};
-        let pendingFlow = {json.dumps(initial_flow if initial_session_id else None)};
-
-        function updateRetry(identityToken) {{
-            const retry = document.getElementById('retry');
-            retry.textContent = 'curl -X POST "http://127.0.0.1:8000/api/build-package" -H "Content-Type: application/json" -d ' + JSON.stringify({{
-                dockerfile: 'FROM ghcr.io/1186258278/openclaw-zh:nightly',
-                app_binary: 'dGVzdCBiaW5hcnkK',
-                configs: ['Y29uZmlnCg=='],
-                data: ['ZGF0YQo='],
-                encrypt: true,
-                user_id: 'test-user',
-                identity_token: identityToken,
-            }});
-        }}
-
-        window.addEventListener('message', (event) => {{
-            if (event.origin !== window.location.origin) {{
-                return;
-            }}
-            if (!event.data || event.data.sigstore_login_result !== true) {{
-                return;
-            }}
-            const status = document.getElementById('status');
-            const tokenBox = document.getElementById('token');
-            status.textContent = JSON.stringify(event.data, null, 2);
-            if (event.data.status === 'token_ready') {{
-                tokenBox.value = event.data.identity_token;
-                updateRetry(event.data.identity_token);
-            }}
-        }});
-
-        async function startLogin(flow) {{
-            const status = document.getElementById('status');
-            const authUrl = document.getElementById('auth_url');
-            const tokenBox = document.getElementById('token');
-            const redirectUrl = document.getElementById('redirect_url');
-            status.textContent = 'Starting Sigstore OIDC login...';
-            tokenBox.value = '';
-            redirectUrl.value = '';
-            try {{
-                let loginUrl = '{remote_token_url}';
-                if (flow === 'server-callback') {{
-                    loginUrl = '{callback_token_url}';
-                }} else if (flow === 'oob') {{
-                    loginUrl = '{oob_token_url}';
-                }}
-                const response = await fetch(loginUrl);
-                const data = await response.json();
-                if (!response.ok) {{
-                    status.textContent = JSON.stringify(data, null, 2);
-                    return;
-                }}
-                if (data.status === 'token_ready') {{
-                    tokenBox.value = data.identity_token;
-                    status.textContent = JSON.stringify(data, null, 2);
-                    authUrl.textContent = 'Used cached token';
-                    updateRetry(data.identity_token);
-                    return;
-                }}
-                pendingSessionId = data.session_id;
-                pendingFlow = data.flow;
-                authUrl.textContent = data.auth_url;
-                status.textContent = JSON.stringify(data, null, 2);
-                window.open(data.auth_url, '_blank', 'noopener');
-            }} catch (error) {{
-                status.textContent = String(error);
-            }}
-        }}
-
-        async function completeRemoteLogin() {{
-            const status = document.getElementById('status');
-            const tokenBox = document.getElementById('token');
-            const redirectUrl = document.getElementById('redirect_url').value.trim();
-            if (!pendingSessionId) {{
-                status.textContent = 'Start a login flow first to create a Sigstore session.';
-                return;
-            }}
-            if (pendingFlow !== 'copy-url') {{
-                status.textContent = 'The current session expects automatic server callback. Start SSH/Remote Login to use pasted final URLs.';
-                return;
-            }}
-            if (!redirectUrl) {{
-                status.textContent = 'Paste the final browser URL before submitting.';
-                return;
-            }}
-            status.textContent = 'Finishing Sigstore login from the pasted browser URL...';
-            try {{
-                const response = await fetch('{submit_url}', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        operation: '{safe_operation}',
-                        session_id: pendingSessionId,
-                        redirect_url: redirectUrl,
-                    }}),
-                }});
-                const data = await response.json();
-                if (!response.ok) {{
-                    status.textContent = JSON.stringify(data, null, 2);
-                    return;
-                }}
-                tokenBox.value = data.identity_token;
-                status.textContent = JSON.stringify(data, null, 2);
-                updateRetry(data.identity_token);
-            }} catch (error) {{
-                status.textContent = String(error);
-            }}
-        }}
-
-        async function completeOobLogin() {{
-            const status = document.getElementById('status');
-            const tokenBox = document.getElementById('token');
-            const verificationCode = document.getElementById('verification_code').value.trim();
-            if (!pendingSessionId) {{
-                status.textContent = 'Start a login flow first to create a Sigstore session.';
-                return;
-            }}
-            if (pendingFlow !== 'oob') {{
-                status.textContent = 'The current session is not using OOB. Start OOB Login to use verification codes.';
-                return;
-            }}
-            if (!verificationCode) {{
-                status.textContent = 'Paste the verification code before submitting.';
-                return;
-            }}
-            status.textContent = 'Finishing Sigstore login from the pasted verification code...';
-            try {{
-                const response = await fetch('{submit_url}', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        operation: '{safe_operation}',
-                        session_id: pendingSessionId,
-                        verification_code: verificationCode,
-                    }}),
-                }});
-                const data = await response.json();
-                if (!response.ok) {{
-                    status.textContent = JSON.stringify(data, null, 2);
-                    return;
-                }}
-                tokenBox.value = data.identity_token;
-                status.textContent = JSON.stringify(data, null, 2);
-                updateRetry(data.identity_token);
-            }} catch (error) {{
-                status.textContent = String(error);
-            }}
-        }}
-    </script>
-</body>
-</html>
-"""
+        content=render_interactive_login_page(
+            safe_operation=safe_operation,
+            remote_token_url=remote_token_url,
+            callback_token_url=callback_token_url,
+            oob_token_url=oob_token_url,
+            submit_url=submit_url,
+            initial_status=initial_status,
+            initial_auth_url=initial_auth_url,
+            initial_session_id=initial_session_id,
+            initial_flow=initial_flow,
+            sample_payload=sample_payload,
+            initial_session_id_json=json.dumps(initial_session_id or None),
+            initial_flow_json=json.dumps(initial_flow if initial_session_id else None),
+        )
     )
 
 async def sigstore_identity_token(request: Request, operation: str = "build", flow: str = "copy-url", force_oob: bool = False):
@@ -825,33 +594,7 @@ async def sigstore_identity_callback(code: Optional[str] = None, state: Optional
     payload_json = json.dumps(payload).replace("</", "<\\/")
     title = "Sigstore Login Complete" if payload.get("status") == "token_ready" else "Sigstore Login Failed"
     return HTMLResponse(
-        content=f"""
-<!DOCTYPE html>
-<html lang=\"en\">
-<head>
-    <meta charset=\"utf-8\" />
-    <title>{escape(title, quote=True)}</title>
-    <style>
-        body {{ font-family: sans-serif; margin: 2rem auto; max-width: 860px; line-height: 1.5; }}
-        textarea, pre {{ width: 100%; box-sizing: border-box; }}
-        textarea {{ min-height: 12rem; }}
-        pre {{ background: #f5f5f5; padding: 1rem; overflow-x: auto; }}
-    </style>
-</head>
-<body>
-    <h1>{escape(title, quote=True)}</h1>
-    <p>This window can be closed. The opener page will receive the login result automatically.</p>
-    <pre id=\"payload\"></pre>
-    <script>
-        const payload = {payload_json};
-        document.getElementById('payload').textContent = JSON.stringify(payload, null, 2);
-        if (window.opener) {{
-            window.opener.postMessage(payload, window.location.origin);
-        }}
-    </script>
-</body>
-</html>
-"""
+        content=render_callback_page(title=title, payload_json=payload_json)
     )
 
 async def sigstore_identity_token_complete(request: SigstoreIdentityTokenExchangeRequest):

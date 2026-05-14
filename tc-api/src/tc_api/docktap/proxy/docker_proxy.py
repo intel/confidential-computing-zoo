@@ -307,11 +307,13 @@ class DockerProxyServer:
         return response.encode('utf-8')
 
     def _attestation_gate_enabled(self) -> bool:
-        return os.environ.get("DOCKTAP_REQUIRE_ATTESTATION", "1") == "1"
+        from ..config import REQUIRE_ATTESTATION
+        return REQUIRE_ATTESTATION
 
     @staticmethod
     def _lifecycle_grant_ttl_seconds() -> int:
-        raw_value = os.environ.get("DOCKTAP_LIFECYCLE_GRANT_TTL_SECONDS", "").strip()
+        from ..config import LIFECYCLE_GRANT_TTL_SECONDS
+        raw_value = LIFECYCLE_GRANT_TTL_SECONDS
         if not raw_value:
             return DEFAULT_LIFECYCLE_GRANT_TTL_SECONDS
         try:
@@ -387,8 +389,9 @@ class DockerProxyServer:
         )
 
     def _create_attestation_required_response(self, operation_type: str, session_id: str) -> bytes:
-        api_base_url = os.environ.get("DOCKTAP_ATTESTATION_API_URL", "http://127.0.0.1:8000")
-        browser_base_url = os.environ.get("DOCKTAP_ATTESTATION_BROWSER_BASE_URL", api_base_url)
+        from ..config import ATTESTATION_API_URL, ATTESTATION_BROWSER_BASE_URL
+        api_base_url = ATTESTATION_API_URL
+        browser_base_url = ATTESTATION_BROWSER_BASE_URL
         interactive_login_path = f"/api/sigstore/interactive-login?{urlencode({'operation': 'docktap', 'session_id': session_id})}"
         login_status_path = f"/api/sigstore/login-status/{session_id}"
         interactive_login_url = self._absolute_url(browser_base_url, interactive_login_path)

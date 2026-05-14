@@ -7,7 +7,6 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-import tc_api.api.lunks_support as lunks_mod
 import tc_api.api.runtime as runtime_mod
 import tc_api.api.workflows as workflow_mod
 from tc_api.api.sigstore_support import _missing_sigstore_identity_detail, _resolve_required_sigstore_identity_token
@@ -31,7 +30,7 @@ def test_required_sigstore_identity_uses_request_token():
 
 def test_startup_fails_when_default_chain_baseline_is_required_and_init_fails():
     with patch("tc_api.api.runtime.INIT_DEFAULT_CHAIN_ON_STARTUP", True), patch(
-        "tc_api.trust.commit_client.TrustedLogAPI.init_chain",
+        "tc_api.transparency.commit_client.TrustedLogAPI.init_chain",
         side_effect=RuntimeError("missing baseline token"),
     ):
         with pytest.raises(RuntimeError, match="Default-chain baseline initialization failed during startup"):
@@ -64,7 +63,7 @@ def test_missing_sigstore_identity_detail_includes_interactive_urls():
 
 
 def test_sigstore_identity_token_start_endpoint_returns_auth_url():
-    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
         "tc_api.api.sigstore_support._start_sigstore_login",
@@ -110,7 +109,7 @@ def test_sigstore_callback_page_returns_token_metadata():
         "exp": 1_700_000_300,
     })
 
-    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
         "tc_api.api.sigstore_support._get_sigstore_login_session_by_state",
@@ -140,7 +139,7 @@ def test_sigstore_callback_page_returns_token_metadata():
 
 
 def test_sigstore_interactive_login_page_references_token_endpoint():
-    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production:
         mock_production.return_value.identity_token.return_value = "fake-identity-token"
@@ -156,7 +155,7 @@ def test_sigstore_interactive_login_page_references_token_endpoint():
 
 
 def test_sigstore_interactive_login_page_can_continue_existing_session():
-    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
         "tc_api.api.sigstore_support._get_sigstore_login_session",
@@ -185,7 +184,7 @@ def test_sigstore_identity_token_complete_accepts_provider_callback_url():
         "exp": 1_700_000_300,
     })
 
-    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
         "tc_api.api.sigstore_support._complete_sigstore_login_from_redirect_url",
@@ -228,7 +227,7 @@ def test_build_package_submits_when_token_missing_without_interactive_login():
 
     fake_ctx = SimpleNamespace(record_id="rec-123")
 
-    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
         "tc_api.api.workflows.resolve_sigstore_identity_token",
@@ -259,7 +258,7 @@ def test_build_package_submits_when_token_missing_without_interactive_login():
     start_login.assert_not_called()
 
 
-def test_create_lunks_skips_interactive_sigstore_login_when_token_missing():
+def test_create_luks_skips_interactive_sigstore_login_when_token_missing():
     payload = {
         "user_id": "test-user",
         "passwd": "/root/luks-key",
@@ -274,25 +273,25 @@ def test_create_lunks_skips_interactive_sigstore_login_when_token_missing():
         def add_entry(self, *args, **kwargs):
             return None
 
-    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
-        "tc_api.api.lunks_support.resolve_sigstore_identity_token",
+        "tc_api.api.luks_support.resolve_sigstore_identity_token",
         return_value=None,
     ) as resolve_token, patch(
-        "tc_api.api.lunks_support.docker_service.create_lunks_block",
+        "tc_api.api.luks_support.docker_service.create_luks_block",
         return_value=("/dev/mapper/test-user", "/dev/loop0"),
     ), patch(
-        "tc_api.api.lunks_support.docker_service.commit_and_save_receipt"
+        "tc_api.api.luks_support.docker_service.commit_and_save_receipt"
     ) as commit_receipt, patch(
-        "tc_api.api.lunks_support.docker_service.verify_chain_state"
+        "tc_api.api.luks_support.docker_service.verify_chain_state"
     ) as verify_chain_state, patch(
-        "tc_api.api.lunks_support.docker_service.update_lunks_status"
-    ) as update_lunks_status:
+        "tc_api.api.luks_support.docker_service.update_luks_status"
+    ) as update_luks_status:
         mock_production.return_value.identity_token.return_value = "fake-identity-token"
         with TestClient(app) as client:
             client.app.state.trusted_log = DummyTrustedLog()
-            response = client.post("/api/create_lunks", json=payload)
+            response = client.post("/api/create_luks", json=payload)
 
     assert response.status_code == 200
     assert response.json()["mapper_dir"] == "/dev/mapper/test-user"
@@ -300,10 +299,10 @@ def test_create_lunks_skips_interactive_sigstore_login_when_token_missing():
     assert resolve_token.call_args.kwargs["allow_interactive"] is False
     commit_receipt.assert_not_called()
     verify_chain_state.assert_not_called()
-    update_lunks_status.assert_called_once_with(
+    update_luks_status.assert_called_once_with(
         "test-user",
         "create success",
-        step="create_lunks completed successfully",
+        step="create_luks completed successfully",
         log_id=None,
         transparencyLog_verify="skipped",
     )
@@ -319,7 +318,7 @@ def test_build_package_accepts_missing_app_binary():
 
     fake_ctx = SimpleNamespace(record_id="rec-123")
 
-    with patch("tc_api.trust.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
     ) as mock_production, patch(
         "tc_api.api.workflows.build_container_async",

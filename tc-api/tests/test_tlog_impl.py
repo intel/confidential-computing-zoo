@@ -13,8 +13,8 @@ from cryptography.x509.oid import NameOID
 from sigstore.models import Bundle
 from tlog_rekor.oci_mirror import OciBundleMirror
 from tlog_rekor.adapter import SigstoreLogAdapter
-from tc_api.trust.commit_client import TrustedLogAPI
-from tc_api.trust.verification import _decode_dsse_payload, _extract_signer_identity
+from tc_api.transparency.commit_client import TrustedLogAPI
+from tc_api.transparency.verification import _decode_dsse_payload, _extract_signer_identity
 from tc_api.trucon.owner_authorization import sign_owner_authorization
 
 @pytest.fixture
@@ -759,7 +759,7 @@ def test_verify_record_returns_structured_entry_details():
     second_entry["body"]["spec"]["payload"] = base64.b64encode(json.dumps(second_payload).encode("utf-8")).decode("utf-8")
     api = TrustedLogAPI(immutable_log=StubImmutableLog(entries=[second_entry, first_entry]))
 
-    with patch("tc_api.trust.verification._extract_signer_identity", side_effect=["alice@example.com", "alice@example.com"]):
+    with patch("tc_api.transparency.verification._extract_signer_identity", side_effect=["alice@example.com", "alice@example.com"]):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is True
@@ -841,7 +841,7 @@ def test_verify_record_rejects_unmaterialized_event_log0_baseline():
 def test_verify_record_filters_by_signer_identity():
     api = TrustedLogAPI(immutable_log=StubImmutableLog(entries=[_make_rekor_entry("evt-1"), _make_rekor_entry("evt-2")]))
 
-    with patch("tc_api.trust.verification._extract_signer_identity", side_effect=["alice@example.com", "bob@example.com"]):
+    with patch("tc_api.transparency.verification._extract_signer_identity", side_effect=["alice@example.com", "bob@example.com"]):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is True
@@ -860,7 +860,7 @@ def test_verify_record_filters_out_entries_from_other_chains():
         )
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", side_effect=["alice@example.com", "alice@example.com"]):
+    with patch("tc_api.transparency.verification._extract_signer_identity", side_effect=["alice@example.com", "alice@example.com"]):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default"})
 
     assert result.success is True
@@ -872,7 +872,7 @@ def test_verify_record_filters_out_entries_from_other_chains():
 def test_verify_record_fails_on_expected_entry_count_mismatch():
     api = TrustedLogAPI(immutable_log=StubImmutableLog(entries=[_make_rekor_entry("evt-1")]))
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record(
             "tail-log-id",
             policy={
@@ -904,7 +904,7 @@ def test_verify_record_fails_on_signed_predecessor_mismatch():
     second_entry = _make_rekor_entry("evt-2")
     api = TrustedLogAPI(immutable_log=StubImmutableLog(entries=[second_entry, first_entry]))
 
-    with patch("tc_api.trust.verification._extract_signer_identity", side_effect=["alice@example.com", "alice@example.com"]):
+    with patch("tc_api.transparency.verification._extract_signer_identity", side_effect=["alice@example.com", "alice@example.com"]):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is False
@@ -924,7 +924,7 @@ def test_verify_record_uses_public_candidate_discovery_when_traverse_stops_early
         immutable_log=StubImmutableLog(entries=[second_entry], candidates={lookup_hash: [first_entry]})
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is True
@@ -945,7 +945,7 @@ def test_verify_record_marks_mirror_materialization_provenance():
         immutable_log=StubImmutableLog(entries=[second_entry], candidates={lookup_hash: [first_entry]})
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is True
@@ -1002,7 +1002,7 @@ def test_verify_record_materializes_attestation_storage_predecessor():
         immutable_log=StubImmutableLog(entries=[second_entry], candidates={f"sha256:{predecessor_hash}": [predecessor_entry]})
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is True
@@ -1050,7 +1050,7 @@ def test_verify_record_rejects_invalid_attestation_material_without_fallback():
         immutable_log=StubImmutableLog(entries=[second_entry], candidates={f"sha256:{predecessor_hash}": [invalid_predecessor_entry]})
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is False
@@ -1116,7 +1116,7 @@ def test_verify_record_falls_back_to_mirror_when_attestation_material_is_invalid
         )
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is True
@@ -1155,7 +1155,7 @@ def test_verify_record_fails_on_invalid_owner_authorization():
     )
     api = TrustedLogAPI(immutable_log=StubImmutableLog(entries=[second_entry, first_entry]))
 
-    with patch("tc_api.trust.verification._extract_signer_identity", side_effect=["alice@example.com", "alice@example.com"]):
+    with patch("tc_api.transparency.verification._extract_signer_identity", side_effect=["alice@example.com", "alice@example.com"]):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is False
@@ -1176,7 +1176,7 @@ def test_verify_record_requires_mirror_when_policy_demands_it():
         immutable_log=StubImmutableLog(entries=[second_entry], candidates={lookup_hash: [first_entry]}, require_mirror=True)
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record(
             "tail-log-id",
             policy={"chain_id": "default", "signer_identity": "alice@example.com", "require_mirror": True},
@@ -1197,7 +1197,7 @@ def test_verify_record_reports_decode_failed_when_candidates_cannot_be_normalize
         immutable_log=StubImmutableLog(entries=[second_entry], candidates={"sha256:broken": [first_entry]})
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is False
@@ -1240,7 +1240,7 @@ def test_verify_record_prefers_materialized_candidate_over_public_duplicate_with
         )
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is True
@@ -1262,7 +1262,7 @@ def test_verify_record_reports_ambiguous_when_multiple_candidates_match():
         immutable_log=StubImmutableLog(entries=[second_entry], candidates={lookup_hash: [first_entry, duplicate_entry]})
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
 
     assert result.success is False
@@ -1289,7 +1289,7 @@ def test_verify_record_prefers_mirror_when_public_and_mirror_match_same_predeces
         )
     )
 
-    with patch("tc_api.trust.verification._extract_signer_identity", return_value="alice@example.com"):
+    with patch("tc_api.transparency.verification._extract_signer_identity", return_value="alice@example.com"):
         result = api.verify_record(
             "tail-log-id",
             policy={"chain_id": "default", "signer_identity": "alice@example.com", "require_mirror": True},
@@ -1326,7 +1326,7 @@ def test_verify_record_reports_degraded_boundary_for_legacy_to_reservation_trans
     api = TrustedLogAPI(immutable_log=StubImmutableLog(entries=[signed_entry, legacy_entry, origin_entry]))
 
     with patch(
-        "tc_api.trust.verification._extract_signer_identity",
+        "tc_api.transparency.verification._extract_signer_identity",
         side_effect=["alice@example.com", "alice@example.com", "alice@example.com"],
     ):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})
@@ -1362,7 +1362,7 @@ def test_verify_record_reports_invalid_boundary_for_reservation_to_legacy_regres
     api = TrustedLogAPI(immutable_log=StubImmutableLog(entries=[regressed_entry, signed_entry, origin_entry]))
 
     with patch(
-        "tc_api.trust.verification._extract_signer_identity",
+        "tc_api.transparency.verification._extract_signer_identity",
         side_effect=["alice@example.com", "alice@example.com", "alice@example.com"],
     ):
         result = api.verify_record("tail-log-id", policy={"chain_id": "default", "signer_identity": "alice@example.com"})

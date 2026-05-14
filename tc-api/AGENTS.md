@@ -16,15 +16,16 @@
 - System-level files at repo root: `Dockerfile`, `docker-compose.yml`, `deploy/`, `scripts/dev-up.sh`.
 
 ## Architecture
-- API layer: `src/tc_api/main.py` defines FastAPI endpoints and request flow.
+- API layer: `src/tc_api/api/app.py` defines the FastAPI application and registers routers from `src/tc_api/api/routers/`.
+- HTTP workflow helpers: `src/tc_api/api/workflows.py` contains build/publish/launch request orchestration.
 - Data contracts: `src/tc_api/models.py` contains request/response and status models.
-- Service layer: `src/tc_api/services.py` encapsulates build/publish/launch workflows and external CLI calls.
+- Service layer: `src/tc_api/services/` encapsulates build/publish/launch/LUKS encrypted-VFS workflows and external CLI calls.
 - KBS integration: `src/tc_api/kbs_service.py` wraps key registration/lookup behavior.
 - Trusted-log shared types: `tlog/` is a standalone package (zero deps) with domain types, ABCs, errors, and digest functions.
 - Rekor backend adapter: `tlog-rekor/` is a standalone package with `SigstoreLogAdapter` and `OciBundleMirror`.
 - On-chain backend adapter: `tlog-onchain/` is a scaffold package with `OnChainLogAdapter` stub.
-- Trusted-log client: `src/tc_api/tlog_client.py` wraps DSSE signing and TruCon communication.
-- TruCon service: `src/tc_api/trucon/` contains the sequencer, SQLite queue, and platform adapters.
+- Transparency-log client: `src/tc_api/transparency/commit_client.py` wraps TruCon communication; shared DSSE predicate/statement construction lives in `src/tc_api/transparency/dsse_builder.py`.
+- TruCon service: `src/tc_api/trucon/` contains the sequencer, SQLite queue, schemas/auth helpers, and platform adapters.
 - Docktap sidecar: `src/tc_api/docktap/` is the Docker operation interception proxy (sub-package of tc_api). Entry point: `tc-docktap` CLI or `python -m tc_api.docktap.main`.
 - Runtime config: `src/tc_api/config.py` centralizes environment-driven settings (paths, commands, registry, KBS).
 - Tests: `tests/` contains pytest modules and manual runners (`test_subprocess_unit.py`, `test_tdx_mr_adapter.py`, `test_api.py`, `test_runner.py`, etc.).
@@ -32,7 +33,7 @@
 - Docs: `docs/` contains architecture documentation and trusted-log module docs.
 
 ## Conventions
-- Prefer extending logic in `src/tc_api/services.py` and keep endpoint handlers in `src/tc_api/main.py` focused on orchestration.
+- Prefer extending logic in `src/tc_api/services/` and keep endpoint handlers in `src/tc_api/api/routers/` focused on request/response binding.
 - Persist per-build artifacts under `builds/<build_id>/`; do not scatter output files in repository root.
 - Treat `docker`, `cosign`, `syft`, and `skopeo` as external dependencies; surface clear errors when unavailable.
 - Preserve status progression fields (`status`, `current_step`, `error_message`) when changing workflows.

@@ -12,7 +12,7 @@ The current `TdxMRAdapter` implementation attempts to write hex-encoded checksum
 ## Capabilities
 
 ### New Capabilities
-- `tdx-guest-binary-rtmr`: Direct capability to extend RTMRs via the proprietary Intel TDX Guest class binary sysfs `/sys/class/misc/tdx_guest/measurements/rtmr` nodes.
+- `tdx-guest-binary-rtmr`: Direct capability to extend RTMRs via the proprietary TDX Guest class binary sysfs `/sys/class/misc/tdx_guest/measurements/rtmr` nodes.
 
 ### Modified Capabilities
 - `implement-local-mr-adapter`: The underlying hardware behavior specification must document the required string $\leftrightarrow$ binary translation inside the adapter layer.

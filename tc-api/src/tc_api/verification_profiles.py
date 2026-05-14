@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
+from .transparency.events import EventEntryKey
+
 
 PROFILE_VERIFIED = "verified"
 PROFILE_WARNING = "warning"
@@ -10,6 +12,7 @@ PROFILE_INCOMPLETE = "incomplete"
 PROFILE_FAILED = "failed"
 
 RUNTIME_OPERATION_TYPES = {"pull", "create", "start", "stop", "rm"}
+CONTAINER_RUNTIME_OPERATION_TYPES = {"create", "start", "stop", "rm"}
 KNOWN_RUNTIME_ENGINES = {"docker", "podman"}
 
 
@@ -49,14 +52,6 @@ def _latest_value(predicate_entries: List[Dict[str, Any]], key: str) -> Any:
     return values[-1] if values else None
 
 
-def _collect_field(event_set: List[Dict[str, Any]], key: str) -> Any:
-    for event in reversed(event_set):
-        value = _latest_value(event.get("predicate_entries") or [], key)
-        if value is not None:
-            return value
-    return None
-
-
 def _flatten_event_fields(event_set: List[Dict[str, Any]]) -> Dict[str, Any]:
     flattened: Dict[str, Any] = {}
     for event in event_set:
@@ -93,13 +88,13 @@ def select_latest_launch_event_set(entries: List[Dict[str, Any]]) -> List[Dict[s
         launch_entries,
         key=lambda entry: entry.get("created") or "",
     ) if any(entry.get("created") for entry in launch_entries) else launch_entries[-1]
-    target_launch_id = _latest_value(latest_launch.get("predicate_entries") or [], "launch_id")
+    target_launch_id = _latest_value(latest_launch.get("predicate_entries") or [], EventEntryKey.launch_id.value)
     if not target_launch_id:
         return [latest_launch]
 
     event_set = []
     for entry in ordered_entries:
-        if _latest_value(entry.get("predicate_entries") or [], "launch_id") == target_launch_id:
+        if _latest_value(entry.get("predicate_entries") or [], EventEntryKey.launch_id.value) == target_launch_id:
             event_set.append(entry)
     if not event_set:
         event_set = [latest_launch]
@@ -110,7 +105,7 @@ def _runtime_event_set(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     oldest = _entries_oldest_first(entries)
     runtime_events: List[Dict[str, Any]] = []
     for entry in oldest:
-        operation_type = _latest_value(entry.get("predicate_entries") or [], "operation_type")
+        operation_type = _latest_value(entry.get("predicate_entries") or [], EventEntryKey.operation_type.value)
         if operation_type in RUNTIME_OPERATION_TYPES:
             runtime_events.append(entry)
     return runtime_events
@@ -121,9 +116,7 @@ def _evaluate_runtime_engine_specific(
     event_id: str,
     warnings: List[str],
 ) -> bool:
-    if runtime_engine == "docker":
-        return True
-    if runtime_engine == "podman":
+    if runtime_engine in KNOWN_RUNTIME_ENGINES:
         return True
 
     warnings.append(
@@ -140,15 +133,21 @@ def evaluate_build_profile(entries: List[Dict[str, Any]]) -> ProfileEvaluation:
     fields = _flatten_event_fields(event_set)
     errors = []
     warnings = []
-    for key in ("output_image_digest", "dockerfile_digest", "build_context_digest", "base_image_digests", "build_status"):
+    for key in (
+        EventEntryKey.output_image_digest.value,
+        EventEntryKey.dockerfile_digest.value,
+        EventEntryKey.build_context_digest.value,
+        EventEntryKey.base_image_digests.value,
+        EventEntryKey.build_status.value,
+    ):
         value = fields.get(key)
         if value in (None, "", []):
             errors.append(f"Missing required field: {key}")
 
-    if fields.get("build_status") not in (None, "success"):
-        errors.append(f"Build status is not successful: {fields.get('build_status')}")
+    if fields.get(EventEntryKey.build_status.value) not in (None, "success"):
+        errors.append(f"Build status is not successful: {fields.get(EventEntryKey.build_status.value)}")
 
-    if fields.get("sbom_digest") in (None, ""):
+    if fields.get(EventEntryKey.sbom_digest.value) in (None, ""):
         warnings.append("Missing optional field: sbom_digest")
 
     status = PROFILE_FAILED if errors else (PROFILE_WARNING if warnings else PROFILE_VERIFIED)
@@ -169,13 +168,13 @@ def evaluate_publish_profile(entries: List[Dict[str, Any]]) -> ProfileEvaluation
 
     fields = _flatten_event_fields(event_set)
     errors = []
-    for key in ("pushed_subject_digest", "target_ref", "publish_status"):
+    for key in (EventEntryKey.pushed_subject_digest.value, EventEntryKey.target_ref.value, EventEntryKey.publish_status.value):
         value = fields.get(key)
         if value in (None, ""):
             errors.append(f"Missing required field: {key}")
 
-    if fields.get("publish_status") not in (None, "success"):
-        errors.append(f"Publish status is not successful: {fields.get('publish_status')}")
+    if fields.get(EventEntryKey.publish_status.value) not in (None, "success"):
+        errors.append(f"Publish status is not successful: {fields.get(EventEntryKey.publish_status.value)}")
 
     status = PROFILE_FAILED if errors else PROFILE_VERIFIED
     return ProfileEvaluation(
@@ -193,20 +192,20 @@ def evaluate_launch_profile(entries: List[Dict[str, Any]]) -> ProfileEvaluation:
         return ProfileEvaluation(profile="launch", status=PROFILE_INCOMPLETE, errors=["No launch event found"])
 
     fields = _flatten_event_fields(event_set)
-    target_launch_id = fields.get("launch_id")
-    target_workload_id = fields.get("workload_id")
+    target_launch_id = fields.get(EventEntryKey.launch_id.value)
+    target_workload_id = fields.get(EventEntryKey.workload_id.value)
     errors = []
     warnings = []
     required_fields = (
-        "launch_id",
-        "workload_id",
-        "image_digest",
-        "launch_config_digest",
-        "privileged",
-        "network_mode",
-        "mounts",
-        "devices",
-        "capabilities",
+        EventEntryKey.launch_id.value,
+        EventEntryKey.workload_id.value,
+        EventEntryKey.image_digest.value,
+        EventEntryKey.launch_config_digest.value,
+        EventEntryKey.privileged.value,
+        EventEntryKey.network_mode.value,
+        EventEntryKey.mounts.value,
+        EventEntryKey.devices.value,
+        EventEntryKey.capabilities.value,
     )
     for key in required_fields:
         value = fields.get(key)
@@ -217,16 +216,16 @@ def evaluate_launch_profile(entries: List[Dict[str, Any]]) -> ProfileEvaluation:
     instance_values: List[Any] = []
     for event in event_set:
         event_fields = _flatten_event_fields([event])
-        if event_fields.get("operation_type") in {"create", "start", "stop", "rm"} and event_fields.get("operation_result") == "success":
+        if event_fields.get(EventEntryKey.operation_type.value) in CONTAINER_RUNTIME_OPERATION_TYPES and event_fields.get(EventEntryKey.operation_result.value) == "success":
             successful_container_scope = True
-            instance_values.append(event_fields.get("instance_id") or event_fields.get("container_id"))
+            instance_values.append(event_fields.get(EventEntryKey.instance_id.value) or event_fields.get(EventEntryKey.container_id.value))
     if successful_container_scope and not any(value not in (None, "") for value in instance_values):
         errors.append("Missing required field: instance_id")
 
-    if fields.get("launch_env_keys") in (None, "") and fields.get("launch_env_digest") in (None, ""):
+    if fields.get(EventEntryKey.launch_env_keys.value) in (None, "") and fields.get(EventEntryKey.launch_env_digest.value) in (None, ""):
         warnings.append("Missing optional environment projection metadata")
 
-    launch_result = fields.get("launch_result")
+    launch_result = fields.get(EventEntryKey.launch_result.value)
     if launch_result not in (None, "success"):
         errors.append(f"Launch result is not successful: {launch_result}")
 
@@ -254,20 +253,20 @@ def evaluate_runtime_profile(entries: List[Dict[str, Any]]) -> ProfileEvaluation
     for event in event_set:
         fields = _flatten_event_fields([event])
         event_id = event.get("event_id") or "<unknown>"
-        operation_type = fields.get("operation_type")
-        runtime_engine = fields.get("runtime_engine")
-        if fields.get("operation_result") in (None, ""):
+        operation_type = fields.get(EventEntryKey.operation_type.value)
+        runtime_engine = fields.get(EventEntryKey.runtime_engine.value)
+        if fields.get(EventEntryKey.operation_result.value) in (None, ""):
             errors.append(f"{event_id}: Missing required field: operation_result")
         if runtime_engine in (None, ""):
             errors.append(f"{event_id}: Missing required field: runtime_engine")
-        if operation_type in {"create", "start", "stop", "rm"}:
-            if fields.get("workload_id") in (None, ""):
+        if operation_type in CONTAINER_RUNTIME_OPERATION_TYPES:
+            if fields.get(EventEntryKey.workload_id.value) in (None, ""):
                 errors.append(f"{event_id}: Missing required field: workload_id")
-            if (fields.get("instance_id") or fields.get("container_id")) in (None, ""):
+            if (fields.get(EventEntryKey.instance_id.value) or fields.get(EventEntryKey.container_id.value)) in (None, ""):
                 errors.append(f"{event_id}: Missing required field: instance_id")
-        if operation_type in {"pull", "create"} and not any(fields.get(key) not in (None, "") for key in ("image_digest", "image_name", "image_ref")):
+        if operation_type in {"pull", "create"} and not any(fields.get(key) not in (None, "") for key in (EventEntryKey.image_digest.value, EventEntryKey.image_name.value, EventEntryKey.image_ref.value)):
             errors.append(f"{event_id}: Missing required image identity")
-        if operation_type in {"stop", "rm"} and fields.get("launch_id") in (None, ""):
+        if operation_type in {"stop", "rm"} and fields.get(EventEntryKey.launch_id.value) in (None, ""):
             warnings.append(f"{event_id}: Missing optional launch_id for post-launch runtime event")
         if runtime_engine not in (None, ""):
             if not _evaluate_runtime_engine_specific(str(runtime_engine), event_id, warnings):

@@ -24,7 +24,7 @@ Each task has:
 ### GAP-13: Public Predecessor Replay Links via Two-Phase Intent Reservation
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/tlog_client.py`, `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/trucon/adapters/sigstore.py`, `src/tc_api/tlog_client.py`, `src/tc_api/sigstore_baseline.py`, `tests/`, `docs/`
+- **Scope**: `src/tc_api/transparency/commit_client.py`, `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `tlog-rekor/src/tlog_rekor/adapter.py`, `src/tc_api/identity/sigstore_baseline.py`, `tests/`, `docs/`
 - **References**: archived OpenSpec changes `2026-04-22-reservation-backed-replay-intents` and `2026-04-22-public-predecessor-replay-diagnostics`; architecture.md replay / verification sections; trusted-log verification docs
 - **Dependencies**: GAP-05 ✅, GAP-09 ✅, GAP-10 ✅, GAP-12 ✅
 - **Status**: PARTIALLY COMPLETED
@@ -70,7 +70,7 @@ Each task has:
 #### Task 13.3: Move tc_api commit flow onto reservation-backed signing
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/tlog_client.py`, internal transport helpers
+- **Scope**: `src/tc_api/transparency/commit_client.py`, internal transport helpers
 - **Dependencies**: Task 13.1, Task 13.2
 - **Goal**: Replace the current one-shot `sign -> /commit` path with reservation-backed DSSE signing.
 - **Acceptance Criteria**:
@@ -94,7 +94,7 @@ Each task has:
 #### Task 13.5: Rework immutable replay and TruCon verification around signed predecessor proof
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/tlog_client.py`, `src/tc_api/trucon/adapters/sigstore.py`, `src/tc_api/trucon/app.py`, CLI verify paths
+- **Scope**: `src/tc_api/transparency/commit_client.py`, `tlog-rekor/src/tlog_rekor/adapter.py`, `src/tc_api/trucon/app.py`, CLI verify paths
 - **Dependencies**: Task 13.4
 - **Goal**: Replace `prev_log_id`-based public continuity checks with signed predecessor verification.
 - **Acceptance Criteria**:
@@ -149,7 +149,7 @@ Each task has:
 ### ~~GAP-02: Idempotency Key Enforcement~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/tlog_client.py`
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/transparency/commit_client.py`
 - **References**: architecture.md §4.3 ("Planned: Idempotency key enforcement"), §7
 - **Dependencies**: None
 - **Completed**: 2026-04-16 | Archive: `openspec/changes/archive/2026-04-16-idempotency-key-enforcement/`
@@ -165,7 +165,7 @@ Each task has:
 ### ~~GAP-03: Workload / Instance Mapping Model~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/`, `docktap/trucon_client.py`, `src/tc_api/tlog_client.py`
+- **Scope**: `src/tc_api/trucon/`, `docktap/trucon_client.py`, `src/tc_api/transparency/commit_client.py`
 - **References**: architecture.md §5.2
 - **Dependencies**: GAP-01 ✅, GAP-11 ✅
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-workload-instance-mapping/`
@@ -187,7 +187,7 @@ Each task has:
 ### ~~GAP-04: Observability Metrics~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/tlog/types.py`, `src/tc_api/tlog_client.py`
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `tlog/src/tlog/types.py`, `src/tc_api/transparency/commit_client.py`
 - **References**: architecture.md §8.2
 - **Dependencies**: ~~GAP-02~~ ✅, ~~GAP-06~~ ✅
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-observability-metrics/`
@@ -210,7 +210,7 @@ Each task has:
 ### ~~GAP-05: Event Log 0 (Baseline Record)~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/tlog_client.py`, `src/tc_api/trucon/app.py`, `src/tc_api/trucon/adapters/tdx_mr.py`, `src/tc_api/trucon/adapters/ccel.py`
+- **Scope**: `src/tc_api/transparency/commit_client.py`, `src/tc_api/trucon/app.py`, `src/tc_api/trucon/adapters/tdx_mr.py`, `src/tc_api/trucon/adapters/ccel.py`
 - **References**: trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow
 - **Dependencies**: None (Q-05 resolved)
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-event-log-0-baseline/`
@@ -269,7 +269,7 @@ Each task has:
 ### ~~GAP-08: Feature-Flag Fallback to Legacy Write Path~~ CLOSED (Won't Do)
 
 - **Priority**: ~~MEDIUM~~ — CLOSED
-- **Scope**: `src/tc_api/main.py`, `src/tc_api/config.py`
+- **Scope**: `src/tc_api/api/app.py`, `src/tc_api/api/runtime.py`, `src/tc_api/config.py`
 - **References**: architecture.md §8.1, §11
 - **Dependencies**: None
 - **Closed**: 2026-04-17
@@ -301,7 +301,7 @@ Each task has:
 ### ~~GAP-10: Internal Service Authentication (Phase A — Bearer Token)~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/tlog_client.py`, `docktap/trucon_client.py`, `src/tc_api/config.py`
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/transparency/commit_client.py`, `docktap/trucon_client.py`, `src/tc_api/config.py`
 - **References**: architecture.md §9
 - **Dependencies**: None
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-internal-service-auth/`
@@ -325,7 +325,7 @@ Each task has:
 ### ~~GAP-12: Internal Service Authentication — Phase B (Unix Socket Peer Credentials / Caller Identity)~~ ✅ COMPLETED
 
 - **Priority**: LOW
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/tlog_client.py`, `docktap/trucon_client.py`
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/transparency/commit_client.py`, `docktap/trucon_client.py`
 - **References**: architecture.md §9; GAP-10 design notes
 - **Dependencies**: GAP-10 ✅
 - **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-harden-trucon-internal-auth/`
@@ -365,7 +365,7 @@ Each task has:
 ### ~~GAP-20: Event Log 0 Baseline for Implicit Workload Chains~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/tlog_client.py`, `src/tc_api/trucon/app.py`, `docktap/trucon_client.py`, workload-chain verification/docs
+- **Scope**: `src/tc_api/transparency/commit_client.py`, `src/tc_api/trucon/app.py`, `docktap/trucon_client.py`, workload-chain verification/docs
 - **References**: trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow; architecture.md workload-chain model
 - **Dependencies**: GAP-05 ✅, GAP-11 ✅, GAP-17 ✅
 - **Completed**: 2026-04-20 | Change: `openspec/changes/add-workload-chain-baseline/`
@@ -384,7 +384,7 @@ Each task has:
 ### ~~FIX-01: Digest Algorithm — Two-Level Hashing Not Implemented~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/tlog_client.py`
+- **Scope**: `src/tc_api/transparency/commit_client.py`
 - **References**: trusted-log/architecture.md §Digest Algorithm
 - **Completed**: 2026-04-16 | Archive: `openspec/changes/archive/2026-04-16-two-level-digest-hashing/`
 - **Acceptance Criteria**:
@@ -399,7 +399,7 @@ Each task has:
 ### ~~FIX-02: `GET /status` Response Shape Mismatches `LatestState` / `CommitQueueStatus`~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/tlog_client.py`
+- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/transparency/commit_client.py`
 - **References**: trusted-log/architecture.md §Data Structures
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-status-response-fix/`
 - **Acceptance Criteria**:
@@ -427,14 +427,14 @@ Each task has:
 ### FIX-04: Entry Type Too Narrow for Architecture's Rich Entry Schema — ✅ COMPLETED
 
 - **Priority**: LOW
-- **Scope**: `src/tc_api/tlog/types.py`, `src/tc_api/tlog_client.py`
+- **Scope**: `tlog/src/tlog/types.py`, `src/tc_api/transparency/commit_client.py`
 - **References**: trusted-log/architecture.md §JSON Mock-Up
 - **Completed**: 2026-04-18 | Archive: `openspec/changes/entry-value-native-json/`
 - **Design Decisions** (confirmed 2026-04-18):
   - **Approach**: `Entry.value` widened from `str` to `Any` (JSON-compatible: str, int, float, bool, None, list, dict). The `key`/`value` wire format is retained; rich structured metadata is passed natively as dicts/lists.
   - **Digest stability**: `canonical_json()` (sort_keys=True, compact separators) already handles nested objects deterministically. No digest algorithm change needed.
   - **Docktap unification**: Docktap now imports `Entry` from `tc_api.tlog.types` instead of using raw tuples.
-  - **JSON-in-JSON elimination**: All `json.dumps()` wrappers removed from `add_entry()` call sites in `main.py` and `services.py`. DSSE predicates now contain native JSON values.
+  - **JSON-in-JSON elimination**: All `json.dumps()` wrappers removed from `add_entry()` call sites in `api/workflows.py` and `services/`. DSSE predicates now contain native JSON values.
   - **Typo fix**: `"verfiy_sbom_status"` → `"verify_sbom_status"` bundled with this change.
 
 ---
@@ -467,7 +467,7 @@ Each task has:
 ### ~~GAP-14: Chain Verification CLI Tool~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/cli/verify.py`, `src/tc_api/tlog_client.py`, package metadata, verification docs
+- **Scope**: `src/tc_api/cli/verify.py`, `src/tc_api/transparency/commit_client.py`, package metadata, verification docs
 - **References**: trusted-log/architecture.md §Verification Plane; trusted-log/api.md `verify_record()`; architecture.md §6.3
 - **Dependencies**: None
 - **Completed**: 2026-04-18 | Archive: `openspec/changes/archive/2026-04-18-add-chain-verification-cli/`

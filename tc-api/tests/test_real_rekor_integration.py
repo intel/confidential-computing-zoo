@@ -16,8 +16,8 @@ import tc_api.identity.sigstore_baseline as sigstore_baseline_mod
 from tc_api.identity.sigstore_baseline import build_baseline_sigstore_bundle
 from tlog.types import Entry
 from tlog.local_mr import LocalMRAdapter
-import tc_api.trust.verification as tlog_client_mod
-from tc_api.trust.commit_client import TrustedLogAPI
+import tc_api.transparency.verification as tlog_client_mod
+from tc_api.transparency.commit_client import TrustedLogAPI
 from tlog_rekor.adapter import SigstoreLogAdapter
 from tlog_rekor.oci_mirror import OciBundleMirror
 from tc_api.trucon.database import init_db
@@ -259,7 +259,7 @@ def test_public_rekor_round_trip_smoke(real_rekor_runtime, real_rekor_trucon_har
         }
 
     with patch.object(tlog, "_post_to_trucon", side_effect=_capture_post_to_trucon), \
-         patch("tc_api.trust.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
+         patch("tc_api.transparency.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
         commit_result = tlog.commit_record(
             ctx.record_id,
             event_type="launch",
@@ -329,7 +329,7 @@ def test_public_rekor_intoto_round_trip_materializes_attestation_payload(real_re
         }
 
     with patch.object(tlog, "_post_to_trucon", side_effect=_capture_post_to_trucon), \
-         patch("tc_api.trust.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
+         patch("tc_api.transparency.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
         commit_result = tlog.commit_record(
             ctx.record_id,
             event_type="launch",
@@ -418,7 +418,7 @@ def test_public_rekor_init_chain_submit_verify_baseline_smoke(real_rekor_runtime
     trucon_app_mod._immutable_log = adapter
 
     tlog = TrustedLogAPI(immutable_log=adapter)
-    with patch("tc_api.trust.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
+    with patch("tc_api.transparency.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
         init_result = tlog.init_chain(chain_id)
 
     assert init_result is not None
@@ -469,7 +469,7 @@ def test_public_rekor_lazy_workload_baseline_smoke(real_rekor_runtime, real_reko
     tlog.add_entry(ctx.record_id, Entry(key="operation_result", value="success"))
     tlog.add_entry(ctx.record_id, Entry(key="timestamp_hint", value=datetime.now(timezone.utc).isoformat()))
 
-    with patch("tc_api.trust.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
+    with patch("tc_api.transparency.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
         commit_result = tlog.commit_record(
             ctx.record_id,
             event_type="launch",
@@ -535,7 +535,7 @@ def test_public_rekor_multi_entry_predecessor_proof_reports_public_replay_limit(
     tlog.add_entry(ctx.record_id, Entry(key="operation_result", value="success"))
     tlog.add_entry(ctx.record_id, Entry(key="timestamp_hint", value=datetime.now(timezone.utc).isoformat()))
 
-    with patch("tc_api.trust.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
+    with patch("tc_api.transparency.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
         commit_result = tlog.commit_record(
             ctx.record_id,
             event_type="launch",
@@ -591,7 +591,7 @@ def test_public_rekor_intoto_multi_entry_predecessor_proof_without_mirror(real_r
     tlog.add_entry(ctx.record_id, Entry(key="operation_result", value="success"))
     tlog.add_entry(ctx.record_id, Entry(key="timestamp_hint", value=datetime.now(timezone.utc).isoformat()))
 
-    with patch("tc_api.trust.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
+    with patch("tc_api.transparency.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
         commit_result = tlog.commit_record(
             ctx.record_id,
             event_type="launch",
@@ -655,7 +655,7 @@ def test_public_rekor_multi_chain_replay_keeps_chain_histories_isolated(real_rek
         tlog.add_entry(ctx.record_id, Entry(key="operation_result", value="success"))
         tlog.add_entry(ctx.record_id, Entry(key="chain_marker", value=chain_id))
 
-        with patch("tc_api.trust.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
+        with patch("tc_api.transparency.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
             commit_result = tlog.commit_record(
                 ctx.record_id,
                 event_type="launch",
@@ -730,7 +730,7 @@ def test_public_rekor_real_oci_multi_chain_verify_smoke(
             tlog.add_entry(ctx.record_id, Entry(key="operation_result", value="success"))
             tlog.add_entry(ctx.record_id, Entry(key="chain_marker", value=chain_id))
 
-            with patch("tc_api.trust.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
+            with patch("tc_api.transparency.commit_client.request_json", side_effect=_request_json_via_testclient(client)):
                 commit_result = tlog.commit_record(
                     ctx.record_id,
                     event_type="launch",

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch
 
-from tc_api.trust.commit_client import TrustedLogAPI
+from tc_api.transparency.commit_client import TrustedLogAPI
 
 
 class _ImmutableLog:
@@ -33,14 +33,14 @@ def test_init_chain_uses_active_identity_token_for_baseline_signing():
 
     tlog = TrustedLogAPI(immutable_log=_ImmutableLog())
 
-    with patch("tc_api.trust.commit_client.request_json", side_effect=fake_request_json), \
+    with patch("tc_api.transparency.commit_client.request_json", side_effect=fake_request_json), \
          patch.object(tlog, "_reserve_commit_intent", return_value={
              "intent_token": "intent-123",
              "sequence_num": 1,
              "prev_event_digest": None,
              "prev_lookup_hash": None,
          }), \
-         patch("tc_api.trust.commit_client.build_baseline_sigstore_bundle", side_effect=fake_build_baseline_sigstore_bundle):
+         patch("tc_api.transparency.commit_client.build_baseline_sigstore_bundle", side_effect=fake_build_baseline_sigstore_bundle):
         result = tlog.init_chain("tc-api-service", identity_token_str="active-token-123")
 
     assert result == {"record_id": "rec-123", "sequence_num": 1}
@@ -64,7 +64,7 @@ def test_init_chain_raises_when_baseline_bundle_cannot_be_built():
 
     tlog = TrustedLogAPI(immutable_log=_ImmutableLog())
 
-    with patch("tc_api.trust.commit_client.request_json", side_effect=fake_request_json), \
+    with patch("tc_api.transparency.commit_client.request_json", side_effect=fake_request_json), \
          patch.object(tlog, "_reserve_commit_intent", return_value={
              "intent_token": "intent-123",
              "sequence_num": 1,
@@ -72,7 +72,7 @@ def test_init_chain_raises_when_baseline_bundle_cannot_be_built():
              "prev_lookup_hash": None,
          }), \
          patch(
-             "tc_api.trust.commit_client.build_baseline_sigstore_bundle",
+             "tc_api.transparency.commit_client.build_baseline_sigstore_bundle",
              side_effect=RuntimeError("missing token"),
          ):
         with pytest.raises(RuntimeError, match="Failed to build baseline Sigstore bundle"):

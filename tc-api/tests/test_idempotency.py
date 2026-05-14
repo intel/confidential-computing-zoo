@@ -27,7 +27,7 @@ from tc_api.trucon.database import (
     get_pending_records,
     update_status,
 )
-from tc_api.trust.commit_client import TrustedLogAPI
+from tc_api.transparency.commit_client import TrustedLogAPI
 from tlog.local_mr import LocalMRAdapter
 
 
@@ -328,8 +328,8 @@ class TestClientIdempotencyKeyGeneration:
 
         with patch.object(TrustedLogAPI, '_reserve_commit_intent', mock_reserve), \
              patch.object(TrustedLogAPI, '_post_to_trucon', mock_post), \
-             patch('tc_api.trust.commit_client.build_signing_context') as mock_build_ctx, \
-             patch('tc_api.trust.commit_client.IdentityToken') as mock_id_token:
+             patch('tc_api.transparency.commit_client.build_signing_context') as mock_build_ctx, \
+             patch('tc_api.transparency.commit_client.IdentityToken') as mock_id_token:
             mock_id_token.return_value = MagicMock(_identity="tester@example.com")
             mock_signer = MagicMock()
             mock_bundle = MagicMock()
@@ -378,8 +378,8 @@ class TestClientIdempotencyKeyGeneration:
 
         with patch.object(TrustedLogAPI, '_reserve_commit_intent', mock_reserve), \
              patch.object(TrustedLogAPI, '_post_to_trucon', mock_post), \
-             patch('tc_api.trust.commit_client.build_signing_context') as mock_build_ctx, \
-             patch('tc_api.trust.commit_client.IdentityToken') as mock_id_token:
+             patch('tc_api.transparency.commit_client.build_signing_context') as mock_build_ctx, \
+             patch('tc_api.transparency.commit_client.IdentityToken') as mock_id_token:
             mock_id_token.return_value = MagicMock(_identity="tester@example.com")
             mock_signer = MagicMock()
             mock_bundle = MagicMock()

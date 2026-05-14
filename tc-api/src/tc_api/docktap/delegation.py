@@ -1,5 +1,4 @@
 """Delegation event predicate builder and helpers."""
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -10,11 +9,7 @@ from tlog.digest import (
 )
 from ..trucon.owner_authorization import sign_owner_authorization
 from ..identity.sigstore_baseline import get_chain_owner_private_key
-
-
-DOCKTAP_DELEGATION_TTL_SECONDS = int(
-    os.environ.get("DOCKTAP_DELEGATION_TTL_SECONDS", "14400")  # 4 hours
-)
+from .config import DELEGATION_TTL_SECONDS as DOCKTAP_DELEGATION_TTL_SECONDS
 
 DEFAULT_SCOPE = ["pull", "create", "start", "stop", "rm"]
 

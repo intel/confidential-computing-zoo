@@ -14,12 +14,11 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 from sigstore.sign import SigningContext
 from sigstore.oidc import IdentityToken
-from sigstore.dsse import StatementBuilder, Subject
 from sigstore.models import Bundle
 
 from ..identity.sigstore_baseline import build_baseline_sigstore_bundle, build_signing_context
 from ..identity.sigstore_baseline import get_chain_owner_private_key
-from ..trucon.owner_authorization import sign_owner_authorization, verify_owner_authorization
+from ..trucon.owner_authorization import verify_owner_authorization
 from tlog.types import (
     RecordContext, Entry, Record, EventLog, CommitResult,
     CommitQueueStatus, LatestState, VerificationResult, SubmitStatus
@@ -27,8 +26,10 @@ from tlog.types import (
 from tlog.errors import RecordNotFoundError, BackendSubmitError, VerificationError
 from ..trucon.database import get_chain_state
 from ..trucon.internal_transport import request_json
+from .trucon_submitter import post_commit_to_trucon, reserve_commit_intent
 
-from tlog.digest import canonical_json, compute_entry_digest, compute_event_digest
+from tlog.digest import canonical_json
+from .dsse_builder import attach_commit_context, build_event_predicate, build_statement
 
 logger = logging.getLogger(__name__)
 
@@ -140,53 +141,21 @@ class TrustedLogAPI:
             pub_key=None
         )
 
-        # In-Toto payload formatting — prev_log_id EXCLUDED from signed predicate
-        # Two-level digest: per-entry digests first, then event digest over metadata + entry digests
-        entry_digests = [compute_entry_digest(e.key, e.value) for e in entries]
         created_iso = event_log.created.isoformat()
-        event_digest = compute_event_digest(event_log.event_id, event_log.event_type, created_iso, entry_digests)
+        predicate_payload, event_digest = build_event_predicate(entries, event_id=event_log.event_id, event_type=event_log.event_type, created_iso=created_iso)
         event_log.digest = event_digest
 
-        predicate_payload = {
-            "event_id": event_log.event_id,
-            "event_type": event_log.event_type,
-            "created": created_iso,
-            "entries": [{"key": e.key, "value": e.value} for e in entries],
-            "entry_digests": entry_digests,
-            "digest": event_digest,
-            "chain_id": chain_id,
-            "sequence_num": reservation["sequence_num"],
-            "prev_event_digest": reservation.get("prev_event_digest"),
-            "prev_lookup_hash": reservation.get("prev_lookup_hash"),
-        }
-
         owner_private_key = get_chain_owner_private_key(chain_id)
-        owner_authorization = None
-        if owner_private_key is not None:
-            owner_authorization = sign_owner_authorization(
-                private_key=owner_private_key,
-                chain_id=chain_id,
-                sequence_num=reservation["sequence_num"],
-                prev_event_digest=reservation.get("prev_event_digest"),
-                prev_lookup_hash=reservation.get("prev_lookup_hash"),
-                event_digest=event_digest,
-            )
-            predicate_payload["owner_authorization"] = owner_authorization
+        owner_authorization = attach_commit_context(
+            predicate_payload,
+            chain_id=chain_id,
+            reservation=reservation,
+            event_digest=event_digest,
+            owner_private_key=owner_private_key,
+        )
         
         identity_token = IdentityToken(identity_token_str)
-
-        # Construct DSSE Statement — subject uses chain_id format
-        subject = Subject(
-            name=f"trusted-log-chain_{chain_id}",
-            digest={"sha384": event_digest.split(":")[1]}
-        )
-        statement = (
-            StatementBuilder()
-            .subjects([subject])
-            .predicate_type("https://trusted-log.dev/v1")
-            .predicate(predicate_payload)
-            .build()
-        )
+        statement = build_statement(chain_id, event_digest, predicate_payload)
 
         # Sign with Sigstore (Offline Mode)
         rekor_url = getattr(self.immutable_log, "rekor_url", None)
@@ -349,18 +318,12 @@ class TrustedLogAPI:
         idempotency_key: Optional[str] = None,
         is_baseline: bool = False,
     ) -> Dict[str, Any]:
-        payload = {
-            "chain_id": chain_id,
-            "idempotency_key": idempotency_key,
-            "is_baseline": is_baseline,
-        }
-        return request_json(
-            "POST",
-            "/commit-intents/reserve",
-            json_body=payload,
-            caller_service="tc_api",
-            timeout=30,
+        return reserve_commit_intent(
             trucon_url=self._trucon_url,
+            caller_service="tc_api",
+            chain_id=chain_id,
+            idempotency_key=idempotency_key,
+            is_baseline=is_baseline,
         )
 
     def _post_to_trucon(self, bundle_json: str, chain_id: str,
@@ -371,25 +334,19 @@ class TrustedLogAPI:
                             identity_token: Optional[str] = None,
                             owner_authorization: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """POST the signed bundle to TruCon /commit endpoint."""
-        payload = {
-            "bundle": bundle_json,
-            "chain_id": chain_id,
-            "event_digest": event_digest,
-            "event_id": event_id,
-            "intent_token": intent_token,
-            "idempotency_key": idempotency_key,
-            "instance_id": instance_id,
-            "identity_token": identity_token,
-            "owner_authorization": owner_authorization,
-        }
         try:
-            return request_json(
-                "POST",
-                "/commit",
-                json_body=payload,
-                caller_service="tc_api",
-                timeout=30,
+            return post_commit_to_trucon(
                 trucon_url=self._trucon_url,
+                caller_service="tc_api",
+                bundle_json=bundle_json,
+                chain_id=chain_id,
+                event_digest=event_digest,
+                event_id=event_id,
+                intent_token=intent_token,
+                idempotency_key=idempotency_key,
+                instance_id=instance_id,
+                identity_token=identity_token,
+                owner_authorization=owner_authorization,
             )
         except urllib.error.URLError as e:
             logger.error("TruCon unavailable via internal transport: %s", e)

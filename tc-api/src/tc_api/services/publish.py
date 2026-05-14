@@ -1,4 +1,22 @@
-from ._shared import *
+import json
+import logging
+import os
+import subprocess
+import time
+from datetime import datetime
+from typing import Optional, Tuple
+
+from ..config import (
+    COSIGN_CMD,
+    SKOPEO_CMD,
+)
+from ..models import PublishResult
+from ..transparency.commit_client import TrustedLogAPI
+from ..transparency.events import publish_identity_entries
+from ..utils.registry import canonical_registry_ref
+from tlog.types import Entry
+
+logger = logging.getLogger(__name__)
 
 
 class PublishServiceMixin:
@@ -32,11 +50,7 @@ class PublishServiceMixin:
                 return False, None
             
             # Sign the same canonical registry ref that launch verification will later check.
-            base_name = image_name.split("/")[-1] + ":latest-encrypted"
-            if DOCKER_REPOSITORY.startswith(("localhost:", "127.0.0.1:")):
-                full_image_ref = f"{DOCKER_REPOSITORY}/{base_name}"
-            else:
-                full_image_ref = f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{base_name}"
+            full_image_ref = canonical_registry_ref(image_name)
             
             logger.info(f"Constructed full image reference: {full_image_ref}")
             
@@ -183,11 +197,7 @@ class PublishServiceMixin:
 
                 return False, None
             
-            base_name = image_name.split("/")[-1] + ":latest-encrypted"
-            if DOCKER_REPOSITORY.startswith(("localhost:", "127.0.0.1:")):
-                full_image_ref = f"{DOCKER_REPOSITORY}/{base_name}"
-            else:
-                full_image_ref = f"{DOCKER_REGISTRY}/{DOCKER_REPOSITORY}/{base_name}"
+            full_image_ref = canonical_registry_ref(image_name)
             
             logger.info(f"Constructed full image reference: {full_image_ref}")
             
@@ -369,9 +379,15 @@ class PublishServiceMixin:
                         "status": "success"
                     }
                     tlog.add_entry(record_id, Entry(key="image_push", value=push_log))
-                    tlog.add_entry(record_id, Entry(key="pushed_subject_digest", value=self._resolve_image_digest(source_ref.replace("oci:", "").replace("docker-daemon:", ""))))
-                    tlog.add_entry(record_id, Entry(key="target_ref", value=dest_ref))
-                    tlog.add_entry(record_id, Entry(key="publish_status", value="success"))
+                    self.add_tlog_entries(
+                        tlog,
+                        record_id,
+                        publish_identity_entries(
+                            pushed_subject_digest=self._resolve_image_digest(source_ref.replace("oci:", "").replace("docker-daemon:", "")),
+                            target_ref=dest_ref,
+                            publish_status="success",
+                        ),
+                    )
 
                     return True
                 else:
@@ -401,8 +417,15 @@ class PublishServiceMixin:
                             }
                         }
                         tlog.add_entry(record_id, Entry(key="image_push", value=push_log))
-                        tlog.add_entry(record_id, Entry(key="target_ref", value=dest_ref))
-                        tlog.add_entry(record_id, Entry(key="publish_status", value="failed"))
+                        self.add_tlog_entries(
+                            tlog,
+                            record_id,
+                            publish_identity_entries(
+                                pushed_subject_digest=None,
+                                target_ref=dest_ref,
+                                publish_status="failed",
+                            ),
+                        )
 
                         return False
                 
@@ -461,12 +484,12 @@ class PublishServiceMixin:
     def get_publish_status(self, build_id: str) -> Optional[PublishResult]:
         """Get publish status by publish_id"""
         publishID = "pub-" + build_id.split("-")[-1]
-        return self.publishs.get(publishID)
+        return self.publish_results.get(publishID)
 
     def update_publish_status(self,user_id: str, build_id: str, status: str, publish_id: str, step: str = None, **kwargs):
         try:
-            if publish_id in self.publishs:
-                publish_result = self.publishs[publish_id]
+            if publish_id in self.publish_results:
+                publish_result = self.publish_results[publish_id]
                 old_status = publish_result.status
                 publish_result.status = status
                 publish_result.updated_at = datetime.now()
@@ -496,7 +519,7 @@ class PublishServiceMixin:
             else:
                 # Create new build result
                 logger.info(f"Creating new publish status for {publish_id}: {status}")
-                self.publishs[publish_id] = PublishResult(
+                self.publish_results[publish_id] = PublishResult(
                     user_id=user_id,
                     publish_id=publish_id,
                     build_id=build_id,
