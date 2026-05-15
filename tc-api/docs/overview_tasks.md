@@ -130,15 +130,15 @@ Each task has:
 - **Dependencies**: None
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-docktap-trucon-emission/`
 - **Design Decisions** (confirmed 2026-04-17):
-  - **Signing identity**: Docktap shares tc_api's signing infrastructure — uses the same `sigstore.oidc.detect_credential()` ambient OIDC mechanism. Token re-acquired on each commit (no caching).
+  - **Signing identity**: The original implementation shared tc_api's ambient OIDC / Sigstore path. Current runtime authorization has since evolved: Docktap now defaults to explicit delegation for runtime operations, while `delegation_disabled` preserves the stricter token-per-operation posture.
   - **Event granularity**: Each Docker operation = one independent TruCon commit. Uses `Entry(key, value)` objects with native JSON values (FIX-04 completed: `value: Any`).
   - **Chain assignment**: v1 uses `"default"` chain_id. Per-workload chain_id assignment deferred to GAP-11.
   - **Failure handling**: Synchronous + best-effort — TruCon failure logs a warning but does NOT block the Docker response back to CLI.
   - **Cross-source ordering**: REST and Docktap events on the same chain get serialized `sequence_num` ordering via TruCon's lock. No additional causal ordering enforcement.
   - **Submitted operation types**: `pull`, `create`, `start`, `stop`, `rm` only. Other operations (`wait`, `rmi`, `image_inspect`, `inspect`, `preflight_ping`, `preflight_info`, `unknown`) are not submitted.
-  - **OIDC token**: Re-acquire each time via same ambient credential source as tc_api. No token caching in Docktap.
+  - **Current auth model note**: Runtime operations now default to `DOCKTAP_AUTH_MODE=explicit_delegation`; operators normally create one `session.delegation` event on `docktap-runtime` and later owner-key-signed runtime events reference that grant through `delegation_id`.
 - **Acceptance Criteria**:
-  1. ✅ Docktap submits `pull`/`create`/`start`/`stop`/`rm` events to TruCon `POST /commit` as signed DSSE bundles using shared OIDC signing.
+  1. ✅ Docktap submits `pull`/`create`/`start`/`stop`/`rm` events to TruCon `POST /commit` as signed DSSE bundles. Current builds support both the explicit-delegation owner-key path and the stricter OIDC-only override path.
   2. ✅ Best-effort submission: TruCon failures log a warning and do not block the Docker API response.
   3. ✅ Integration tests for concurrent event submissions from Docktap and REST workers verifying `sequence_num` ordering.
 - **Tests**: `docktap/tests/test_trucon_client.py` (25 tests), `docktap/tests/test_docktap_integration.py` (3 tests); 129 total regression pass

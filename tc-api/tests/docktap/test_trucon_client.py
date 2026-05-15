@@ -45,6 +45,11 @@ def _mock_signing_context(bundle_json='{"fake": "bundle"}'):
     return mock_signing_context, mock_signer
 
 
+@pytest.fixture(autouse=True)
+def _token_based_auth_mode(monkeypatch):
+    monkeypatch.setenv("DOCKTAP_AUTH_MODE", "delegation_disabled")
+
+
 # ---------------------------------------------------------------------------
 # 3.1  Entry mapping per operation type
 # ---------------------------------------------------------------------------
@@ -468,6 +473,28 @@ class TestRetryAndAcknowledgement:
         assert len(snapshot) == 1
         assert snapshot[0]["status"] == "acknowledged"
         assert snapshot[0]["record_id"] == "rec-1"
+
+    def test_async_terminal_failure_expires_reserved_intent(self):
+        committer = self._make_committer()
+        rec = _make_record(operation={"type": "pull"}, image={"name": "busybox", "tag": "latest"})
+
+        with patch.object(committer, "_ensure_chain_initialized", return_value=None), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 1, "prev_event_digest": None, "prev_lookup_hash": None}), \
+             patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
+             patch("tc_api.docktap.trucon_client.get_chain_owner_private_key"), \
+             patch("tc_api.docktap.trucon_client.attach_commit_context", return_value={"algorithm": "ecdsa-p384-sha384"}), \
+             patch("tc_api.docktap.trucon_client.build_statement_json", return_value='{"predicate":{}}'), \
+             patch("tc_api.docktap.trucon_client.IdentityToken", side_effect=ValueError("Identity token is malformed or missing claims")), \
+             patch.object(committer, "_expire_intent") as expire_intent:
+
+            committer.enqueue_operation(rec, "pull")
+            committer.process_retry_queue(now=time.monotonic())
+
+        snapshot = committer.get_retry_snapshot()
+        assert len(snapshot) == 1
+        assert snapshot[0]["status"] == "failed_terminal"
+        assert snapshot[0]["last_error"] == "Identity token is malformed or missing claims"
+        expire_intent.assert_called_once_with("intent-1")
 
     def test_retry_reuses_same_idempotency_key(self):
         committer = self._make_committer()

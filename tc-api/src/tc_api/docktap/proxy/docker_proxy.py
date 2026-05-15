@@ -17,6 +17,7 @@ from .operation_log import (
     is_streaming_endpoint,
 )
 from .runtime_adapter import DEFAULT_RUNTIME_ENGINE, DockerRuntimeAdapter
+from .. import config as _cfg
 from ..trucon_client import SUBMITTABLE_OPERATIONS, has_reusable_identity_token, has_active_delegation
 
 
@@ -33,9 +34,6 @@ LAUNCH_LABEL = "io.trucon.launch-id"
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-DEFAULT_LIFECYCLE_GRANT_TTL_SECONDS = 120
-
 
 class DockerProxyServer:
     """Unix socket proxy server that intercepts Docker CLI operations"""
@@ -56,8 +54,6 @@ class DockerProxyServer:
         self.tracker = OperationTracker()
         self._trucon_committer = trucon_committer
         self._runtime_adapter = DockerRuntimeAdapter(runtime_engine=runtime_engine)
-        self._lifecycle_grants: Dict[str, float] = {}
-        self._lifecycle_grant_lock = threading.Lock()
 
     def set_log_callback(self, callback):
         """Set callback function for logging operations"""
@@ -307,75 +303,15 @@ class DockerProxyServer:
         return response.encode('utf-8')
 
     def _attestation_gate_enabled(self) -> bool:
-        from ..config import REQUIRE_ATTESTATION
-        return REQUIRE_ATTESTATION
+        return _cfg.require_attestation()
 
     @staticmethod
-    def _lifecycle_grant_ttl_seconds() -> int:
-        from ..config import LIFECYCLE_GRANT_TTL_SECONDS
-        raw_value = LIFECYCLE_GRANT_TTL_SECONDS
-        if not raw_value:
-            return DEFAULT_LIFECYCLE_GRANT_TTL_SECONDS
-        try:
-            return max(0, int(raw_value))
-        except ValueError:
-            return DEFAULT_LIFECYCLE_GRANT_TTL_SECONDS
+    def _delegation_required() -> bool:
+        return _cfg.delegation_required()
 
-    def _cleanup_expired_lifecycle_grants(self) -> None:
-        now = time.monotonic()
-        with self._lifecycle_grant_lock:
-            expired = [key for key, expiry in self._lifecycle_grants.items() if expiry <= now]
-            for key in expired:
-                self._lifecycle_grants.pop(key, None)
-
-    def _grant_lifecycle_session(self, container_id: Optional[str], container_name: Optional[str] = None) -> None:
-        ttl_seconds = self._lifecycle_grant_ttl_seconds()
-        if ttl_seconds <= 0:
-            return
-
-        expiry = time.monotonic() + ttl_seconds
-        with self._lifecycle_grant_lock:
-            if container_id:
-                self._lifecycle_grants[container_id] = expiry
-            if container_name:
-                self._lifecycle_grants[container_name] = expiry
-
-    def _resolve_lifecycle_grant(self, container_ref: Optional[str]) -> Optional[str]:
-        if not container_ref:
-            return None
-
-        self._cleanup_expired_lifecycle_grants()
-        with self._lifecycle_grant_lock:
-            if container_ref in self._lifecycle_grants:
-                return container_ref
-            for granted_ref in self._lifecycle_grants:
-                if granted_ref.startswith(container_ref) or container_ref.startswith(granted_ref):
-                    return granted_ref
-        return None
-
-    def _consume_lifecycle_grant(self, container_ref: Optional[str]) -> bool:
-        granted_ref = self._resolve_lifecycle_grant(container_ref)
-        if not granted_ref:
-            return False
-
-        ttl_seconds = self._lifecycle_grant_ttl_seconds()
-        if ttl_seconds > 0:
-            with self._lifecycle_grant_lock:
-                if granted_ref in self._lifecycle_grants:
-                    self._lifecycle_grants[granted_ref] = time.monotonic() + ttl_seconds
-        return True
-
-    def _revoke_lifecycle_grant(self, *container_refs: Optional[str]) -> None:
-        refs = [ref for ref in container_refs if ref]
-        if not refs:
-            return
-
-        with self._lifecycle_grant_lock:
-            for container_ref in refs:
-                self._lifecycle_grants.pop(container_ref, None)
-                for granted_ref in list(self._lifecycle_grants.keys()):
-                    if granted_ref.startswith(container_ref) or container_ref.startswith(granted_ref):
-                        self._lifecycle_grants.pop(granted_ref, None)
+    @staticmethod
+    def _delegation_enabled() -> bool:
+        return _cfg.delegation_enabled()
 
     @staticmethod
     def _absolute_url(base_url: str, path: str) -> str:
@@ -388,38 +324,61 @@ class DockerProxyServer:
             f"--base-url {api_base_url} --sigstore-login oob sigstore-token --format json"
         )
 
-    def _create_attestation_required_response(self, operation_type: str, session_id: str) -> bytes:
-        from ..config import ATTESTATION_API_URL, ATTESTATION_BROWSER_BASE_URL
-        api_base_url = ATTESTATION_API_URL
-        browser_base_url = ATTESTATION_BROWSER_BASE_URL
+    def _create_auth_required_response(self, operation_type: str, session_id: str) -> bytes:
+        api_base_url = _cfg.ATTESTATION_API_URL
+        browser_base_url = _cfg.ATTESTATION_BROWSER_BASE_URL
         interactive_login_path = f"/api/sigstore/interactive-login?{urlencode({'operation': 'docktap', 'session_id': session_id})}"
         login_status_path = f"/api/sigstore/login-status/{session_id}"
+        delegate_path = "/api/docktap/delegate"
         interactive_login_url = self._absolute_url(browser_base_url, interactive_login_path)
         login_status_url = self._absolute_url(api_base_url, login_status_path)
+        delegate_url = self._absolute_url(api_base_url, delegate_path)
         oob_login_command = self._sigstore_oob_login_command(api_base_url)
+        delegate_command = (
+            "curl -X POST "
+            f"{delegate_url} "
+            "-H 'Content-Type: application/json' "
+            f"-d '{{\"chain_id\": \"{_cfg.RUNTIME_CHAIN_ID}\"}}'"
+        )
         install_hint = (
             "If tc-client is unavailable, from the tc_api repo root run: bash setup.sh, "
             f"then run ./venv/bin/tc-client --base-url {api_base_url} --sigstore-login oob sigstore-token --format json"
         )
+        if self._delegation_required():
+            message = (
+                f"Active Docktap delegation required before docker {operation_type}.\n"
+                f"Browser login: {interactive_login_url}\n"
+                f"Remote login command: {oob_login_command}\n"
+                f"Create delegation: {delegate_command}\n"
+                f"{install_hint}\n"
+                "Then retry."
+            )
+        else:
+            message = (
+                f"Attested Docker login required before docker {operation_type}.\n"
+                f"Browser login: {interactive_login_url}\n"
+                f"Remote login command: {oob_login_command}\n"
+                f"{install_hint}\n"
+                "Then retry."
+            )
         body = json.dumps(
             {
-                "message": (
-                    f"Attested Docker login required before docker {operation_type}.\n"
-                    f"Browser login: {interactive_login_url}\n"
-                    f"Remote login command: {oob_login_command}\n"
-                    f"{install_hint}\n"
-                    "Then retry."
-                ),
+                "message": message,
                 "detail": {
+                    "auth_mode": _cfg.auth_mode(),
                     "interactive_login_url": interactive_login_url,
                     "interactive_continue_url": interactive_login_url,
                     "login_status_url": login_status_url,
                     "oob_login_command": oob_login_command,
                     "oob_login_install_hint": install_hint,
+                    "delegate_url": delegate_url,
+                    "delegate_command": delegate_command,
                     "remediation": {
                         "browser_login_url": interactive_login_url,
                         "remote_login_command": oob_login_command,
                         "remote_login_install_hint": install_hint,
+                        "delegate_url": delegate_url,
+                        "delegate_command": delegate_command,
                     },
                     "session_id": session_id,
                 },
@@ -537,17 +496,16 @@ class DockerProxyServer:
                         log_data['tag'] = params['tag']
                     self._log_callback(log_data)
 
-                if operation in SUBMITTABLE_OPERATIONS and self._attestation_gate_enabled() and not has_reusable_identity_token() and not has_active_delegation():
-                    container_ref = None
-                    if operation in {"start", "stop", "rm"}:
-                        container_ref = op_record.container.get("id") or container_name
-
-                    if not (operation in {"start", "stop", "rm"} and self._consume_lifecycle_grant(container_ref)):
-                        response = self._create_attestation_required_response(operation, session_id)
+                if operation in SUBMITTABLE_OPERATIONS and self._attestation_gate_enabled():
+                    delegation_ok = self._delegation_enabled() and has_active_delegation()
+                    token_ok = has_reusable_identity_token()
+                    if (self._delegation_required() and not delegation_ok) or (
+                        not self._delegation_required() and not token_ok
+                    ):
+                        response = self._create_auth_required_response(operation, session_id)
                         client_socket.sendall(response)
-                        logger.info("Blocked docker %s until attestation login completes", operation)
+                        logger.info("Blocked docker %s until required Docktap authorization becomes available", operation)
                         break
-                    logger.info("Allowed docker %s using lifecycle session grant for container=%s", operation, container_ref)
 
                 docker_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 docker_sock.settimeout(30)
@@ -603,14 +561,6 @@ class DockerProxyServer:
                                     )
                                     break
 
-                    op_type = op_record.operation.get("type")
-                    response_status = (op_record.response or {}).get("status")
-                    if op_type == "create" and isinstance(response_status, int) and 200 <= response_status < 400:
-                        self._grant_lifecycle_session(
-                            op_record.container.get("id"),
-                            op_record.container.get("name"),
-                        )
-
                     client_socket.sendall(response)
                     if async_submission is not None:
                         op_type, workload_id, launch_id = async_submission
@@ -626,8 +576,6 @@ class DockerProxyServer:
                             response_status,
                             queue_id,
                         )
-                    if op_type == "rm" and isinstance(response_status, int) and 200 <= response_status < 400:
-                        self._revoke_lifecycle_grant(op_record.container.get("id"), container_name)
                 else:
                     logger.error("No response from Docker")
                     break

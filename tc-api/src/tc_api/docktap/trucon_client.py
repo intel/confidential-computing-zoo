@@ -29,6 +29,7 @@ from tc_api.identity.sigstore_baseline import (
     sign_dsse_with_owner_key,
 )
 from tc_api.trucon.internal_transport import request_json
+from tc_api.trucon.database import update_commit_intent_status
 from tc_api.transparency.events import runtime_operation_entries
 from tc_api.transparency.dsse_builder import attach_commit_context, build_event_predicate, build_statement, build_statement_json
 from tc_api.transparency.trucon_submitter import post_commit_to_trucon, reserve_commit_intent
@@ -90,6 +91,14 @@ def has_active_delegation(chain_id: Optional[str] = None) -> bool:
         return get_active_delegation(resolved_chain) is not None
     except Exception:
         return False
+
+
+def _delegation_required() -> bool:
+    return _cfg.delegation_required()
+
+
+def _delegation_enabled() -> bool:
+    return _cfg.delegation_enabled()
 
 
 def _extract_rekor_identifiers(bundle) -> Dict[str, Optional[str]]:
@@ -390,6 +399,15 @@ class TruConCommitter:
             return exc.code >= 500
         return isinstance(exc, urllib.error.URLError)
 
+    @staticmethod
+    def _expire_intent(intent_token: Optional[str]) -> None:
+        if not intent_token:
+            return
+        try:
+            update_commit_intent_status(intent_token, "EXPIRED")
+        except Exception:
+            logger.warning("Failed to expire commit intent %s", intent_token, exc_info=True)
+
     def _mark_acknowledged(self, submission: PendingSubmission, response: Dict) -> None:
         with self._retry_lock:
             submission.status = "acknowledged"
@@ -400,6 +418,7 @@ class TruConCommitter:
             self._pending_submissions[submission.event_id] = submission
 
     def _mark_terminal(self, submission: PendingSubmission, error: Exception) -> None:
+        self._expire_intent(submission.intent_token)
         with self._retry_lock:
             submission.status = "failed_terminal"
             submission.last_error = str(error)
@@ -479,6 +498,7 @@ class TruConCommitter:
                 submission.operation_type,
                 workload_id=submission.workload_id,
                 launch_id=submission.launch_id,
+                pending_submission=submission,
             )
         except RetryQueuedError:
             with self._retry_lock:
@@ -570,7 +590,15 @@ class TruConCommitter:
             is_baseline=is_baseline,
         )
 
-    def _do_submit(self, op_record, operation_type: str, *, workload_id: Optional[str] = None, launch_id: Optional[str] = None) -> bool:
+    def _do_submit(
+        self,
+        op_record,
+        operation_type: str,
+        *,
+        workload_id: Optional[str] = None,
+        launch_id: Optional[str] = None,
+        pending_submission: Optional[PendingSubmission] = None,
+    ) -> bool:
         chain_id, resolved_workload_id, resolved_launch_id, instance_id = self._resolve_submission_context(
             op_record,
             operation_type,
@@ -592,23 +620,30 @@ class TruConCommitter:
         event_type = f"{runtime_engine}_{operation_type}"
         predicate_payload, event_digest = build_event_predicate(entry_list, event_id=event_id, event_type=event_type)
 
-        # 4. Acquire OIDC identity token (or fall back to delegation)
-        identity_token_str = _resolve_identity_token_str()
         delegation = None
-        if not identity_token_str:
+        if _delegation_enabled():
             from tc_api.trucon.database import get_active_delegation
             try:
                 delegation = get_active_delegation(chain_id)
             except Exception:
                 delegation = None
+
+        if delegation is not None and operation_type not in delegation["scope"]:
+            raise MissingIdentityTokenError(
+                f"Active delegation does not include '{operation_type}' in scope"
+            )
+
+        # 4. Acquire authorization context based on the configured Docktap auth mode.
+        identity_token_str = None if _delegation_required() else _resolve_identity_token_str()
+        if _delegation_required():
+            if delegation is None:
+                raise MissingIdentityTokenError(
+                    f"Active Docktap delegation is required for docker {operation_type}"
+                )
+        elif not identity_token_str:
             if delegation is None:
                 raise MissingIdentityTokenError(
                     f"No reusable Sigstore identity token is available for docker {operation_type}"
-                )
-            # Check scope
-            if operation_type not in delegation["scope"]:
-                raise MissingIdentityTokenError(
-                    f"Active delegation does not include '{operation_type}' in scope"
                 )
 
         if identity_token_str:
@@ -628,80 +663,98 @@ class TruConCommitter:
             )
             return True
 
-        owner_private_key = get_chain_owner_private_key(chain_id)
-        owner_authorization = attach_commit_context(
-            predicate_payload,
-            chain_id=chain_id,
-            reservation=reservation,
-            event_digest=event_digest,
-            owner_private_key=owner_private_key,
-            delegation_id=delegation["delegation_id"] if delegation is not None else None,
-        )
-
-        statement_json = build_statement_json(chain_id, event_digest, predicate_payload)
-
-        if delegation is not None and not identity_token_str:
-            # --- Owner key signing path (delegation active, no OIDC token) ---
-            envelope = sign_dsse_with_owner_key(statement_json, owner_private_key)
-            pub_key_pem = generate_chain_owner_pub_key_pem(chain_id)
-
-            adapter = SigstoreLogAdapter()
-            rekor_uuid, rekor_log_index, rekor_entry = adapter.submit_owner_signed_entry(
-                envelope, pub_key_pem,
-            )
-
-            bundle_json = json.dumps({
-                "_owner_key_signed": True,
-                "envelope": envelope,
-                "pub_key_pem": pub_key_pem,
-                "rekor_uuid": rekor_uuid,
-                "rekor_log_index": rekor_log_index,
-            })
-            rekor_identifiers = {
-                "initial_bundle_rekor_uuid": rekor_uuid,
-                "initial_bundle_rekor_log_index": rekor_log_index,
-            }
-        else:
-            # --- Fulcio signing path (OIDC token available) ---
-            identity_token = IdentityToken(identity_token_str)
-
-            statement = build_statement(chain_id, event_digest, predicate_payload)
-
-            signing_context = build_signing_context()
-            with signing_context.signer(identity_token, cache=True) as signer:
-                bundle = signer.sign_dsse(statement)
-
-            bundle_json = bundle.to_json()
-            rekor_identifiers = _extract_rekor_identifiers(bundle)
-
-        # 7. POST to TruCon /commit
-        submission = PendingSubmission(
-            operation_type=operation_type,
-            bundle_json=bundle_json,
-            chain_id=chain_id,
-            event_digest=event_digest,
-            event_id=event_id,
-            idempotency_key=idempotency_key,
-            instance_id=instance_id,
-            intent_token=reservation.get("intent_token"),
-            owner_authorization=owner_authorization,
-        )
+        if pending_submission is not None:
+            pending_submission.chain_id = chain_id
+            pending_submission.event_digest = event_digest
+            pending_submission.idempotency_key = idempotency_key
+            pending_submission.instance_id = instance_id
+            pending_submission.intent_token = reservation.get("intent_token")
 
         try:
-            response = self._post_to_trucon(
+            owner_private_key = get_chain_owner_private_key(chain_id)
+            owner_authorization = attach_commit_context(
+                predicate_payload,
+                chain_id=chain_id,
+                reservation=reservation,
+                event_digest=event_digest,
+                owner_private_key=owner_private_key,
+                delegation_id=delegation["delegation_id"] if delegation is not None else None,
+            )
+
+            statement_json = build_statement_json(chain_id, event_digest, predicate_payload)
+
+            if delegation is not None and (_delegation_required() or not identity_token_str):
+                # --- Owner key signing path (delegation active, no OIDC token) ---
+                envelope = sign_dsse_with_owner_key(statement_json, owner_private_key)
+                pub_key_pem = generate_chain_owner_pub_key_pem(chain_id)
+
+                adapter = SigstoreLogAdapter()
+                rekor_uuid, rekor_log_index, rekor_entry = adapter.submit_owner_signed_entry(
+                    envelope, pub_key_pem,
+                )
+
+                bundle_json = json.dumps({
+                    "_owner_key_signed": True,
+                    "envelope": envelope,
+                    "pub_key_pem": pub_key_pem,
+                    "rekor_uuid": rekor_uuid,
+                    "rekor_log_index": rekor_log_index,
+                })
+                rekor_identifiers = {
+                    "initial_bundle_rekor_uuid": rekor_uuid,
+                    "initial_bundle_rekor_log_index": rekor_log_index,
+                }
+            else:
+                # --- Fulcio signing path (OIDC token available) ---
+                identity_token = IdentityToken(identity_token_str)
+
+                statement = build_statement(chain_id, event_digest, predicate_payload)
+
+                signing_context = build_signing_context()
+                with signing_context.signer(identity_token, cache=True) as signer:
+                    bundle = signer.sign_dsse(statement)
+
+                bundle_json = bundle.to_json()
+                rekor_identifiers = _extract_rekor_identifiers(bundle)
+
+            # 7. POST to TruCon /commit
+            submission = PendingSubmission(
+                operation_type=operation_type,
                 bundle_json=bundle_json,
                 chain_id=chain_id,
                 event_digest=event_digest,
                 event_id=event_id,
-                intent_token=reservation.get("intent_token"),
                 idempotency_key=idempotency_key,
                 instance_id=instance_id,
+                intent_token=reservation.get("intent_token"),
                 owner_authorization=owner_authorization,
             )
-        except Exception as exc:
-            if self._is_retryable_commit_error(exc):
-                self._queue_retry(submission, exc)
-                raise RetryQueuedError(str(exc)) from exc
+
+            if pending_submission is not None:
+                pending_submission.bundle_json = bundle_json
+                pending_submission.owner_authorization = owner_authorization
+
+            try:
+                response = self._post_to_trucon(
+                    bundle_json=bundle_json,
+                    chain_id=chain_id,
+                    event_digest=event_digest,
+                    event_id=event_id,
+                    intent_token=reservation.get("intent_token"),
+                    idempotency_key=idempotency_key,
+                    instance_id=instance_id,
+                    owner_authorization=owner_authorization,
+                )
+            except Exception as exc:
+                if self._is_retryable_commit_error(exc):
+                    self._queue_retry(submission, exc)
+                    raise RetryQueuedError(str(exc)) from exc
+                raise
+        except RetryQueuedError:
+            raise
+        except Exception:
+            if pending_submission is None:
+                self._expire_intent(reservation.get("intent_token"))
             raise
 
         self._mark_acknowledged(submission, response)

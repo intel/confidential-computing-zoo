@@ -179,7 +179,13 @@ This contract lets `tc-verify` distinguish successful versus failed runtime acti
 
 ## Session Delegation
 
-Session delegation solves the 1-minute OIDC token expiry problem for Docktap runtime operations. Instead of requiring a fresh OIDC token per Docker operation, the user authenticates once and creates a delegation event that authorizes subsequent operations for a configurable time window.
+Session delegation solves the short-lived OIDC token problem for Docktap runtime operations. Instead of requiring a fresh OIDC token per Docker operation, the user authenticates once, creates a delegation event, and reuses that explicit grant for later runtime operations on the same chain until TTL or scope runs out.
+
+Docktap now defaults to `DOCKTAP_AUTH_MODE=explicit_delegation`.
+
+- In `explicit_delegation` mode, the proxy gate requires an active delegation before allowing submittable runtime operations.
+- `DOCKTAP_AUTH_MODE=delegation_disabled` is the stricter override for environments that want OIDC-backed authorization on each runtime operation and do not want delegation reuse.
+- The older in-memory lifecycle grant for nearby `start`/`stop`/`rm` operations is gone. Reuse now comes only from an explicit delegation record.
 
 ### Delegation Flow
 
@@ -193,13 +199,16 @@ Session delegation solves the 1-minute OIDC token expiry problem for Docktap run
 
 When Docktap submits a trusted event, the signing path is selected as follows:
 
-1. **OIDC token available** → Fulcio signing (existing behavior, preferred).
-2. **No OIDC token + active delegation** → Owner key signing:
+1. **`explicit_delegation` + active delegation** → Owner key signing:
    - The DSSE envelope is signed with the chain owner key (ECDSA P-384 + SHA-256).
    - An `intoto` v0.0.2 proposed entry is constructed with the raw owner public key PEM.
    - The entry is submitted to Rekor via `POST /api/v1/log/entries`.
    - The predicate includes `delegation_id` referencing the active delegation.
-3. **No OIDC token + no delegation + `DOCKTAP_REQUIRE_ATTESTATION=1`** → HTTP 428 attestation gate.
+2. **`explicit_delegation` + no active delegation + `DOCKTAP_REQUIRE_ATTESTATION=1`** → HTTP 428 authorization gate with OIDC-login and delegation-creation instructions.
+3. **`delegation_disabled` + reusable OIDC token** → Fulcio signing.
+4. **`delegation_disabled` + no reusable OIDC token + `DOCKTAP_REQUIRE_ATTESTATION=1`** → HTTP 428 attestation-login gate.
+
+`delegation_id` is not a replacement for the chain predecessor contract. Chain order and continuity still come from TruCon's reserved `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`. `delegation_id` exists in parallel so verifiers can bind an owner-key-signed runtime event back to the exact `session.delegation` event that authorized it and then evaluate TTL and scope on that grant.
 
 ### Delegation Storage
 
@@ -220,7 +229,7 @@ Delegations are stored in the `delegations` table alongside the existing `commit
 - Default TTL: 4 hours (14400 seconds).
 - Configurable via `DOCKTAP_DELEGATION_TTL_SECONDS` environment variable.
 - Scope: list of allowed operation types (subset of `pull`, `create`, `start`, `stop`, `rm`).
-- Operations outside scope or beyond TTL are rejected at the attestation gate.
+- Operations outside scope or beyond TTL are rejected at the authorization gate.
 - Expired delegations are cleaned up periodically by `cleanup_expired_delegations()`.
 
 ### Verification
@@ -231,8 +240,8 @@ Chain verification annotates each event with an independent `delegation_status` 
 - `proven` — the event references a valid delegation within scope and TTL.
 - `expired` — the event references a delegation but exceeds `expires_at`.
 - `scope_violation` — the event's operation type is not in the delegation's scope.
-- `missing` — the event has no Fulcio SAN and no `delegation_id`.
-- `n/a` — the event has a Fulcio SAN (standard signing path, delegation not applicable).
+- `missing` — the event references a `delegation_id` that cannot be found on the chain.
+- `not_applicable` — the event does not reference a delegation.
 
 This is independent of the existing `owner_status` annotation.
 

@@ -35,6 +35,54 @@ def _future_iso(seconds=3600):
 
 
 class TestDelegationSigningPath:
+    @patch.dict("os.environ", {"DOCKTAP_AUTH_MODE": "explicit_delegation"}, clear=False)
+    @patch("tc_api.docktap.trucon_client._resolve_identity_token_str", return_value="header.payload.signature")
+    @patch("tc_api.docktap.trucon_client.get_chain_owner_private_key")
+    def test_explicit_delegation_mode_prefers_delegation_even_with_token(
+        self, mock_get_key, _mock_token, committer
+    ):
+        mock_key = ec.generate_private_key(ec.SECP384R1())
+        mock_get_key.return_value = mock_key
+
+        delegation = {
+            "delegation_id": "del-explicit-001",
+            "chain_id": "docktap-runtime",
+            "scope": ["pull", "create", "start", "stop", "rm"],
+            "expires_at": _future_iso(),
+            "signer_identity": "user@example.com",
+            "sequence_num": 2,
+        }
+
+        with patch("tc_api.trucon.database.get_active_delegation", return_value=delegation), \
+             patch.object(committer, "_resolve_submission_context", return_value=("docktap-runtime", "wl-1", "l-1", "inst-1")), \
+             patch.object(committer, "_reserve_commit_intent", return_value={
+                 "sequence_num": 3,
+                 "prev_event_digest": "sha384:prev",
+                 "prev_lookup_hash": "sha384:lh",
+                 "intent_token": "tok-abc",
+             }), \
+             patch("tc_api.docktap.trucon_client.sign_dsse_with_owner_key") as mock_sign, \
+             patch("tc_api.docktap.trucon_client.generate_chain_owner_pub_key_pem", return_value="PEM"), \
+             patch("tc_api.docktap.trucon_client.SigstoreLogAdapter") as mock_adapter_cls, \
+             patch.object(committer, "_post_to_trucon", return_value={"record_id": "r-1", "sequence_num": 3}), \
+             patch.object(committer, "_mark_acknowledged"), \
+             patch("tc_api.docktap.trucon_client.IdentityToken") as mock_identity_token:
+
+            mock_sign.return_value = {
+                "payloadType": "application/vnd.in-toto+json",
+                "payload": "cGF5bG9hZA==",
+                "signatures": [{"sig": "c2ln"}],
+            }
+            mock_adapter_cls.return_value.submit_owner_signed_entry.return_value = (
+                "uuid-123", 999, {"logIndex": 999}
+            )
+
+            result = committer._do_submit(_mock_op_record(), "pull")
+
+            assert result is True
+            mock_sign.assert_called_once()
+            mock_identity_token.assert_not_called()
+
     @patch("tc_api.docktap.trucon_client._resolve_identity_token_str", return_value=None)
     @patch("tc_api.docktap.trucon_client.get_chain_owner_private_key")
     def test_delegation_path_invoked_when_no_token(

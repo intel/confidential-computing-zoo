@@ -143,43 +143,50 @@ See `docs/TESTING.md` for the full matrix.
 - Recommended rollout posture is TruCon-only operation with process supervision, parity checks on critical flows, and degraded-mode handling that preserves external business results when trust-event submission is unavailable.
 - Docktap keeps only bounded local routing, mapping, and retry state. Replay and verification rely on TruCon and immutable backend state rather than Docktap-local persistence.
 
-## Docktap OIDC
+## Docktap Authorization
 
-Docktap uses the same OIDC / Sigstore identity model as the rest of the control plane.
+Docktap uses the same OIDC / Sigstore identity model as the rest of the control plane, but runtime authorization is now delegation-first by default.
 
 Current operator contract:
 
 - `./start.sh restart` starts `tc_api`, TruCon, and Docktap together.
 - `DOCKTAP_REQUIRE_ATTESTATION=1` is enabled by default.
-- If a reusable Sigstore token is cached, Docktap reuses it.
-- If no reusable token is available, submittable Docker operations such as `pull` are blocked until the user completes the attestation-login challenge.
+- `DOCKTAP_AUTH_MODE=explicit_delegation` is the default.
+- In `explicit_delegation` mode, submittable Docker operations such as `pull` are blocked until the user completes OIDC login and creates a Docktap delegation on the target chain.
+- `DOCKTAP_AUTH_MODE=delegation_disabled` is the stricter override for environments that want per-operation OIDC-backed authorization instead of delegation reuse.
+- The older local lifecycle grant shortcut for follow-up `start`/`stop`/`rm` operations has been removed. Runtime reuse now happens only through an explicit delegation record.
 
 Recommended flows:
 
-- Same-machine browser access: retry the Docker command after completing the browser login challenge.
+- Same-machine browser access: complete browser login, create the delegation, then retry the Docker command.
 - Remote SSH with browser reachability: set `DOCKTAP_ATTESTATION_BROWSER_BASE_URL` before startup.
-- Remote SSH without callback reachability: use the out-of-band `tc-client` login command from the challenge.
-- Non-interactive launchers: pre-acquire a token and inject `DOCKTAP_SIGSTORE_IDENTITY_TOKEN`.
+- Remote SSH without callback reachability: use the out-of-band `tc-client` login command from the challenge, then call `POST /api/docktap/delegate`.
+- Non-interactive launchers: pre-acquire a token and either create the delegation once up front or set `DOCKTAP_AUTH_MODE=delegation_disabled` if delegation reuse is intentionally forbidden.
 
 Example OOB flow:
 
 ```shell
 ./start.sh restart
-docker exec openclaw-gateway sh -lc 'docker pull hello-world:latest'
 tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
-python scripts/run_docktap_oob_atomic.py
+curl -X POST http://127.0.0.1:8000/api/docktap/delegate \
+	-H 'Content-Type: application/json' \
+	-d '{"chain_id": "docktap-runtime"}'
+docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
 ```
 
 Example challenge error:
 
 ```text
-Error response from daemon: Attested Docker login required before docker pull.
+Error response from daemon: Active Docktap delegation required before docker pull.
 Browser login: http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap&session_id=<session-id>
 Remote login command: tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+Create delegation: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{"chain_id": "docktap-runtime"}'
 If tc-client is unavailable, from the tc_api repo root run: bash setup.sh
 Then run: ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
 Then retry.
 ```
+
+`delegation_id` is intentionally kept in runtime predicates. Chain continuity is still enforced by the reserved predecessor fields (`prev_event_digest` and `prev_lookup_hash`), but `delegation_id` separately binds an owner-key-signed runtime event back to the specific `session.delegation` grant that authorized it. Verification uses that reference to prove scope and TTL, which predecessor linkage alone cannot express.
 
 ## Chain Verification CLI
 
@@ -269,7 +276,9 @@ For local manual checks, run the service and use the built-in FastAPI docs or th
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker daemon socket path |
 | `DOCKTAP_HEALTH_PORT` | `8002` | HTTP health endpoint port |
 | `DOCKTAP_SOCKET` | `/var/run/docktap/docker.sock` | Proxy socket path (bare-metal `start.sh`) |
-| `DOCKTAP_REQUIRE_ATTESTATION` | `1` | Block submittable Docker operations until a reusable Sigstore token is available |
+| `DOCKTAP_REQUIRE_ATTESTATION` | `1` | Keep the Docktap authorization gate enabled for submittable runtime operations |
+| `DOCKTAP_AUTH_MODE` | `explicit_delegation` | Runtime authorization mode: explicit delegation by default, or `delegation_disabled` for stricter per-operation OIDC-only behavior |
+| `DOCKTAP_DELEGATION_TTL_SECONDS` | `14400` | Default delegation lifetime in seconds for `POST /api/docktap/delegate` |
 | `DOCKTAP_ATTESTATION_API_URL` | `http://127.0.0.1:8000` | Base API URL embedded in the attestation-login challenge |
 | `DOCKTAP_ATTESTATION_BROWSER_BASE_URL` | `http://127.0.0.1:8000` | Browser-visible base URL embedded in the attestation-login challenge |
 | `DOCKTAP_LOG_FILE` | `./logs/docktap-latest.log` | Docktap runtime log path used by `start.sh` |

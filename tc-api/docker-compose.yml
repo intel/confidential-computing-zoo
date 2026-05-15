@@ -96,6 +96,7 @@ services:
       - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
       - DOCKER_SOCKET=/var/run/docker-daemon.sock
       - SOCK_BRIDGE_SOCKET=/var/run/docktap/docker.sock
+      - DOCKTAP_AUTH_MODE=${DOCKTAP_AUTH_MODE:-explicit_delegation}
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-}

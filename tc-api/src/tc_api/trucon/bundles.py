@@ -91,6 +91,14 @@ def compute_record_lookup_hash(record: Any) -> Optional[str]:
 
 
 def extract_bundle_payload_b64(bundle_json: str) -> str:
+    parsed = json.loads(bundle_json)
+    if isinstance(parsed, dict) and parsed.get("_owner_key_signed"):
+        envelope = parsed.get("envelope", {})
+        payload_b64 = envelope.get("payload")
+        if not isinstance(payload_b64, str) or not payload_b64:
+            raise ValueError("Owner-key-signed bundle missing payload")
+        return payload_b64
+
     bundle = Bundle.from_json(bundle_json)
     envelope = bundle._dsse_envelope
     if envelope is None:

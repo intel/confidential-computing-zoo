@@ -98,6 +98,9 @@ Keep the supported OpenClaw validation path narrow:
 
 ```bash
 ./start.sh restart
+curl -X POST http://127.0.0.1:8000/api/docktap/delegate \
+	-H 'Content-Type: application/json' \
+	-d '{"chain_id": "docktap-runtime"}'
 docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
 PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_current_attested_head.py docktap-runtime
 ```
@@ -107,11 +110,109 @@ Helpful shortcuts:
 - `python scripts/run_docktap_oob_atomic.py` for one-shot OOB login plus Docktap startup and pull replay
 - `scripts/verify_current_attested_head.py` for post-pull direct quote-backed verification
 
+Docktap now defaults to `DOCKTAP_AUTH_MODE=explicit_delegation`, so the usual operator sequence is: acquire or refresh OIDC, create one delegation on `docktap-runtime`, then perform the Docker operation. Use `DOCKTAP_AUTH_MODE=delegation_disabled` only when you intentionally want the stricter per-operation OIDC path.
+
 If no reusable Sigstore token is cached yet, refresh one first:
 
 ```bash
 ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
 ```
+
+### Persistent Docktap Success Path
+
+Use this host-side runbook when you want to validate the default explicit-delegation flow without depending on `openclaw-gateway` mounts:
+
+```bash
+DOCKTAP_AUTH_MODE=explicit_delegation PYTHONPATH=$PWD/src \
+	./venv/bin/python -m tc_api.docktap.main \
+	--socket-path /var/run/docktap/docker.sock \
+	--docker-socket-path /var/run/docker.sock
+```
+
+In another terminal:
+
+```bash
+./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+curl -fsS -X POST http://127.0.0.1:8000/api/docktap/delegate \
+	-H 'Content-Type: application/json' \
+	-d '{"chain_id":"docktap-runtime"}'
+DOCKER_HOST=unix:///var/run/docktap/docker.sock docker pull hello-world:latest
+PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_current_attested_head.py docktap-runtime
+```
+
+Expected result:
+
+- `docker pull` returns success through the persistent Docktap socket.
+- `verify_current_attested_head.py docktap-runtime` reports `Status: verified`.
+- The runtime chain contains baseline, delegation, and pull records, with no residual active intent.
+
+Quick intent check:
+
+```bash
+./venv/bin/python - <<'PY'
+from tc_api.trucon.database import get_active_commit_intent_for_chain
+row = get_active_commit_intent_for_chain('docktap-runtime')
+print(dict(row) if row else None)
+PY
+```
+
+This should print `None` after the successful pull is acknowledged.
+
+### Expired Token Failure Path
+
+Use this regression check to confirm that a background Docktap submission can fail after reservation without leaving an `ACTIVE` intent behind.
+
+Precondition:
+
+- `docktap-runtime` already has a confirmed baseline record. Running the success path once satisfies this.
+
+Start Docktap in the stricter per-operation OIDC mode with an intentionally expired token:
+
+```bash
+DOCKTAP_AUTH_MODE=delegation_disabled \
+DOCKTAP_SIGSTORE_IDENTITY_TOKEN='<expired-real-sigstore-jwt>' \
+PYTHONPATH=$PWD/src \
+	./venv/bin/python -m tc_api.docktap.main \
+	--socket-path /var/run/docktap/docker.sock \
+	--docker-socket-path /var/run/docker.sock
+```
+
+Then run a host-side pull and inspect intent state:
+
+```bash
+DOCKER_HOST=unix:///var/run/docktap/docker.sock docker pull busybox:latest
+./venv/bin/python - <<'PY'
+from tc_api.trucon.database import get_active_commit_intent_for_chain
+row = get_active_commit_intent_for_chain('docktap-runtime')
+print(dict(row) if row else None)
+PY
+```
+
+Expected result:
+
+- `docker pull` still completes because Docktap releases the Docker response before the best-effort TruCon background submission finishes.
+- Docktap logs show a terminal background failure on the expired token path. In the current Sigstore stack this may surface as `Identity token is malformed or missing claims`.
+- `get_active_commit_intent_for_chain('docktap-runtime')` prints `None`.
+
+If you need the SQLite-level proof that the failed runtime reservation was cleaned up, inspect `commit_intents` directly:
+
+```bash
+./venv/bin/python - <<'PY'
+import sqlite3
+from tc_api.trucon.database import DB_PATH
+
+conn = sqlite3.connect(DB_PATH)
+conn.row_factory = sqlite3.Row
+for row in conn.execute(
+    "SELECT intent_token, idempotency_key, status, sequence_num, record_id FROM commit_intents WHERE chain_id = ? ORDER BY created_at ASC",
+    ('docktap-runtime',),
+):
+    print(dict(row))
+conn.close()
+PY
+```
+
+The failed runtime intent should show `status='EXPIRED'`, not `ACTIVE`.
 
 ## Verification And Mirror Regression
 

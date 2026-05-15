@@ -31,6 +31,33 @@ MAX_RETRIES = 10
 POLL_INTERVAL = 5.0
 
 
+def _extract_preconfirmed_owner_key_submission(bundle_json: str) -> Optional[Dict[str, Any]]:
+    try:
+        parsed = json.loads(bundle_json)
+    except Exception:
+        return None
+
+    if not isinstance(parsed, dict) or not parsed.get("_owner_key_signed"):
+        return None
+
+    rekor_uuid = parsed.get("rekor_uuid")
+    rekor_log_index = parsed.get("rekor_log_index")
+    log_id = rekor_uuid or rekor_log_index
+    if log_id is None:
+        raise ValueError("Owner-key-signed bundle is missing Rekor identifiers")
+
+    receipt: Dict[str, Any] = {
+        "uuid": str(rekor_uuid) if rekor_uuid is not None else None,
+        "entryUUID": str(rekor_uuid) if rekor_uuid is not None else None,
+        "log_index": int(rekor_log_index) if isinstance(rekor_log_index, int) else rekor_log_index,
+        "logIndex": int(rekor_log_index) if isinstance(rekor_log_index, int) else rekor_log_index,
+    }
+    return {
+        "log_id": str(log_id),
+        "receipt": receipt,
+    }
+
+
 def extract_confirmed_rekor_identifiers(log_id: str, receipt: Optional[Dict[str, Any]]) -> Dict[str, Optional[str]]:
     receipt_data = receipt or {}
     confirmed_rekor_uuid = receipt_data.get("uuid") or receipt_data.get("entryUUID")
@@ -123,6 +150,19 @@ class SubmitDaemon:
         self._emit_queue_snapshot(get_queue_stats())
 
     def _submit_record(self, record: Any, record_id: str, chain_id: str, seq: int, bundle_json: str, submit_start: float) -> None:
+        preconfirmed = _extract_preconfirmed_owner_key_submission(bundle_json)
+        if preconfirmed is not None:
+            self._confirm_record(
+                record,
+                record_id,
+                chain_id,
+                seq,
+                preconfirmed["log_id"],
+                submit_start,
+                preconfirmed["receipt"],
+            )
+            return
+
         if self.immutable_log:
             log_id, status, receipt = self.immutable_log.submit_bundle(bundle_json)
             if status == "confirmed":

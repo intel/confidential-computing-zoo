@@ -6,6 +6,28 @@ so the env-var surface is discoverable and defaults cannot diverge.
 
 import os
 
+
+VALID_AUTH_MODES = {"explicit_delegation", "delegation_disabled"}
+
+
+def auth_mode() -> str:
+    raw_value = os.environ.get("DOCKTAP_AUTH_MODE", "explicit_delegation").strip().lower()
+    if raw_value in VALID_AUTH_MODES:
+        return raw_value
+    return "explicit_delegation"
+
+
+def delegation_required() -> bool:
+    return auth_mode() == "explicit_delegation"
+
+
+def delegation_enabled() -> bool:
+    return auth_mode() != "delegation_disabled"
+
+
+def require_attestation() -> bool:
+    return os.environ.get("DOCKTAP_REQUIRE_ATTESTATION", "1") == "1"
+
 # ---------------------------------------------------------------------------
 # TruCon connectivity
 # ---------------------------------------------------------------------------
@@ -48,8 +70,6 @@ DOCKER_SOCKET: str = os.environ.get("DOCKER_SOCKET", "/var/run/docker.sock")
 # ---------------------------------------------------------------------------
 # Proxy / attestation
 # ---------------------------------------------------------------------------
-REQUIRE_ATTESTATION: bool = os.environ.get("DOCKTAP_REQUIRE_ATTESTATION", "1") == "1"
-LIFECYCLE_GRANT_TTL_SECONDS: str = os.environ.get("DOCKTAP_LIFECYCLE_GRANT_TTL_SECONDS", "").strip()
 ATTESTATION_API_URL: str = os.environ.get("DOCKTAP_ATTESTATION_API_URL", "http://127.0.0.1:8000")
 ATTESTATION_BROWSER_BASE_URL: str = os.environ.get(
     "DOCKTAP_ATTESTATION_BROWSER_BASE_URL",

@@ -8,6 +8,20 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field, asdict
 
 
+def _safe_stdout_write(text: str) -> None:
+    """Best-effort stdout emission for proxy-side structured logs.
+
+    Docktap can run detached from an interactive terminal. In that mode stdout may
+    point at a closed pipe; letting BrokenPipeError escape would abort request
+    handling and surface as EOF to Docker clients.
+    """
+    try:
+        print(text, file=sys.stdout)
+        sys.stdout.flush()
+    except (BrokenPipeError, OSError, ValueError):
+        return
+
+
 OBSERVATION_OUTCOME_OPERATIONS = {
     "image_inspect",
     "network_inspect",
@@ -543,8 +557,7 @@ def enrich_from_response(op: OperationRecord, response_bytes: bytes) -> Operatio
 def log_operation_json(op: OperationRecord) -> None:
     """Log operation as JSON to stdout"""
     output = asdict(op)
-    print(json.dumps(output), file=sys.stdout)
-    sys.stdout.flush()
+    _safe_stdout_write(json.dumps(output))
 
 
 def log_operation(
@@ -589,9 +602,8 @@ def log_operation(
             log_parts.append(f"{key.upper()}={value}")
     
     log_line = " ".join(log_parts)
-    
-    print(log_line, file=sys.stdout)
-    sys.stdout.flush()
+
+    _safe_stdout_write(log_line)
 
 
 def log_event(event_data: Dict[str, Any]) -> None:

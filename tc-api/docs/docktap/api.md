@@ -657,9 +657,13 @@ def has_active_delegation(chain_id: Optional[str] = None) -> bool:
 
 - `submit_delegation()` creates a `session.delegation` chain event signed via Fulcio, storing the delegation in the `delegations` table. It returns a dict with `delegation_id`, `expires_at`, and `chain_id`.
 - `has_active_delegation()` checks the SQLite `delegations` table for non-expired rows. It is called by the attestation gate and the signing path selector.
-- When `_do_submit()` detects no OIDC token but finds an active delegation via `has_active_delegation()`, it switches to the owner key signing path: signs the DSSE envelope with `sign_dsse_with_owner_key()`, constructs an `intoto` v0.0.2 entry via `build_intoto_entry_from_owner_key()`, submits to Rekor via `submit_owner_signed_entry()`, and posts the result to TruCon.
+- Docktap now defaults to `DOCKTAP_AUTH_MODE=explicit_delegation`, so the proxy gate and `_do_submit()` both require an active delegation before submittable runtime operations are allowed.
+- In `explicit_delegation` mode, `_do_submit()` prefers the owner key signing path even if a reusable OIDC token is also present.
+- In `delegation_disabled` mode, `_do_submit()` ignores delegation reuse and requires a reusable OIDC token for Fulcio signing.
+- When `_do_submit()` finds an active delegation in `explicit_delegation` mode, it switches to the owner key signing path: signs the DSSE envelope with `sign_dsse_with_owner_key()`, constructs an `intoto` v0.0.2 entry via `build_intoto_entry_from_owner_key()`, submits to Rekor via `submit_owner_signed_entry()`, and posts the result to TruCon.
 - The delegation-signed predicate includes a `delegation_id` field referencing the active delegation's identifier.
-- The attestation gate in `docker_proxy.py` checks both `has_reusable_identity_token()` and `has_active_delegation()` before blocking operations with HTTP 428.
+- `delegation_id` is kept on runtime predicates so verification can bind an owner-key-signed business event back to the exact `session.delegation` grant that authorized it. Predecessor continuity is still enforced separately by the chain reservation fields.
+- The authorization gate in `docker_proxy.py` is mode-aware: `explicit_delegation` blocks until delegation exists, while `delegation_disabled` blocks until a reusable OIDC token exists.
 
 ### Submission Payload Contract
 
@@ -688,12 +692,12 @@ Creates a session delegation event that authorizes subsequent Docker operations 
 
 ```json
 {
-  "chain_id": "default",
+    "chain_id": "docktap-runtime",
   "scope": ["pull", "create", "start", "stop", "rm"]
 }
 ```
 
-- `chain_id` (optional, default `"default"`): target chain for the delegation.
+- `chain_id`: target chain for the delegation. For Docktap runtime validation the usual value is `docktap-runtime`.
 - `scope` (optional, default all submittable operations): allowed operation types.
 
 **Response (200):**
@@ -701,7 +705,7 @@ Creates a session delegation event that authorizes subsequent Docker operations 
 ```json
 {
   "delegation_id": "deleg-xxxxxxxx",
-  "chain_id": "default",
+    "chain_id": "docktap-runtime",
   "expires_at": "2025-05-13T18:00:00+00:00"
 }
 ```
@@ -718,6 +722,7 @@ Creates a session delegation event that authorizes subsequent Docker operations 
 - The delegation record is stored in the `delegations` table in `/dev/shm/tc_api_queue/queue.db`.
 - Default TTL is 4 hours (14400 seconds), configurable via `DOCKTAP_DELEGATION_TTL_SECONDS`.
 - Each delegation is scoped to exactly one chain; delegations on chain A do not authorize operations on chain B.
+- The returned `delegation_id` is the stable authorization reference that later owner-key-signed runtime events embed in their predicates so verifiers can prove scope and TTL against the correct grant.
 
 ## Sidecar Bootstrap API
 
