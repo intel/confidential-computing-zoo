@@ -288,11 +288,11 @@ Each task has:
   - `prev_log_id` stays OUT of the DSSE predicate (no signing change). This is DB-level verification, not cryptographic proof.
   - Unconfirmed chain tail: accepted as unverifiable (prev_log_id depends on log_id assignment at confirmation time).
   - Response model: keep existing `rtmr_available: bool` field, no new verification-mode field.
-  - Startup warning: upgrade to `logger.warning()` with clear non-TEE banner.
+  - Startup behavior has since been tightened to TDX-only; missing RTMR extend support now fails startup.
   - Auto-detect only (via TDX sysfs presence). No explicit env var override.
 - **Acceptance Criteria**:
   1. ✅ `verify-chain` checks `prev_log_id` linkage for confirmed records when `rtmr_available == False`.
-  2. ✅ TruCon logs a prominent warning at startup when running without TDX hardware.
+  2. ✅ Historical note: the original change introduced a startup warning before the service was later tightened to TDX-only startup.
   3. ✅ No changes to signing flow, DSSE predicate format, or commit flow.
 - **Tests**: `tests/test_non_tee_verification.py` (5 tests, all passing)
 
@@ -476,10 +476,10 @@ Each task has:
   - **Target model**: Initial v1 exposed `chain_id` as the verification selector; later changes moved the supported external contract to exported attested-head evidence, with `chain_id` retained only for explicit troubleshooting mode.
   - **Verdict model**: Immutable-backend replay is the primary source; TruCon local verification is retained as secondary diagnostic input.
   - **Policy flags**: Supports `--signer-identity`, `--expected-entry-count`, `--fail-on-pending`, and `--require-tee`.
-  - **Non-TEE handling**: Explicitly reported as test-only fallback rather than TEE-equivalent success.
+  - **TDX requirement**: Production verification is expected to run against TDX-backed attested-head evidence.
 - **Acceptance Criteria**:
-  1. ✅ CLI accepts a `chain_id` and performs Rekor traversal, digest replay, signature validation, and local RTMR / non-TEE diagnostics.
-  2. ✅ Supports both TEE mode and non-TEE fallback mode.
+  1. ✅ CLI accepts a `chain_id` and performs Rekor traversal, digest replay, signature validation, and local RTMR diagnostics.
+  2. ✅ Supports TDX-backed verification and evidence-driven workflows.
   3. ✅ Human-readable output with per-record detail and summary.
   4. ✅ Machine-readable JSON output option (`--json`).
   5. ✅ Documented in README.md, docs/TESTING.md, and trusted-log docs.

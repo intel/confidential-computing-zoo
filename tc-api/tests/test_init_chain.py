@@ -205,58 +205,6 @@ def trucon_client(tmp_path):
         trucon_app_mod._pending_init_tokens.update(old_tokens)
 
 
-@pytest.fixture
-def trucon_client_no_tee(tmp_path):
-    """TruCon TestClient with no TEE (non-TEE mode, _local_mr=None)."""
-    db_path = str(tmp_path / "test.db")
-    init_db(db_path)
-
-    patches = _make_db_patches(db_path)
-
-    old_mr = trucon_app_mod._local_mr
-    old_quote_adapter = trucon_app_mod._quote_adapter
-    old_auth = trucon_app_mod._AUTH_DISABLED
-    old_tokens = trucon_app_mod._pending_init_tokens.copy()
-
-    try:
-        trucon_app_mod._local_mr = None
-        trucon_app_mod._quote_adapter = MockQuoteAdapter()
-        trucon_app_mod._AUTH_DISABLED = True
-        trucon_app_mod._pending_init_tokens.clear()
-        trucon_app_mod.app.state.test_db_path = db_path
-
-        with ExitStack() as stack:
-            stack.enter_context(patch.object(trucon_app_mod, "acquire_instance_lock"))
-            stack.enter_context(patch.object(trucon_app_mod, "release_instance_lock"))
-            stack.enter_context(patch.object(trucon_app_mod, "_crash_recovery"))
-            stack.enter_context(patch.object(trucon_app_mod, "_submit_daemon_loop"))
-            stack.enter_context(patch.object(trucon_app_mod, "init_db"))
-            stack.enter_context(patch.object(trucon_app_mod, "build_baseline_sigstore_bundle", return_value=('{"mock":"bundle"}', 'test-pub-key', 'sha384:' + ('11' * 48))))
-            stack.enter_context(patch.object(trucon_app_mod, "SigstoreLogAdapter"))
-            stack.enter_context(patch.object(trucon_app_mod, "_extract_bundle_predicate", side_effect=lambda bundle_json: json.loads(bundle_json)))
-            stack.enter_context(patch.object(trucon_app_mod, "insert_record", side_effect=patches["insert_record"]))
-            stack.enter_context(patch.object(trucon_app_mod, "get_chain_state", side_effect=patches["get_chain_state"]))
-            stack.enter_context(patch.object(trucon_app_mod, "update_chain_state", side_effect=patches["update_chain_state"]))
-            stack.enter_context(patch.object(trucon_app_mod, "get_record_by_idempotency_key", side_effect=patches["get_record_by_idempotency_key"]))
-            stack.enter_context(patch.object(trucon_app_mod, "get_chain_records", side_effect=patches["get_chain_records"]))
-            stack.enter_context(patch.object(trucon_db_mod, "get_chain_records", side_effect=patches["get_chain_records"]))
-            stack.enter_context(patch.object(trucon_app_mod, "create_commit_intent", side_effect=patches["create_commit_intent"]))
-            stack.enter_context(patch.object(trucon_app_mod, "get_commit_intent_by_token", side_effect=patches["get_commit_intent_by_token"]))
-            stack.enter_context(patch.object(trucon_app_mod, "get_commit_intent_by_idempotency_key", side_effect=patches["get_commit_intent_by_idempotency_key"]))
-            stack.enter_context(patch.object(trucon_app_mod, "get_active_commit_intent_for_chain", side_effect=patches["get_active_commit_intent_for_chain"]))
-            stack.enter_context(patch.object(trucon_app_mod, "update_commit_intent_status", side_effect=patches["update_commit_intent_status"]))
-            stack.enter_context(patch.object(trucon_app_mod, "expire_active_commit_intents", side_effect=patches["expire_active_commit_intents"]))
-            stack.enter_context(patch.object(trucon_app_mod, "get_record_by_id", side_effect=patches["get_record_by_id"]))
-            client = TestClient(trucon_app_mod.app, raise_server_exceptions=False)
-            yield client
-    finally:
-        trucon_app_mod._local_mr = old_mr
-        trucon_app_mod._quote_adapter = old_quote_adapter
-        trucon_app_mod._AUTH_DISABLED = old_auth
-        trucon_app_mod._pending_init_tokens.clear()
-        trucon_app_mod._pending_init_tokens.update(old_tokens)
-
-
 def _get_record_payload(record_id: str, db_path: str) -> dict:
     row = trucon_db_mod.get_record_by_id(record_id, db_path=db_path)
     assert row is not None
@@ -280,13 +228,6 @@ class TestGetBaseline:
             assert resp.status_code == 200
             data = resp.json()
             assert data["ccel_digest"] == "sha384:bb" + "cc" * 47
-
-    def test_baseline_non_tee_mode(self, trucon_client_no_tee):
-        resp = trucon_client_no_tee.get("/init-chain/test-chain/baseline")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["rtmr_value"] is None
-        assert data["init_token"]
 
     def test_baseline_chain_already_exists_409(self, trucon_client):
         # First, successfully init a chain
@@ -503,26 +444,6 @@ class TestPostInitChain:
         assert row["rtmr_extended"] == 1
         assert row["mr_value"] == "aa" * 48
 
-    def test_init_chain_non_tee_mode(self, trucon_client_no_tee):
-        """Init chain works in non-TEE mode with null RTMR."""
-        resp1 = trucon_client_no_tee.get("/init-chain/test-chain/baseline")
-        assert resp1.status_code == 200
-        assert resp1.json()["rtmr_value"] is None
-        token = resp1.json()["init_token"]
-        reserve = _reserve_baseline_intent(trucon_client_no_tee, "test-chain", "init-chain-test-chain")
-        assert reserve.status_code == 200
-
-        resp2 = trucon_client_no_tee.post("/init-chain", json={
-            "chain_id": "test-chain",
-            "init_token": token,
-            "intent_token": reserve.json()["intent_token"],
-            "signed_bundle": _make_baseline_bundle("test-chain"),
-            "pub_key": "test-key",
-        })
-        assert resp2.status_code == 200
-        payload = _get_record_payload(resp2.json()["record_id"], trucon_app_mod.app.state.test_db_path)
-        assert payload["owner_attestation"]["baseline_rtmr"] is None
-
     def test_init_chain_missing_owner_attestation_rejected(self, trucon_client):
         resp1 = trucon_client.get("/init-chain/test-chain/baseline")
         assert resp1.status_code == 200
@@ -599,7 +520,7 @@ class TestLazyWorkloadBaseline:
         records = trucon_db_mod.get_chain_records("workload-fail", db_path=trucon_client.app.state.test_db_path)
         assert records == []
 
-    def test_verify_chain_rejects_non_default_without_baseline(self, trucon_client_no_tee):
+    def test_verify_chain_rejects_non_default_without_baseline(self, trucon_client):
         trucon_db_mod.insert_record(
             record_id="rec-1",
             event_id="evt-1",
@@ -611,16 +532,16 @@ class TestLazyWorkloadBaseline:
             mr_value=None,
             sequence_num=1,
             event_digest="sha384:" + "ab" * 48,
-            db_path=trucon_client_no_tee.app.state.test_db_path,
+            db_path=trucon_client.app.state.test_db_path,
         )
 
-        resp = trucon_client_no_tee.get("/verify-chain/workload-no-baseline")
+        resp = trucon_client.get("/verify-chain/workload-no-baseline")
         assert resp.status_code == 200
         data = resp.json()
         assert data["valid"] is False
         assert data["entries"][0]["error"] == "non-default chain 'workload-no-baseline' does not begin with Event Log 0"
 
-    def test_verify_chain_accepts_pending_baseline_origin(self, trucon_client_no_tee):
+    def test_verify_chain_accepts_pending_baseline_origin(self, trucon_client):
         trucon_db_mod.insert_record(
             record_id="rec-log0",
             event_id="evt-log0-workload-pending",
@@ -632,7 +553,7 @@ class TestLazyWorkloadBaseline:
             mr_value=None,
             sequence_num=1,
             event_digest=None,
-            db_path=trucon_client_no_tee.app.state.test_db_path,
+            db_path=trucon_client.app.state.test_db_path,
         )
         trucon_db_mod.insert_record(
             record_id="rec-2",
@@ -645,10 +566,10 @@ class TestLazyWorkloadBaseline:
             mr_value=None,
             sequence_num=2,
             event_digest="sha384:" + "ab" * 48,
-            db_path=trucon_client_no_tee.app.state.test_db_path,
+            db_path=trucon_client.app.state.test_db_path,
         )
 
-        resp = trucon_client_no_tee.get("/verify-chain/workload-pending")
+        resp = trucon_client.get("/verify-chain/workload-pending")
         assert resp.status_code == 200
         data = resp.json()
         assert data["entries"][0]["error"] is None

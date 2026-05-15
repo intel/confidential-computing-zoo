@@ -9,6 +9,7 @@ MUST be run with --workers 1 to preserve lock semantics.
 
 import fcntl
 import hmac
+import json
 import logging
 import os
 import secrets
@@ -26,6 +27,7 @@ from fastapi.responses import JSONResponse
 from .database import (
     create_commit_intent,
     delete_non_extended_records,
+    enqueue_mirror_publish,
     expire_active_commit_intents,
     get_active_commit_intent_for_chain,
     get_all_chain_ids,
@@ -41,6 +43,7 @@ from .database import (
     get_latest_confirmed_record,
     get_latest_state,
     get_pending_by_chain,
+    get_pending_mirror_publishes,
     get_queue_stats,
     get_record_by_id,
     get_record_by_idempotency_key,
@@ -50,15 +53,22 @@ from .database import (
     set_status_submitting,
     update_commit_intent_status,
     update_chain_state,
+    update_mirror_publish_status,
     update_record_confirmed,
     update_status,
 )
 from tc_api.identity.sigstore_baseline import build_baseline_sigstore_bundle
-from tlog_rekor.oci_mirror import OciBundleMirror
+from tlog_rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
 from tlog_rekor.adapter import SigstoreLogAdapter
 from .adapters.ccel import compute_ccel_digest, read_ccel_eventlog_b64
 from .adapters.tdx_quote import TdxQuoteAdapter
-from .bundles import compute_record_lookup_hash, extract_bundle_predicate, should_extend_rtmr
+from .bundles import (
+    compute_bundle_payload_hash,
+    compute_record_lookup_hash,
+    extract_bundle_payload_b64,
+    extract_bundle_predicate,
+    should_extend_rtmr,
+)
 from .chain_verification import (
     get_chain_owner_pub_key_from_records,
     verify_chain_records,
@@ -108,7 +118,6 @@ from . import submit_daemon as submit_daemon_mod
 from .config import (
     AUTH_DISABLED as _AUTH_DISABLED_DEFAULT,
     BUNDLE_MIRROR_LOCATION,
-    ENABLE_TDX as _ENABLE_TDX,
     INTENT_TTL_SECONDS,
     QUEUE_SNAPSHOT_HEARTBEAT_TICKS,
     RTMR_INDEX,
@@ -120,6 +129,13 @@ from .config import (
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger("trucon")
+
+
+def _tdx_environment_hint(message: str) -> str:
+    return (
+        f"{message}. Check the TDX environment: ensure /dev/tdx_guest is available, "
+        "RTMR extend support is exposed, quote generation is functional, and trust-service / attestation configuration is correct"
+    )
 
 
 def _extract_bundle_predicate(bundle_json: str) -> Dict[str, Any]:
@@ -143,7 +159,7 @@ def _build_chain_owner_attestation(
 ) -> Dict[str, Any]:
     quote_adapter = _quote_adapter
     if quote_adapter is None:
-        raise HTTPException(status_code=500, detail="Quote adapter is unavailable")
+        raise HTTPException(status_code=500, detail=_tdx_environment_hint("Quote adapter is unavailable"))
 
     expected_value = compute_owner_attestation_expected_value(
         chain_id=chain_id,
@@ -156,10 +172,16 @@ def _build_chain_owner_attestation(
     try:
         quote_material = quote_adapter.quote(expected_value)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Owner attestation quote acquisition failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail=_tdx_environment_hint(f"Owner attestation quote acquisition failed: {exc}"),
+        ) from exc
 
     if quote_material.report_data != expected_value:
-        raise HTTPException(status_code=500, detail="Owner attestation report data did not match the expected binding value")
+        raise HTTPException(
+            status_code=500,
+            detail=_tdx_environment_hint("Owner attestation report data did not match the expected binding value"),
+        )
 
     return validate_chain_root_owner_attestation_payload(
         {
@@ -295,22 +317,32 @@ def _get_chain_owner_pub_key(chain_id: str) -> Optional[str]:
 LOCK_PATH = "/dev/shm/tc_api_queue/trucon.lock"
 _lock_fd = None
 
+
+def _current_lock_path() -> str:
+    override = os.environ.get("TRUCON_LOCK_PATH")
+    if override:
+        return override
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return f"/tmp/trucon-{os.getpid()}.lock"
+    return LOCK_PATH
+
 def acquire_instance_lock():
     """Acquire exclusive file lock. Exits if another instance holds it."""
     global _lock_fd
+    lock_path = _current_lock_path()
     if _lock_fd is not None:
-        logger.info("Single-instance lock already held by this process at %s", LOCK_PATH)
+        logger.info("Single-instance lock already held by this process at %s", lock_path)
         return
-    lock_dir = os.path.dirname(LOCK_PATH)
+    lock_dir = os.path.dirname(lock_path)
     os.makedirs(lock_dir, mode=0o700, exist_ok=True)
     try:
-        _lock_fd = open(LOCK_PATH, "w")
+        _lock_fd = open(lock_path, "w")
         fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _lock_fd.write(str(os.getpid()))
         _lock_fd.flush()
-        logger.info("Acquired single-instance lock at %s (PID %d)", LOCK_PATH, os.getpid())
+        logger.info("Acquired single-instance lock at %s (PID %d)", lock_path, os.getpid())
     except OSError:
-        logger.error("Another TruCon instance is already running (lock held at %s)", LOCK_PATH)
+        logger.error("Another TruCon instance is already running (lock held at %s)", lock_path)
         sys.exit(1)
 
 def release_instance_lock():
@@ -405,24 +437,12 @@ def _initialize_local_mr_adapter():
             "TDX RTMR sysfs not found, but TDREPORT-backed RTMR reads are available; "
             "no RTMR extend interface is available on this platform"
         )
-        if _ENABLE_TDX:
-            logger.error("ENABLE_TDX=true but %s. Refusing to start in degraded mode.", message)
-            raise RuntimeError(f"ENABLE_TDX=true requires RTMR extend support; {message}")
-        logger.warning(
-            "NON-TEE MODE: %s; running without hardware measurement extensions because no extend interface is available on this platform",
-            message,
-        )
-        return None
+        logger.error("TDX support incomplete: %s", message)
+        raise RuntimeError(_tdx_environment_hint(f"TDX startup requires RTMR extend support; {message}"))
 
     message = "TDX RTMR sysfs not found and no libtdx_attest extend path is available"
-    if _ENABLE_TDX:
-        logger.error("ENABLE_TDX=true but %s. Refusing to start in degraded mode.", message)
-        raise RuntimeError(f"ENABLE_TDX=true requires RTMR extend support; {message}")
-    logger.warning(
-        "NON-TEE MODE: %s — running without hardware measurement extensions (development/testing only)",
-        message,
-    )
-    return None
+    logger.error("TDX support unavailable: %s", message)
+    raise RuntimeError(_tdx_environment_hint(f"TDX startup requires RTMR extend support; {message}"))
 
 # ---------------------------------------------------------------------------
 # Submit daemon thread
@@ -431,6 +451,106 @@ def _initialize_local_mr_adapter():
 _bundle_mirror: Optional[OciBundleMirror] = None
 _submit_daemon: Optional[SubmitDaemon] = None
 _submit_daemon_thread: Optional[threading.Thread] = None
+_last_queue_snapshot: Optional[tuple[int, int, int, int, int]] = None
+_last_queue_snapshot_tick = 0
+_queue_snapshot_tick = 0
+
+
+def _extract_confirmed_rekor_identifiers(log_id: str, receipt: Optional[Dict[str, Any]]) -> Dict[str, Optional[str]]:
+    return submit_daemon_mod.extract_confirmed_rekor_identifiers(log_id, receipt)
+
+
+def _compute_bundle_payload_hash(bundle_json: str) -> str:
+    return compute_bundle_payload_hash(bundle_json)
+
+
+def _extract_bundle_payload_b64(bundle_json: str) -> str:
+    return extract_bundle_payload_b64(bundle_json)
+
+
+def _enqueue_mirror_publish_for_record(record: Any, log_id: Optional[str]) -> None:
+    payload = json.loads(record["payload"])
+    bundle_json = payload.get("bundle")
+    if not isinstance(bundle_json, str) or not bundle_json:
+        return
+
+    payload_hash = _compute_bundle_payload_hash(bundle_json)
+    payload_b64 = _extract_bundle_payload_b64(bundle_json)
+    annotations = build_mirror_annotations(
+        chain_id=record["chain_id"],
+        sequence_num=record["sequence_num"],
+        event_digest=record["event_digest"] if "event_digest" in record.keys() else None,
+        rekor_log_id=log_id,
+        payload_b64=payload_b64,
+        event_id=record["event_id"] if "event_id" in record.keys() else None,
+        prev_event_digest=record["prev_event_digest"] if "prev_event_digest" in record.keys() else None,
+        prev_lookup_hash=record["prev_lookup_hash"] if "prev_lookup_hash" in record.keys() else None,
+    )
+    enqueue_mirror_publish(
+        record_id=record["record_id"],
+        chain_id=record["chain_id"],
+        payload_hash=payload_hash,
+        bundle_json=bundle_json,
+        annotations=annotations,
+    )
+
+
+def _drain_mirror_publish_queue() -> None:
+    if _bundle_mirror is None:
+        return
+
+    for job in get_pending_mirror_publishes():
+        try:
+            manifest = _bundle_mirror.publish_bundle(
+                payload_hash=job["payload_hash"],
+                bundle_json=job["bundle_json"],
+                annotations=json.loads(job["annotations"]),
+            )
+            update_mirror_publish_status(
+                job["record_id"],
+                "PUBLISHED",
+                artifact_digest=manifest.get("artifactDigest"),
+                last_error=None,
+            )
+        except Exception as exc:
+            logger.warning("Mirror publish failed for record %s: %s", job["record_id"], exc)
+            update_mirror_publish_status(
+                job["record_id"],
+                "FAILED_RETRYABLE",
+                last_error=str(exc),
+                increment_retry_count=True,
+            )
+
+
+def _emit_queue_snapshot(stats: Dict[str, int]) -> None:
+    global _last_queue_snapshot, _last_queue_snapshot_tick, _queue_snapshot_tick
+
+    snapshot = (
+        stats["queued_count"],
+        stats["submitting_count"],
+        stats["failed_retryable_count"],
+        stats["failed_terminal_count"],
+        stats["total_retry_count"],
+    )
+    _queue_snapshot_tick += 1
+    should_emit = _last_queue_snapshot != snapshot
+
+    if not should_emit and (_queue_snapshot_tick - _last_queue_snapshot_tick) >= QUEUE_SNAPSHOT_HEARTBEAT_TICKS:
+        should_emit = True
+
+    if not should_emit:
+        return
+
+    _last_queue_snapshot = snapshot
+    _last_queue_snapshot_tick = _queue_snapshot_tick
+    logger.info(
+        "metric=queue_snapshot queue_depth=%d submitting=%d failed_retryable=%d failed_terminal=%d total_retries=%d",
+        snapshot[0],
+        snapshot[1],
+        snapshot[2],
+        snapshot[3],
+        snapshot[4],
+    )
 
 
 def _submit_daemon_loop() -> None:
@@ -469,13 +589,8 @@ async def lifespan(app: FastAPI):
     if _AUTH_DISABLED:
         logger.warning("⚠ TruCon service authentication DISABLED — development mode only")
     elif not _SERVICE_TOKEN and not _TRUCON_UDS_PATH:
-        if _ENABLE_TDX:
-            logger.error("Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled. Refusing to start.")
-            raise RuntimeError("Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled")
-        logger.warning(
-            "Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled. Falling back to auth-disabled development mode."
-        )
-        _AUTH_DISABLED = True
+        logger.error("Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled. Refusing to start.")
+        raise RuntimeError("Neither TRUCON_SERVICE_TOKEN nor TRUCON_UDS_PATH is configured while auth is enabled")
 
     # Single-instance enforcement
     acquire_instance_lock()
@@ -487,12 +602,7 @@ async def lifespan(app: FastAPI):
     _crash_recovery()
 
     # Initialize adapters
-    try:
-        _local_mr = _initialize_local_mr_adapter()
-    except Exception as e:
-        if _ENABLE_TDX:
-            raise
-        logger.warning("Could not init local MR adapter: %s", e)
+    _local_mr = _initialize_local_mr_adapter()
 
     mirror_location = BUNDLE_MIRROR_LOCATION
     _bundle_mirror = OciBundleMirror(mirror_location) if mirror_location else None
@@ -933,7 +1043,10 @@ def commit(req: CommitRequest, request: Request):
                     mr_value, prev_mr_value = _local_mr.extend(RTMR_INDEX, req.event_digest)
                 except Exception as e:
                     logger.error("RTMR extend failed: %s", e)
-                    raise HTTPException(status_code=500, detail=f"RTMR extend failed: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=_tdx_environment_hint(f"RTMR extend failed: {e}"),
+                    )
 
             insert_record(
                 record_id=record_id,
@@ -1023,7 +1136,10 @@ def commit(req: CommitRequest, request: Request):
                 mr_value, prev_mr_value = _local_mr.extend(RTMR_INDEX, req.event_digest)
             except Exception as e:
                 logger.error("RTMR extend failed: %s", e)
-                raise HTTPException(status_code=500, detail=f"RTMR extend failed: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=_tdx_environment_hint(f"RTMR extend failed: {e}"),
+                )
 
         # 3. INSERT into commit_queue with rtmr_extended=TRUE
         insert_record(
@@ -1107,10 +1223,16 @@ def get_attested_head_evidence(chain_id: str):
     try:
         quote_material = quote_adapter.quote(expected_value)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Quote acquisition failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail=_tdx_environment_hint(f"Quote acquisition failed: {exc}"),
+        ) from exc
 
     if quote_material.report_data != expected_value:
-        raise HTTPException(status_code=500, detail="Quote-backed report data did not match the expected binding value")
+        raise HTTPException(
+            status_code=500,
+            detail=_tdx_environment_hint("Quote-backed report data did not match the expected binding value"),
+        )
 
     evidence = validate_attested_head_evidence_payload(
         {

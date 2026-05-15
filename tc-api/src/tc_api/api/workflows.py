@@ -34,7 +34,6 @@ logger = runtime.logger
 
 BUILD_DIR = runtime.BUILD_DIR
 DOCKER_REPOSITORY = runtime.DOCKER_REPOSITORY
-ENABLE_TDX = runtime.ENABLE_TDX
 TRANSPARENCY_SERVICE_CHAIN_ID = runtime.TRANSPARENCY_SERVICE_CHAIN_ID
 
 
@@ -184,17 +183,16 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
         encryption_key_source = "generated"
         if not request.sign_key or not request.cert:
             docker_service.update_build_status(request.user_id, build_id, "preparing", step="Get signing and encryption keys")
-            if ENABLE_TDX:
-                attestation_result, decryption_key = docker_service.get_pubKey_from_KBS(tlog, record_id)
-                if attestation_result != "trusted":
-                    docker_service.update_build_status(
-                        request.user_id,
-                        build_id,
-                        "failed",
-                        error_message="Attestation failed: get key failed.",
-                    )
-                    return
-                encryption_key_source = "kbs"
+            attestation_result, decryption_key = docker_service.get_pubKey_from_KBS(tlog, record_id)
+            if attestation_result != "trusted":
+                docker_service.update_build_status(
+                    request.user_id,
+                    build_id,
+                    "failed",
+                    error_message="Attestation failed: get key failed.",
+                )
+                return
+            encryption_key_source = "kbs"
 
             docker_service.update_build_status(
                 request.user_id,
@@ -547,24 +545,23 @@ async def launch_container_async(
         attestation_result = "trusted"
         decryption_key = None
         if request.attestation_required:
-            if ENABLE_TDX:
-                attestation_result, decryption_key = await docker_service.verify_attestation(
-                    request.image_id,
+            attestation_result, decryption_key = await docker_service.verify_attestation(
+                request.image_id,
+                request.user_id,
+                tlog,
+                record_id,
+            )
+            tlog.add_entry(record_id, Entry(key="verify_image", value={"verify_image": attestation_result}))
+            tlog.add_entry(record_id, Entry(key="verify_keys", value={"verify_keys": decryption_key}))
+            if attestation_result != "trusted":
+                docker_service.update_launch_status(
                     request.user_id,
-                    tlog,
-                    record_id,
+                    launch_id,
+                    "failed",
+                    error_message=f"Attestation failed: {attestation_result}",
                 )
                 tlog.add_entry(record_id, Entry(key="verify_image", value={"verify_image": attestation_result}))
-                tlog.add_entry(record_id, Entry(key="verify_keys", value={"verify_keys": decryption_key}))
-                if attestation_result != "trusted":
-                    docker_service.update_launch_status(
-                        request.user_id,
-                        launch_id,
-                        "failed",
-                        error_message=f"Attestation failed: {attestation_result}",
-                    )
-                    tlog.add_entry(record_id, Entry(key="verify_image", value={"verify_image": attestation_result}))
-                    return
+                return
 
         log_proxy_configuration("Launch image pull")
         pull_success = docker_service.pull_image(

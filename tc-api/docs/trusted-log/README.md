@@ -53,7 +53,7 @@ The Trusted Log module persists event records into immutable backends (transpare
 Each persisted immutable-log entry wraps one committed `EventLog` plus signed predecessor metadata.
 Verifier-facing continuity is now established by the signed predecessor contract: `sequence_num`, `prev_event_digest`, and `prev_lookup_hash`.
 
-**Note:** `prev_log_id` is still maintained by the TruCon in SQLite for backend-oriented bookkeeping and compatibility paths, but it is no longer the verifier-facing predecessor contract. In TEE environments, RTMR remains the strongest ordering proof; in non-TEE fallback, continuity is checked against the signed predecessor contract for confirmed records.
+**Note:** `prev_log_id` is still maintained by the TruCon in SQLite for backend-oriented bookkeeping and compatibility paths, but it is no longer the verifier-facing predecessor contract. RTMR remains the primary ordering proof for the deployed TDX-backed system, while signed predecessor continuity is retained as verifier logic over confirmed records.
 
 ```mermaid
 classDiagram

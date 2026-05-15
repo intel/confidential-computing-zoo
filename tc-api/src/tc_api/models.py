@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Optional, Dict, List, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 
 
@@ -78,8 +78,7 @@ class PublishPackageRequest(BaseModel):
     identity_token: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 class PublishPackageResponse(BaseModel):
     build_id: str

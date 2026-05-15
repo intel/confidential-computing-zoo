@@ -12,6 +12,7 @@ import urllib.error
 
 from cryptography import x509
 from cryptography.x509.oid import NameOID
+from sigstore.dsse import StatementBuilder, Subject
 from sigstore.sign import SigningContext
 from sigstore.oidc import IdentityToken
 from sigstore.models import Bundle
@@ -29,9 +30,23 @@ from ..trucon.internal_transport import request_json
 from .trucon_submitter import post_commit_to_trucon, reserve_commit_intent
 
 from tlog.digest import canonical_json
-from .dsse_builder import attach_commit_context, build_event_predicate, build_statement
+from .dsse_builder import PREDICATE_TYPE, attach_commit_context, build_event_predicate
 
 logger = logging.getLogger(__name__)
+
+
+def build_statement(chain_id: str, event_digest: str, predicate_payload: Dict[str, Any]):
+    subject = Subject(
+        name=f"trusted-log-chain_{chain_id}",
+        digest={"sha384": event_digest.split(":")[1]},
+    )
+    return (
+        StatementBuilder()
+        .subjects([subject])
+        .predicate_type(PREDICATE_TYPE)
+        .predicate(predicate_payload)
+        .build()
+    )
 
 
 from .baseline import (

@@ -1,13 +1,4 @@
-"""
-Tests for the non-tee-verification change.
-
-Covers:
-- 4.1 Valid signed predecessor chain in non-TEE mode
-- 4.2 Signed predecessor mismatch detection
-- 4.3 Unconfirmed record returns predecessor_ok: None
-- 4.4 RTMR mode suppresses predecessor check
-- 4.5 Startup warning emits WARNING-level "NON-TEE MODE"
-"""
+"""Tests for chain verification behavior across predecessor and MR states."""
 
 import logging
 import os
@@ -47,7 +38,7 @@ def _insert_confirmed_record(db, record_id, seq, chain_id, prev_event_digest, pr
         rtmr_extended=True,
         prev_event_digest=prev_event_digest,
         prev_lookup_hash=prev_lookup_hash,
-        mr_value=None,  # non-TEE: no mr_value
+        mr_value=None,
         sequence_num=seq,
         event_digest=event_digest or f"sha384:{seq:096x}",
         db_path=db,
@@ -74,7 +65,7 @@ def _owner_baseline_payload(pub_key: str) -> dict:
 
 
 class TestPredecessorVerification:
-    """Tests for signed predecessor linkage in verify-chain (non-TEE mode)."""
+    """Tests for signed predecessor linkage in verify-chain."""
 
     def test_valid_signed_predecessor_chain(self, db):
         """4.1: Valid signed predecessor chain returns all predecessor_ok: True."""
@@ -355,46 +346,27 @@ class TestPredecessorVerification:
         assert resp.entries[1].mr_ok is True
 
 
-class TestStartupWarning:
-    """Test for NON-TEE MODE startup warning."""
-
-    def test_non_tee_startup_warning(self, caplog):
-        """4.5: When TDX sysfs absent, WARNING with 'NON-TEE MODE' is emitted."""
-        with patch("os.path.exists", return_value=False):
-            with caplog.at_level(logging.WARNING, logger="trucon"):
-                # Simulate the startup check logic
-                from tc_api.trucon.app import logger as trucon_logger
-                if not os.path.exists("/sys/class/misc/tdx_guest/measurements/rtmr"):
-                    trucon_logger.warning(
-                        "NON-TEE MODE: TDX RTMR sysfs not found — "
-                        "running without hardware measurement extensions (development/testing only)"
-                    )
-
-        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert any("NON-TEE MODE" in r.message for r in warning_records)
-
+class TestTdxStartupRequirements:
     def test_enable_tdx_rejects_read_only_rtmr_mode(self):
         from tc_api.trucon.app import _initialize_local_mr_adapter
 
-        with patch("tc_api.trucon.app._ENABLE_TDX", True), \
-             patch("tc_api.trucon.app.RTMR_INDEX", 2), \
+        with patch("tc_api.trucon.app.RTMR_INDEX", 2), \
              patch("tc_api.trucon.app.logger"), \
              patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_available", return_value=False), \
              patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_extend_available", return_value=False), \
              patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_report_read_available", return_value=True):
-            with pytest.raises(RuntimeError, match="requires RTMR extend support"):
+            with pytest.raises(RuntimeError, match="TDX startup requires RTMR extend support"):
                 _initialize_local_mr_adapter()
 
     def test_enable_tdx_rejects_missing_rtmr_support(self):
         from tc_api.trucon.app import _initialize_local_mr_adapter
 
-        with patch("tc_api.trucon.app._ENABLE_TDX", True), \
-             patch("tc_api.trucon.app.RTMR_INDEX", 2), \
+        with patch("tc_api.trucon.app.RTMR_INDEX", 2), \
              patch("tc_api.trucon.app.logger"), \
              patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_available", return_value=False), \
              patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_extend_available", return_value=False), \
              patch("tc_api.trucon.adapters.tdx_mr.TdxMRAdapter.is_report_read_available", return_value=False):
-            with pytest.raises(RuntimeError, match="requires RTMR extend support"):
+            with pytest.raises(RuntimeError, match="TDX startup requires RTMR extend support"):
                 _initialize_local_mr_adapter()
 
 

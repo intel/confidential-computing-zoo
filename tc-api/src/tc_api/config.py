@@ -35,7 +35,6 @@ KBS_FETCH_RETRY_DELAY_SECONDS = config("KBS_FETCH_RETRY_DELAY_SECONDS", default=
 GIT_EMAIL = config("GIT_EMAIL", default="")
 
 # Runtime feature flags
-ENABLE_TDX = config("ENABLE_TDX", default=True, cast=bool)
 INIT_DEFAULT_CHAIN_ON_STARTUP = config("INIT_DEFAULT_CHAIN_ON_STARTUP", default=True, cast=bool)
 TRANSPARENCY_SERVICE_CHAIN_ID = config("TRANSPARENCY_SERVICE_CHAIN_ID", default="tc-api-service")
 TRANSPARENCY_WORKLOAD_CHAIN_PREFIX = config("TRANSPARENCY_WORKLOAD_CHAIN_PREFIX", default="tc-api-workload-")

@@ -229,11 +229,9 @@ Core contract definitions:
 
 **Important**: backend-assigned `prev_log_id` is no longer the verifier-facing predecessor contract. The caller signs `sequence_num`, `prev_event_digest`, and `prev_lookup_hash` after TruCon reserves them, so replay continuity can be checked directly against the signed predicate. RTMR still provides the hardware-backed ordering proof for measured environments.
 
-**Non-TEE Mode: signed predecessor replay as DB-Level Ordering Verification**
+**Signed predecessor replay as verifier-side continuity logic**
 
-In environments without TEE hardware (no RTMR), signed predecessor replay is used as a DB-level ordering verification fallback. This is still weaker than hardware-backed RTMR ordering, but it does validate that each confirmed record's signed `prev_event_digest` and `prev_lookup_hash` match the preceding confirmed record selected by `sequence_num`. Unconfirmed records at the chain tail cannot be verified and are reported as unverifiable.
-
-This mode is suitable for development and testing only. TruCon logs a prominent warning at startup when TDX hardware is absent. The production trust model is bound to TDX RTMR hardware chains; non-TEE mode exists solely to allow functional testing of the commit/verify flow without hardware.
+The deployed system is TDX-only and relies on RTMR as the hardware-backed ordering proof. In addition, verifier-side signed predecessor replay checks that each confirmed record's signed `prev_event_digest` and `prev_lookup_hash` match the preceding confirmed record selected by `sequence_num`. Unconfirmed records at the chain tail remain unverifiable until confirmation.
 
 The following diagram shows the verifier-facing replay contract. `log_id` remains the immutable backend identity, but predecessor continuity is proven from the signed predicate rather than from backend-assigned predecessor IDs.
 
@@ -416,7 +414,7 @@ For the `default` chain, tc_api creates Event Log 0 during service startup via t
 
 **Contents**:
 - Current RTMR[2] snapshot (read, not extended).
-- SHA-384 digest of the raw CCEL binary read from ACPI tables (`/sys/firmware/acpi/tables/CCEL`). Only the digest is stored, not the full CCEL binary. In non-TEE environments, the CCEL field is null.
+- SHA-384 digest of the raw CCEL binary read from ACPI tables (`/sys/firmware/acpi/tables/CCEL`). Only the digest is stored, not the full CCEL binary. On supported TDX hosts, missing CCEL material should be treated as a platform configuration problem.
 - The TEE-generated ECDSA P-384 public key in PEM format (`pub_key` field).
 
 **Initialization semantics**: Event Log 0 creation is a logical prerequisite, not a blocking gate. Subsequent `/commit` calls can proceed and queue while Event Log 0 is still PENDING. The submit daemon's ordered-submission behavior (ascending `sequence_num`) guarantees that Event Log 0 (sequence_num=1) is published to Rekor before any subsequent records. If Event Log 0 submission fails terminally, the entire chain is dead — no trust anchor exists. For lazily bootstrapped workload chains, failure to create the local baseline rejects the triggering first commit instead of admitting a chain whose first record is not Event Log 0.

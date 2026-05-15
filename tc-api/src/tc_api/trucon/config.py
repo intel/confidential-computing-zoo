@@ -36,5 +36,4 @@ BUNDLE_MIRROR_LOCATION: str = (
 AUTH_DISABLED: bool = os.environ.get("TRUCON_AUTH_DISABLED", "").lower() == "true"
 SERVICE_TOKEN: str = os.environ.get("TRUCON_SERVICE_TOKEN", "")
 TRUCON_UDS_PATH: str = os.environ.get("TRUCON_UDS_PATH", "")
-ENABLE_TDX: bool = os.environ.get("ENABLE_TDX", "true").lower() == "true"
 TRUCON_HTTP_PORT: int = int(os.environ.get("TRUCON_PORT", "8001"))

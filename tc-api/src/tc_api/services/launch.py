@@ -10,7 +10,6 @@ from typing import Any, Dict, Optional
 from ..config import (
     BUILD_DIR,
     DOCKER_CMD,
-    ENABLE_TDX,
     SKOPEO_CMD,
 )
 from ..models import LaunchResult, TransparencyResult
@@ -60,15 +59,11 @@ class LaunchServiceMixin:
     def _build_launch_security_projection(self, launch_id: str, workload_id: str) -> Dict[str, Any]:
         mounts = [
             "/etc/hosts:/etc/hosts",
+            "/etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf",
+            "/usr/share/doc/libtdx-attest-dev/examples/:/td-attest/",
+            "/etc/tdx-attest.conf:/etc/tdx-attest.conf",
         ]
-        devices = []
-        if ENABLE_TDX:
-            mounts.extend([
-                "/etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf",
-                "/usr/share/doc/libtdx-attest-dev/examples/:/td-attest/",
-                "/etc/tdx-attest.conf:/etc/tdx-attest.conf",
-            ])
-            devices.append("/dev/tdx_guest")
+        devices = ["/dev/tdx_guest"]
         return {
             "launch_id": launch_id,
             "workload_id": workload_id,
@@ -142,7 +137,6 @@ class LaunchServiceMixin:
                 if openssl_key:
                     cmd = [SKOPEO_CMD, "copy", "--decryption-key", openssl_key, source_ref, dest_ref]
                 else:
-                    # Non-TDX mode can operate without decryption key when image is not encrypted.
                     cmd = [SKOPEO_CMD, "copy", source_ref, dest_ref]
                 if insecure_local_registry:
                     cmd.insert(2, "--src-tls-verify=false")
@@ -354,19 +348,16 @@ class LaunchServiceMixin:
                 docker_cmd.extend(["--label", f"io.trucon.workload-id={workload_id}"])
             if launch_id:
                 docker_cmd.extend(["--label", f"io.trucon.launch-id={launch_id}"])
-            if ENABLE_TDX:
-                docker_cmd.extend([
-                    "-v",
-                    "/etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf",
-                    "-v",
-                    "/dev/tdx_guest:/dev/tdx_guest",
-                    "-v",
-                    "/usr/share/doc/libtdx-attest-dev/examples/:/td-attest/",
-                    "-v",
-                    "/etc/tdx-attest.conf:/etc/tdx-attest.conf",
-                ])
-            else:
-                logger.info("ENABLE_TDX=false, skipping TDX device and attestation mounts")
+            docker_cmd.extend([
+                "-v",
+                "/etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf",
+                "-v",
+                "/dev/tdx_guest:/dev/tdx_guest",
+                "-v",
+                "/usr/share/doc/libtdx-attest-dev/examples/:/td-attest/",
+                "-v",
+                "/etc/tdx-attest.conf:/etc/tdx-attest.conf",
+            ])
 
             docker_cmd.append(loaded_image_ref)
             logger.info(f"Runcmd : {' '.join(docker_cmd)}")

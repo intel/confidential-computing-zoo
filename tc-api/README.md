@@ -195,7 +195,7 @@ Operational notes for mirror-backed replay:
 
 For failure analysis, `tc-verify --json` now emits a top-level `diagnostics` section summarizing immutable replay success, replay provenance, fallback validity, and the first replay entry with a boundary, predecessor, or materialization problem.
 
-Use `chain_id` without `--evidence` only for transitional live fallback verification. In the preferred evidence-backed flow, `tc-verify` derives `chain_id`, `head_log_id`, `sequence_num`, and `mr_value` from the exported evidence package, replays immutable-backend history from the attested head, and reports attested-head results separately from fallback diagnostics. Live TruCon verification remains available as fallback and non-TEE fallback remains test-only rather than production-equivalent success.
+Use `chain_id` without `--evidence` only for transitional live fallback verification. In the preferred evidence-backed flow, `tc-verify` derives `chain_id`, `head_log_id`, `sequence_num`, and `mr_value` from the exported evidence package, replays immutable-backend history from the attested head, and reports attested-head results separately from fallback diagnostics. Live TruCon verification remains available for troubleshooting, but production verification is expected to run against exported attested-head evidence on TDX-backed chains.
 
 ## Real OCI Mirror Validation
 
@@ -625,7 +625,7 @@ Configure via environment variables:
 - `HOST`: Service listening address (default: 0.0.0.0)
 - `PORT`: Service port (default: 8000)
 - `DOCKER_REGISTRY`: Docker image registry address
-- `ENABLE_TDX`: enable TDX-specific flow and mounts (`true` or `false`, default `false`)
+- TDX guest support is mandatory. The service expects `/dev/tdx_guest`, RTMR extend support, and quote generation to be available.
 - `UPLOAD_DIR`: File upload directory
 - `BUILD_DIR`: Build working directory
 
