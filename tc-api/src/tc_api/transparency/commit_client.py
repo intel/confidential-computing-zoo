@@ -1,35 +1,23 @@
-import hashlib
-import json
 import logging
-import os
-import threading
 import uuid
-import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
-import urllib.request
+from typing import Any, Dict, List, Optional
 import urllib.error
 
-from cryptography import x509
-from cryptography.x509.oid import NameOID
 from sigstore.dsse import StatementBuilder, Subject
-from sigstore.sign import SigningContext
 from sigstore.oidc import IdentityToken
-from sigstore.models import Bundle
 
 from ..identity.sigstore_baseline import build_baseline_sigstore_bundle, build_signing_context
 from ..identity.sigstore_baseline import get_chain_owner_private_key
-from ..trucon.owner_authorization import verify_owner_authorization
 from tlog.types import (
     RecordContext, Entry, Record, EventLog, CommitResult,
-    CommitQueueStatus, LatestState, VerificationResult, SubmitStatus
+    CommitQueueStatus, VerificationResult, SubmitStatus
 )
-from tlog.errors import RecordNotFoundError, BackendSubmitError, VerificationError
+from tlog.errors import RecordNotFoundError, BackendSubmitError
 from ..trucon.database import get_chain_state
 from ..trucon.internal_transport import request_json
 from .trucon_submitter import post_commit_to_trucon, reserve_commit_intent
 
-from tlog.digest import canonical_json
 from .dsse_builder import PREDICATE_TYPE, attach_commit_context, build_event_predicate
 
 logger = logging.getLogger(__name__)
@@ -49,19 +37,11 @@ def build_statement(chain_id: str, event_digest: str, predicate_payload: Dict[st
     )
 
 
-from .baseline import (
-    _entry_has_required_history_fields,
-    _entry_has_event_log0_baseline,
-    _predicate_entry_value,
-    _replay_owner_pub_key,
-)
 from .verification import (
     _annotate_delegation_verification,
     _annotate_owner_verification,
     _annotate_predecessor_verification,
-    _decode_dsse_payload,
     _entry_matches_chain,
-    _extract_signer_identity,
     _normalize_verification_entry,
 )
 

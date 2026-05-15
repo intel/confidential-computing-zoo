@@ -4,8 +4,6 @@ Unit tests for TruCon service authentication middleware.
 Covers: valid token, missing header, wrong scheme, invalid token,
 dev-mode bypass, and startup guard.
 """
-
-import os
 import pytest
 from unittest.mock import patch
 from fastapi.testclient import TestClient

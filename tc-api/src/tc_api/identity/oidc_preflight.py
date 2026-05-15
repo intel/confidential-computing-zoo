@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 import jwt
 from sigstore.oidc import IdentityToken, Issuer
 import sigstore.oidc as sigstore_oidc
-from .sigstore_identity import cache_sigstore_identity_token, token_seconds_remaining
+from .sigstore_identity import cache_sigstore_identity_token
 
 
 DEFAULT_TOKEN_ENV = "TC_API_REAL_REKOR_IDENTITY_TOKEN"

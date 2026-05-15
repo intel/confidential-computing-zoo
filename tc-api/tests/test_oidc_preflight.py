@@ -3,9 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-import jwt
-
-from tc_api import oidc_preflight
+from tc_api.identity import oidc_preflight
 
 
 def _make_token(**claims):
@@ -218,7 +216,7 @@ def test_main_does_not_run_smoke_when_preflight_fails(monkeypatch):
 
 def test_load_token_from_interactive_prompt(monkeypatch):
     token = _make_token()
-    monkeypatch.setattr(oidc_preflight.getpass, "getpass", lambda prompt: token)
+    monkeypatch.setattr(oidc_preflight.getpass, "getpass", lambda _prompt: token)
 
     loaded = oidc_preflight._load_token(
         SimpleNamespace(prompt_token=True, stdin=False, env_var=oidc_preflight.DEFAULT_TOKEN_ENV)
@@ -231,7 +229,7 @@ def test_main_uses_interactive_prompt_token(monkeypatch):
     now = int(datetime.now(timezone.utc).timestamp())
     token = _make_token(iat=now, exp=now + 300)
     monkeypatch.setattr(oidc_preflight, "_utc_now_epoch", lambda: now)
-    monkeypatch.setattr(oidc_preflight.getpass, "getpass", lambda prompt: token)
+    monkeypatch.setattr(oidc_preflight.getpass, "getpass", lambda _prompt: token)
 
     rc = oidc_preflight.main(["--prompt-token", "--json"])
 
@@ -239,7 +237,7 @@ def test_main_uses_interactive_prompt_token(monkeypatch):
 
 
 def test_load_expected_identity_from_interactive_prompt(monkeypatch):
-    monkeypatch.setattr("builtins.input", lambda prompt: "alice@example.com")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "alice@example.com")
 
     expected_identity = oidc_preflight._load_expected_identity(
         SimpleNamespace(expected_identity=None, prompt_expected_identity=True)
@@ -252,8 +250,8 @@ def test_main_uses_interactive_expected_identity(monkeypatch):
     now = int(datetime.now(timezone.utc).timestamp())
     token = _make_token(iat=now, exp=now + 300)
     monkeypatch.setattr(oidc_preflight, "_utc_now_epoch", lambda: now)
-    monkeypatch.setattr(oidc_preflight.getpass, "getpass", lambda prompt: token)
-    monkeypatch.setattr("builtins.input", lambda prompt: "repo:example/project:ref:refs/heads/main")
+    monkeypatch.setattr(oidc_preflight.getpass, "getpass", lambda _prompt: token)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "repo:example/project:ref:refs/heads/main")
 
     rc = oidc_preflight.main(["--prompt-token", "--prompt-expected-identity", "--json"])
 

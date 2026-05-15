@@ -10,8 +10,6 @@ Covers:
 - 5.6 metric=queue_snapshot log line contains all 5 count fields
 - 5.7 metric=confirmation_lag is emitted with correct lag_ms on confirm
 """
-
-import json
 import importlib
 import logging
 import sqlite3
@@ -20,7 +18,7 @@ import time
 import uuid
 from datetime import datetime
 from typing import Tuple
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -223,7 +221,7 @@ class TestTotalRetryCount:
 class TestCommitLatencyMetric:
     def test_commit_emits_latency_log(self, db, caplog):
         """Verify /commit handler emits metric=commit_latency on normal commit."""
-        from tc_api.trucon.database import get_chain_state, update_chain_state
+        from tc_api.trucon.database import update_chain_state
 
         lock = threading.Lock()
         event_digest = "sha384:" + "ab" * 48

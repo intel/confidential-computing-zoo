@@ -4,18 +4,13 @@ These tests validate the full delegation lifecycle using mocks for
 external services (TruCon, Rekor, Fulcio).  They exercise the real
 code paths in trucon_client.py and delegation.py.
 """
-import base64
-import json
-import os
-import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
 import pytest
-from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from tc_api.docktap.trucon_client import TruConCommitter, MissingIdentityTokenError
+from tc_api.docktap.trucon_client import TruConCommitter
 from tc_api.trucon.database import (
     init_db,
     get_active_delegation,

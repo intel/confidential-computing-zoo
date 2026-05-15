@@ -10,11 +10,8 @@ Covers:
 - 4.6 Schema migration adds idempotency_key column
 - 4.7 commit_record() generates idempotency key in TruCon payload
 """
-
-import json
 import sqlite3
 import threading
-import uuid
 from typing import Tuple
 from unittest.mock import MagicMock, patch
 
@@ -155,7 +152,7 @@ class TestIdempotencyKeyUnique:
 class TestCommitIdempotency:
     def test_duplicate_commit_returns_cached_response(self, db):
         """Simulate the /commit handler logic: second call with same key skips RTMR extend."""
-        from tc_api.trucon.database import get_chain_state, update_chain_state
+        from tc_api.trucon.database import update_chain_state
 
         mr_adapter = MockMRAdapter()
         lock = threading.Lock()
@@ -340,7 +337,7 @@ class TestClientIdempotencyKeyGeneration:
             mock_ctx.signer.return_value.__exit__ = lambda s, *a: None
             mock_build_ctx.return_value = mock_ctx
 
-            result = api.commit_record(
+            api.commit_record(
                 record_id=ctx.record_id,
                 event_type="test",
                 commit_options={"identity_token": "mock-token"},
@@ -390,7 +387,7 @@ class TestClientIdempotencyKeyGeneration:
             mock_ctx.signer.return_value.__exit__ = lambda s, *a: None
             mock_build_ctx.return_value = mock_ctx
 
-            result = api.commit_record(
+            api.commit_record(
                 record_id=ctx.record_id,
                 event_type="test",
                 commit_options={

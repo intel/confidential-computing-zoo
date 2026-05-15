@@ -1,11 +1,10 @@
 import base64
 import ctypes
-import hashlib
 import os
 import uuid
 from dataclasses import dataclass
 
-from tc_api.trucon.evidence import decode_binding_expected_value, encode_binding_expected_value
+from tc_api.trucon.evidence import decode_binding_expected_value
 
 
 @dataclass(frozen=True)

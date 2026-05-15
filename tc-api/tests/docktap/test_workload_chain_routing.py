@@ -1,7 +1,6 @@
 """Unit tests for workload label extraction and chain routing logic."""
 
 import json
-from unittest.mock import MagicMock
 
 import pytest
 

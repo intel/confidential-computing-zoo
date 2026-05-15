@@ -11,7 +11,6 @@ from urllib.parse import parse_qs, urlencode, urljoin
 
 from .operation_log import (
     OperationTracker,
-    parse_operation_metadata,
     enrich_from_response,
     log_operation_json,
     is_streaming_endpoint,

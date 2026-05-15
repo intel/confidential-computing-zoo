@@ -244,7 +244,6 @@ def parse_http_request(request_bytes: bytes) -> tuple:
     parts = request_line.split(" ")
     method = parts[0] if len(parts) > 0 else ""
     path = parts[1] if len(parts) > 1 else ""
-    version = parts[2] if len(parts) > 2 else "HTTP/1.1"
     
     headers = {}
     for line in lines[1:]:

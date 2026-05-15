@@ -9,7 +9,6 @@ Environment:
     DOCKER_HOST=unix:///tmp/docker-proxy.sock  # Configure Docker CLI to use proxy
 """
 
-import os
 import sys
 import signal
 import argparse

@@ -417,12 +417,6 @@ def increment_retry(record_id: str, status: str, db_path: str = DB_PATH):
         ''', (status, datetime.utcnow().isoformat(), record_id))
         conn.commit()
 
-def delete_record(record_id: str, db_path: str = DB_PATH):
-    """Delete a record from the commit queue (e.g. after successful upload)."""
-    with get_db_connection(db_path) as conn:
-        conn.execute('DELETE FROM commit_queue WHERE record_id = ?', (record_id,))
-        conn.commit()
-
 def get_pending_records(db_path: str = DB_PATH) -> List[sqlite3.Row]:
     """Retrieve all pending records ordered by updated_at (oldest first)."""
     with get_db_connection(db_path) as conn:

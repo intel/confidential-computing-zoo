@@ -1,10 +1,7 @@
 import pytest
-import sqlite3
 import threading
-import json
-import time
 import ctypes
-from tc_api.trucon.database import init_db, insert_record, get_pending_records, delete_record
+from tc_api.trucon.database import init_db, insert_record, get_pending_records
 from tc_api.transparency.commit_client import TrustedLogAPI
 from tlog.local_mr import LocalMRAdapter
 from typing import Tuple
@@ -40,7 +37,7 @@ def test_sqlite_wal_persistence(tmp_path):
 
 def test_dsse_formatting_mocked():
     adapter = MockMRAdapter()
-    api = TrustedLogAPI(local_mr=adapter)
+    TrustedLogAPI(local_mr=adapter)
     # Mocking out the missing dependencies locally
     assert True # In reality we'd assert the dsse StatementBuilder properties 
 
@@ -48,8 +45,8 @@ def test_tokenless_rekor_push_daemon():
     # Setup dummy queue
     # Assert daemon takes from SQLite and calls submit without IdentityToken
     assert True
+
 from tc_api.trucon.adapters.tdx_mr import TdxMRAdapter
-import os
 
 def test_tdx_mr_adapter_detects_real_sysfs_node(tmp_path):
     d = tmp_path / "measurements"

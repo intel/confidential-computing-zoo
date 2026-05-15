@@ -6,16 +6,11 @@ This test process can be run to verify the proxy is working correctly.
 It starts the proxy and makes test Docker API calls through it.
 """
 
-import os
 import sys
 import time
-import socket
 import threading
-import subprocess
-from datetime import datetime
 
 from tc_api.docktap.proxy.docker_proxy import DockerProxyServer
-from tc_api.docktap.proxy.operation_log import log_event
 
 
 def test_proxy_start_stop():

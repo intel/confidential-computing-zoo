@@ -4,10 +4,9 @@ Tests for TruCon /init-chain endpoints (Event Log 0 baseline).
 
 import importlib
 import json
-import os
 from contextlib import ExitStack
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from typing import Tuple
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
@@ -16,6 +15,7 @@ from fastapi.testclient import TestClient
 from tlog.local_mr import LocalMRAdapter
 from tc_api.trucon.database import init_db
 from tc_api.trucon.owner_authorization import sign_owner_authorization
+from tests.utils import EchoQuoteAdapter, make_db_patches
 
 trucon_app_mod = importlib.import_module("tc_api.trucon.app")
 trucon_db_mod = importlib.import_module("tc_api.trucon.database")
@@ -31,135 +31,30 @@ class MockMRAdapter(LocalMRAdapter):
         return "cc" * 48, "bb" * 48
 
 
-class MockQuoteAdapter:
-    """Mock quote adapter that returns deterministic owner-attestation material."""
-
-    def quote(self, expected_value: str):
-        return type(
-            "QuoteMaterial",
-            (),
-            {
-                "quote": "mock-owner-quote",
-                "report_data": expected_value,
-                "quote_format": "mock-quote-format",
-            },
-        )()
-
-
-def _make_db_patches(db_path: str):
-    """Create patched versions of DB functions that use the test db_path."""
-    orig_insert = trucon_db_mod.insert_record
-    orig_get_chain_state = trucon_db_mod.get_chain_state
-    orig_update_chain_state = trucon_db_mod.update_chain_state
-    orig_get_record_by_idem = trucon_db_mod.get_record_by_idempotency_key
-    orig_get_chain_records = trucon_db_mod.get_chain_records
-    orig_create_commit_intent = trucon_db_mod.create_commit_intent
-    orig_get_commit_intent_by_token = trucon_db_mod.get_commit_intent_by_token
-    orig_get_commit_intent_by_idempotency_key = trucon_db_mod.get_commit_intent_by_idempotency_key
-    orig_get_active_commit_intent_for_chain = trucon_db_mod.get_active_commit_intent_for_chain
-    orig_update_commit_intent_status = trucon_db_mod.update_commit_intent_status
-    orig_expire_active_commit_intents = trucon_db_mod.expire_active_commit_intents
-    orig_get_record_by_id = trucon_db_mod.get_record_by_id
-
-    def patched_insert(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_insert(*args, **kwargs)
-
-    def patched_get_chain_state(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_get_chain_state(*args, **kwargs)
-
-    def patched_update_chain_state(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_update_chain_state(*args, **kwargs)
-
-    def patched_get_record_by_idem(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_get_record_by_idem(*args, **kwargs)
-
-    def patched_get_chain_records(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_get_chain_records(*args, **kwargs)
-
-    def patched_create_commit_intent(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_create_commit_intent(*args, **kwargs)
-
-    def patched_get_commit_intent_by_token(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_get_commit_intent_by_token(*args, **kwargs)
-
-    def patched_get_commit_intent_by_idempotency_key(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_get_commit_intent_by_idempotency_key(*args, **kwargs)
-
-    def patched_get_active_commit_intent_for_chain(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_get_active_commit_intent_for_chain(*args, **kwargs)
-
-    def patched_update_commit_intent_status(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_update_commit_intent_status(*args, **kwargs)
-
-    def patched_expire_active_commit_intents(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_expire_active_commit_intents(*args, **kwargs)
-
-    def patched_get_record_by_id(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_get_record_by_id(*args, **kwargs)
-
-    return {
-        "insert_record": patched_insert,
-        "get_chain_state": patched_get_chain_state,
-        "update_chain_state": patched_update_chain_state,
-        "get_record_by_idempotency_key": patched_get_record_by_idem,
-        "get_chain_records": patched_get_chain_records,
-        "create_commit_intent": patched_create_commit_intent,
-        "get_commit_intent_by_token": patched_get_commit_intent_by_token,
-        "get_commit_intent_by_idempotency_key": patched_get_commit_intent_by_idempotency_key,
-        "get_active_commit_intent_for_chain": patched_get_active_commit_intent_for_chain,
-        "update_commit_intent_status": patched_update_commit_intent_status,
-        "expire_active_commit_intents": patched_expire_active_commit_intents,
-        "get_record_by_id": patched_get_record_by_id,
-    }
-
-
-def _make_baseline_bundle(chain_id: str) -> str:
-    return json.dumps(
-        {
-            "chain_id": chain_id,
-            "sequence_num": 1,
-            "prev_event_digest": None,
-            "prev_lookup_hash": None,
-            "digest": "sha384:" + ("11" * 48),
-        }
-    )
-
-
-def _generate_owner_keypair() -> Tuple[ec.EllipticCurvePrivateKey, str]:
-    private_key = ec.generate_private_key(ec.SECP384R1())
-    public_key = private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    ).decode("utf-8")
-    return private_key, public_key
-
-
-def _reserve_baseline_intent(client: TestClient, chain_id: str, idempotency_key: str | None = None):
-    payload = {"chain_id": chain_id, "is_baseline": True}
-    if idempotency_key is not None:
-        payload["idempotency_key"] = idempotency_key
-    return client.post("/commit-intents/reserve", json=payload)
-
-
 @pytest.fixture
 def trucon_client(tmp_path):
     """Set up an isolated TruCon TestClient with mock adapters and temp DB."""
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
 
-    patches = _make_db_patches(db_path)
+    patches = make_db_patches(
+        trucon_db_mod,
+        db_path,
+        [
+            "insert_record",
+            "get_chain_state",
+            "update_chain_state",
+            "get_record_by_idempotency_key",
+            "get_chain_records",
+            "create_commit_intent",
+            "get_commit_intent_by_token",
+            "get_commit_intent_by_idempotency_key",
+            "get_active_commit_intent_for_chain",
+            "update_commit_intent_status",
+            "expire_active_commit_intents",
+            "get_record_by_id",
+        ],
+    )
 
     old_mr = trucon_app_mod._local_mr
     old_quote_adapter = trucon_app_mod._quote_adapter
@@ -168,7 +63,10 @@ def trucon_client(tmp_path):
 
     try:
         trucon_app_mod._local_mr = MockMRAdapter()
-        trucon_app_mod._quote_adapter = MockQuoteAdapter()
+        trucon_app_mod._quote_adapter = EchoQuoteAdapter(
+            quote="mock-owner-quote",
+            quote_format="mock-quote-format",
+        )
         trucon_app_mod._AUTH_DISABLED = True
         trucon_app_mod._pending_init_tokens.clear()
         trucon_app_mod.app.state.test_db_path = db_path
@@ -209,6 +107,38 @@ def _get_record_payload(record_id: str, db_path: str) -> dict:
     row = trucon_db_mod.get_record_by_id(record_id, db_path=db_path)
     assert row is not None
     return json.loads(row["payload"])
+
+
+def _make_baseline_bundle(chain_id: str) -> str:
+    return json.dumps(
+        {
+            "chain_id": chain_id,
+            "sequence_num": 1,
+            "prev_event_digest": None,
+            "prev_lookup_hash": None,
+            "digest": "sha384:" + ("11" * 48),
+        }
+    )
+
+
+def _reserve_baseline_intent(client: TestClient, chain_id: str, idempotency_key: str):
+    return client.post(
+        "/commit-intents/reserve",
+        json={
+            "chain_id": chain_id,
+            "idempotency_key": idempotency_key,
+            "is_baseline": True,
+        },
+    )
+
+
+def _generate_owner_keypair():
+    private_key = ec.generate_private_key(ec.SECP384R1())
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    return private_key, public_key
 
 
 class TestGetBaseline:

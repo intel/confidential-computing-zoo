@@ -1,7 +1,6 @@
-import subprocess
 import logging
 from typing import Dict, Any, Optional
-from .config import KBS_ENDPOINT, KBS_CLIENT_CMD
+from .config import KBS_ENDPOINT
 
 logger = logging.getLogger(__name__)
 

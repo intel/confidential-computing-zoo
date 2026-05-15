@@ -4,7 +4,6 @@ import base64
 import hashlib
 import os
 import struct
-import pytest
 
 from tc_api.trucon.adapters.ccel import (
     compute_ccel_digest,

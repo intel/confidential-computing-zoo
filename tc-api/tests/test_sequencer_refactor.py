@@ -11,22 +11,16 @@ Covers:
 """
 
 import fcntl
-import json
 import os
 import sqlite3
 import threading
-import time
 import uuid
-from datetime import datetime
 from typing import Tuple
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from tc_api.trucon.database import (
-    DB_PATH,
     delete_non_extended_records,
-    get_all_chain_ids,
     get_chain_state,
     get_failed_by_chain,
     get_highest_extended_record,
@@ -322,7 +316,7 @@ class TestSubmitDaemon:
 class TestIntegration:
     def test_commit_flow_through_trucon_endpoint(self, db):
         """Test the TruCon commit endpoint logic directly."""
-        from tc_api.trucon.app import CommitRequest, _sequencer_lock
+        from tc_api.trucon.app import _sequencer_lock
 
         mr_adapter = MockMRAdapter()
         chain_id = "test-chain"

@@ -1,8 +1,6 @@
 """Tests for delegation-aware attestation gate in docker_proxy."""
 from unittest.mock import patch
 
-import pytest
-
 from tc_api.docktap.trucon_client import has_active_delegation
 
 

@@ -15,9 +15,7 @@ from tc_api.trucon.evidence import (
     load_attested_head_evidence_json,
 )
 from .verify_quote import (
-    inspect_evidence_quote as _inspect_evidence_quote,
     inspect_quote_binding as _inspect_quote_binding,
-    parse_tdx_quote as _parse_tdx_quote,
 )
 from .verify_replay import (
     attach_profile_results as _attach_profile_results,

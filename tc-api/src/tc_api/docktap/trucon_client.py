@@ -13,13 +13,11 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import urllib.request
 import urllib.error
 
 from tlog.types import Entry
-from tlog.digest import canonical_json
 from tc_api.identity.sigstore_identity import resolve_sigstore_identity_token
 from tc_api.identity.sigstore_baseline import (
     build_baseline_sigstore_bundle,
@@ -36,7 +34,6 @@ from tc_api.transparency.trucon_submitter import post_commit_to_trucon, reserve_
 from tlog_rekor.adapter import SigstoreLogAdapter
 
 from sigstore.oidc import IdentityToken, detect_credential
-from sigstore.sign import SigningContext
 from sigstore.dsse import StatementBuilder, Subject
 
 from . import config as _cfg

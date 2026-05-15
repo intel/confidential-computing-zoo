@@ -1,12 +1,12 @@
 """Tests for submit_operation delegation signing path in TruConCommitter."""
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from tc_api.docktap.trucon_client import TruConCommitter, _resolve_identity_token_str
+from tc_api.docktap.trucon_client import TruConCommitter
 
 
 @pytest.fixture()
@@ -86,7 +86,7 @@ class TestDelegationSigningPath:
     @patch("tc_api.docktap.trucon_client._resolve_identity_token_str", return_value=None)
     @patch("tc_api.docktap.trucon_client.get_chain_owner_private_key")
     def test_delegation_path_invoked_when_no_token(
-        self, mock_get_key, mock_token, committer
+        self, mock_get_key, _mock_token, committer
     ):
         """When no OIDC token and delegation exists, owner key signing path is used."""
         mock_key = ec.generate_private_key(ec.SECP384R1())
@@ -132,7 +132,7 @@ class TestDelegationSigningPath:
             mock_adapter_cls.return_value.submit_owner_signed_entry.assert_called_once()
 
     @patch("tc_api.docktap.trucon_client._resolve_identity_token_str", return_value=None)
-    def test_raises_when_no_token_and_no_delegation(self, mock_token, committer):
+    def test_raises_when_no_token_and_no_delegation(self, _mock_token, committer):
         """When no token and no delegation, MissingIdentityTokenError is raised."""
         from tc_api.docktap.trucon_client import MissingIdentityTokenError
 
@@ -144,7 +144,7 @@ class TestDelegationSigningPath:
                 committer._do_submit(op_record, "pull")
 
     @patch("tc_api.docktap.trucon_client._resolve_identity_token_str", return_value=None)
-    def test_scope_violation_raises(self, mock_token, committer):
+    def test_scope_violation_raises(self, _mock_token, committer):
         """When delegation scope doesn't include operation, error is raised."""
         from tc_api.docktap.trucon_client import MissingIdentityTokenError
 
@@ -164,7 +164,7 @@ class TestDelegationSigningPath:
 
     @patch("tc_api.docktap.trucon_client._resolve_identity_token_str", return_value=None)
     @patch("tc_api.docktap.trucon_client.get_chain_owner_private_key")
-    def test_delegation_id_in_predicate(self, mock_get_key, mock_token, committer):
+    def test_delegation_id_in_predicate(self, mock_get_key, _mock_token, committer):
         """When delegation path is used, delegation_id appears in predicate."""
         mock_key = ec.generate_private_key(ec.SECP384R1())
         mock_get_key.return_value = mock_key

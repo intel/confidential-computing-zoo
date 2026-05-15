@@ -135,7 +135,7 @@ def harness(monkeypatch, tmp_path):
     return ControlPlaneHarness(monkeypatch, tmp_path)
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def patched_lifespan():
     with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "sigstore.oidc.Issuer.production"
@@ -179,7 +179,7 @@ def _launch_payload():
     ("commit_success", "verify_status"),
     [(True, "success")],
 )
-def test_build_flow_preserves_result_fields(harness, patched_lifespan, commit_success, verify_status):
+def test_build_flow_preserves_result_fields(harness, commit_success, verify_status):
     harness.patch_build_success()
     harness.patch_trucon(commit_success=commit_success, verify_status=verify_status)
 
@@ -203,7 +203,7 @@ def test_build_flow_preserves_result_fields(harness, patched_lifespan, commit_su
     assert result_data["image_url"] == "oci:/tmp/builds/bld-test123/plain"
 
 
-def test_build_flow_fails_when_transparency_commit_fails(harness, patched_lifespan, monkeypatch):
+def test_build_flow_fails_when_transparency_commit_fails(harness, monkeypatch):
     harness.patch_build_success()
     harness.patch_trucon(commit_success=False, verify_status="degraded")
     monkeypatch.setattr(
@@ -232,7 +232,7 @@ def test_build_flow_fails_when_transparency_commit_fails(harness, patched_lifesp
     ("commit_success", "verify_status"),
     [(True, "success"), (False, "degraded")],
 )
-def test_publish_flow_preserves_result_fields(harness, patched_lifespan, commit_success, verify_status):
+def test_publish_flow_preserves_result_fields(harness, commit_success, verify_status):
     harness.patch_publish_success()
     harness.patch_trucon(commit_success=commit_success, verify_status=verify_status)
 
@@ -261,7 +261,7 @@ def test_publish_flow_preserves_result_fields(harness, patched_lifespan, commit_
     ("commit_success", "verify_status"),
     [(True, "success"), (False, "degraded")],
 )
-def test_launch_flow_preserves_result_fields(harness, patched_lifespan, commit_success, verify_status):
+def test_launch_flow_preserves_result_fields(harness, commit_success, verify_status):
     harness.patch_launch_success()
     harness.patch_trucon(commit_success=commit_success, verify_status=verify_status)
 

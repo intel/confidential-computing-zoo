@@ -1,13 +1,9 @@
 """Tests for delegation predicate builder and endpoint logic."""
-import json
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch, MagicMock
-
-import pytest
+from datetime import datetime
+from unittest.mock import patch
 
 from tc_api.docktap.delegation import (
     build_delegation_predicate,
-    DOCKTAP_DELEGATION_TTL_SECONDS,
     DEFAULT_SCOPE,
 )
 

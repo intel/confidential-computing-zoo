@@ -1,9 +1,7 @@
 import requests
-import json
 import time
 import base64
 import os
-from datetime import datetime
 
 BASE_URL = os.getenv("TC_API_BASE_URL", "http://localhost:8000")
 

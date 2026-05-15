@@ -1,57 +1,25 @@
 import importlib
-from dataclasses import dataclass
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from tc_api.trucon.database import init_db, insert_record, update_chain_state, update_record_confirmed
+from tests.utils import StaticQuoteAdapter, make_db_patches
 
 trucon_app_mod = importlib.import_module("tc_api.trucon.app")
 trucon_db_mod = importlib.import_module("tc_api.trucon.database")
-
-
-@dataclass
-class MockQuoteMaterial:
-    quote: str
-    report_data: str
-    quote_format: str = "tdx-configfs-tsm"
-
-
-class MockQuoteAdapter:
-    def __init__(self, expected_report_data: str, should_fail: bool = False) -> None:
-        self.expected_report_data = expected_report_data
-        self.should_fail = should_fail
-
-    def quote(self, expected_value: str) -> MockQuoteMaterial:
-        if self.should_fail:
-            raise RuntimeError("mock quote failure")
-        return MockQuoteMaterial(quote="base64-quote", report_data=self.expected_report_data)
-
-
-def _make_db_patches(db_path: str):
-    orig_get_chain_state = trucon_db_mod.get_chain_state
-    orig_get_latest_confirmed_record = trucon_db_mod.get_latest_confirmed_record
-
-    def patched_get_chain_state(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_get_chain_state(*args, **kwargs)
-
-    def patched_get_latest_confirmed_record(*args, **kwargs):
-        kwargs.setdefault("db_path", db_path)
-        return orig_get_latest_confirmed_record(*args, **kwargs)
-
-    return {
-        "get_chain_state": patched_get_chain_state,
-        "get_latest_confirmed_record": patched_get_latest_confirmed_record,
-    }
 
 
 @pytest.fixture
 def trucon_client(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
-    patches = _make_db_patches(db_path)
+    patches = make_db_patches(
+        trucon_db_mod,
+        db_path,
+        ["get_chain_state", "get_latest_confirmed_record"],
+    )
 
     old_auth = trucon_app_mod._AUTH_DISABLED
     old_quote_adapter = trucon_app_mod._quote_adapter
@@ -109,7 +77,7 @@ def test_evidence_export_success_returns_latest_confirmed_head(trucon_client):
     update_chain_state(chain_id="default", head_record_id="rec-3", sequence_num=3, mr_value="cc" * 48, db_path=db_path)
 
     expected_value = trucon_app_mod.compute_binding_expected_value("default", 2, "log-2", "bb" * 48)
-    trucon_app_mod._quote_adapter = MockQuoteAdapter(expected_value)
+    trucon_app_mod._quote_adapter = StaticQuoteAdapter(expected_value)
 
     response = client.get("/evidence/default")
 
@@ -124,7 +92,7 @@ def test_evidence_export_success_returns_latest_confirmed_head(trucon_client):
 def test_evidence_export_fails_without_confirmed_head(trucon_client):
     client, db_path = trucon_client
     update_chain_state(chain_id="default", head_record_id="rec-pending", sequence_num=1, mr_value="aa" * 48, db_path=db_path)
-    trucon_app_mod._quote_adapter = MockQuoteAdapter("head_log_id_bytes:" + "11" * 8)
+    trucon_app_mod._quote_adapter = StaticQuoteAdapter("head_log_id_bytes:" + "11" * 8)
 
     response = client.get("/evidence/default")
 
@@ -136,7 +104,7 @@ def test_evidence_export_fails_when_quote_acquisition_fails(trucon_client):
     client, db_path = trucon_client
     _insert_confirmed_record(db_path, "default", 1, "log-1", "aa" * 48)
     expected_value = trucon_app_mod.compute_binding_expected_value("default", 1, "log-1", "aa" * 48)
-    trucon_app_mod._quote_adapter = MockQuoteAdapter(expected_value, should_fail=True)
+    trucon_app_mod._quote_adapter = StaticQuoteAdapter(expected_value, should_fail=True)
 
     response = client.get("/evidence/default")
 
@@ -147,7 +115,7 @@ def test_evidence_export_fails_when_quote_acquisition_fails(trucon_client):
 def test_evidence_export_fails_on_binding_mismatch(trucon_client):
     client, db_path = trucon_client
     _insert_confirmed_record(db_path, "default", 1, "log-1", "aa" * 48)
-    trucon_app_mod._quote_adapter = MockQuoteAdapter("head_log_id_bytes:" + "ff" * 8)
+    trucon_app_mod._quote_adapter = StaticQuoteAdapter("head_log_id_bytes:" + "ff" * 8)
 
     response = client.get("/evidence/default")
 

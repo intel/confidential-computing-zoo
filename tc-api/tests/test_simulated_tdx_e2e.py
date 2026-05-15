@@ -19,6 +19,7 @@ from tlog.digest import compute_entry_digest, compute_event_digest
 from tc_api.trucon.evidence import decode_binding_expected_value
 from tc_api.trucon.database import init_db
 from tc_api.trucon.owner_authorization import sign_owner_authorization
+from tests.utils import make_db_patches
 
 trucon_app_mod = importlib.import_module("tc_api.trucon.app")
 trucon_db_mod = importlib.import_module("tc_api.trucon.database")
@@ -129,35 +130,6 @@ class FakeImmutableBackend:
         return list(reversed(window))[:count]
 
 
-def _make_db_patches(db_path: str):
-    names = [
-        "insert_record",
-        "get_chain_state",
-        "update_chain_state",
-        "get_record_by_idempotency_key",
-        "get_latest_confirmed_record",
-        "get_all_chain_ids",
-        "get_failed_by_chain",
-        "get_pending_by_chain",
-        "set_status_submitting",
-        "update_record_confirmed",
-        "update_status",
-        "get_queue_stats",
-    ]
-    originals = {name: getattr(trucon_db_mod, name) for name in names}
-
-    def _wrap(name: str):
-        original = originals[name]
-
-        def wrapped(*args, **kwargs):
-            kwargs.setdefault("db_path", db_path)
-            return original(*args, **kwargs)
-
-        return wrapped
-
-    return {name: _wrap(name) for name in names}
-
-
 def _statement_json(
     chain_id: str,
     event_id: str,
@@ -199,7 +171,24 @@ def simulated_tdx_harness(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     backend = FakeImmutableBackend()
-    db_patches = _make_db_patches(db_path)
+    db_patches = make_db_patches(
+        trucon_db_mod,
+        db_path,
+        [
+            "insert_record",
+            "get_chain_state",
+            "update_chain_state",
+            "get_record_by_idempotency_key",
+            "get_latest_confirmed_record",
+            "get_all_chain_ids",
+            "get_failed_by_chain",
+            "get_pending_by_chain",
+            "set_status_submitting",
+            "update_record_confirmed",
+            "update_status",
+            "get_queue_stats",
+        ],
+    )
 
     old_auth = trucon_app_mod._AUTH_DISABLED
     old_local_mr = trucon_app_mod._local_mr

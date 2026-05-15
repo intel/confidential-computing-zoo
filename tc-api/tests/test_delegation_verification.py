@@ -1,6 +1,4 @@
 """Tests for _annotate_delegation_verification in tlog_client.py."""
-import pytest
-
 from tc_api.transparency.verification import _annotate_delegation_verification
 
 

@@ -1,8 +1,5 @@
 """Tests for delegation storage CRUD in trucon/database.py."""
-import os
-import tempfile
-import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import pytest
 

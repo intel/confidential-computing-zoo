@@ -76,66 +76,6 @@ def parse_tdx_quote(quote_b64: str) -> Dict[str, Any]:
         "report_data_hex": report_data.hex(),
         "rtmrs": rtmrs,
     }
-
-
-def inspect_evidence_quote(evidence: Any) -> Dict[str, Any]:
-    result: Dict[str, Any] = {
-        "present": bool(evidence.quote),
-        "parsed": False,
-        "version": None,
-        "body_type": None,
-        "body_size": None,
-        "quote_size": None,
-        "report_data_hex": None,
-        "report_data_prefix_hex": None,
-        "report_data_prefix_matches_binding": None,
-        "report_data_zero_padded": None,
-        "rtmrs": [],
-        "mr_index": 2,
-        "mr_value_matches_quote": None,
-        "errors": [],
-    }
-    if not evidence.quote:
-        return result
-
-    try:
-        parsed = parse_tdx_quote(evidence.quote)
-    except Exception as exc:
-        result["errors"].append(f"Quote parsing failed: {exc}")
-        return result
-
-    result.update(parsed)
-    result["parsed"] = True
-
-    report_data_hex = parsed["report_data_hex"]
-    expected_value = evidence.report_data_binding.expected_value
-    if not isinstance(expected_value, str) or not expected_value.startswith("sha384:"):
-        result["errors"].append("Evidence expected_value did not use the supported sha384: format")
-        return result
-
-    expected_prefix_hex = expected_value.removeprefix("sha384:").lower()
-    report_prefix_hex = report_data_hex[: len(expected_prefix_hex)]
-    report_padding_hex = report_data_hex[len(expected_prefix_hex):]
-    result["report_data_prefix_hex"] = report_prefix_hex
-    result["report_data_prefix_matches_binding"] = report_prefix_hex == expected_prefix_hex
-    result["report_data_zero_padded"] = set(report_padding_hex) <= {"0"}
-    if result["report_data_prefix_matches_binding"] is False:
-        result["errors"].append("Quote REPORTDATA prefix did not match evidence report_data_binding.expected_value")
-    if result["report_data_zero_padded"] is False:
-        result["errors"].append("Quote REPORTDATA suffix was not zero-padded after the bound sha384 digest")
-
-    quote_mr_value = None
-    if len(parsed["rtmrs"]) > result["mr_index"]:
-        quote_mr_value = parsed["rtmrs"][result["mr_index"]]
-    result["quote_mr_value"] = quote_mr_value
-    result["mr_value_matches_quote"] = quote_mr_value == evidence.mr_value
-    if result["mr_value_matches_quote"] is False:
-        result["errors"].append(
-            f"Quote RTMR[{result['mr_index']}] did not match evidence mr_value"
-        )
-    return result
-
-
 def inspect_quote_binding(
     quote_b64: str,
     expected_value: str,

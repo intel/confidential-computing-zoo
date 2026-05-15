@@ -3,8 +3,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tc_api.api.workflows import _normalize_local_oci_reference, launch_container_async
-import tc_api.services.build as build_services
-import tc_api.services.publish as publish_services
 from tc_api.services import DockerService
 from tc_api.verification_profiles import evaluate_profiles
 

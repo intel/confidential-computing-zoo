@@ -372,8 +372,8 @@ def test_handle_client_returns_create_success_before_async_trucon_submission():
          patch.object(proxy._runtime_adapter, "parse_operation_metadata", return_value=op_record), \
          patch.object(proxy, "_parse_http_request", return_value=("create", "/v1.41/containers/create", {})), \
          patch.object(proxy, "_read_docker_response", return_value=response_data), \
-         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response") as enrich_response, \
-         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json") as log_operation_json:
+         patch("tc_api.docktap.proxy.docker_proxy.enrich_from_response"), \
+         patch("tc_api.docktap.proxy.docker_proxy.log_operation_json"):
         proxy.handle_client(client_socket)
 
     assert client_socket.sent == [response_data]

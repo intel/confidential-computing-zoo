@@ -10,12 +10,6 @@ Covers:
 - 7.6 Crash recovery resets SUBMITTING → PENDING
 - 7.7 get_failed_by_chain returns both FAILED_RETRYABLE and FAILED_TERMINAL
 """
-
-import sqlite3
-import threading
-import uuid
-from typing import Tuple
-
 import pytest
 
 from tlog.types import SubmitStatus

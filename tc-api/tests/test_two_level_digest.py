@@ -11,19 +11,11 @@ Covers:
 """
 
 import hashlib
-import json
-import threading
-import uuid
-from datetime import datetime
-from typing import Tuple
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from tc_api.transparency.commit_client import TrustedLogAPI
 from tlog.digest import canonical_json, compute_entry_digest, compute_event_digest
-from tlog.types import Entry, SubmitStatus
-from tlog.local_mr import LocalMRAdapter
+from tlog.types import Entry
 
 
 # ---------------------------------------------------------------------------
@@ -197,8 +189,6 @@ class TestCommitRecordPredicate:
         api._reserve_commit_intent = MagicMock(side_effect=fake_reserve)
 
         # Patch StatementBuilder to capture predicate
-        original_builder = __import__("sigstore.dsse", fromlist=["StatementBuilder"]).StatementBuilder
-
         class CapturingBuilder:
             def __init__(self):
                 self._subjects = []

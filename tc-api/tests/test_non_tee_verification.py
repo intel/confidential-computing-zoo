@@ -1,8 +1,5 @@
 """Tests for chain verification behavior across predecessor and MR states."""
 
-import logging
-import os
-import sqlite3
 from unittest.mock import patch
 
 import pytest

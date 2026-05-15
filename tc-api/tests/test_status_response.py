@@ -11,9 +11,7 @@ Covers:
 - 5.7 tlog_client.get_commit_queue_status() maps new fields correctly
 """
 
-import json
-import sqlite3
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -23,7 +21,6 @@ from tc_api.trucon.database import (
     init_db,
     insert_record,
     update_chain_state,
-    update_status,
 )
 
 
@@ -220,7 +217,7 @@ class TestClientMapping:
         from tlog.types import CommitQueueStatus
         from tc_api.transparency.commit_client import TrustedLogAPI
 
-        mock_response_data = json.dumps({
+        mock_response_data = {
             "has_queued_records": True,
             "queued_record_count": 3,
             "next_record_id": "rec-abc",
@@ -228,14 +225,9 @@ class TestClientMapping:
             "failed_retryable_count": 0,
             "failed_terminal_count": 0,
             "total_retry_count": 0,
-        }).encode("utf-8")
+        }
 
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = mock_response_data
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch("tc_api.transparency.commit_client.request_json", return_value=mock_response_data):
             client = TrustedLogAPI.__new__(TrustedLogAPI)
             client._trucon_url = "http://localhost:8001"
             status = client.get_commit_queue_status()
@@ -247,10 +239,9 @@ class TestClientMapping:
 
     def test_client_handles_null_next_record_id(self):
         """next_record_id=null should be properly handled."""
-        from tlog.types import CommitQueueStatus
         from tc_api.transparency.commit_client import TrustedLogAPI
 
-        mock_response_data = json.dumps({
+        mock_response_data = {
             "has_queued_records": False,
             "queued_record_count": 0,
             "next_record_id": None,
@@ -258,14 +249,9 @@ class TestClientMapping:
             "failed_retryable_count": 0,
             "failed_terminal_count": 0,
             "total_retry_count": 0,
-        }).encode("utf-8")
+        }
 
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = mock_response_data
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch("tc_api.transparency.commit_client.request_json", return_value=mock_response_data):
             client = TrustedLogAPI.__new__(TrustedLogAPI)
             client._trucon_url = "http://localhost:8001"
             status = client.get_commit_queue_status()

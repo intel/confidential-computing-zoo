@@ -1,5 +1,3 @@
-import os
-
 from fastapi import FastAPI
 
 from . import runtime

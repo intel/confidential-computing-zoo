@@ -7,7 +7,6 @@ Integration tests for Docktap → TruCon event emission.
 
 import json
 import os
-import sqlite3
 import threading
 import uuid
 from datetime import datetime
@@ -18,7 +17,7 @@ import pytest
 
 from tlog.local_mr import LocalMRAdapter
 from tlog.digest import compute_entry_digest, compute_event_digest
-from tc_api.trucon.database import get_chain_state, get_pending_records, init_db, update_chain_state
+from tc_api.trucon.database import get_chain_state, init_db, update_chain_state
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +79,6 @@ def trucon_client(tmp_path):
     os.environ["COMMIT_QUEUE_DB"] = db_path
 
     import tc_api.trucon.database as db_mod
-    original_db_path = db_mod.DB_PATH
     # Reload to re-evaluate DB_PATH from env and rebind all function defaults
     importlib.reload(db_mod)
     assert db_mod.DB_PATH == db_path
@@ -216,7 +214,8 @@ class TestEndToEndDocktapFlow:
         # Mock signing + HTTP to go through TestClient instead of real HTTP
         committer = TruConCommitter(trucon_url=trucon_url)
 
-        with patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
+        with patch.dict(os.environ, {"DOCKTAP_AUTH_MODE": "delegation_disabled"}, clear=False), \
+             patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
              patch("tc_api.docktap.trucon_client.IdentityToken"), \
              patch("tc_api.docktap.trucon_client.build_signing_context") as mock_build_signing_context:
             mock_signer = MagicMock()

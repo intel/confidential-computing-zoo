@@ -9,8 +9,6 @@ from fastapi.testclient import TestClient
 
 import tc_api.services.base as base_services
 import tc_api.services.build as build_services
-import tc_api.services.launch as launch_services
-import tc_api.services.publish as publish_services
 import tc_api.services.build as services
 from tc_api.api.app import app
 from tc_api.services import DockerService

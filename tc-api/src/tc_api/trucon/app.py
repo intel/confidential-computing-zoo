@@ -19,7 +19,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -35,13 +35,9 @@ from .database import (
     get_chain_state,
     get_commit_intent_by_idempotency_key,
     get_commit_intent_by_token,
-    get_events_for_instance,
-    get_events_for_workload,
     get_failed_by_chain,
     get_highest_extended_record,
-    get_instances_for_workload,
     get_latest_confirmed_record,
-    get_latest_state,
     get_pending_by_chain,
     get_pending_mirror_publishes,
     get_queue_stats,
@@ -57,7 +53,6 @@ from .database import (
     update_record_confirmed,
     update_status,
 )
-from tc_api.identity.sigstore_baseline import build_baseline_sigstore_bundle
 from tlog_rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
 from tlog_rekor.adapter import SigstoreLogAdapter
 from .adapters.ccel import compute_ccel_digest, read_ccel_eventlog_b64
@@ -71,7 +66,6 @@ from .bundles import (
 )
 from .chain_verification import (
     get_chain_owner_pub_key_from_records,
-    verify_chain_records,
 )
 from .internal_transport import (
     AUTH_TRANSPORT_HEADER,
@@ -98,20 +92,14 @@ from .owner_attestation import (
 from .owner_authorization import verify_owner_authorization
 from .auth import authorize_caller
 from .schemas import (
-    ChainStateResponse,
-    ChainVerificationResponse,
     CommitIntentReserveRequest,
     CommitIntentReserveResponse,
-    CommitQueueStatusResponse,
     CommitRequest,
     CommitResponse,
-    EventSummary,
     EvidenceErrorResponse,
     InitChainBaselineResponse,
     InitChainRequest,
     InitChainResponse,
-    InstanceSummary,
-    LatestStateResponse,
 )
 from .submit_daemon import SubmitDaemon
 from . import submit_daemon as submit_daemon_mod
@@ -225,86 +213,6 @@ def _intent_response_from_row(intent: Any, committed_record: Optional[Any] = Non
         response["record_id"] = committed_record["record_id"]
         response["sequence_num"] = committed_record["sequence_num"]
     return response
-
-
-def _create_workload_chain_baseline(
-    chain_id: str,
-    caller_service: Optional[str],
-    auth_transport: Optional[str],
-    identity_token_str: Optional[str] = None,
-) -> None:
-    """Create Event Log 0 for a previously unseen non-default chain."""
-    if chain_id == "default" or get_chain_state(chain_id):
-        return
-
-    rtmr_value = None
-    if _local_mr:
-        try:
-            rtmr_value = _local_mr.read(RTMR_INDEX)
-        except Exception as exc:
-            logger.error("Failed to read RTMR[%d] for lazy baseline on chain '%s': %s", RTMR_INDEX, chain_id, exc)
-            raise HTTPException(status_code=500, detail=f"Baseline creation failed: {exc}") from exc
-
-    try:
-        ccel_digest = compute_ccel_digest()
-        ccel_eventlog_b64 = read_ccel_eventlog_b64()
-        signed_bundle, pub_key_pem, event_digest = build_baseline_sigstore_bundle(
-            chain_id=chain_id,
-            rtmr_value=rtmr_value,
-            ccel_digest=ccel_digest,
-            ccel_eventlog_b64=ccel_eventlog_b64,
-            identity_token_str=identity_token_str,
-            rekor_url=getattr(_immutable_log, "rekor_url", None),
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("Failed to construct lazy baseline bundle for chain '%s': %s", chain_id, exc)
-        raise HTTPException(status_code=500, detail=f"Baseline creation failed: {exc}") from exc
-
-    record_id = str(uuid.uuid4())
-    owner_attestation = _build_chain_owner_attestation(
-        chain_id=chain_id,
-        sequence_num=1,
-        baseline_rtmr=rtmr_value,
-        ccel_digest=ccel_digest,
-        owner_pub_key=pub_key_pem,
-    )
-    insert_record(
-        record_id=record_id,
-        event_id=f"evt-log0-{chain_id}",
-        payload={
-            "bundle": signed_bundle,
-            "chain_id": chain_id,
-            "pub_key": pub_key_pem,
-            "owner_attestation": owner_attestation,
-            "is_baseline": True,
-            "caller_service": caller_service,
-            "auth_transport": auth_transport,
-        },
-        status="PENDING",
-        chain_id=chain_id,
-        rtmr_extended=True,
-        prev_log_id=None,
-        mr_value=rtmr_value,
-        sequence_num=1,
-        event_digest=event_digest,
-        idempotency_key=f"init-chain-{chain_id}",
-        instance_id=None,
-    )
-    update_chain_state(
-        chain_id=chain_id,
-        head_record_id=record_id,
-        sequence_num=1,
-        mr_value=rtmr_value,
-    )
-    logger.info(
-        "Auto-created workload baseline for chain '%s' record_id=%s caller_service=%s auth_transport=%s",
-        chain_id,
-        record_id,
-        caller_service,
-        auth_transport,
-    )
 
 
 def _get_chain_owner_pub_key(chain_id: str) -> Optional[str]:
@@ -649,9 +557,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-from .routers.query import router as _query_router
-from .routers.query import verify_chain  # backward-compat re-export
-app.include_router(_query_router)
+from .routers import query as _query_module
+from . import schemas as _schemas_module
+from ..identity import sigstore_baseline as _sigstore_baseline_module
+
+app.include_router(_query_module.router)
+verify_chain = _query_module.verify_chain
+ChainStateResponse = _schemas_module.ChainStateResponse
+build_baseline_sigstore_bundle = _sigstore_baseline_module.build_baseline_sigstore_bundle
 
 # ---------------------------------------------------------------------------
 # Service authentication middleware

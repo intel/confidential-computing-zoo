@@ -22,7 +22,8 @@ from tlog_rekor.adapter import SigstoreLogAdapter
 from tlog_rekor.oci_mirror import OciBundleMirror
 from tc_api.trucon.database import init_db
 from tc_api.cli.verify import main as verify_main
-from tests.test_real_oci_mirror_integration import real_oci_registry_runtime
+from tests.test_real_oci_mirror_integration import real_oci_registry_runtime  # noqa: F401
+from tests.utils import make_db_patches
 
 import importlib
 
@@ -94,52 +95,40 @@ class MockMRAdapter(LocalMRAdapter):
         return next_mr, prev_mr
 
 
-def _make_db_patches(db_path: str):
-    names = [
-        "insert_record",
-        "get_chain_state",
-        "update_chain_state",
-        "create_commit_intent",
-        "get_active_commit_intent_for_chain",
-        "get_commit_intent_by_idempotency_key",
-        "get_commit_intent_by_token",
-        "update_commit_intent_status",
-        "expire_active_commit_intents",
-        "get_record_by_id",
-        "get_record_by_idempotency_key",
-        "get_chain_records",
-        "get_latest_confirmed_record",
-        "get_all_chain_ids",
-        "get_failed_by_chain",
-        "get_pending_by_chain",
-        "set_status_submitting",
-        "update_record_confirmed",
-        "update_status",
-        "get_queue_stats",
-        "enqueue_mirror_publish",
-        "get_pending_mirror_publishes",
-        "update_mirror_publish_status",
-        "get_mirror_publish_job",
-    ]
-    originals = {name: getattr(trucon_db_mod, name) for name in names}
-
-    def _wrap(name: str):
-        original = originals[name]
-
-        def wrapped(*args, **kwargs):
-            kwargs.setdefault("db_path", db_path)
-            return original(*args, **kwargs)
-
-        return wrapped
-
-    return {name: _wrap(name) for name in names}
-
-
 @pytest.fixture
 def real_rekor_trucon_harness(tmp_path):
     db_path = str(tmp_path / "real-rekor.db")
     init_db(db_path)
-    patches = _make_db_patches(db_path)
+    patches = make_db_patches(
+        trucon_db_mod,
+        db_path,
+        [
+            "insert_record",
+            "get_chain_state",
+            "update_chain_state",
+            "create_commit_intent",
+            "get_active_commit_intent_for_chain",
+            "get_commit_intent_by_idempotency_key",
+            "get_commit_intent_by_token",
+            "update_commit_intent_status",
+            "expire_active_commit_intents",
+            "get_record_by_id",
+            "get_record_by_idempotency_key",
+            "get_chain_records",
+            "get_latest_confirmed_record",
+            "get_all_chain_ids",
+            "get_failed_by_chain",
+            "get_pending_by_chain",
+            "set_status_submitting",
+            "update_record_confirmed",
+            "update_status",
+            "get_queue_stats",
+            "enqueue_mirror_publish",
+            "get_pending_mirror_publishes",
+            "update_mirror_publish_status",
+            "get_mirror_publish_job",
+        ],
+    )
 
     old_mr = trucon_app_mod._local_mr
     old_auth = trucon_app_mod._AUTH_DISABLED
@@ -409,7 +398,6 @@ def test_public_rekor_baseline_bundle_round_trip_smoke(real_rekor_runtime):
 def test_public_rekor_init_chain_submit_verify_baseline_smoke(real_rekor_runtime, real_rekor_trucon_harness):
     """Opt-in smoke test for the full explicit baseline path: init_chain -> submit -> verify."""
 
-    identity_token = real_rekor_runtime["identity_token"]
     rekor_url = real_rekor_runtime["rekor_url"]
     signer_identity = real_rekor_runtime["signer_identity"]
     chain_id = f"rekor-init-chain-{uuid.uuid4().hex[:12]}"

@@ -9,12 +9,8 @@ Covers:
 - 6.5 GET /workloads/{workload_id}/events (cross-instance, includes null-instance records)
 - 6.6 Docktap instance_id submission (container events vs pull)
 """
-
-import json
 import sqlite3
-import sys
 import threading
-import uuid
 from typing import Tuple
 from unittest.mock import MagicMock, patch
 
@@ -414,7 +410,6 @@ class TestListWorkloadEvents:
 class TestDocktapInstanceId:
     def test_container_event_includes_instance_id(self):
         """Container lifecycle events (create/start/stop/rm) include instance_id."""
-        import sys
         from tc_api.docktap.trucon_client import TruConCommitter
         from tc_api.docktap.proxy.operation_log import OperationRecord
 
@@ -426,9 +421,10 @@ class TestDocktapInstanceId:
                 image={"name": "myapp"},
                 container={"id": "a" * 64, "name": "mycontainer"},
             )
-            with patch.object(committer, "_post_to_trucon") as mock_post, \
+            with patch.dict("os.environ", {"DOCKTAP_AUTH_MODE": "delegation_disabled"}, clear=False), \
+                 patch.object(committer, "_post_to_trucon") as mock_post, \
                  patch.object(committer, "_ensure_chain_initialized"), \
-                  patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 2, "prev_event_digest": None, "prev_lookup_hash": None, "committed": False}), \
+                 patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 2, "prev_event_digest": None, "prev_lookup_hash": None, "committed": False}), \
                  patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
                  patch("tc_api.docktap.trucon_client.IdentityToken") as mock_id_token, \
                  patch("tc_api.docktap.trucon_client.build_signing_context") as mock_ctx:
@@ -460,9 +456,10 @@ class TestDocktapInstanceId:
             image={"name": "nginx", "tag": "latest", "digest": "sha256:abc"},
             container={},
         )
-        with patch.object(committer, "_post_to_trucon") as mock_post, \
+        with patch.dict("os.environ", {"DOCKTAP_AUTH_MODE": "delegation_disabled"}, clear=False), \
+             patch.object(committer, "_post_to_trucon") as mock_post, \
              patch.object(committer, "_ensure_chain_initialized"), \
-               patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 2, "prev_event_digest": None, "prev_lookup_hash": None, "committed": False}), \
+             patch.object(committer, "_reserve_commit_intent", return_value={"intent_token": "intent-1", "sequence_num": 2, "prev_event_digest": None, "prev_lookup_hash": None, "committed": False}), \
              patch("tc_api.docktap.trucon_client.detect_credential", return_value="fake-token"), \
              patch("tc_api.docktap.trucon_client.IdentityToken") as mock_id_token, \
              patch("tc_api.docktap.trucon_client.build_signing_context") as mock_ctx:

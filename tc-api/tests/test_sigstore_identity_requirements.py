@@ -7,7 +7,6 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-import tc_api.api.runtime as runtime_mod
 import tc_api.api.workflows as workflow_mod
 from tc_api.api.sigstore_support import _missing_sigstore_identity_detail, _resolve_required_sigstore_identity_token
 from tc_api.api.app import app
