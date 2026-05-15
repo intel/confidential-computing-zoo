@@ -16,7 +16,7 @@ The TruCon core service SHALL be identified by the name "TruCon" in all code, co
 - **THEN** the environment variable SHALL be named `TRUCON_URL`
 
 #### Scenario: Docker Compose service name
-- **WHEN** the TruCon service is defined in docker-compose.yml
+- **WHEN** the TruCon service is defined in `tc-api/docker-compose.yml`
 - **THEN** the service name SHALL be `trucon`
 
 #### Scenario: Python parameter naming

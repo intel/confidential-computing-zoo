@@ -3,7 +3,8 @@ version: '3.8'
 services:
   tc-api:
     build:
-      context: .
+      context: ..
+      dockerfile: tc-api/Dockerfile
       args:
         - http_proxy=${http_proxy:-}
         - https_proxy=${https_proxy:-}
@@ -11,7 +12,6 @@ services:
         - HTTP_PROXY=${HTTP_PROXY:-}
         - HTTPS_PROXY=${HTTPS_PROXY:-}
         - NO_PROXY=${NO_PROXY:-}
-        - ENABLE_TDX=${ENABLE_TDX:-false}
     ports:
       - "8000:8000"
     environment:
@@ -20,7 +20,6 @@ services:
       - DEBUG=false
       - DOCKER_REGISTRY=docker.io
       - DOCKER_REPOSITORY=myrepo
-      - ENABLE_TDX=${ENABLE_TDX:-false}
       - TRUCON_URL=http://trucon:8001
       - TRUCON_UDS_PATH=/var/run/trucon/trucon.sock
       - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
@@ -31,10 +30,10 @@ services:
       - HTTPS_PROXY=${HTTPS_PROXY:-}
       - NO_PROXY=${NO_PROXY:-}
     volumes:
-      - ./tc-api/uploads:/app/tc-api/uploads
-      - ./tc-api/builds:/app/tc-api/builds
-      - ./tc-api/logs:/app/tc-api/logs
-      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for building images
+      - ./uploads:/app/tc-api/uploads
+      - ./builds:/app/tc-api/builds
+      - ./logs:/app/tc-api/logs
+      - /var/run/docker.sock:/var/run/docker.sock
       - /var/run/trucon:/var/run/trucon
     tmpfs:
       - /dev/shm
@@ -51,7 +50,8 @@ services:
 
   trucon:
     build:
-      context: .
+      context: ..
+      dockerfile: tc-api/Dockerfile
       args:
         - http_proxy=${http_proxy:-}
         - https_proxy=${https_proxy:-}
@@ -66,7 +66,7 @@ services:
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-}
     volumes:
-      - ./tc-api/logs:/app/tc-api/logs
+      - ./logs:/app/tc-api/logs
       - /var/run/trucon:/var/run/trucon
     tmpfs:
       - /dev/shm
@@ -81,7 +81,8 @@ services:
 
   docktap:
     build:
-      context: .
+      context: ..
+      dockerfile: tc-api/Dockerfile
       args:
         - http_proxy=${http_proxy:-}
         - https_proxy=${https_proxy:-}
@@ -102,7 +103,7 @@ services:
       - /var/run/docker.sock:/var/run/docker-daemon.sock
       - /var/run/docktap:/var/run/docktap
       - /var/run/trucon:/var/run/trucon
-      - ./tc-api/logs:/app/tc-api/logs
+      - ./logs:/app/tc-api/logs
     tmpfs:
       - /dev/shm
     mem_swappiness: 0
@@ -117,13 +118,12 @@ services:
       trucon:
         condition: service_healthy
 
-  # Optional: Add a reverse proxy
   nginx:
     image: nginx:alpine
     ports:
       - "80:80"
     volumes:
-      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../deploy/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - tc-api
     restart: unless-stopped

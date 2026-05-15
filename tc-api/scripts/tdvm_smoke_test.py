@@ -41,7 +41,6 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from tc_api.identity.sigstore_baseline import build_baseline_sigstore_bundle
-from tc_api.config import ENABLE_TDX
 from tc_api.identity.sigstore_identity import resolve_sigstore_identity_token
 from tc_api.transparency.commit_client import TrustedLogAPI
 from tc_api.trucon.adapters.ccel import read_ccel_eventlog_used_binary
@@ -631,13 +630,6 @@ def main() -> int:
     session = SimpleSession()
     base_url = args.base_url.rstrip("/")
     user_id = f"{args.user_id_prefix}-{uuid.uuid4().hex[:8]}"
-
-    if not args.skip_deploy and not args.no_encrypt and not ENABLE_TDX:
-        print(
-            "[tdvm-smoke] ENABLE_TDX=false in the current service configuration; "
-            "forcing --no-encrypt so deploy can launch without a decryption key"
-        )
-        args.no_encrypt = True
 
     summary: Dict[str, Any] = {
         "base_url": base_url,

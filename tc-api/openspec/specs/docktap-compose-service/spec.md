@@ -5,10 +5,10 @@ Define the requirements for running Docktap as an independent service in the Com
 ## Requirements
 
 ### Requirement: Docktap runs as independent compose service
-The `docker-compose.yml` SHALL define a `docktap` service that uses the same Docker image as `tc-api` and `trucon` with a distinct `command:` override to launch Docktap's `main.py`.
+The `tc-api/docker-compose.yml` SHALL define a `docktap` service that uses the same Docker image as `tc-api` and `trucon` with a distinct `command:` override to launch Docktap's `main.py`.
 
 #### Scenario: Compose brings up Docktap alongside other services
-- **WHEN** operator runs `docker compose up`
+- **WHEN** operator runs `docker compose -f tc-api/docker-compose.yml up`
 - **THEN** three application services start: `tc-api`, `trucon`, and `docktap`
 - **THEN** `docktap` container uses the same image as `tc-api`
 
@@ -50,7 +50,7 @@ The `docktap` service SHALL receive `TRUCON_URL` pointing to the trucon service 
 The `docktap` service SHALL declare `depends_on: trucon` with a healthcheck condition so Docktap starts only after TruCon is healthy.
 
 #### Scenario: Startup ordering enforced
-- **WHEN** `docker compose up` is run
+- **WHEN** `docker compose -f tc-api/docker-compose.yml up` is run
 - **THEN** TruCon starts and passes healthcheck before Docktap starts
 
 ### Requirement: Docktap has restart policy
@@ -68,9 +68,9 @@ The `docktap` service SHALL define a `healthcheck` using `curl` against the `/he
 - **THEN** Docker compose marks the service as unhealthy
 
 ### Requirement: Token pre-generation for compose
-A mechanism (documented script or `start.sh` integration) SHALL generate `TRUCON_SERVICE_TOKEN` and write it to `.env` before `docker compose up` so all services share the same token.
+A mechanism (documented script or `start.sh` integration) SHALL generate `TRUCON_SERVICE_TOKEN` and write it to `.env` before `docker compose -f tc-api/docker-compose.yml up` so all services share the same token.
 
 #### Scenario: Token generated before compose up
 - **WHEN** operator follows deployment instructions
 - **THEN** `.env` file contains a freshly generated `TRUCON_SERVICE_TOKEN`
-- **THEN** `docker compose up` interpolates the token into all service environments
+- **THEN** `docker compose -f tc-api/docker-compose.yml up` interpolates the token into all service environments

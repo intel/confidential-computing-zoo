@@ -469,9 +469,9 @@ Every subsequent event log created by tc_api or Docktap references Event Log 0, 
       },
       {
         "name": "docker-up",
-        "compose_file": "docker-compose.yml",
+                "compose_file": "tc-api/docker-compose.yml",
         "service_count": 5,
-        "cmd": "docker compose up -d",
+                "cmd": "cd tc-api && docker compose up -d",
         "created": "2026-03-20T10:16:30Z",
         "digest": "sha384:eeee..."
       }

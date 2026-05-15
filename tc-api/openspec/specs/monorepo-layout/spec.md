@@ -21,16 +21,16 @@ The repository root SHALL contain separate top-level directories for each logica
 - **THEN** `trust-service/` SHALL exist containing the attestation service Dockerfile and configuration files
 - **AND** `aa_asr_cdh/` SHALL NOT exist
 
-### Requirement: System-level files remain at repository root
-The `Dockerfile`, `docker-compose.yml`, and `deploy/` directory SHALL remain at the repository root because they operate across multiple packages.
+### Requirement: Deployment files live with tc-api while shared infra stays at root
+The core-stack deployment files `tc-api/Dockerfile` and `tc-api/docker-compose.yml` SHALL live under `tc-api/`. Shared workspace infrastructure such as `deploy/` and root-level orchestration scripts SHALL remain at the repository root.
 
-#### Scenario: Dockerfile is at repo root
+#### Scenario: Dockerfile is under tc-api
 - **WHEN** building the Docker image
-- **THEN** `Dockerfile` SHALL be at the repository root with build context set to the repository root
+- **THEN** `tc-api/Dockerfile` SHALL exist with build context set to the repository root
 
-#### Scenario: docker-compose.yml is at repo root
-- **WHEN** running `docker-compose up`
-- **THEN** `docker-compose.yml` SHALL be at the repository root
+#### Scenario: docker-compose.yml is under tc-api
+- **WHEN** running `docker-compose -f tc-api/docker-compose.yml up`
+- **THEN** `tc-api/docker-compose.yml` SHALL exist
 
 ### Requirement: Scripts are split between root and tc-api
 System-level orchestration scripts SHALL remain at `scripts/` in the repository root. tc-api-specific scripts SHALL be located at `tc-api/scripts/`.
@@ -59,12 +59,12 @@ The Dockerfile SHALL explicitly COPY only the packages needed for the container 
 Volume mounts for tc-api runtime directories SHALL reference the `tc-api/` subdirectory on the host side.
 
 #### Scenario: uploads volume mount uses tc-api path
-- **WHEN** inspecting the tc-api service in docker-compose.yml
-- **THEN** the uploads volume mount source SHALL be `./tc-api/uploads`
+- **WHEN** inspecting the tc-api service in `tc-api/docker-compose.yml`
+- **THEN** the uploads volume mount source SHALL be `./uploads`
 
 #### Scenario: builds volume mount uses tc-api path
-- **WHEN** inspecting the tc-api service in docker-compose.yml
-- **THEN** the builds volume mount source SHALL be `./tc-api/builds`
+- **WHEN** inspecting the tc-api service in `tc-api/docker-compose.yml`
+- **THEN** the builds volume mount source SHALL be `./builds`
 
 ### Requirement: Root README describes monorepo structure
 A `README.md` at the repository root SHALL describe the overall monorepo structure, listing each top-level directory and its purpose.

@@ -8,7 +8,6 @@ ARG no_proxy
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
-ARG ENABLE_TDX=false
 
 # set env to aviod interactive
 ENV DEBIAN_FRONTEND=noninteractive
@@ -49,24 +48,10 @@ RUN wget https://github.com/anchore/syft/releases/download/v0.96.0/syft_0.96.0_l
 RUN apt-get update && apt-get install -y skopeo \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy packages into the image (targeted, not the entire repo).
-COPY tlog/    /app/tlog/
+# Copy packages into the image (targeted, not the entire workspace).
+COPY tlog/ /app/tlog/
 COPY tlog-rekor/ /app/tlog-rekor/
-COPY tc-api/  /app/tc-api/
-
-# Todo libtdx_attest.so source
-RUN if [ "$ENABLE_TDX" = "true" ]; then \ 
-        if ls /app/tc-api/libtdx_attest.so* >/dev/null 2>&1; then \
-            mv /app/tc-api/libtdx_attest.so* /usr/lib/x86_64-linux-gnu/ && \
-            ln -sf /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1.21.100.3 /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1 && \
-            ln -sf /usr/lib/x86_64-linux-gnu/libtdx_attest.so.1 /usr/lib/x86_64-linux-gnu/libtdx_attest.so; \
-        else \
-            echo "ENABLE_TDX=true but libtdx_attest.so* not found in build context" >&2; \
-            exit 1; \
-        fi; \
-    else \
-        echo "ENABLE_TDX=false, skipping TDX extension setup"; \
-    fi
+COPY tc-api/ /app/tc-api/
 
 WORKDIR /app/tc-api
 

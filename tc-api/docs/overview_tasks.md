@@ -444,7 +444,7 @@ Each task has:
 ### ~~GAP-13: Docktap Deployment Integration~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `start.sh`, `docker-compose.yml`, `Dockerfile`, `docktap/main.py`
+- **Scope**: `start.sh`, `tc-api/docker-compose.yml`, `tc-api/Dockerfile`, `docktap/main.py`
 - **References**: architecture.md §4.2, §6.2, §10; docktap/architecture.md
 - **Dependencies**: GAP-01 ✅, GAP-10 ✅, GAP-11 ✅
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/docktap-deployment-integration/`
@@ -455,7 +455,7 @@ Each task has:
   - **Token sharing**: Compose `.env` file + variable interpolation. Bare-metal: environment variable inheritance.
   - **Proxy socket**: Bind-mount `/var/run/docktap/` directory. Users set `DOCKER_HOST=unix:///var/run/docktap/docker.sock`.
 - **Acceptance Criteria**:
-  1. ✅ `docker-compose.yml` includes `docktap` service with daemon socket mount, proxy socket volume, healthcheck, depends_on, and `TRUCON_SERVICE_TOKEN`.
+  1. ✅ `tc-api/docker-compose.yml` includes `docktap` service with daemon socket mount, proxy socket volume, healthcheck, depends_on, and `TRUCON_SERVICE_TOKEN`.
   2. ✅ `start.sh` launches Docktap as managed background process with PID tracking and graceful shutdown.
   3. ✅ `Dockerfile` exposes port 8002 for health endpoint.
   4. ✅ Healthcheck configured via `curl -f http://localhost:8002/healthz`.

@@ -347,7 +347,7 @@ class TestPredecessorVerification:
 
 
 class TestTdxStartupRequirements:
-    def test_enable_tdx_rejects_read_only_rtmr_mode(self):
+    def test_rejects_read_only_rtmr_mode(self):
         from tc_api.trucon.app import _initialize_local_mr_adapter
 
         with patch("tc_api.trucon.app.RTMR_INDEX", 2), \
@@ -358,7 +358,7 @@ class TestTdxStartupRequirements:
             with pytest.raises(RuntimeError, match="TDX startup requires RTMR extend support"):
                 _initialize_local_mr_adapter()
 
-    def test_enable_tdx_rejects_missing_rtmr_support(self):
+    def test_rejects_missing_rtmr_support(self):
         from tc_api.trucon.app import _initialize_local_mr_adapter
 
         with patch("tc_api.trucon.app.RTMR_INDEX", 2), \

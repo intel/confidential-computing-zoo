@@ -371,7 +371,6 @@ export TRUCON_LOG_FILE=${TRUCON_LOG_FILE:-$PWD/logs/trucon-latest.log}
 export DOCKTAP_REQUIRE_ATTESTATION=${DOCKTAP_REQUIRE_ATTESTATION:-1}
 export TRUCON_UDS_PATH=${TRUCON_UDS_PATH:-/var/run/trucon/trucon.sock}
 export DEBUG=${DEBUG:-false}
-export ENABLE_TDX=${ENABLE_TDX:-true}
 export TRUCON_AUTH_DISABLED=${TRUCON_AUTH_DISABLED:-false}
 export INIT_DEFAULT_CHAIN_ON_STARTUP=${INIT_DEFAULT_CHAIN_ON_STARTUP:-true}
 export PYTHON_BIN=$(tc_api_default_python_bin)

@@ -31,10 +31,10 @@ The `tc-docktap` command SHALL be registered as a setuptools console script entr
 - **AND** it SHALL invoke `tc_api.docktap.main:main`
 
 ### Requirement: Deployment files reference tc_api.docktap
-Deployment entry points in `docker-compose.yml` and `start.sh` SHALL reference the `tc_api.docktap.main` module path. After monorepo restructure, `start.sh` is located at `tc-api/start.sh` and volume mounts in `docker-compose.yml` reference the `tc-api/` subdirectory.
+Deployment entry points in `tc-api/docker-compose.yml` and `start.sh` SHALL reference the `tc_api.docktap.main` module path. `start.sh` is located at `tc-api/start.sh` and volume mounts in `tc-api/docker-compose.yml` reference tc-api-local runtime paths.
 
 #### Scenario: docker-compose uses new module path
-- **WHEN** inspecting the docktap service in `docker-compose.yml`
+- **WHEN** inspecting the docktap service in `tc-api/docker-compose.yml`
 - **THEN** the command SHALL reference `tc_api.docktap.main` (not `docktap.main`)
 
 #### Scenario: start.sh uses new module path
@@ -42,5 +42,5 @@ Deployment entry points in `docker-compose.yml` and `start.sh` SHALL reference t
 - **THEN** the command SHALL use `python -m tc_api.docktap.main` or the `tc-docktap` entry point
 
 #### Scenario: docker-compose docktap logs volume uses tc-api path
-- **WHEN** inspecting the docktap service volumes in `docker-compose.yml`
-- **THEN** the logs volume mount source SHALL be `./tc-api/logs`
+- **WHEN** inspecting the docktap service volumes in `tc-api/docker-compose.yml`
+- **THEN** the logs volume mount source SHALL be `./logs`
