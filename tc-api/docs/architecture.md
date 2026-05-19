@@ -50,7 +50,7 @@ Key layout conventions:
 - `tc_api/transparency/commit_client.py`: TrustedLogAPI — TruCon reservation/commit communication for tc_api workflows
 - `tc_api/transparency/dsse_builder.py`: Shared trusted-event DSSE predicate, owner-authorization, and statement construction used by tc_api and Docktap committers
 - `tc_api/trucon/`: Sequencer service with Pydantic schemas (`schemas.py`), caller authorization helpers (`auth.py`), platform-specific adapters (`adapters/tdx_mr.py`, `adapters/ccel.py`), evidence, owner attestation, and queue/database logic; `adapters/` does not contain `sigstore.py` or `oci_mirror.py` (those live in `tlog-rekor`)
-- `tc_api/trucon/app.py`: FastAPI routes, lifecycle wiring, submit daemon orchestration, and immutable backend loading via `TC_IMMUTABLE_BACKEND` env var (default: `rekor`)
+- `tc_api/trucon/app.py`: FastAPI routes, lifecycle wiring, submit daemon orchestration, and immutable backend loading via `TC_IMMUTABLE_WRITE_BACKENDS`, `TC_IMMUTABLE_PRIMARY_BACKEND`, and `TC_IMMUTABLE_WRITE_POLICY` (`primary` keeps confirmation authoritative on the primary backend while secondary backend outcomes remain observable). `TC_IMMUTABLE_BACKEND` remains a single-backend compatibility alias when the write-set variable is unset.
 - `tc_api/identity/sigstore_oauth.py`: Sigstore OAuth/OIDC constants, issuer selection, PKCE, and login-flow normalization helpers used by the API layer
 - `tc_api/docktap/`: Docker operation interception sidecar — `main.py` (entry point), `proxy/` (socket proxy, operation log, runtime adapter), `trucon_client.py` (DSSE signing and TruCon commit), `workload_store.py` (container-to-workload mapping). Uses relative imports internally; `tc-docktap` CLI entry point registered in `pyproject.toml`
 

@@ -23,6 +23,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from tlog.immutable import ImmutableLogAdapter
 
 from .database import (
     create_commit_intent,
@@ -110,10 +111,11 @@ from .config import (
     QUEUE_SNAPSHOT_HEARTBEAT_TICKS,
     RTMR_INDEX,
     SERVICE_TOKEN as _SERVICE_TOKEN,
-    TC_IMMUTABLE_BACKEND as _TC_IMMUTABLE_BACKEND,
     TRUCON_HTTP_PORT as _TRUCON_HTTP_PORT,
     TRUCON_UDS_PATH as _TRUCON_UDS_PATH,
+    get_immutable_backend_config,
 )
+from .immutable_fanout import CompositeImmutableLogAdapter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger("trucon")
@@ -272,14 +274,37 @@ _local_mr = None       # Set during lifespan
 _immutable_log = None   # Set during lifespan
 
 
+def _load_backend_adapter(backend_name: str, **kwargs) -> ImmutableLogAdapter:
+    if backend_name == "rekor":
+        return SigstoreLogAdapter(**kwargs)
+    if backend_name == "onchain":
+        from tlog_onchain.adapter import OnChainLogAdapter
+
+        return OnChainLogAdapter(**kwargs)
+    raise ValueError(f"Unknown immutable backend: {backend_name!r}. Supported: rekor, onchain")
+
+
 def _load_immutable_adapter(**kwargs):
     """Load the configured immutable-log backend adapter."""
-    if _TC_IMMUTABLE_BACKEND == "rekor":
-        return SigstoreLogAdapter(**kwargs)
-    elif _TC_IMMUTABLE_BACKEND == "onchain":
-        from tlog_onchain.adapter import OnChainLogAdapter
-        return OnChainLogAdapter(**kwargs)
-    raise ValueError(f"Unknown immutable backend: {_TC_IMMUTABLE_BACKEND!r}. Supported: rekor, onchain")
+    backend_config = get_immutable_backend_config()
+    adapters = {
+        backend_name: _load_backend_adapter(backend_name, **kwargs)
+        for backend_name in backend_config.write_backends
+    }
+    if len(adapters) == 1:
+        return adapters[backend_config.primary_backend]
+
+    secondary_adapters = tuple(
+        (backend_name, adapter)
+        for backend_name, adapter in adapters.items()
+        if backend_name != backend_config.primary_backend
+    )
+    return CompositeImmutableLogAdapter(
+        primary_backend=backend_config.primary_backend,
+        primary_adapter=adapters[backend_config.primary_backend],
+        secondary_adapters=secondary_adapters,
+        write_policy=backend_config.write_policy,
+    )
 _quote_adapter = None    # Set during lifespan
 
 

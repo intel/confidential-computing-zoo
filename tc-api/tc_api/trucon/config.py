@@ -2,9 +2,20 @@
 
 Mirrors the pattern in ``tc_api.config`` — all environment variable reads
 are collected here so the surface is discoverable in a single place.
+
+Phase-one immutable backend semantics:
+- ``TC_IMMUTABLE_WRITE_BACKENDS`` defines the ordered write set.
+- ``TC_IMMUTABLE_PRIMARY_BACKEND`` defines the authoritative read/confirm backend.
+- ``TC_IMMUTABLE_WRITE_POLICY=primary`` keeps confirmation anchored to the
+    primary backend while secondary outcomes remain observable for future rollout.
+
+``TC_IMMUTABLE_BACKEND`` remains as a compatibility alias for single-backend
+deployments when ``TC_IMMUTABLE_WRITE_BACKENDS`` is unset.
 """
 
 import os
+from dataclasses import dataclass
+from typing import Tuple
 
 # ---------------------------------------------------------------------------
 # Sequencer tuning
@@ -18,6 +29,79 @@ QUEUE_SNAPSHOT_HEARTBEAT_TICKS: int = max(
 # ---------------------------------------------------------------------------
 # Immutable backend selection
 # ---------------------------------------------------------------------------
+SUPPORTED_IMMUTABLE_BACKENDS: Tuple[str, ...] = ("rekor", "onchain")
+SUPPORTED_IMMUTABLE_WRITE_POLICIES: Tuple[str, ...] = ("primary",)
+
+
+@dataclass(frozen=True)
+class ImmutableBackendConfig:
+    write_backends: Tuple[str, ...]
+    primary_backend: str
+    write_policy: str
+
+
+def _split_backend_values(raw_value: str) -> Tuple[str, ...]:
+    values = []
+    seen = set()
+    for item in raw_value.split(","):
+        backend = item.strip().lower()
+        if not backend or backend in seen:
+            continue
+        values.append(backend)
+        seen.add(backend)
+    return tuple(values)
+
+
+def get_immutable_backend_config() -> ImmutableBackendConfig:
+    legacy_backend = os.environ.get("TC_IMMUTABLE_BACKEND", "rekor").strip().lower()
+    raw_write_backends = os.environ.get("TC_IMMUTABLE_WRITE_BACKENDS", legacy_backend)
+    write_backends = _split_backend_values(raw_write_backends)
+    if not write_backends:
+        write_backends = ("rekor",)
+
+    unsupported = [backend for backend in write_backends if backend not in SUPPORTED_IMMUTABLE_BACKENDS]
+    if unsupported:
+        supported = ", ".join(SUPPORTED_IMMUTABLE_BACKENDS)
+        raise ValueError(
+            f"Unknown immutable backend(s): {', '.join(unsupported)}. Supported: {supported}"
+        )
+
+    primary_backend = os.environ.get("TC_IMMUTABLE_PRIMARY_BACKEND", "").strip().lower()
+    if not primary_backend:
+        primary_backend = write_backends[0] if len(write_backends) == 1 else "rekor"
+
+    if primary_backend not in SUPPORTED_IMMUTABLE_BACKENDS:
+        supported = ", ".join(SUPPORTED_IMMUTABLE_BACKENDS)
+        raise ValueError(
+            f"Unknown primary immutable backend: {primary_backend!r}. Supported: {supported}"
+        )
+
+    if primary_backend not in write_backends:
+        configured = ", ".join(write_backends)
+        raise ValueError(
+            f"Primary immutable backend {primary_backend!r} must be included in write backends: {configured}"
+        )
+
+    write_policy = os.environ.get("TC_IMMUTABLE_WRITE_POLICY", "primary").strip().lower() or "primary"
+    if write_policy not in SUPPORTED_IMMUTABLE_WRITE_POLICIES:
+        supported = ", ".join(SUPPORTED_IMMUTABLE_WRITE_POLICIES)
+        raise ValueError(
+            f"Unsupported immutable write policy: {write_policy!r}. Supported: {supported}"
+        )
+
+    if len(write_backends) > 1 and "onchain" in write_backends:
+        raise ValueError(
+            "Unsupported immutable backend fanout configuration 'rekor,onchain': "
+            "on-chain fanout remains disabled until the on-chain adapter is implemented"
+        )
+
+    return ImmutableBackendConfig(
+        write_backends=write_backends,
+        primary_backend=primary_backend,
+        write_policy=write_policy,
+    )
+
+
 TC_IMMUTABLE_BACKEND: str = os.environ.get("TC_IMMUTABLE_BACKEND", "rekor").strip().lower()
 
 # ---------------------------------------------------------------------------

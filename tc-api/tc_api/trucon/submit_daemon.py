@@ -143,7 +143,7 @@ class SubmitDaemon:
                 except Exception as exc:
                     submit_ms = (time.perf_counter() - submit_start) * 1000
                     logger.info("metric=submit_latency latency_ms=%.1f record_id=%s outcome=%s", submit_ms, record_id, "failed_retryable")
-                    logger.error("Failed to submit record %s to Rekor: %s", record_id, exc)
+                    logger.error("Failed to submit record %s to immutable backend: %s", record_id, exc)
                     self._handle_retry(record_id)
 
         self._drain_mirror_publish_queue()
@@ -165,6 +165,7 @@ class SubmitDaemon:
 
         if self.immutable_log:
             log_id, status, receipt = self.immutable_log.submit_bundle(bundle_json)
+            self._emit_secondary_backend_results(record_id)
             if status == "confirmed":
                 self._confirm_record(record, record_id, chain_id, seq, log_id, submit_start, receipt)
             else:
@@ -303,3 +304,25 @@ class SubmitDaemon:
             stats['failed_terminal_count'],
             stats['total_retry_count'],
         )
+
+    def _emit_secondary_backend_results(self, record_id: str) -> None:
+        results = getattr(self.immutable_log, "last_submit_results", None)
+        primary_backend = getattr(self.immutable_log, "primary_backend", None)
+        if not isinstance(results, dict) or len(results) <= 1 or primary_backend is None:
+            return
+
+        secondary_results = {
+            backend: {
+                "status": result.get("status"),
+                "log_id": result.get("log_id"),
+                "error": result.get("error"),
+            }
+            for backend, result in results.items()
+            if backend != primary_backend
+        }
+        if secondary_results:
+            logger.info(
+                "record %s secondary immutable backend results=%s",
+                record_id,
+                json.dumps(secondary_results, sort_keys=True),
+            )
