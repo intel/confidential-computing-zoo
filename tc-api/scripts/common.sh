@@ -15,8 +15,8 @@ tc_api_activate_venv_if_present() {
 	fi
 }
 
-tc_api_prepend_src_to_pythonpath() {
-	export PYTHONPATH="$TC_API_REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+tc_api_prepend_repo_root_to_pythonpath() {
+	export PYTHONPATH="$TC_API_REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 }
 
 tc_api_default_python_bin() {

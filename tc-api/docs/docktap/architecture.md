@@ -606,7 +606,7 @@ Common socket defaults:
 Docktap validation is split across three layers:
 
 - repository-level service and smoke validation documented in `docs/TESTING.md`
-- focused Docktap proxy and lifecycle scenarios exercised through the Docktap test harness in `src/tc_api/docktap/test_suite.py`
+- focused Docktap proxy and lifecycle scenarios exercised through the Docktap test harness in `tc_api/docktap/test_suite.py`
 - architecture-level mixed-trace interpretation captured in this document and the related analysis references
 
 This document does not duplicate concrete test commands. Use `docs/TESTING.md` as the supported operator entrypoint.

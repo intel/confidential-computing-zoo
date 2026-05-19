@@ -15,7 +15,7 @@ Each immutable-log backend adapter SHALL be a separate installable Python packag
 The `tlog-rekor` package SHALL contain the Sigstore/Rekor implementation of `ImmutableLogAdapter`.
 
 #### Scenario: SigstoreLogAdapter implements ImmutableLogAdapter
-- **WHEN** inspecting `tlog-rekor/src/tlog_rekor/adapter.py`
+- **WHEN** inspecting `tlog-rekor/tlog_rekor/adapter.py`
 - **THEN** `SigstoreLogAdapter` SHALL be defined as a concrete implementation of `tlog.immutable.ImmutableLogAdapter`
 
 #### Scenario: SigstoreLogAdapter accepts str bundle
@@ -23,14 +23,14 @@ The `tlog-rekor` package SHALL contain the Sigstore/Rekor implementation of `Imm
 - **THEN** the adapter SHALL deserialize `bundle_json` from string to `sigstore.models.Bundle` internally before submission
 
 #### Scenario: tlog-rekor contains OciBundleMirror
-- **WHEN** inspecting `tlog-rekor/src/tlog_rekor/oci_mirror.py`
+- **WHEN** inspecting `tlog-rekor/tlog_rekor/oci_mirror.py`
 - **THEN** `OciBundleMirror` SHALL be present, moved from `tc_api.trucon.adapters.oci_mirror`
 
 ### Requirement: tlog-onchain provides a scaffold for on-chain backend
 The `tlog-onchain` package SHALL contain a placeholder `OnChainLogAdapter` class that implements `ImmutableLogAdapter` with `NotImplementedError` stubs.
 
 #### Scenario: OnChainLogAdapter exists as a scaffold
-- **WHEN** inspecting `tlog-onchain/src/tlog_onchain/adapter.py`
+- **WHEN** inspecting `tlog-onchain/tlog_onchain/adapter.py`
 - **THEN** `OnChainLogAdapter` SHALL inherit from `tlog.immutable.ImmutableLogAdapter` and raise `NotImplementedError` for all abstract methods
 
 ### Requirement: TruCon submit daemon SHALL load backend adapters at runtime
@@ -52,15 +52,15 @@ The TruCon submit daemon SHALL select and instantiate the appropriate `Immutable
 After extraction of `SigstoreLogAdapter` and `OciBundleMirror`, the `trucon/adapters/` directory SHALL contain only platform-specific adapters that are not immutable-log backends.
 
 #### Scenario: trucon/adapters/ contains TDX adapters
-- **WHEN** inspecting `tc-api/src/tc_api/trucon/adapters/`
+- **WHEN** inspecting `tc-api/tc_api/trucon/adapters/`
 - **THEN** it SHALL contain `tdx_mr.py`, `tdx_quote.py`, and `ccel.py`
 
 #### Scenario: sigstore.py removed from trucon/adapters
-- **WHEN** inspecting `tc-api/src/tc_api/trucon/adapters/`
+- **WHEN** inspecting `tc-api/tc_api/trucon/adapters/`
 - **THEN** `sigstore.py` SHALL NOT exist (moved to `tlog-rekor`)
 
 #### Scenario: oci_mirror.py removed from trucon/adapters
-- **WHEN** inspecting `tc-api/src/tc_api/trucon/adapters/`
+- **WHEN** inspecting `tc-api/tc_api/trucon/adapters/`
 - **THEN** `oci_mirror.py` SHALL NOT exist (moved to `tlog-rekor`)
 
 ### Requirement: tc-api declares tlog and tlog-rekor as dependencies

@@ -35,7 +35,8 @@ python -m pip install -e .
 ```text
 tlog/
 ├── pyproject.toml
-└── src/tlog/
+
+└── tlog/
     ├── __init__.py
     ├── digest.py
     ├── errors.py
@@ -64,6 +65,6 @@ from tlog import (
 
 ## Development Notes
 
-- Source lives under `src/tlog/`
+- Source lives under `tlog/`
 - The package targets Python 3.11+
 - This package is intended to stay usable as an independent building block inside or outside this monorepo

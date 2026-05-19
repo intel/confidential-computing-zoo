@@ -9,7 +9,7 @@ The repository root SHALL contain separate top-level directories for each logica
 
 #### Scenario: tc-api files are in tc-api/ subdirectory
 - **WHEN** inspecting the repository root
-- **THEN** `tc-api/` SHALL contain `pyproject.toml`, `src/`, `tests/`, `docs/`, `examples/`, `openspec/`, `setup.sh`, `start.sh`, `run_tests.sh`, `AGENTS.md`, `README.md`, `.env.example`, `.github/`, and `.vscode/`
+- **THEN** `tc-api/` SHALL contain `pyproject.toml`, `tc_api/`, `tests/`, `docs/`, `examples/`, `openspec/`, `setup.sh`, `start.sh`, `run_tests.sh`, `AGENTS.md`, `README.md`, `.env.example`, `.github/`, and `.vscode/`
 - **AND** none of these files SHALL exist at the repository root
 
 #### Scenario: tlog packages remain at repository root
@@ -82,7 +82,7 @@ After the restructure, no dead code, tombstone packages, or orphaned directories
 - **THEN** there SHALL be no `docktap/` directory at the root
 
 #### Scenario: No tlog tombstone package
-- **WHEN** inspecting `tc-api/src/tc_api/`
+- **WHEN** inspecting `tc-api/tc_api/`
 - **THEN** there SHALL be no `tlog/` subdirectory (the tombstone package SHALL be removed)
 
 #### Scenario: No stray test files at root

@@ -9,7 +9,7 @@ The TruCon core service SHALL be identified by the name "TruCon" in all code, co
 
 #### Scenario: Python module filename
 - **WHEN** the TruCon service module is created or referenced
-- **THEN** the source file SHALL be `src/tc_api/trucon.py` and the uvicorn target SHALL be `tc_api.trucon:app`
+- **THEN** the source file SHALL be `tc_api/trucon/app.py` and the uvicorn target SHALL be `tc_api.trucon.app:app`
 
 #### Scenario: Environment variable
 - **WHEN** the tc_api or deployment configuration references the TruCon service URL

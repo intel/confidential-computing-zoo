@@ -24,7 +24,7 @@ Each task has:
 ### GAP-13: Public Predecessor Replay Links via Two-Phase Intent Reservation
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/transparency/commit_client.py`, `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `tlog-rekor/src/tlog_rekor/adapter.py`, `src/tc_api/identity/sigstore_baseline.py`, `tests/`, `docs/`
+- **Scope**: `tc_api/transparency/commit_client.py`, `tc_api/trucon/app.py`, `tc_api/trucon/database.py`, `tlog-rekor/tlog_rekor/adapter.py`, `tc_api/identity/sigstore_baseline.py`, `tests/`, `docs/`
 - **References**: archived OpenSpec changes `2026-04-22-reservation-backed-replay-intents` and `2026-04-22-public-predecessor-replay-diagnostics`; architecture.md replay / verification sections; trusted-log verification docs
 - **Dependencies**: GAP-05 ✅, GAP-09 ✅, GAP-10 ✅, GAP-12 ✅
 - **Status**: PARTIALLY COMPLETED
@@ -42,7 +42,7 @@ Each task has:
 #### Task 13.1: Define the reservation protocol and state model
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, protocol docs
+- **Scope**: `tc_api/trucon/app.py`, `tc_api/trucon/database.py`, protocol docs
 - **Dependencies**: None
 - **Goal**: Introduce an explicit `reserve -> sign -> commit` control flow with a stable predecessor contract.
 - **Questions already resolved for implementation direction**:
@@ -58,7 +58,7 @@ Each task has:
 #### Task 13.2: Extend Event Log 0 and lazy baseline to the same signed replay contract
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/sigstore_baseline.py`, `src/tc_api/trucon/app.py`, init/lazy baseline tests
+- **Scope**: `tc_api/sigstore_baseline.py`, `tc_api/trucon/app.py`, init/lazy baseline tests
 - **Dependencies**: Task 13.1
 - **Goal**: Make baseline records the null-predecessor instance of the same replay protocol, including lazy workload baseline creation.
 - **Acceptance Criteria**:
@@ -70,7 +70,7 @@ Each task has:
 #### Task 13.3: Move tc_api commit flow onto reservation-backed signing
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/transparency/commit_client.py`, internal transport helpers
+- **Scope**: `tc_api/transparency/commit_client.py`, internal transport helpers
 - **Dependencies**: Task 13.1, Task 13.2
 - **Goal**: Replace the current one-shot `sign -> /commit` path with reservation-backed DSSE signing.
 - **Acceptance Criteria**:
@@ -82,7 +82,7 @@ Each task has:
 #### Task 13.4: Validate reserved contract at TruCon commit time and persist replay metadata
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`
+- **Scope**: `tc_api/trucon/app.py`, `tc_api/trucon/database.py`
 - **Dependencies**: Task 13.3
 - **Goal**: Ensure TruCon treats the intent token as a strong consistency constraint rather than a weak hint.
 - **Acceptance Criteria**:
@@ -94,7 +94,7 @@ Each task has:
 #### Task 13.5: Rework immutable replay and TruCon verification around signed predecessor proof
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/transparency/commit_client.py`, `tlog-rekor/src/tlog_rekor/adapter.py`, `src/tc_api/trucon/app.py`, CLI verify paths
+- **Scope**: `tc_api/transparency/commit_client.py`, `tlog-rekor/tlog_rekor/adapter.py`, `tc_api/trucon/app.py`, CLI verify paths
 - **Dependencies**: Task 13.4
 - **Goal**: Replace `prev_log_id`-based public continuity checks with signed predecessor verification.
 - **Acceptance Criteria**:
@@ -125,7 +125,7 @@ Each task has:
 ### ~~GAP-01: Docktap → TruCon Event Emission~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `docktap/`, `src/tc_api/trucon/`
+- **Scope**: `tc_api/docktap/`, `tc_api/trucon/`
 - **References**: architecture.md §4.2, §6.2; trusted-log/architecture.md component diagram
 - **Dependencies**: None
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-docktap-trucon-emission/`
@@ -149,7 +149,7 @@ Each task has:
 ### ~~GAP-02: Idempotency Key Enforcement~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/transparency/commit_client.py`
+- **Scope**: `tc_api/trucon/app.py`, `tc_api/trucon/database.py`, `tc_api/transparency/commit_client.py`
 - **References**: architecture.md §4.3 ("Planned: Idempotency key enforcement"), §7
 - **Dependencies**: None
 - **Completed**: 2026-04-16 | Archive: `openspec/changes/archive/2026-04-16-idempotency-key-enforcement/`
@@ -165,7 +165,7 @@ Each task has:
 ### ~~GAP-03: Workload / Instance Mapping Model~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/`, `docktap/trucon_client.py`, `src/tc_api/transparency/commit_client.py`
+- **Scope**: `tc_api/trucon/`, `tc_api/docktap/trucon_client.py`, `tc_api/transparency/commit_client.py`
 - **References**: architecture.md §5.2
 - **Dependencies**: GAP-01 ✅, GAP-11 ✅
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-workload-instance-mapping/`
@@ -187,7 +187,7 @@ Each task has:
 ### ~~GAP-04: Observability Metrics~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `tlog/src/tlog/types.py`, `src/tc_api/transparency/commit_client.py`
+- **Scope**: `tc_api/trucon/app.py`, `tc_api/trucon/database.py`, `tlog/tlog/types.py`, `tc_api/transparency/commit_client.py`
 - **References**: architecture.md §8.2
 - **Dependencies**: ~~GAP-02~~ ✅, ~~GAP-06~~ ✅
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-observability-metrics/`
@@ -210,7 +210,7 @@ Each task has:
 ### ~~GAP-05: Event Log 0 (Baseline Record)~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/transparency/commit_client.py`, `src/tc_api/trucon/app.py`, `src/tc_api/trucon/adapters/tdx_mr.py`, `src/tc_api/trucon/adapters/ccel.py`
+- **Scope**: `tc_api/transparency/commit_client.py`, `tc_api/trucon/app.py`, `tc_api/trucon/adapters/tdx_mr.py`, `tc_api/trucon/adapters/ccel.py`
 - **References**: trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow
 - **Dependencies**: None (Q-05 resolved)
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-event-log-0-baseline/`
@@ -239,7 +239,7 @@ Each task has:
 ### ~~GAP-06: Granular Lifecycle States~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/tlog/types.py`
+- **Scope**: `tc_api/trucon/app.py`, `tc_api/trucon/database.py`, `tc_api/tlog/types.py`
 - **References**: architecture.md §5.1
 - **Dependencies**: None
 - **Completed**: 2026-04-16 | Archive: `openspec/changes/archive/2026-04-16-granular-lifecycle-states/`
@@ -255,10 +255,10 @@ Each task has:
 ### GAP-07: On-Chain Backend Adapter
 
 - **Priority**: ~~MEDIUM~~ → LOW (long-term)
-- **Scope**: `src/tc_api/trucon/adapters/`
+- **Scope**: `tc_api/trucon/adapters/`
 - **References**: trusted-log/architecture.md component diagram (OnChain implementation)
 - **Dependencies**: External — requires a concrete on-chain target (EVM, Solana, custom, etc.) to be selected before implementation can begin.
-- **Current State**: Only `SigstoreLogAdapter` (Rekor/transparent-log) exists. The `ImmutableLogAdapter` abstract interface is defined in `src/tc_api/tlog/immutable.py`, but no on-chain implementation exists. Blocked by target chain selection.
+- **Current State**: Only `SigstoreLogAdapter` (Rekor/transparent-log) exists. The `ImmutableLogAdapter` abstract interface is defined in `tc_api/tlog/immutable.py`, but no on-chain implementation exists. Blocked by target chain selection.
 - **Acceptance Criteria**:
   1. `OnChainAdapter` class implementing `ImmutableLogAdapter`.
   2. `submit_bundle()`, `get_entry()`, `traverse()` implemented for on-chain target.
@@ -269,7 +269,7 @@ Each task has:
 ### ~~GAP-08: Feature-Flag Fallback to Legacy Write Path~~ CLOSED (Won't Do)
 
 - **Priority**: ~~MEDIUM~~ — CLOSED
-- **Scope**: `src/tc_api/api/app.py`, `src/tc_api/api/runtime.py`, `src/tc_api/config.py`
+- **Scope**: `tc_api/api/app.py`, `tc_api/api/runtime.py`, `tc_api/config.py`
 - **References**: architecture.md §8.1, §11
 - **Dependencies**: None
 - **Closed**: 2026-04-17
@@ -280,7 +280,7 @@ Each task has:
 ### ~~GAP-09: `prev_log_id` as DB-Level Ordering Verification (Non-TEE Mode)~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/trucon/app.py`
+- **Scope**: `tc_api/trucon/app.py`
 - **References**: trusted-log/architecture.md §"Non-TEE Mode: prev_log_id as DB-Level Ordering Verification"
 - **Dependencies**: None
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-non-tee-verification/`
@@ -301,7 +301,7 @@ Each task has:
 ### ~~GAP-10: Internal Service Authentication (Phase A — Bearer Token)~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/transparency/commit_client.py`, `docktap/trucon_client.py`, `src/tc_api/config.py`
+- **Scope**: `tc_api/trucon/app.py`, `tc_api/transparency/commit_client.py`, `tc_api/docktap/trucon_client.py`, `tc_api/config.py`
 - **References**: architecture.md §9
 - **Dependencies**: None
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-internal-service-auth/`
@@ -325,7 +325,7 @@ Each task has:
 ### ~~GAP-12: Internal Service Authentication — Phase B (Unix Socket Peer Credentials / Caller Identity)~~ ✅ COMPLETED
 
 - **Priority**: LOW
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/transparency/commit_client.py`, `docktap/trucon_client.py`
+- **Scope**: `tc_api/trucon/app.py`, `tc_api/transparency/commit_client.py`, `tc_api/docktap/trucon_client.py`
 - **References**: architecture.md §9; GAP-10 design notes
 - **Dependencies**: GAP-10 ✅
 - **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-harden-trucon-internal-auth/`
@@ -348,7 +348,7 @@ Each task has:
 ### ~~GAP-11: Per-Workload Chain Assignment for Docktap~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `docktap/`, `src/tc_api/trucon/`
+- **Scope**: `tc_api/docktap/`, `tc_api/trucon/`
 - **References**: architecture.md §4.2, §7; Q-01
 - **Dependencies**: GAP-01 ✅
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-per-workload-chain-assignment/`
@@ -365,7 +365,7 @@ Each task has:
 ### ~~GAP-20: Event Log 0 Baseline for Implicit Workload Chains~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/transparency/commit_client.py`, `src/tc_api/trucon/app.py`, `docktap/trucon_client.py`, workload-chain verification/docs
+- **Scope**: `tc_api/transparency/commit_client.py`, `tc_api/trucon/app.py`, `tc_api/docktap/trucon_client.py`, workload-chain verification/docs
 - **References**: trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow; architecture.md workload-chain model
 - **Dependencies**: GAP-05 ✅, GAP-11 ✅, GAP-17 ✅
 - **Completed**: 2026-04-20 | Change: `openspec/changes/add-workload-chain-baseline/`
@@ -384,7 +384,7 @@ Each task has:
 ### ~~FIX-01: Digest Algorithm — Two-Level Hashing Not Implemented~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/transparency/commit_client.py`
+- **Scope**: `tc_api/transparency/commit_client.py`
 - **References**: trusted-log/architecture.md §Digest Algorithm
 - **Completed**: 2026-04-16 | Archive: `openspec/changes/archive/2026-04-16-two-level-digest-hashing/`
 - **Acceptance Criteria**:
@@ -399,7 +399,7 @@ Each task has:
 ### ~~FIX-02: `GET /status` Response Shape Mismatches `LatestState` / `CommitQueueStatus`~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/trucon/app.py`, `src/tc_api/trucon/database.py`, `src/tc_api/transparency/commit_client.py`
+- **Scope**: `tc_api/trucon/app.py`, `tc_api/trucon/database.py`, `tc_api/transparency/commit_client.py`
 - **References**: trusted-log/architecture.md §Data Structures
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-status-response-fix/`
 - **Acceptance Criteria**:
@@ -414,7 +414,7 @@ Each task has:
 ### ~~FIX-03: `SubmitResult` Type Defined but Never Exposed~~ ✅ COMPLETED
 
 - **Priority**: LOW
-- **Scope**: `src/tc_api/tlog/types.py`, `src/tc_api/trucon/app.py`
+- **Scope**: `tc_api/tlog/types.py`, `tc_api/trucon/app.py`
 - **References**: trusted-log/architecture.md §Data Structures, §Message Flow step 4
 - **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-harden-trucon-internal-auth/`
 - **Implemented Outcome**: The unused `SubmitResult` type was removed during the GAP-12 refactor. No runtime endpoint exposed it, and the current queue-driven submit model does not produce or require a separate queryable submit-result contract.
@@ -427,7 +427,7 @@ Each task has:
 ### FIX-04: Entry Type Too Narrow for Architecture's Rich Entry Schema — ✅ COMPLETED
 
 - **Priority**: LOW
-- **Scope**: `tlog/src/tlog/types.py`, `src/tc_api/transparency/commit_client.py`
+- **Scope**: `tlog/tlog/types.py`, `tc_api/transparency/commit_client.py`
 - **References**: trusted-log/architecture.md §JSON Mock-Up
 - **Completed**: 2026-04-18 | Archive: `openspec/changes/entry-value-native-json/`
 - **Design Decisions** (confirmed 2026-04-18):
@@ -467,7 +467,7 @@ Each task has:
 ### ~~GAP-14: Chain Verification CLI Tool~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `src/tc_api/cli/verify.py`, `src/tc_api/transparency/commit_client.py`, package metadata, verification docs
+- **Scope**: `tc_api/cli/verify.py`, `tc_api/transparency/commit_client.py`, package metadata, verification docs
 - **References**: trusted-log/architecture.md §Verification Plane; trusted-log/api.md `verify_record()`; architecture.md §6.3
 - **Dependencies**: None
 - **Completed**: 2026-04-18 | Archive: `openspec/changes/archive/2026-04-18-add-chain-verification-cli/`
@@ -489,7 +489,7 @@ Each task has:
 ### ~~GAP-17: Attested Head Evidence Export~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/trucon/`, quote/evidence production path, `docs/trusted-log/verification.md`
+- **Scope**: `tc_api/trucon/`, quote/evidence production path, `docs/trusted-log/verification.md`
 - **References**: architecture.md §6.4, §12; trusted-log/architecture.md §Operator Verification Surfaces; trusted-log/verification.md §Attested Head Evidence
 - **Dependencies**: GAP-05 ✅, GAP-14 ✅
 - **Completed**: 2026-04-19
@@ -513,7 +513,7 @@ Each task has:
 ### ~~GAP-18: tc-verify External Evidence Mode~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `src/tc_api/cli/verify.py`, verification support code, package interfaces, tests
+- **Scope**: `tc_api/cli/verify.py`, verification support code, package interfaces, tests
 - **References**: trusted-log/verification.md §Verification Inputs, §Verification Flow; architecture.md §6.4
 - **Dependencies**: GAP-14 ✅, GAP-17
 - **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-tc-verify-external-evidence-mode/`
@@ -540,7 +540,7 @@ Each task has:
 ### ~~GAP-19: Verification Profiles for Application Flows~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: event producers in `src/tc_api/`, `docktap/`, `tc-verify` verification logic, trusted-log verification docs
+- **Scope**: event producers in `tc_api/`, `tc_api/docktap/`, `tc-verify` verification logic, trusted-log verification docs
 - **References**: trusted-log/verification.md §Verification Profiles; architecture.md §6.1, §6.2
 - **Dependencies**: GAP-14 ✅, GAP-18 ✅
 - **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-add-verification-profiles/`
@@ -572,7 +572,7 @@ Each task has:
 ### ~~GAP-15: Docktap In-Memory Retention / Garbage Collection~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `docktap/main.py`, `docktap/proxy/operation_log.py`, `docktap/workload_store.py`, `docktap/trucon_client.py`
+- **Scope**: `docktap/main.py`, `docktap/proxy/operation_log.py`, `docktap/workload_store.py`, `tc_api/docktap/trucon_client.py`
 - **References**: docktap/architecture.md §Data Model (`cleanup_old_operations(max_age_hours=24)`)
 - **Dependencies**: GAP-13 ✅
 - **Completed**: 2026-04-18 | Archive: `openspec/changes/archive/2026-04-18-docktap-local-state-retention-and-runbook-closure/`
@@ -777,7 +777,7 @@ Each task has:
 ### ~~FIX-05: `SubmitStatus.OPEN` Enum Value Dead Code~~ ✅ COMPLETED
 
 - **Priority**: LOW
-- **Scope**: `src/tc_api/tlog/types.py`
+- **Scope**: `tc_api/tlog/types.py`
 - **References**: architecture.md §5.1; GAP-06 acceptance criteria §4 ("deferred until pre-commit assembly flow")
 - **Dependencies**: None
 - **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-harden-trucon-internal-auth/`

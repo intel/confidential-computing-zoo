@@ -30,11 +30,8 @@ tc-oidc-preflight = "tc_api.identity.oidc_preflight:main"
 tc-oidc-verification-code = "tc_api.cli.oidc_verification_code:main"
 tc-client = "tc_api.cli.client:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-
 [tool.setuptools.packages.find]
-where = ["src"]
+include = ["tc_api*"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}

@@ -12,20 +12,20 @@ The codebase SHALL organize trusted-log related code into three distinct layers:
 - **THEN** it SHALL have its own `pyproject.toml` and be installable independently via `pip install -e tlog/`
 
 #### Scenario: tlog/ contains only shared contracts and digest computation
-- **WHEN** inspecting the `tlog/src/tlog/` package
+- **WHEN** inspecting the `tlog/tlog/` package
 - **THEN** it SHALL contain domain types (`types.py`), error definitions (`errors.py`), abstract adapter interfaces (`immutable.py`, `local_mr.py`), and consolidated digest functions (`digest.py`) with no concrete implementations, database code, or third-party dependencies
 
 #### Scenario: trucon/ contains sequencer internals
-- **WHEN** inspecting the `tc-api/src/tc_api/trucon/` package
+- **WHEN** inspecting the `tc-api/tc_api/trucon/` package
 - **THEN** it SHALL contain the FastAPI sequencer app (`app.py`), SQLite queue operations (`database.py`), and platform-specific adapters under `adapters/` (`tdx_mr.py`, `tdx_quote.py`, `ccel.py`)
 - **AND** `adapters/` SHALL NOT contain `sigstore.py` or `oci_mirror.py` — those files SHALL NOT exist in the directory
 
 #### Scenario: tlog_client.py is the tc_api-side interface
-- **WHEN** inspecting `tc-api/src/tc_api/tlog_client.py`
+- **WHEN** inspecting `tc-api/tc_api/tlog_client.py`
 - **THEN** it SHALL contain the `TrustedLogAPI` class that performs DSSE signing and communicates with TruCon, importing domain types from the standalone `tlog` package
 
-#### Scenario: src/tc_api/tlog/ tombstone is removed
-- **WHEN** inspecting `tc-api/src/tc_api/`
+#### Scenario: tc_api/tlog/ tombstone is removed
+- **WHEN** inspecting `tc-api/tc_api/`
 - **THEN** there SHALL be no `tlog/` subdirectory
 
 #### Scenario: setup.sh installs sibling tlog packages
@@ -62,4 +62,4 @@ The `trusted_container_log/` directory SHALL be completely removed after restruc
 
 #### Scenario: No trusted_container_log directory exists
 - **WHEN** the restructure is complete
-- **THEN** `src/tc_api/transparencyed_container_log/` SHALL NOT exist as a directory
+- **THEN** `tc_api/transparencyed_container_log/` SHALL NOT exist as a directory

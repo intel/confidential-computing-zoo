@@ -69,4 +69,4 @@ Once all import paths across the codebase are updated to reference `tlog` and `t
 
 #### Scenario: No shim files remain after migration
 - **WHEN** the import path migration is complete
-- **THEN** `src/tc_api/tlog/types.py`, `src/tc_api/tlog/immutable.py`, `src/tc_api/tlog/errors.py`, and `src/tc_api/tlog/local_mr.py` SHALL either be deleted or contain only tc_api-specific additions (not re-exports)
+- **THEN** `tc_api/tlog/types.py`, `tc_api/tlog/immutable.py`, `tc_api/tlog/errors.py`, and `tc_api/tlog/local_mr.py` SHALL either be deleted or contain only tc_api-specific additions (not re-exports)

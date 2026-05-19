@@ -68,9 +68,9 @@ python -m tc_api.api.app
 Use the smallest supported acceptance flow on a real TD VM:
 
 ```bash
-PYTHONPATH=$PWD/src python tests/check_real_tdx_quote.py
+PYTHONPATH=$PWD python tests/check_real_tdx_quote.py
 ./start.sh restart
-PYTHONPATH=$PWD/src python scripts/tdvm_smoke_test.py --summary-file /tmp/tdvm-smoke-summary.json
+PYTHONPATH=$PWD python scripts/tdvm_smoke_test.py --summary-file /tmp/tdvm-smoke-summary.json
 ```
 
 For a shorter run, add `--skip-publish` or `--skip-deploy` to `scripts/tdvm_smoke_test.py`.
@@ -94,7 +94,7 @@ Docktap-specific variables are listed later in this README.
 
 ```text
 tc-api/
-├── src/tc_api/          # tc_api, TruCon, Docktap, CLI, and shared models
+├── tc_api/              # tc_api, TruCon, Docktap, CLI, and shared models
 ├── tests/               # focused pytest modules and manual checks
 ├── scripts/             # operator helpers such as tdvm_smoke_test.py
 ├── docs/                # architecture and testing docs

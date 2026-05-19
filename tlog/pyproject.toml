@@ -8,8 +8,5 @@ version = "0.1.0"
 description = "Trusted Log shared types, ABCs, and digest computation"
 requires-python = ">=3.11"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-
 [tool.setuptools.packages.find]
-where = ["src"]
+include = ["tlog*"]

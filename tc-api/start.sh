@@ -374,7 +374,7 @@ export DEBUG=${DEBUG:-false}
 export TRUCON_AUTH_DISABLED=${TRUCON_AUTH_DISABLED:-false}
 export INIT_DEFAULT_CHAIN_ON_STARTUP=${INIT_DEFAULT_CHAIN_ON_STARTUP:-true}
 export PYTHON_BIN=$(tc_api_default_python_bin)
-tc_api_prepend_src_to_pythonpath
+tc_api_prepend_repo_root_to_pythonpath
 
 ensure_startup_sigstore_token
 

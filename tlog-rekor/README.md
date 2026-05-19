@@ -31,7 +31,7 @@ python -m pip install -e .
 ```text
 tlog-rekor/
 ├── pyproject.toml
-└── src/tlog_rekor/
+└── tlog_rekor/
     ├── __init__.py
     ├── adapter.py
     └── oci_mirror.py

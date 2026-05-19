@@ -279,7 +279,7 @@ The TruCon is a single-instance FastAPI service (started with `--workers 1`) tha
 | `/verify-chain/{chain_id}` | GET | Return local chain verification details: sequence continuity, RTMR checks, Rekor confirmation state, and signed predecessor diagnostics exposed as `predecessor_ok`, `predecessor_status`, `prev_event_digest`, `prev_lookup_hash`, `candidate_count`, and related pipeline counts. |
 | `/status` | GET | Return aggregate queue statistics: total pending, confirmed, and failed counts per chain. |
 
-See `src/tc_api/trucon/schemas.py` for Pydantic request/response models (`CommitRequest`, `CommitResponse`, `ChainStateResponse`, `CommitQueueStatusResponse`, `ChainVerificationResponse`). `src/tc_api/trucon/app.py` imports those schemas and binds them to FastAPI routes.
+See `tc_api/trucon/schemas.py` for Pydantic request/response models (`CommitRequest`, `CommitResponse`, `ChainStateResponse`, `CommitQueueStatusResponse`, `ChainVerificationResponse`). `tc_api/trucon/app.py` imports those schemas and binds them to FastAPI routes.
 
 ## Lifecycle (Python Caller)
 

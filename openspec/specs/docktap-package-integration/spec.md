@@ -5,20 +5,20 @@ Define the requirements for docktap's integration as a sub-package of tc_api, in
 ## Requirements
 
 ### Requirement: Docktap is a sub-package of tc_api
-The `docktap` module SHALL be located at `src/tc_api/docktap/` and be installable as part of the `tc-api` package. It SHALL NOT exist as a top-level directory or use `sys.path` manipulation to resolve imports.
+The `docktap` module SHALL be located at `tc_api/docktap/` and be installable as part of the `tc-api` package. It SHALL NOT exist as a top-level directory or use `sys.path` manipulation to resolve imports.
 
 #### Scenario: docktap is discoverable as tc_api.docktap
 - **WHEN** `tc-api` is installed via `pip install -e .`
 - **THEN** `import tc_api.docktap` SHALL succeed and `python -m tc_api.docktap.main` SHALL start the docktap proxy
 
 #### Scenario: docktap uses relative imports internally
-- **WHEN** inspecting import statements in `src/tc_api/docktap/*.py` and `src/tc_api/docktap/proxy/*.py`
+- **WHEN** inspecting import statements in `tc_api/docktap/*.py` and `tc_api/docktap/proxy/*.py`
 - **THEN** intra-package references SHALL use relative imports (e.g., `from .trucon_client import ...`, `from .proxy.docker_proxy import ...`)
 - **AND** no file SHALL contain `sys.path.insert` or `sys.path.append` calls
 
 #### Scenario: docktap tests live outside the runtime package
 - **WHEN** inspecting Docktap pytest files
-- **THEN** they SHALL live under `tests/docktap/` rather than `src/tc_api/docktap/tests/`
+- **THEN** they SHALL live under `tests/docktap/` rather than `tc_api/docktap/tests/`
 - **AND** imports of docktap modules SHALL use absolute `tc_api.docktap.*` imports
 - **AND** `conftest.py` SHALL NOT manipulate `sys.path`
 

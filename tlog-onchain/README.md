@@ -20,7 +20,7 @@ python -m pip install -e .
 ```text
 tlog-onchain/
 ├── pyproject.toml
-└── src/tlog_onchain/
+└── tlog_onchain/
     ├── __init__.py
     └── adapter.py
 ```

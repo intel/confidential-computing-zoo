@@ -58,7 +58,7 @@ Use the smallest supported TDVM flow:
 python -m pytest tests/test_tdx_quote_adapter.py -q
 python tests/check_real_tdx_quote.py
 ./start.sh restart
-PYTHONPATH=$PWD/src python scripts/tdvm_smoke_test.py --summary-file /tmp/tdvm-smoke-summary.json
+PYTHONPATH=$PWD python scripts/tdvm_smoke_test.py --summary-file /tmp/tdvm-smoke-summary.json
 ```
 
 Notes:
@@ -72,7 +72,7 @@ Notes:
 For remote or SSH environments, prefer the out-of-band token flow:
 
 ```bash
-PYTHONPATH=$PWD/src python -m tc_api.identity.oidc_preflight --fetch --force-oob
+PYTHONPATH=$PWD python -m tc_api.identity.oidc_preflight --fetch --force-oob
 ```
 
 Common real-Rekor entrypoints:
@@ -102,7 +102,7 @@ curl -X POST http://127.0.0.1:8000/api/docktap/delegate \
 	-H 'Content-Type: application/json' \
 	-d '{"chain_id": "docktap-runtime"}'
 docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
-PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_current_attested_head.py docktap-runtime
+PYTHONPATH=$PWD ./venv/bin/python scripts/verify_current_attested_head.py docktap-runtime
 ```
 
 Helpful shortcuts:
@@ -123,7 +123,7 @@ If no reusable Sigstore token is cached yet, refresh one first:
 Use this host-side runbook when you want to validate the default explicit-delegation flow without depending on `openclaw-gateway` mounts:
 
 ```bash
-DOCKTAP_AUTH_MODE=explicit_delegation PYTHONPATH=$PWD/src \
+DOCKTAP_AUTH_MODE=explicit_delegation PYTHONPATH=$PWD \
 	./venv/bin/python -m tc_api.docktap.main \
 	--socket-path /var/run/docktap/docker.sock \
 	--docker-socket-path /var/run/docker.sock
@@ -137,7 +137,7 @@ curl -fsS -X POST http://127.0.0.1:8000/api/docktap/delegate \
 	-H 'Content-Type: application/json' \
 	-d '{"chain_id":"docktap-runtime"}'
 DOCKER_HOST=unix:///var/run/docktap/docker.sock docker pull hello-world:latest
-PYTHONPATH=$PWD/src ./venv/bin/python scripts/verify_current_attested_head.py docktap-runtime
+PYTHONPATH=$PWD ./venv/bin/python scripts/verify_current_attested_head.py docktap-runtime
 ```
 
 Expected result:
@@ -171,7 +171,7 @@ Start Docktap in the stricter per-operation OIDC mode with an intentionally expi
 ```bash
 DOCKTAP_AUTH_MODE=delegation_disabled \
 DOCKTAP_SIGSTORE_IDENTITY_TOKEN='<expired-real-sigstore-jwt>' \
-PYTHONPATH=$PWD/src \
+PYTHONPATH=$PWD \
 	./venv/bin/python -m tc_api.docktap.main \
 	--socket-path /var/run/docktap/docker.sock \
 	--docker-socket-path /var/run/docker.sock
