@@ -31,7 +31,7 @@ from tc_api.trucon.database import update_commit_intent_status
 from tc_api.transparency.events import runtime_operation_entries
 from tc_api.transparency.dsse_builder import attach_commit_context, build_event_predicate, build_statement, build_statement_json
 from tc_api.transparency.trucon_submitter import post_commit_to_trucon, reserve_commit_intent
-from tlog_rekor.adapter import SigstoreLogAdapter
+from tlog.backends.rekor.adapter import SigstoreLogAdapter
 
 from sigstore.oidc import IdentityToken, detect_credential
 from sigstore.dsse import StatementBuilder, Subject

@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from tc_api.cli.verify import _normalize_replay_entries, main
-from tlog_rekor.adapter import SigstoreLogAdapter
+from tlog.backends.rekor.adapter import SigstoreLogAdapter
 from tc_api.trucon.evidence import (
     BINDING_ALGORITHM,
     REQUIRED_BOUND_FIELDS,
@@ -192,7 +192,7 @@ def test_sigstore_payload_hash_lookup_retries_after_timeout():
     }, clear=False):
         adapter = SigstoreLogAdapter()
 
-    with patch("tlog_rekor.adapter.urllib.request.urlopen", side_effect=_urlopen):
+    with patch("tlog.backends.rekor.adapter.urllib.request.urlopen", side_effect=_urlopen):
         with patch.object(adapter, "get_entry", return_value={"uuid": "12345", "body": {"spec": {"payload": "e30="}}}) as mock_get_entry:
             results = adapter.find_entries_by_payload_hash("sha256:test")
 
@@ -210,7 +210,7 @@ def test_sigstore_payload_hash_lookup_retries_when_candidates_are_unmaterialized
     }, clear=False):
         adapter = SigstoreLogAdapter()
 
-    with patch("tlog_rekor.adapter.urllib.request.urlopen", return_value=_Response(["12345"])):
+    with patch("tlog.backends.rekor.adapter.urllib.request.urlopen", return_value=_Response(["12345"])):
         with patch.object(
             adapter,
             "get_entry",

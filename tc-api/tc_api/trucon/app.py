@@ -54,8 +54,8 @@ from .database import (
     update_record_confirmed,
     update_status,
 )
-from tlog_rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
-from tlog_rekor.adapter import SigstoreLogAdapter
+from tlog.backends.rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
+from tlog.backends.rekor.adapter import SigstoreLogAdapter
 from .adapters.ccel import compute_ccel_digest, read_ccel_eventlog_b64
 from .adapters.tdx_quote import TdxQuoteAdapter
 from .bundles import (
@@ -278,7 +278,7 @@ def _load_backend_adapter(backend_name: str, **kwargs) -> ImmutableLogAdapter:
     if backend_name == "rekor":
         return SigstoreLogAdapter(**kwargs)
     if backend_name == "onchain":
-        from tlog_onchain.adapter import OnChainLogAdapter
+        from tlog.backends.onchain.adapter import OnChainLogAdapter
 
         return OnChainLogAdapter(**kwargs)
     raise ValueError(f"Unknown immutable backend: {backend_name!r}. Supported: rekor, onchain")

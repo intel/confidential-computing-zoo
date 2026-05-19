@@ -9,8 +9,8 @@ description = "Trusted Container Build and Publish Service"
 readme = "README.md"
 requires-python = ">=3.11"
 dynamic = ["dependencies"]
-# tlog and tlog-rekor are installed as editable local packages
-# (pip install -e tlog/ -e tlog-rekor/)
+# tlog is installed as an editable local package with Rekor extras
+# (pip install -e tlog[rekor]/)
 
 [project.optional-dependencies]
 dev = [

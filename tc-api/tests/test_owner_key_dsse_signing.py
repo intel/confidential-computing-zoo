@@ -91,7 +91,7 @@ class TestSignDsseWithOwnerKey:
 
 class TestBuildIntotoEntryFromOwnerKey:
     def test_entry_structure(self, owner_key_pair, sample_statement):
-        from tlog_rekor.adapter import SigstoreLogAdapter
+        from tlog.backends.rekor.adapter import SigstoreLogAdapter
 
         private_key, _, pub_pem = owner_key_pair
         envelope = sign_dsse_with_owner_key(sample_statement, private_key)
@@ -108,7 +108,7 @@ class TestBuildIntotoEntryFromOwnerKey:
         assert content["hash"]["algorithm"] == "sha256"
 
     def test_public_key_embedded(self, owner_key_pair, sample_statement):
-        from tlog_rekor.adapter import SigstoreLogAdapter
+        from tlog.backends.rekor.adapter import SigstoreLogAdapter
 
         private_key, _, pub_pem = owner_key_pair
         envelope = sign_dsse_with_owner_key(sample_statement, private_key)
@@ -122,7 +122,7 @@ class TestBuildIntotoEntryFromOwnerKey:
         assert decoded_pk == pub_pem
 
     def test_double_base64_payload(self, owner_key_pair, sample_statement):
-        from tlog_rekor.adapter import SigstoreLogAdapter
+        from tlog.backends.rekor.adapter import SigstoreLogAdapter
 
         private_key, _, pub_pem = owner_key_pair
         envelope = sign_dsse_with_owner_key(sample_statement, private_key)
@@ -138,7 +138,7 @@ class TestBuildIntotoEntryFromOwnerKey:
         assert second == sample_statement
 
     def test_envelope_hash_matches(self, owner_key_pair, sample_statement):
-        from tlog_rekor.adapter import SigstoreLogAdapter
+        from tlog.backends.rekor.adapter import SigstoreLogAdapter
 
         private_key, _, pub_pem = owner_key_pair
         envelope = sign_dsse_with_owner_key(sample_statement, private_key)

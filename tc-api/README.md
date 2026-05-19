@@ -51,6 +51,8 @@ To clear local state without starting services:
 
 They do not remove build artifacts under `builds/`, published mirror material, or the cached Sigstore identity token file.
 
+Local development now uses the consolidated `tlog` project. Rekor-specific code lives under `tlog.backends.rekor`, and the Rekor dependency set is enabled through the `rekor` extra on `tlog`.
+
 If you want a wrapper that also manages the local AA / CDH / ASR trust-service container, use:
 
 ```bash

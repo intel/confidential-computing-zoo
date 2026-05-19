@@ -15,7 +15,7 @@ from sigstore.models import LogEntry
 from sigstore.models import Bundle
 
 from tlog.immutable import ImmutableLogAdapter
-from tlog_rekor.oci_mirror import OciBundleMirror
+from .oci_mirror import OciBundleMirror
 
 logger = logging.getLogger(__name__)
 

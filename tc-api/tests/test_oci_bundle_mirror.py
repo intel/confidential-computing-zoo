@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from tlog_rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
+from tlog.backends.rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
 from tc_api.trucon.database import (
     enqueue_mirror_publish,
     get_mirror_publish_job,

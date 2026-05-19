@@ -36,20 +36,17 @@ Trusted-log code is organized into independently installable packages:
 
 | Package | Location | Purpose | Dependencies |
 |---|---|---|---|
-| `tlog` | `tlog/` | Shared domain types, ABCs, errors, digest functions | stdlib only |
-| `tlog-rekor` | `tlog-rekor/` | Rekor/Sigstore backend adapter (`SigstoreLogAdapter`, `OciBundleMirror`) | tlog, sigstore, sigstore-rekor-types, cryptography, requests |
-| `tlog-onchain` | `tlog-onchain/` | On-chain backend adapter scaffold (`OnChainLogAdapter` stub) | tlog |
-| `tc-api` | `.` (root) | REST API, TruCon service, Docktap sidecar, trust commit client | tlog, tlog-rekor, FastAPI, etc. |
+| `tlog` | `tlog/` | Shared domain types, ABCs, digest functions, and backend namespaces (`tlog.backends.rekor`, `tlog.backends.onchain`) | stdlib for base install; optional extras add sigstore, sigstore-rekor-types, cryptography, requests |
+| `tc-api` | `.` (root) | REST API, TruCon service, Docktap sidecar, trust commit client | tlog[rekor], FastAPI, etc. |
 
 Key layout conventions:
-- `tlog/tlog/`: `types.py` (Entry, Record, SubmitStatus, etc.), `errors.py`, `immutable.py` (ImmutableLogAdapter ABC), `local_mr.py` (LocalMRAdapter ABC), `digest.py` (canonical_json, compute_entry_digest, compute_event_digest)
-- `tlog-rekor/tlog_rekor/`: `adapter.py` (SigstoreLogAdapter), `oci_mirror.py` (OciBundleMirror)
+- `tlog/tlog/`: `types.py` (Entry, Record, SubmitStatus, etc.), `errors.py`, `immutable.py` (ImmutableLogAdapter ABC), `local_mr.py` (LocalMRAdapter ABC), `digest.py` (canonical_json, compute_entry_digest, compute_event_digest), `backends/rekor/` (`SigstoreLogAdapter`, `OciBundleMirror`), and `backends/onchain/` (`OnChainLogAdapter` scaffold)
 - `tc_api/api/app.py`: REST API entry point and router registration
 - `tc_api/api/workflows.py`: REST-facing build/publish/launch orchestration helpers
 - `tc_api/services/`: Docker, SBOM, publish, launch, and LUKS encrypted-VFS service mixins
 - `tc_api/transparency/commit_client.py`: TrustedLogAPI — TruCon reservation/commit communication for tc_api workflows
 - `tc_api/transparency/dsse_builder.py`: Shared trusted-event DSSE predicate, owner-authorization, and statement construction used by tc_api and Docktap committers
-- `tc_api/trucon/`: Sequencer service with Pydantic schemas (`schemas.py`), caller authorization helpers (`auth.py`), platform-specific adapters (`adapters/tdx_mr.py`, `adapters/ccel.py`), evidence, owner attestation, and queue/database logic; `adapters/` does not contain `sigstore.py` or `oci_mirror.py` (those live in `tlog-rekor`)
+- `tc_api/trucon/`: Sequencer service with Pydantic schemas (`schemas.py`), caller authorization helpers (`auth.py`), platform-specific adapters (`adapters/tdx_mr.py`, `adapters/ccel.py`), evidence, owner attestation, and queue/database logic; immutable-log backend implementations live in `tlog.backends.*`
 - `tc_api/trucon/app.py`: FastAPI routes, lifecycle wiring, submit daemon orchestration, and immutable backend loading via `TC_IMMUTABLE_WRITE_BACKENDS`, `TC_IMMUTABLE_PRIMARY_BACKEND`, and `TC_IMMUTABLE_WRITE_POLICY` (`primary` keeps confirmation authoritative on the primary backend while secondary backend outcomes remain observable). `TC_IMMUTABLE_BACKEND` remains a single-backend compatibility alias when the write-set variable is unset.
 - `tc_api/identity/sigstore_oauth.py`: Sigstore OAuth/OIDC constants, issuer selection, PKCE, and login-flow normalization helpers used by the API layer
 - `tc_api/docktap/`: Docker operation interception sidecar — `main.py` (entry point), `proxy/` (socket proxy, operation log, runtime adapter), `trucon_client.py` (DSSE signing and TruCon commit), `workload_store.py` (container-to-workload mapping). Uses relative imports internally; `tc-docktap` CLI entry point registered in `pyproject.toml`
@@ -388,7 +385,7 @@ In this model, `baseline_rtmr` and `ccel_digest` are acquired from TruCon's base
 For non-`default` workload chains, the same bootstrap contract applies before the first business or runtime commit is accepted. The tc_api-side trusted-log client performs that baseline bootstrap automatically; direct commits to an uninitialized workload chain are rejected instead of creating an implicit unsigned baseline.
 
 **Planned (not yet implemented):**
-- On-chain backend adapter (GAP-07, blocked by target chain selection). Scaffold exists in `tlog-onchain/` with `OnChainLogAdapter` stub raising `NotImplementedError`.
+- On-chain backend adapter (GAP-07, blocked by target chain selection). Scaffold exists in `tlog/tlog/backends/onchain/` with `OnChainLogAdapter` stub raising `NotImplementedError`.
 
 For implementation details, see [trusted-log/architecture.md](trusted-log/architecture.md).
 

@@ -5,16 +5,18 @@ Define the requirements for the monorepo directory structure where each logical 
 ## Requirements
 
 ### Requirement: Repository has a monorepo directory structure
-The repository root SHALL contain separate top-level directories for each logical unit: `tc-api/` for the API service package, `tlog/` for the standalone trusted-log types, `tlog-rekor/` for the Rekor backend adapter, `tlog-onchain/` for the on-chain backend adapter, and `trust-service/` for the attestation trust service.
+The repository root SHALL contain separate top-level directories for each logical unit: `tc-api/` for the API service package, `tlog/` for the standalone trusted-log project (including backend implementations), and `trust-service/` for the attestation trust service. Trusted-log backend implementations SHALL NOT exist as separate top-level Python projects once consolidated.
 
 #### Scenario: tc-api files are in tc-api/ subdirectory
 - **WHEN** inspecting the repository root
 - **THEN** `tc-api/` SHALL contain `pyproject.toml`, `tc_api/`, `tests/`, `docs/`, `examples/`, `openspec/`, `setup.sh`, `start.sh`, `run_tests.sh`, `AGENTS.md`, `README.md`, `.env.example`, `.github/`, and `.vscode/`
 - **AND** none of these files SHALL exist at the repository root
 
-#### Scenario: tlog packages remain at repository root
+#### Scenario: tlog is the only trusted-log Python project at the repository root
 - **WHEN** inspecting the repository root
-- **THEN** `tlog/`, `tlog-rekor/`, and `tlog-onchain/` SHALL exist at the repository root with their contents unchanged
+- **THEN** `tlog/` SHALL exist as the standalone trusted-log project
+- **AND** `tlog-rekor/` SHALL NOT exist as a separate top-level Python project
+- **AND** `tlog-onchain/` SHALL NOT exist as a separate top-level Python project
 
 #### Scenario: trust-service is named trust-service
 - **WHEN** inspecting the repository root
@@ -48,7 +50,8 @@ The Dockerfile SHALL explicitly COPY only the packages needed for the container 
 
 #### Scenario: Dockerfile copies individual packages
 - **WHEN** inspecting the Dockerfile
-- **THEN** it SHALL contain separate COPY commands for `tlog/`, `tlog-rekor/`, and `tc-api/`
+- **THEN** it SHALL contain separate COPY commands for `tlog/` and `tc-api/`
+- **AND** it SHALL NOT copy `tlog-rekor/` or `tlog-onchain/` as separate top-level projects
 - **AND** it SHALL NOT use `COPY . /app/` to copy the entire repository
 
 #### Scenario: Dockerfile WORKDIR is tc-api
@@ -71,7 +74,7 @@ A `README.md` at the repository root SHALL describe the overall monorepo structu
 
 #### Scenario: Root README exists and describes layout
 - **WHEN** inspecting `README.md` at the repository root
-- **THEN** it SHALL list and describe `tc-api/`, `tlog/`, `tlog-rekor/`, `tlog-onchain/`, `trust-service/`, and system-level files
+- **THEN** it SHALL list and describe `tc-api/`, `tlog/`, `trust-service/`, and system-level files
 - **AND** `tc-api/README.md` SHALL contain the original tc-api-specific documentation
 
 ### Requirement: No dead remnants exist

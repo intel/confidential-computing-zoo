@@ -1,8 +1,4 @@
-## Purpose
-
-Define the requirements for the trusted-log package layout and the boundaries between shared types, TruCon internals, and tc_api client code.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Three-layer package structure
 The codebase SHALL organize trusted-log related code into three distinct layers: a standalone `tlog` package (independent project), a TruCon service package (`trucon/` within `tc-api`), and a tc_api-side client module (`tlog_client.py` within `tc-api`). The standalone `tlog` project SHALL contain both core trusted-log contracts and backend implementation namespaces, but SHALL NOT absorb TruCon runtime orchestration.
@@ -18,7 +14,7 @@ The codebase SHALL organize trusted-log related code into three distinct layers:
 #### Scenario: trucon/ contains sequencer internals
 - **WHEN** inspecting the `tc-api/tc_api/trucon/` package
 - **THEN** it SHALL contain the FastAPI sequencer app (`app.py`), SQLite queue operations (`database.py`), and platform-specific adapters under `adapters/` (`tdx_mr.py`, `tdx_quote.py`, `ccel.py`)
-- **AND** `adapters/` SHALL NOT contain `sigstore.py` or `oci_mirror.py` — those files SHALL NOT exist in the directory
+- **AND** `adapters/` SHALL NOT contain immutable-log backend implementations
 
 #### Scenario: tlog_client.py is the tc_api-side interface
 - **WHEN** inspecting `tc-api/tc_api/tlog_client.py`
@@ -46,24 +42,3 @@ Each layer SHALL use import paths consistent with its package location. The tc_a
 #### Scenario: backend imports use consolidated tlog namespace
 - **WHEN** first-party code imports immutable-log backend implementations
 - **THEN** it SHALL use paths under `tlog.backends.*` rather than `tlog_rekor.*` or `tlog_onchain.*`
-
-### Requirement: No upward imports from trucon to tc_api
-The `trucon/` package SHALL NOT import from `tc_api.config`, `tc_api.api`, `tc_api.services`, or `tc_api.models`. Configuration values (such as database path) SHALL be injected via module-level defaults or environment variables.
-
-#### Scenario: trucon/database.py does not import tc_api.config
-- **WHEN** `trucon/database.py` needs the database file path
-- **THEN** it SHALL use a module-level default (`/dev/shm/tc_api_queue/queue.db`) that can be overridden, rather than importing from `tc_api.config`
-
-### Requirement: Entry point update for TruCon
-The TruCon uvicorn entry point SHALL reference the module path `tc_api.trucon.app:app`.
-
-#### Scenario: TruCon starts via entry point
-- **WHEN** TruCon is started via uvicorn or `python -m tc_api.trucon.app`
-- **THEN** the FastAPI application SHALL load successfully from `tc_api.trucon.app:app`
-
-### Requirement: Legacy package removed
-The `trusted_container_log/` directory SHALL be completely removed after restructure. No files SHALL remain in the old location.
-
-#### Scenario: No trusted_container_log directory exists
-- **WHEN** the restructure is complete
-- **THEN** `tc_api/transparencyed_container_log/` SHALL NOT exist as a directory

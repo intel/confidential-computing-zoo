@@ -50,15 +50,13 @@ RUN apt-get update && apt-get install -y skopeo \
 
 # Copy packages into the image (targeted, not the entire workspace).
 COPY tlog/ /app/tlog/
-COPY tlog-rekor/ /app/tlog-rekor/
 COPY tc-api/ /app/tc-api/
 
 WORKDIR /app/tc-api
 
 RUN python -m venv /app/venv
 RUN /app/venv/bin/pip install --no-cache-dir \
-    -e /app/tlog \
-    -e /app/tlog-rekor \
+    -e /app/tlog[rekor] \
     .
 
 # Create necessary directories

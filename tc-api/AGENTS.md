@@ -1,7 +1,7 @@
 # Project Guidelines
 
 ## Build and Test
-- Setup environment: `cd tc-api && bash setup.sh` (creates `venv`, installs tlog/tlog-rekor/tc-api in editable mode).
+- Setup environment: `cd tc-api && bash setup.sh` (creates `venv`, installs `tlog[rekor]` and `tc-api` in editable mode).
 - Start service: `cd tc-api && ./start.sh restart` (preferred local lifecycle entrypoint for tc_api, TruCon, and Docktap).
 - Alternate start: `python -m tc_api.api.app`.
 - Run all tests: `cd tc-api && ./run_tests.sh --type all --verbose`.
@@ -11,7 +11,7 @@
 
 ## Repository Layout
 - This file lives in `tc-api/`, one of several top-level packages in the monorepo.
-- Standalone packages at repo root: `tlog/`, `tlog-rekor/`, `tlog-onchain/`.
+- Standalone package at repo root: `tlog/`.
 - Trust service: `trust-service/` (attestation agent/CDH).
 - Workspace-level files at repo root: `deploy/`, `scripts/dev-up.sh`.
 - tc-api deployment files: `tc-api/Dockerfile`, `tc-api/docker-compose.yml`.
@@ -23,8 +23,8 @@
 - Service layer: `tc_api/services/` encapsulates build/publish/launch/LUKS encrypted-VFS workflows and external CLI calls.
 - KBS integration: `tc_api/kbs_service.py` wraps key registration/lookup behavior.
 - Trusted-log shared types: `tlog/` is a standalone package (zero deps) with domain types, ABCs, errors, and digest functions.
-- Rekor backend adapter: `tlog-rekor/` is a standalone package with `SigstoreLogAdapter` and `OciBundleMirror`.
-- On-chain backend adapter: `tlog-onchain/` is a scaffold package with `OnChainLogAdapter` stub.
+- Rekor backend adapter: `tlog/tlog/backends/rekor/` contains `SigstoreLogAdapter` and `OciBundleMirror`.
+- On-chain backend adapter: `tlog/tlog/backends/onchain/` contains the `OnChainLogAdapter` scaffold.
 - Transparency-log client: `tc_api/transparency/commit_client.py` wraps TruCon communication; shared DSSE predicate/statement construction lives in `tc_api/transparency/dsse_builder.py`.
 - TruCon service: `tc_api/trucon/` contains the sequencer, SQLite queue, schemas/auth helpers, and platform adapters.
 - Docktap sidecar: `tc_api/docktap/` is the Docker operation interception proxy (sub-package of tc_api). Entry point: `tc-docktap` CLI or `python -m tc_api.docktap.main`.

@@ -18,8 +18,8 @@ from tlog.types import Entry
 from tlog.local_mr import LocalMRAdapter
 import tc_api.transparency.verification as tlog_client_mod
 from tc_api.transparency.commit_client import TrustedLogAPI
-from tlog_rekor.adapter import SigstoreLogAdapter
-from tlog_rekor.oci_mirror import OciBundleMirror
+from tlog.backends.rekor.adapter import SigstoreLogAdapter
+from tlog.backends.rekor.oci_mirror import OciBundleMirror
 from tc_api.trucon.database import init_db
 from tc_api.cli.verify import main as verify_main
 from tests.test_real_oci_mirror_integration import real_oci_registry_runtime  # noqa: F401

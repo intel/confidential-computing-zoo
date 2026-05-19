@@ -1,8 +1,8 @@
 # tlog
 
-Standalone trusted-log core package.
+Standalone trusted-log package.
 
-`tlog` is the low-dependency foundation shared by the higher-level services in this repository. It provides the core domain types, abstract interfaces, error classes, and deterministic digest helpers used by TruCon and backend adapters.
+`tlog` provides the core domain types, abstract interfaces, error classes, deterministic digest helpers, and the backend namespaces used by TruCon and verification tooling.
 
 ## What It Contains
 
@@ -11,23 +11,26 @@ Standalone trusted-log core package.
 - Abstract interfaces such as `ImmutableLogAdapter` and `LocalMRAdapter`
 - Stable digest helpers such as `canonical_json()`, `compute_entry_digest()`, and `compute_event_digest()`
 - Shared trusted-log error types
+- Backend namespaces under `tlog.backends.rekor` and `tlog.backends.onchain`
 
 ## Scope
 
-`tlog` is intentionally narrow:
+`tlog` keeps a narrow base install while containing backend namespaces:
 
 - no FastAPI or service runtime code
-- no Rekor-specific logic
 - no container orchestration logic
-- minimal third-party dependency surface
+- minimal third-party dependency surface in the base package
 
-Use this package when you need the trusted-log data model or digest rules without pulling in the rest of the control plane.
+Use this package when you need the trusted-log data model or digest rules without pulling in the rest of the control plane. Install extras when you need backend-specific integrations.
 
 ## Install
 
 ```bash
 cd tlog
 python -m pip install -e .
+
+# With Rekor backend dependencies
+python -m pip install -e '.[rekor]'
 ```
 
 ## Package Layout
@@ -42,6 +45,9 @@ tlog/
     ├── errors.py
     ├── immutable.py
     ├── local_mr.py
+    ├── backends/
+    │   ├── onchain/
+    │   └── rekor/
     └── types.py
 ```
 
@@ -61,10 +67,13 @@ from tlog import (
     compute_entry_digest,
     compute_event_digest,
 )
+
+from tlog.backends.rekor import SigstoreLogAdapter, OciBundleMirror
 ```
 
 ## Development Notes
 
 - Source lives under `tlog/`
 - The package targets Python 3.11+
-- This package is intended to stay usable as an independent building block inside or outside this monorepo
+- This package remains usable as an independent building block inside or outside this monorepo
+- Backend-specific third-party dependencies are exposed through extras such as `rekor`

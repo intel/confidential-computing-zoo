@@ -62,7 +62,7 @@ VENV_PYTHON="$VENV_DIR/bin/python"
 
 # Install package and dependencies
 "$VENV_PYTHON" -m pip install --upgrade pip
-"$VENV_PYTHON" -m pip install -e "$TC_API_REPO_ROOT/../tlog" -e "$TC_API_REPO_ROOT/../tlog-rekor" -e "$TC_API_REPO_ROOT"
+"$VENV_PYTHON" -m pip install -e "$TC_API_REPO_ROOT/../tlog[rekor]" -e "$TC_API_REPO_ROOT"
 "$VENV_PYTHON" -m pip install -r "$TC_API_REPO_ROOT/requirements-dev.txt"
 
 # Create necessary directories

@@ -24,7 +24,7 @@ Each task has:
 ### GAP-13: Public Predecessor Replay Links via Two-Phase Intent Reservation
 
 - **Priority**: HIGH
-- **Scope**: `tc_api/transparency/commit_client.py`, `tc_api/trucon/app.py`, `tc_api/trucon/database.py`, `tlog-rekor/tlog_rekor/adapter.py`, `tc_api/identity/sigstore_baseline.py`, `tests/`, `docs/`
+- **Scope**: `tc_api/transparency/commit_client.py`, `tc_api/trucon/app.py`, `tc_api/trucon/database.py`, `tlog/tlog/backends/rekor/adapter.py`, `tc_api/identity/sigstore_baseline.py`, `tests/`, `docs/`
 - **References**: archived OpenSpec changes `2026-04-22-reservation-backed-replay-intents` and `2026-04-22-public-predecessor-replay-diagnostics`; architecture.md replay / verification sections; trusted-log verification docs
 - **Dependencies**: GAP-05 ✅, GAP-09 ✅, GAP-10 ✅, GAP-12 ✅
 - **Status**: PARTIALLY COMPLETED
@@ -94,7 +94,7 @@ Each task has:
 #### Task 13.5: Rework immutable replay and TruCon verification around signed predecessor proof
 
 - **Priority**: HIGH
-- **Scope**: `tc_api/transparency/commit_client.py`, `tlog-rekor/tlog_rekor/adapter.py`, `tc_api/trucon/app.py`, CLI verify paths
+- **Scope**: `tc_api/transparency/commit_client.py`, `tlog/tlog/backends/rekor/adapter.py`, `tc_api/trucon/app.py`, CLI verify paths
 - **Dependencies**: Task 13.4
 - **Goal**: Replace `prev_log_id`-based public continuity checks with signed predecessor verification.
 - **Acceptance Criteria**:

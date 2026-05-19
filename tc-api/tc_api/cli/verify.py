@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from tc_api.config import TRUCON_SERVICE_TOKEN, TRUCON_URL
 from tc_api.transparency.commit_client import TrustedLogAPI
-from tlog_rekor.adapter import SigstoreLogAdapter
+from tlog.backends.rekor.adapter import SigstoreLogAdapter
 from tc_api.trucon.evidence import (
     compute_binding_expected_value,
     load_attested_head_evidence_json,

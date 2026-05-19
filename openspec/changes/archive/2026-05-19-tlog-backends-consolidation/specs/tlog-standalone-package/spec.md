@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: tlog is an independent installable Python package
 The `tlog` package SHALL be installable via `pip install -e tlog/` (or equivalent) without any dependency on `tc_api` or any other project in the monorepo. Backend-specific third-party dependencies SHALL remain optional rather than required by the base install.
@@ -43,32 +43,6 @@ The `ImmutableLogAdapter` ABC SHALL NOT import from `sigstore` or any backend-sp
 #### Scenario: immutable.py has no third-party imports
 - **WHEN** inspecting the import statements in `tlog/tlog/immutable.py`
 - **THEN** only `abc` and `typing` from the standard library SHALL be imported
-
-### Requirement: tlog contains consolidated digest computation
-The `tlog` package SHALL contain a single canonical implementation of digest computation functions, eliminating the current duplication across three files.
-
-#### Scenario: digest.py contains canonical_json
-- **WHEN** inspecting `tlog/tlog/digest.py`
-- **THEN** it SHALL contain a `canonical_json(data)` function that produces deterministic UTF-8 JSON serialization with sorted keys and no unnecessary whitespace
-
-#### Scenario: digest.py contains compute_entry_digest
-- **WHEN** inspecting `tlog/tlog/digest.py`
-- **THEN** it SHALL contain a `compute_entry_digest(key, value)` function that returns a `sha384:`-prefixed hex digest
-
-#### Scenario: digest.py contains compute_event_digest
-- **WHEN** inspecting `tlog/tlog/digest.py`
-- **THEN** it SHALL contain a `compute_event_digest(event_id, event_type, created_iso, entry_digests)` function implementing the two-level digest algorithm
-
-#### Scenario: Digest functions produce identical results to current implementations
-- **WHEN** the same inputs are passed to the consolidated digest functions
-- **THEN** the outputs SHALL be byte-identical to the current implementations in `tlog_client.py`, `sigstore_baseline.py`, and `owner_attestation.py`
-
-### Requirement: tlog __init__.py re-exports public API
-The `tlog` package `__init__.py` SHALL re-export all public types, errors, ABCs, and digest functions for convenient import.
-
-#### Scenario: Top-level imports work
-- **WHEN** code imports `from tlog import Entry, ImmutableLogAdapter, compute_entry_digest`
-- **THEN** the imports SHALL resolve successfully
 
 ### Requirement: tlog exposes backend extras and namespaces
 The standalone `tlog` project SHALL expose backend-specific optional dependency groups and backend namespaces without requiring those backends in the base package root API.

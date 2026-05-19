@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from tlog_rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
+from tlog.backends.rekor.oci_mirror import OciBundleMirror, build_mirror_annotations
 
 from .bundles import compute_bundle_payload_hash, extract_bundle_payload_b64
 from .database import (

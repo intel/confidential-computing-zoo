@@ -56,7 +56,7 @@ def ensure_runtime_dirs() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from tlog_rekor.adapter import SigstoreLogAdapter
+    from tlog.backends.rekor.adapter import SigstoreLogAdapter
 
     from ..transparency.commit_client import TrustedLogAPI
 

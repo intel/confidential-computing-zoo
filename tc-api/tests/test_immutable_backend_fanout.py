@@ -1,4 +1,6 @@
 import importlib
+import tomllib
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -7,6 +9,17 @@ from tc_api.trucon.config import ImmutableBackendConfig, get_immutable_backend_c
 from tc_api.trucon.immutable_fanout import CompositeImmutableLogAdapter
 
 trucon_app_mod = importlib.import_module("tc_api.trucon.app")
+
+
+def test_tlog_pyproject_exposes_rekor_extra():
+    pyproject_path = Path(__file__).resolve().parents[2] / "tlog" / "pyproject.toml"
+
+    with pyproject_path.open("rb") as handle:
+        pyproject = tomllib.load(handle)
+
+    optional_deps = pyproject["project"]["optional-dependencies"]
+    assert "rekor" in optional_deps
+    assert "sigstore-rekor-types" in optional_deps["rekor"]
 
 
 def test_default_immutable_backend_config(monkeypatch):

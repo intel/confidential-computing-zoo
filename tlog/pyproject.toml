@@ -5,8 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tlog"
 version = "0.1.0"
-description = "Trusted Log shared types, ABCs, and digest computation"
+description = "Trusted Log core types, contracts, and backend implementations"
 requires-python = ">=3.11"
+
+[project.optional-dependencies]
+rekor = [
+	"sigstore>=3.0.0",
+	"sigstore-rekor-types",
+	"cryptography>=41.0.0",
+	"requests",
+]
+onchain = []
 
 [tool.setuptools.packages.find]
 include = ["tlog*"]

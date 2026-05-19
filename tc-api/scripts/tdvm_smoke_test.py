@@ -44,7 +44,7 @@ from tc_api.identity.sigstore_baseline import build_baseline_sigstore_bundle
 from tc_api.identity.sigstore_identity import resolve_sigstore_identity_token
 from tc_api.transparency.commit_client import TrustedLogAPI
 from tc_api.trucon.adapters.ccel import read_ccel_eventlog_used_binary
-from tlog_rekor.adapter import SigstoreLogAdapter
+from tlog.backends.rekor.adapter import SigstoreLogAdapter
 from tc_api.trucon.internal_transport import request_json, resolve_trucon_url
 
 
