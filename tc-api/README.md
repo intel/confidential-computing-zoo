@@ -154,23 +154,23 @@ Current operator contract:
 - `./start.sh restart` starts `tc_api`, TruCon, and Docktap together.
 - `DOCKTAP_REQUIRE_ATTESTATION=1` is enabled by default.
 - `DOCKTAP_AUTH_MODE=explicit_delegation` is the default.
-- In `explicit_delegation` mode, submittable Docker operations such as `pull` are blocked until the user completes OIDC login and creates a Docktap delegation on the target chain.
+- In `explicit_delegation` mode, submittable Docker operations such as `pull` are blocked until the user completes OIDC login and passes Docktap authorization readiness for the target chain. The readiness path reuses a valid delegation when possible and creates one with service defaults when needed.
 - `DOCKTAP_AUTH_MODE=delegation_disabled` is the stricter override for environments that want per-operation OIDC-backed authorization instead of delegation reuse.
 - The older local lifecycle grant shortcut for follow-up `start`/`stop`/`rm` operations has been removed. Runtime reuse now happens only through an explicit delegation record.
 
 Recommended flows:
 
-- Same-machine browser access: complete browser login, create the delegation, then retry the Docker command.
+- Same-machine browser access: complete browser login, call `POST /api/docktap/authorize`, then retry the Docker command.
 - Remote SSH with browser reachability: set `DOCKTAP_ATTESTATION_BROWSER_BASE_URL` before startup.
-- Remote SSH without callback reachability: use the out-of-band `tc-client` login command from the challenge, then call `POST /api/docktap/delegate`.
-- Non-interactive launchers: pre-acquire a token and either create the delegation once up front or set `DOCKTAP_AUTH_MODE=delegation_disabled` if delegation reuse is intentionally forbidden.
+- Remote SSH without callback reachability: use the out-of-band `tc-client` login command from the challenge, then call `POST /api/docktap/authorize`.
+- Non-interactive launchers: pre-acquire a token and call `POST /api/docktap/authorize` up front, or set `DOCKTAP_AUTH_MODE=delegation_disabled` if delegation reuse is intentionally forbidden.
 
 Example OOB flow:
 
 ```shell
 ./start.sh restart
 tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
-curl -X POST http://127.0.0.1:8000/api/docktap/delegate \
+curl -X POST http://127.0.0.1:8000/api/docktap/authorize \
 	-H 'Content-Type: application/json' \
 	-d '{"chain_id": "docktap-runtime"}'
 docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
@@ -179,10 +179,11 @@ docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway 
 Example challenge error:
 
 ```text
-Error response from daemon: Active Docktap delegation required before docker pull.
+Error response from daemon: Docktap authorization required before docker pull.
 Browser login: http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap&session_id=<session-id>
 Remote login command: tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
-Create delegation: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{"chain_id": "docktap-runtime"}'
+Ensure authorization: curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{"chain_id": "docktap-runtime"}'
+Direct delegation fallback: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{"chain_id": "docktap-runtime"}'
 If tc-client is unavailable, from the tc_api repo root run: bash setup.sh
 Then run: ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
 Then retry.

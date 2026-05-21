@@ -98,7 +98,7 @@ Keep the supported OpenClaw validation path narrow:
 
 ```bash
 ./start.sh restart
-curl -X POST http://127.0.0.1:8000/api/docktap/delegate \
+curl -X POST http://127.0.0.1:8000/api/docktap/authorize \
 	-H 'Content-Type: application/json' \
 	-d '{"chain_id": "docktap-runtime"}'
 docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
@@ -107,10 +107,10 @@ PYTHONPATH=$PWD ./venv/bin/python scripts/verify_current_attested_head.py dockta
 
 Helpful shortcuts:
 
-- `python scripts/run_docktap_oob_atomic.py` for one-shot OOB login plus Docktap startup and pull replay
+- `python scripts/run_docktap_oob_atomic.py` for one-shot OOB login, authorization preflight, Docktap startup, and pull replay
 - `scripts/verify_current_attested_head.py` for post-pull direct quote-backed verification
 
-Docktap now defaults to `DOCKTAP_AUTH_MODE=explicit_delegation`, so the usual operator sequence is: acquire or refresh OIDC, create one delegation on `docktap-runtime`, then perform the Docker operation. Use `DOCKTAP_AUTH_MODE=delegation_disabled` only when you intentionally want the stricter per-operation OIDC path.
+Docktap now defaults to `DOCKTAP_AUTH_MODE=explicit_delegation`, so the usual operator sequence is: acquire or refresh OIDC, run authorization preflight on `docktap-runtime`, then perform the Docker operation. Use `DOCKTAP_AUTH_MODE=delegation_disabled` only when you intentionally want the stricter per-operation OIDC path.
 
 If no reusable Sigstore token is cached yet, refresh one first:
 
@@ -133,7 +133,7 @@ In another terminal:
 
 ```bash
 ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
-curl -fsS -X POST http://127.0.0.1:8000/api/docktap/delegate \
+curl -fsS -X POST http://127.0.0.1:8000/api/docktap/authorize \
 	-H 'Content-Type: application/json' \
 	-d '{"chain_id":"docktap-runtime"}'
 DOCKER_HOST=unix:///var/run/docktap/docker.sock docker pull hello-world:latest

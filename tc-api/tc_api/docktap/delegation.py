@@ -9,9 +9,12 @@ from tlog.digest import (
 )
 from ..trucon.owner_authorization import sign_owner_authorization
 from ..identity.sigstore_baseline import get_chain_owner_private_key
-from .config import DELEGATION_TTL_SECONDS as DOCKTAP_DELEGATION_TTL_SECONDS
+from .config import (
+    DELEGATION_TTL_SECONDS as DOCKTAP_DELEGATION_TTL_SECONDS,
+    delegation_scope,
+)
 
-DEFAULT_SCOPE = ["pull", "create", "start", "stop", "rm"]
+DEFAULT_SCOPE = delegation_scope()
 
 
 def build_delegation_predicate(
@@ -30,7 +33,7 @@ def build_delegation_predicate(
     ttl = ttl_seconds if ttl_seconds is not None else DOCKTAP_DELEGATION_TTL_SECONDS
     created_iso = datetime.now(timezone.utc).isoformat()
     expires_at_iso = (datetime.now(timezone.utc) + timedelta(seconds=ttl)).isoformat()
-    resolved_scope = scope if scope is not None else list(DEFAULT_SCOPE)
+    resolved_scope = scope if scope is not None else delegation_scope()
 
     event_id = f"evt-del-{uuid.uuid4().hex[:8]}"
     event_type = "session.delegation"

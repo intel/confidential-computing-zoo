@@ -39,6 +39,8 @@
 - Treat `docker`, `cosign`, `syft`, and `skopeo` as external dependencies; surface clear errors when unavailable.
 - Preserve status progression fields (`status`, `current_step`, `error_message`) when changing workflows.
 - Keep request/response model changes synchronized with endpoint handlers and tests.
+- Agent-facing Docktap preflight should use `POST /api/docktap/authorize` as the primary contract; treat `POST /api/docktap/delegate` as a lower-level operator/debug path rather than the default integration surface.
+- The first-version Docktap integration surface intentionally defines one primary preflight contract only; there is no separate status/debug skill contract yet.
 
 ## Pitfalls
 - Tests and runtime behavior depend on a running local API at `http://localhost:8000` for integration paths.

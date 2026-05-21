@@ -682,11 +682,47 @@ This trusted lifecycle `operation_result` field is separate from the local `resp
 
 ## Session Delegation REST Endpoint
 
-`tc_api.api.app` exposes the delegation endpoint for Docktap session management.
+`tc_api.api.app` exposes the readiness and delegation endpoints for Docktap session management.
+
+### `POST /api/docktap/authorize`
+
+Ensures Docktap authorization readiness for the specified chain using service defaults. This is the preferred preflight path for users, wrappers, and future skill integrations.
+
+**Request body:**
+
+```json
+{
+    "chain_id": "docktap-runtime"
+}
+```
+
+- `chain_id` (optional): target chain for the readiness check. For Docktap runtime validation the usual value is `docktap-runtime`.
+
+**Response (200):**
+
+```json
+{
+    "ready": true,
+    "auth_mode": "explicit_delegation",
+    "chain_id": "docktap-runtime",
+    "scope": ["pull", "create", "start", "stop", "rm"],
+    "expires_at": "2025-05-13T18:00:00+00:00",
+    "delegation_id": "deleg-xxxxxxxx",
+    "source": "created_delegation",
+    "detail": null
+}
+```
+
+**Behavioral notes:**
+
+- In `explicit_delegation` mode, the endpoint reuses an active delegation if it already satisfies the current service policy.
+- If no suitable delegation exists and an ambient OIDC token is available, the endpoint creates a new delegation using the configured default TTL and scope.
+- In `delegation_disabled` mode, the endpoint reports readiness from reusable identity-token availability instead of creating a delegation.
+- If readiness cannot be ensured, the endpoint still returns a structured summary with `ready: false` and a machine-readable `source` instead of forcing callers to interpret raw delegation errors.
 
 ### `POST /api/docktap/delegate`
 
-Creates a session delegation event that authorizes subsequent Docker operations on the specified chain without requiring per-operation OIDC tokens.
+Creates a session delegation event that authorizes subsequent Docker operations on the specified chain without requiring per-operation OIDC tokens. This lower-level path is retained for operator/debug workflows; callers should prefer `POST /api/docktap/authorize` for normal preflight behavior.
 
 **Request body:**
 

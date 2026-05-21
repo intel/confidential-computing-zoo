@@ -179,7 +179,7 @@ This contract lets `tc-verify` distinguish successful versus failed runtime acti
 
 ## Session Delegation
 
-Session delegation solves the short-lived OIDC token problem for Docktap runtime operations. Instead of requiring a fresh OIDC token per Docker operation, the user authenticates once, creates a delegation event, and reuses that explicit grant for later runtime operations on the same chain until TTL or scope runs out.
+Session delegation solves the short-lived OIDC token problem for Docktap runtime operations. Instead of requiring a fresh OIDC token per Docker operation, the user authenticates once, runs authorization readiness, and reuses the resulting explicit grant for later runtime operations on the same chain until TTL or scope runs out.
 
 Docktap now defaults to `DOCKTAP_AUTH_MODE=explicit_delegation`.
 
@@ -187,13 +187,16 @@ Docktap now defaults to `DOCKTAP_AUTH_MODE=explicit_delegation`.
 - `DOCKTAP_AUTH_MODE=delegation_disabled` is the stricter override for environments that want OIDC-backed authorization on each runtime operation and do not want delegation reuse.
 - The older in-memory lifecycle grant for nearby `start`/`stop`/`rm` operations is gone. Reuse now comes only from an explicit delegation record.
 
-### Delegation Flow
+### Authorization Readiness Flow
 
-1. User calls `POST /api/docktap/delegate` with a valid OIDC token and optional `chain_id`.
-2. tc_api creates a `session.delegation` chain event signed via Fulcio (consuming the OIDC token).
-3. The delegation record is stored in the existing SQLite database at `/dev/shm/tc_api_queue/queue.db`.
-4. The endpoint returns `delegation_id` and `expires_at`.
-5. Subsequent Docker operations on the delegated chain use the owner key signing path instead of Fulcio.
+1. User, wrapper, or agent calls `POST /api/docktap/authorize` with an optional `chain_id`.
+2. tc_api reuses an active delegation if it already satisfies the current service policy.
+3. If no suitable delegation exists and an ambient OIDC token is available, tc_api creates a `session.delegation` chain event signed via Fulcio.
+4. The delegation record is stored in the existing SQLite database at `/dev/shm/tc_api_queue/queue.db`.
+5. The readiness response returns whether authorization is ready, the effective scope, and delegation expiry when applicable.
+6. Subsequent Docker operations on the authorized chain use the owner key signing path instead of Fulcio when explicit delegation is active.
+
+`POST /api/docktap/delegate` remains available as a lower-level operator/debug endpoint when direct delegation creation is needed.
 
 ### Signing Path Selection
 
@@ -204,7 +207,7 @@ When Docktap submits a trusted event, the signing path is selected as follows:
    - An `intoto` v0.0.2 proposed entry is constructed with the raw owner public key PEM.
    - The entry is submitted to Rekor via `POST /api/v1/log/entries`.
    - The predicate includes `delegation_id` referencing the active delegation.
-2. **`explicit_delegation` + no active delegation + `DOCKTAP_REQUIRE_ATTESTATION=1`** → HTTP 428 authorization gate with OIDC-login and delegation-creation instructions.
+2. **`explicit_delegation` + no active delegation + `DOCKTAP_REQUIRE_ATTESTATION=1`** → HTTP 428 authorization gate with OIDC-login and readiness-preflight instructions, plus raw delegation fallback.
 3. **`delegation_disabled` + reusable OIDC token** → Fulcio signing.
 4. **`delegation_disabled` + no reusable OIDC token + `DOCKTAP_REQUIRE_ATTESTATION=1`** → HTTP 428 attestation-login gate.
 

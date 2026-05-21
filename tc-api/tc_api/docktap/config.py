@@ -5,9 +5,11 @@ so the env-var surface is discoverable and defaults cannot diverge.
 """
 
 import os
+from typing import List
 
 
 VALID_AUTH_MODES = {"explicit_delegation", "delegation_disabled"}
+DEFAULT_DELEGATION_SCOPE = ["pull", "create", "start", "stop", "rm"]
 
 
 def auth_mode() -> str:
@@ -23,6 +25,21 @@ def delegation_required() -> bool:
 
 def delegation_enabled() -> bool:
     return auth_mode() != "delegation_disabled"
+
+
+def delegation_scope() -> List[str]:
+    raw_value = os.environ.get("DOCKTAP_DELEGATION_SCOPE", ",".join(DEFAULT_DELEGATION_SCOPE)).strip()
+    if not raw_value:
+        return list(DEFAULT_DELEGATION_SCOPE)
+
+    resolved = [value.strip().lower() for value in raw_value.split(",") if value.strip()]
+    if not resolved:
+        return list(DEFAULT_DELEGATION_SCOPE)
+
+    allowed = set(DEFAULT_DELEGATION_SCOPE)
+    if any(value not in allowed for value in resolved):
+        return list(DEFAULT_DELEGATION_SCOPE)
+    return resolved
 
 
 def require_attestation() -> bool:

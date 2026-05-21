@@ -227,10 +227,11 @@ def test_handle_client_blocks_submittable_requests_without_active_delegation_by_
     header_blob, body_blob = client_socket.sent[0].split(b"\r\n\r\n", 1)
     assert header_blob.startswith(b"HTTP/1.1 428 Precondition Required")
     payload = json.loads(body_blob.decode("utf-8"))
-    assert payload["message"].startswith("Active Docktap delegation required before docker pull.\n")
+    assert payload["message"].startswith("Docktap authorization required before docker pull.\n")
     assert "\nBrowser login: http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap" in payload["message"]
     assert "\nRemote login command: tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json\n" in payload["message"]
-    assert "\nCreate delegation: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\"}'\n" in payload["message"]
+    assert "\nEnsure authorization: curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\"}'\n" in payload["message"]
+    assert "\nDirect delegation fallback: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\"}'\n" in payload["message"]
     assert "If tc-client is unavailable, from the tc_api repo root run: bash setup.sh" in payload["message"]
     assert payload["message"].endswith("\nThen retry.")
     assert payload["detail"]["auth_mode"] == "explicit_delegation"
@@ -238,11 +239,15 @@ def test_handle_client_blocks_submittable_requests_without_active_delegation_by_
     assert payload["detail"]["login_status_url"].startswith("http://127.0.0.1:8000/api/sigstore/login-status/")
     assert payload["detail"]["oob_login_command"] == "tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json"
     assert payload["detail"]["oob_login_install_hint"] == "If tc-client is unavailable, from the tc_api repo root run: bash setup.sh, then run ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json"
+    assert payload["detail"]["authorize_url"] == "http://127.0.0.1:8000/api/docktap/authorize"
+    assert payload["detail"]["authorize_command"] == "curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\"}'"
     assert payload["detail"]["delegate_url"] == "http://127.0.0.1:8000/api/docktap/delegate"
     assert payload["detail"]["delegate_command"] == "curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\"}'"
     assert payload["detail"]["remediation"]["browser_login_url"].startswith("http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap")
     assert payload["detail"]["remediation"]["remote_login_command"] == payload["detail"]["oob_login_command"]
     assert payload["detail"]["remediation"]["remote_login_install_hint"] == payload["detail"]["oob_login_install_hint"]
+    assert payload["detail"]["remediation"]["authorize_url"] == payload["detail"]["authorize_url"]
+    assert payload["detail"]["remediation"]["authorize_command"] == payload["detail"]["authorize_command"]
     assert payload["detail"]["remediation"]["delegate_url"] == payload["detail"]["delegate_url"]
     assert payload["detail"]["remediation"]["delegate_command"] == payload["detail"]["delegate_command"]
     enrich_response.assert_not_called()

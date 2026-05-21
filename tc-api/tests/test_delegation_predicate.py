@@ -29,6 +29,17 @@ class TestBuildDelegationPredicate:
         assert event_digest == pred["digest"]
 
     @patch("tc_api.docktap.delegation.get_chain_owner_private_key", return_value=None)
+    @patch("tc_api.docktap.delegation.delegation_scope", return_value=["pull", "create"])
+    def test_uses_service_default_scope_when_scope_omitted(self, _mock_scope, _mock_key):
+        pred, _, _, _ = build_delegation_predicate(
+            chain_id="chain-test",
+            sequence_num=5,
+            prev_event_digest="sha384:abc",
+            prev_lookup_hash="sha384:def",
+        )
+        assert pred["scope"] == ["pull", "create"]
+
+    @patch("tc_api.docktap.delegation.get_chain_owner_private_key", return_value=None)
     def test_custom_scope(self, _mock_key):
         pred, _, _, _ = build_delegation_predicate(
             chain_id="c", sequence_num=1,
@@ -48,6 +59,18 @@ class TestBuildDelegationPredicate:
         exp = datetime.fromisoformat(expires_at)
         delta = (exp - created).total_seconds()
         assert 119 <= delta <= 121
+
+    @patch("tc_api.docktap.delegation.get_chain_owner_private_key", return_value=None)
+    @patch("tc_api.docktap.delegation.DOCKTAP_DELEGATION_TTL_SECONDS", 90)
+    def test_uses_service_default_ttl_when_ttl_omitted(self, _mock_key):
+        pred, _, _, expires_at = build_delegation_predicate(
+            chain_id="c", sequence_num=1,
+            prev_event_digest=None, prev_lookup_hash=None,
+        )
+        created = datetime.fromisoformat(pred["created"])
+        exp = datetime.fromisoformat(expires_at)
+        delta = (exp - created).total_seconds()
+        assert 89 <= delta <= 91
 
     @patch("tc_api.docktap.delegation.get_chain_owner_private_key")
     def test_owner_authorization_added(self, mock_key):

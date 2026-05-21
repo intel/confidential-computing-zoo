@@ -328,11 +328,19 @@ class DockerProxyServer:
         browser_base_url = _cfg.ATTESTATION_BROWSER_BASE_URL
         interactive_login_path = f"/api/sigstore/interactive-login?{urlencode({'operation': 'docktap', 'session_id': session_id})}"
         login_status_path = f"/api/sigstore/login-status/{session_id}"
+        authorize_path = "/api/docktap/authorize"
         delegate_path = "/api/docktap/delegate"
         interactive_login_url = self._absolute_url(browser_base_url, interactive_login_path)
         login_status_url = self._absolute_url(api_base_url, login_status_path)
+        authorize_url = self._absolute_url(api_base_url, authorize_path)
         delegate_url = self._absolute_url(api_base_url, delegate_path)
         oob_login_command = self._sigstore_oob_login_command(api_base_url)
+        authorize_command = (
+            "curl -X POST "
+            f"{authorize_url} "
+            "-H 'Content-Type: application/json' "
+            f"-d '{{\"chain_id\": \"{_cfg.RUNTIME_CHAIN_ID}\"}}'"
+        )
         delegate_command = (
             "curl -X POST "
             f"{delegate_url} "
@@ -345,10 +353,11 @@ class DockerProxyServer:
         )
         if self._delegation_required():
             message = (
-                f"Active Docktap delegation required before docker {operation_type}.\n"
+                f"Docktap authorization required before docker {operation_type}.\n"
                 f"Browser login: {interactive_login_url}\n"
                 f"Remote login command: {oob_login_command}\n"
-                f"Create delegation: {delegate_command}\n"
+                f"Ensure authorization: {authorize_command}\n"
+                f"Direct delegation fallback: {delegate_command}\n"
                 f"{install_hint}\n"
                 "Then retry."
             )
@@ -370,12 +379,16 @@ class DockerProxyServer:
                     "login_status_url": login_status_url,
                     "oob_login_command": oob_login_command,
                     "oob_login_install_hint": install_hint,
+                    "authorize_url": authorize_url,
+                    "authorize_command": authorize_command,
                     "delegate_url": delegate_url,
                     "delegate_command": delegate_command,
                     "remediation": {
                         "browser_login_url": interactive_login_url,
                         "remote_login_command": oob_login_command,
                         "remote_login_install_hint": install_hint,
+                        "authorize_url": authorize_url,
+                        "authorize_command": authorize_command,
                         "delegate_url": delegate_url,
                         "delegate_command": delegate_command,
                     },

@@ -16,6 +16,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from tc_api.docktap.preflight import ensure_docktap_authorization
+
 
 PROMPT_TEXT = "Enter verification code:"
 STARTED_MARKERS = (
@@ -326,6 +328,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     identity_token = run_sigstore_oob_login(root, args)
     print("[atomic-oob] acquired fresh Sigstore identity token")
+    readiness = ensure_docktap_authorization(args.base_url, "docktap-runtime")
+    print(
+        "[atomic-oob] authorization preflight ready "
+        f"via {readiness.get('source')} for {readiness.get('chain_id')}"
+    )
 
     docktap = DocktapProcess(root, args, identity_token, trucon_token, log_path)
     try:
