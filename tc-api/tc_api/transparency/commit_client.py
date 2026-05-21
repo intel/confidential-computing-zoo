@@ -381,6 +381,7 @@ class TrustedLogAPI:
         chain_id = applied_policy.get("chain_id", "default")
         expected_identity = applied_policy.get("signer_identity")
         expected_entry_count = applied_policy.get("expected_entry_count")
+        checkpoint_public_key_pem = applied_policy.get("checkpoint_public_key_pem")
         if self.immutable_log is not None:
             setattr(self.immutable_log, "require_mirror", bool(applied_policy.get("require_mirror")))
         subject_name = f"trusted-log-chain_{chain_id}"
@@ -463,6 +464,32 @@ class TrustedLogAPI:
             matched_entries = _annotate_owner_verification(matched_entries)
             matched_entries = _annotate_delegation_verification(matched_entries)
 
+            head_log_verification: Dict[str, Any]
+            verify_head_entry = getattr(self.immutable_log, "verify_head_entry_inclusion", None)
+            if callable(verify_head_entry):
+                head_log_verification = verify_head_entry(
+                    target,
+                    checkpoint_public_key_pem=checkpoint_public_key_pem,
+                )
+            else:
+                head_log_verification = {
+                    "status": "verified",
+                    "scope": "accepted-head-only",
+                    "log_id": target,
+                    "entry_uuid": None,
+                    "log_index": None,
+                    "inclusion_status": "verified",
+                    "checkpoint_status": "verified",
+                    "checkpoint_origin": None,
+                    "bootstrap_trust": {
+                        "configured": False,
+                        "source": None,
+                        "consistency_proven": False,
+                    },
+                    "proof": None,
+                    "reasons": [],
+                }
+
             predecessor_errors = [
                 entry for entry in matched_entries
                 if entry.get("predecessor_ok") is False
@@ -471,6 +498,7 @@ class TrustedLogAPI:
                 entry for entry in matched_entries
                 if entry.get("owner_ok") is False
             ]
+            head_log_failed = head_log_verification.get("status") == "failed"
 
             if predecessor_errors:
                 return VerificationResult(
@@ -487,6 +515,7 @@ class TrustedLogAPI:
                         "filtered_out_count": len(entries) - len(matched_entries),
                         "applied_signer_identity": expected_identity,
                         "expected_entry_count": expected_entry_count,
+                        "head_log_verification": head_log_verification,
                     },
                 )
 
@@ -505,6 +534,26 @@ class TrustedLogAPI:
                         "filtered_out_count": len(entries) - len(matched_entries),
                         "applied_signer_identity": expected_identity,
                         "expected_entry_count": expected_entry_count,
+                        "head_log_verification": head_log_verification,
+                    },
+                )
+
+            if head_log_failed:
+                return VerificationResult(
+                    success=False,
+                    errors=["Accepted head-entry transparency-log verification failed"],
+                    details={
+                        "source": "immutable_backend",
+                        "target": target,
+                        "chain_id": chain_id,
+                        "subject": subject_name,
+                        "entries": matched_entries,
+                        "observed_entry_count": len(entries),
+                        "entry_count": len(matched_entries),
+                        "filtered_out_count": len(entries) - len(matched_entries),
+                        "applied_signer_identity": expected_identity,
+                        "expected_entry_count": expected_entry_count,
+                        "head_log_verification": head_log_verification,
                     },
                 )
 
@@ -525,6 +574,7 @@ class TrustedLogAPI:
                         "filtered_out_count": len(entries) - len(matched_entries),
                         "applied_signer_identity": expected_identity,
                         "expected_entry_count": expected_entry_count,
+                        "head_log_verification": head_log_verification,
                     },
                 )
 
@@ -541,6 +591,7 @@ class TrustedLogAPI:
                     "expected_entry_count": expected_entry_count,
                     "subject": subject_name,
                     "entries": matched_entries,
+                    "head_log_verification": head_log_verification,
                 },
             )
         except Exception as e:
@@ -555,6 +606,23 @@ class TrustedLogAPI:
                     "entries": [],
                     "applied_signer_identity": expected_identity,
                     "expected_entry_count": expected_entry_count,
+                    "head_log_verification": {
+                        "status": "failed",
+                        "scope": "accepted-head-only",
+                        "log_id": target,
+                        "entry_uuid": None,
+                        "log_index": None,
+                        "inclusion_status": "unavailable",
+                        "checkpoint_status": "unavailable",
+                        "checkpoint_origin": None,
+                        "bootstrap_trust": {
+                            "configured": False,
+                            "source": None,
+                            "consistency_proven": False,
+                        },
+                        "proof": None,
+                        "reasons": [str(e)],
+                    },
                 },
             )
 __all__ = ["TrustedLogAPI"]

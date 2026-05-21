@@ -141,6 +141,23 @@ def test_verify_cli_json_success(capsys):
                 "source": "immutable_backend",
                 "subject": "trusted-log-chain_default",
                 "entry_count": 1,
+                "head_log_verification": {
+                    "status": "verified",
+                    "scope": "accepted-head-only",
+                    "log_id": "log-tail",
+                    "entry_uuid": "uuid-log-tail",
+                    "log_index": 123,
+                    "inclusion_status": "verified",
+                    "checkpoint_status": "verified",
+                    "checkpoint_origin": "rekor.sigstore.dev - 2605736670972794746",
+                    "bootstrap_trust": {
+                        "configured": True,
+                        "source": "TC_API_REKOR_CHECKPOINT_PUBLIC_KEY_FILE",
+                        "consistency_proven": False,
+                    },
+                    "proof": {"root_hash": "abcd", "tree_size": 1, "hashes": []},
+                    "reasons": [],
+                },
                 "entries": [
                     {
                         "event_id": "evt-1",
@@ -173,7 +190,118 @@ def test_verify_cli_json_success(capsys):
     assert captured["fallback"]["note"] == "explicit internal troubleshooting mode"
     assert captured["diagnostics"]["replay"]["success"] is True
     assert captured["diagnostics"]["fallback"]["valid"] is True
+    assert captured["log_verification"]["status"] == "verified"
+    assert captured["log_verification"]["bootstrap_trust"]["source"] == "TC_API_REKOR_CHECKPOINT_PUBLIC_KEY_FILE"
+    assert "historical consistency across time is not proven" in captured["log_verification"]["limitations"][0]
     assert "profiles" in captured
+
+
+def test_verify_cli_live_troubleshooting_reports_head_log_degraded(capsys):
+    chain_state = {"chain_id": "default", "head_log_id": "log-tail"}
+    trucon_verify = {
+        "valid": True,
+        "chain_id": "default",
+        "total_entries": 1,
+        "mr_verified": 1,
+        "rekor_confirmed": 1,
+        "rekor_pending": 0,
+        "rtmr_available": True,
+        "head_mr_value": "aa",
+        "first_error_at": None,
+        "entries": [],
+    }
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": True,
+            "errors": [],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "entry_count": 1,
+                "head_log_verification": {
+                    "status": "degraded",
+                    "scope": "accepted-head-only",
+                    "log_id": "log-tail",
+                    "inclusion_status": "verified",
+                    "checkpoint_status": "unconfigured",
+                    "bootstrap_trust": {
+                        "configured": False,
+                        "source": None,
+                        "consistency_proven": False,
+                    },
+                    "reasons": ["accepted head checkpoint trust source was not configured"],
+                },
+                "entries": [{**_immutable_entry("evt-1", "launch", "sha384:evt-1", 1)}],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
+        with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+            MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+            exit_code = main(["default", "--troubleshoot-live", "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["summary"]["status"] == "troubleshooting-only"
+    assert captured["log_verification"]["status"] == "troubleshooting-only"
+    assert captured["log_verification"]["checkpoint_status"] == "unconfigured"
+
+
+def test_verify_cli_live_troubleshooting_fails_on_invalid_head_log_verification(capsys):
+    chain_state = {"chain_id": "default", "head_log_id": "log-tail"}
+    trucon_verify = {
+        "valid": True,
+        "chain_id": "default",
+        "total_entries": 1,
+        "mr_verified": 1,
+        "rekor_confirmed": 1,
+        "rekor_pending": 0,
+        "rtmr_available": True,
+        "head_mr_value": "aa",
+        "first_error_at": None,
+        "entries": [],
+    }
+    immutable_result = type(
+        "VerifyResult",
+        (),
+        {
+            "success": False,
+            "errors": ["Accepted head-entry transparency-log verification failed"],
+            "details": {
+                "source": "immutable_backend",
+                "subject": "trusted-log-chain_default",
+                "entry_count": 1,
+                "head_log_verification": {
+                    "status": "failed",
+                    "scope": "accepted-head-only",
+                    "log_id": "log-tail",
+                    "inclusion_status": "verified",
+                    "checkpoint_status": "invalid",
+                    "bootstrap_trust": {
+                        "configured": True,
+                        "source": "explicit-policy",
+                        "consistency_proven": False,
+                    },
+                    "reasons": ["accepted head checkpoint validation failed: invalid signature"],
+                },
+                "entries": [{**_immutable_entry("evt-1", "launch", "sha384:evt-1", 1)}],
+            },
+        },
+    )()
+
+    with patch("tc_api.cli.verify.urllib.request.urlopen", side_effect=_urlopen_factory(chain_state, trucon_verify)):
+        with patch("tc_api.cli.verify.TrustedLogAPI") as MockTrustedLogAPI:
+            MockTrustedLogAPI.return_value.verify_record.return_value = immutable_result
+            exit_code = main(["default", "--troubleshoot-live", "--json"])
+
+    captured = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert captured["summary"]["status"] == "failed"
+    assert captured["log_verification"]["status"] == "failed"
+    assert captured["log_verification"]["checkpoint_status"] == "invalid"
 
 
 def test_sigstore_payload_hash_lookup_retries_after_timeout():
@@ -1182,6 +1310,21 @@ def test_verify_cli_text_reports_verification_tier(capsys):
                 "source": "immutable_backend",
                 "subject": "trusted-log-chain_default",
                 "entry_count": 1,
+                "head_log_verification": {
+                    "status": "verified",
+                    "scope": "accepted-head-only",
+                    "log_id": "log-tail",
+                    "entry_uuid": "uuid-log-tail",
+                    "log_index": 123,
+                    "inclusion_status": "verified",
+                    "checkpoint_status": "verified",
+                    "bootstrap_trust": {
+                        "configured": True,
+                        "source": "TC_API_REKOR_CHECKPOINT_PUBLIC_KEY_FILE",
+                        "consistency_proven": False,
+                    },
+                    "reasons": [],
+                },
                 "entries": [{**_immutable_entry("evt-1", "launch", "sha384:evt-1", 1), "history_materialization_provenance": "mirror"}],
             },
         },
@@ -1195,6 +1338,9 @@ def test_verify_cli_text_reports_verification_tier(capsys):
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Verification tier: public+mirrored" in output
+    assert "Head log verification:" in output
+    assert "bootstrap_trust_configured=True source=TC_API_REKOR_CHECKPOINT_PUBLIC_KEY_FILE historical_consistency_proven=False" in output
+    assert "historical consistency across time is not proven" in output
 
 
 def test_verify_cli_text_explains_attestation_storage_provenance(capsys):

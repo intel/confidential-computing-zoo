@@ -81,6 +81,61 @@ def _format_timestamp(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _normalize_head_log_verification(
+    immutable_result: Dict[str, Any],
+    *,
+    fallback_used: bool = False,
+) -> Dict[str, Any]:
+    immutable_data = immutable_result.get("details") or {}
+    raw_head_log = immutable_data.get("head_log_verification") or {}
+    head_log_id = immutable_result.get("head_log_id")
+    bootstrap_trust = raw_head_log.get("bootstrap_trust") or {}
+    raw_status = raw_head_log.get("status")
+    if not raw_status:
+        raw_status = "verified" if head_log_id else "unavailable"
+
+    display_status = raw_status
+    if fallback_used and raw_status in {"degraded", "unavailable"}:
+        display_status = "troubleshooting-only"
+
+    normalized = {
+        "status": display_status,
+        "raw_status": raw_status,
+        "scope": raw_head_log.get("scope") or "accepted-head-only",
+        "log_id": raw_head_log.get("log_id") or head_log_id,
+        "entry_uuid": raw_head_log.get("entry_uuid"),
+        "log_index": raw_head_log.get("log_index"),
+        "inclusion_status": raw_head_log.get("inclusion_status") or ("verified" if head_log_id else "unavailable"),
+        "checkpoint_status": raw_head_log.get("checkpoint_status") or ("verified" if head_log_id else "unavailable"),
+        "checkpoint_origin": raw_head_log.get("checkpoint_origin"),
+        "bootstrap_trust": {
+            "configured": bool(bootstrap_trust.get("configured")),
+            "source": bootstrap_trust.get("source"),
+            "consistency_proven": bool(bootstrap_trust.get("consistency_proven")),
+        },
+        "proof": raw_head_log.get("proof"),
+        "reasons": list(raw_head_log.get("reasons") or []),
+        "limitations": [],
+    }
+    if (
+        normalized["raw_status"] == "verified"
+        and normalized["bootstrap_trust"]["configured"]
+        and not normalized["bootstrap_trust"]["consistency_proven"]
+    ):
+        normalized["limitations"].append(
+            "Accepted head inclusion is anchored to the configured bootstrap checkpoint trust only; historical consistency across time is not proven."
+        )
+    return normalized
+
+
+def _head_log_failed(head_log_verification: Dict[str, Any]) -> bool:
+    return head_log_verification.get("raw_status", head_log_verification.get("status")) == "failed"
+
+
+def _head_log_degraded(head_log_verification: Dict[str, Any]) -> bool:
+    return head_log_verification.get("raw_status", head_log_verification.get("status")) in {"degraded", "unavailable"}
+
+
 def _load_evidence(args: argparse.Namespace) -> Any:
     if not args.evidence_path:
         return None
@@ -198,6 +253,7 @@ def _normalize_evidence_result(
     immutable_result: Dict[str, Any],
 ) -> Dict[str, Any]:
     immutable_data = immutable_result.get("details") or {}
+    head_log_verification = _normalize_head_log_verification(immutable_result)
     replay_entries = _normalize_replay_entries(immutable_data.get("entries", []))
     derived_replay = _derive_replay_chain_state(immutable_result)
     quote_parse = _inspect_quote_binding(
@@ -257,6 +313,12 @@ def _normalize_evidence_result(
     attested_valid = not attested_errors
     success = immutable_success and attested_valid
     status = "verified" if success else "failed"
+    if _head_log_failed(head_log_verification):
+        success = False
+        status = "failed"
+    elif _head_log_degraded(head_log_verification) and success:
+        success = False
+        status = "degraded"
     provenance_status, provenance_detail = _summarize_replay_provenance(replay_entries)
     verification_tier = _compute_verification_tier(provenance_status, attested_valid)
 
@@ -298,6 +360,7 @@ def _normalize_evidence_result(
                 "detail": provenance_detail,
             },
         },
+        "log_verification": head_log_verification,
         "attested_head": {
             "present": True,
             "valid": attested_valid,
@@ -345,6 +408,7 @@ def _normalize_quote_result(
     immutable_result: Dict[str, Any],
 ) -> Dict[str, Any]:
     immutable_data = immutable_result.get("details") or {}
+    head_log_verification = _normalize_head_log_verification(immutable_result)
     replay_entries = _normalize_replay_entries(immutable_data.get("entries", []))
     derived_replay = _derive_replay_chain_state(immutable_result)
     expected_value = None
@@ -374,6 +438,12 @@ def _normalize_quote_result(
     attested_valid = not attested_errors
     success = immutable_success and attested_valid
     status = "verified" if success else "failed"
+    if _head_log_failed(head_log_verification):
+        success = False
+        status = "failed"
+    elif _head_log_degraded(head_log_verification) and success:
+        success = False
+        status = "degraded"
     provenance_status, provenance_detail = _summarize_replay_provenance(replay_entries)
     verification_tier = _compute_verification_tier(provenance_status, attested_valid)
 
@@ -415,6 +485,7 @@ def _normalize_quote_result(
                 "detail": provenance_detail,
             },
         },
+        "log_verification": head_log_verification,
         "attested_head": {
             "present": True,
             "valid": attested_valid,
@@ -463,6 +534,7 @@ def _normalize_fallback_result(
     chain_state = fallback_result["chain_state"]
     trucon_data = trucon_result.get("data") or {}
     immutable_data = immutable_result.get("details") or {}
+    head_log_verification = _normalize_head_log_verification(immutable_result, fallback_used=True)
     replay_entries = _normalize_replay_entries(immutable_data.get("entries", []))
 
     pending_count = trucon_data.get("rekor_pending", 0)
@@ -487,6 +559,9 @@ def _normalize_fallback_result(
         success = False
         status = "failed"
         errors.append("TEE evidence was required but unavailable")
+    elif _head_log_failed(head_log_verification):
+        success = False
+        status = "failed"
     elif not immutable_success and pending_count == 0:
         success = False
         status = "failed"
@@ -499,6 +574,9 @@ def _normalize_fallback_result(
         errors.append("Pending records present while --fail-on-pending is enabled")
     elif pending_count > 0:
         status = "incomplete"
+    elif _head_log_degraded(head_log_verification):
+        success = False
+        status = head_log_verification.get("status", "troubleshooting-only")
     elif not trucon_reachable:
         success = immutable_success
         status = "degraded" if immutable_success else "failed"
@@ -544,6 +622,7 @@ def _normalize_fallback_result(
                 "detail": provenance_detail,
             },
         },
+        "log_verification": head_log_verification,
         "attested_head": {
             "present": False,
             "valid": None,
@@ -606,6 +685,25 @@ def run_verification(args: argparse.Namespace) -> Dict[str, Any]:
                 "subject": None,
                 "entries": [],
                 "derived": None,
+            },
+            "log_verification": {
+                "status": "unavailable",
+                "raw_status": "unavailable",
+                "scope": "accepted-head-only",
+                "log_id": None,
+                "entry_uuid": None,
+                "log_index": None,
+                "inclusion_status": "unavailable",
+                "checkpoint_status": "unavailable",
+                "checkpoint_origin": None,
+                "bootstrap_trust": {
+                    "configured": False,
+                    "source": None,
+                    "consistency_proven": False,
+                },
+                "proof": None,
+                "reasons": [message],
+                "limitations": [],
             },
             "attested_head": {
                 "present": True,

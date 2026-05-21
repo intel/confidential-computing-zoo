@@ -10,9 +10,16 @@ import urllib.error
 import urllib.request
 
 import rekor_types
-from cryptography.hazmat.primitives.serialization import Encoding
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
+from sigstore._internal.merkle import verify_merkle_inclusion
+from sigstore._internal.rekor.checkpoint import verify_checkpoint
+from sigstore._internal.trust import Keyring
+from sigstore.errors import VerificationError
 from sigstore.models import LogEntry
 from sigstore.models import Bundle
+from sigstore_protobuf_specs.dev.sigstore.common.v1 import PublicKey as SigstorePublicKey
+from sigstore_protobuf_specs.dev.sigstore.common.v1 import PublicKeyDetails
 
 from tlog.immutable import ImmutableLogAdapter
 from .oci_mirror import OciBundleMirror
@@ -23,6 +30,8 @@ logger = logging.getLogger(__name__)
 class SigstoreLogAdapter(ImmutableLogAdapter):
     _bundle_entry_cache: dict[tuple[str, str], dict[str, Any]] = {}
     _SUPPORTED_ENTRY_TYPES = {"dsse", "intoto"}
+    _CHECKPOINT_PUBLIC_KEY_FILE_ENV = "TC_API_REKOR_CHECKPOINT_PUBLIC_KEY_FILE"
+    _CHECKPOINT_PUBLIC_KEY_PEM_ENV = "TC_API_REKOR_CHECKPOINT_PUBLIC_KEY_PEM"
 
     def __init__(
         self,
@@ -387,6 +396,177 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
         with urllib.request.urlopen(request, timeout=15) as response:
             payload = json.loads(response.read().decode("utf-8"))
         return self._normalize_raw_entry_response(payload)
+
+    @classmethod
+    def _normalized_inclusion_proof(cls, raw_entry: dict[str, Any]) -> Optional[dict[str, Any]]:
+        verification = raw_entry.get("verification") if isinstance(raw_entry, dict) else None
+        if not isinstance(verification, dict):
+            return None
+        inclusion_proof = verification.get("inclusionProof")
+        if not isinstance(inclusion_proof, dict):
+            return None
+
+        hashes = inclusion_proof.get("hashes")
+        if not isinstance(hashes, list):
+            hashes = []
+
+        return {
+            "log_index": inclusion_proof.get("logIndex"),
+            "root_hash": inclusion_proof.get("rootHash"),
+            "tree_size": inclusion_proof.get("treeSize"),
+            "hashes": hashes,
+            "checkpoint": inclusion_proof.get("checkpoint"),
+            "signed_entry_timestamp": verification.get("signedEntryTimestamp"),
+        }
+
+    @classmethod
+    def _wrapped_raw_entry_response(cls, log_id: str, raw_entry: dict[str, Any]) -> dict[str, Any]:
+        entry_id = raw_entry.get("uuid") or raw_entry.get("entryUUID") or str(log_id)
+        wrapped = dict(raw_entry)
+        wrapped.setdefault("uuid", str(entry_id))
+        wrapped.setdefault("entryUUID", str(entry_id))
+        return {str(entry_id): wrapped}
+
+    @classmethod
+    def _log_entry_from_raw_entry(cls, log_id: str, raw_entry: dict[str, Any]) -> LogEntry:
+        return LogEntry._from_response(cls._wrapped_raw_entry_response(log_id, raw_entry))
+
+    @classmethod
+    def _checkpoint_public_key_details(cls, public_key: Any) -> PublicKeyDetails:
+        if isinstance(public_key, rsa.RSAPublicKey):
+            key_size = public_key.key_size
+            if key_size <= 2048:
+                return PublicKeyDetails.PKIX_RSA_PKCS1V15_2048_SHA256
+            if key_size <= 3072:
+                return PublicKeyDetails.PKIX_RSA_PKCS1V15_3072_SHA256
+            return PublicKeyDetails.PKIX_RSA_PKCS1V15_4096_SHA256
+
+        if isinstance(public_key, ec.EllipticCurvePublicKey):
+            curve = public_key.curve
+            if isinstance(curve, ec.SECP256R1):
+                return PublicKeyDetails.PKIX_ECDSA_P256_SHA_256
+            if isinstance(curve, ec.SECP384R1):
+                return PublicKeyDetails.PKIX_ECDSA_P384_SHA_384
+            if isinstance(curve, ec.SECP521R1):
+                return PublicKeyDetails.PKIX_ECDSA_P521_SHA_512
+
+        raise VerificationError(f"unsupported Rekor checkpoint public key type: {type(public_key)!r}")
+
+    @classmethod
+    def _rekor_keyring_from_pem(cls, public_key_pem: str) -> Keyring:
+        public_key = load_pem_public_key(public_key_pem.encode("utf-8"))
+        der_bytes = public_key.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+        sigstore_public_key = SigstorePublicKey(
+            raw_bytes=der_bytes,
+            key_details=cls._checkpoint_public_key_details(public_key),
+        )
+        return Keyring([sigstore_public_key])
+
+    @classmethod
+    def _load_checkpoint_public_key_pem(
+        cls,
+        explicit_pem: Optional[str] = None,
+    ) -> tuple[Optional[str], Optional[str]]:
+        if explicit_pem and explicit_pem.strip():
+            return explicit_pem.strip(), "explicit-policy"
+
+        pem_env = os.environ.get(cls._CHECKPOINT_PUBLIC_KEY_PEM_ENV, "").strip()
+        if pem_env:
+            return pem_env, cls._CHECKPOINT_PUBLIC_KEY_PEM_ENV
+
+        pem_file = os.environ.get(cls._CHECKPOINT_PUBLIC_KEY_FILE_ENV, "").strip()
+        if pem_file:
+            with open(pem_file, "r", encoding="utf-8") as handle:
+                return handle.read(), cls._CHECKPOINT_PUBLIC_KEY_FILE_ENV
+
+        return None, None
+
+    def verify_head_entry_inclusion(
+        self,
+        log_id: str,
+        checkpoint_public_key_pem: Optional[str] = None,
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "status": "degraded",
+            "scope": "accepted-head-only",
+            "log_id": log_id,
+            "entry_uuid": None,
+            "log_index": None,
+            "inclusion_status": "unavailable",
+            "checkpoint_status": "unavailable",
+            "checkpoint_origin": None,
+            "bootstrap_trust": {
+                "configured": False,
+                "source": None,
+                "consistency_proven": False,
+            },
+            "proof": None,
+            "reasons": [],
+        }
+
+        try:
+            raw_entry = self._fetch_raw_rekor_entry(log_id)
+        except Exception as exc:
+            result["reasons"].append(f"failed to fetch Rekor entry proof material: {exc}")
+            return result
+
+        if raw_entry is None:
+            result["reasons"].append("Rekor entry proof material was unavailable")
+            return result
+
+        result["entry_uuid"] = raw_entry.get("uuid") or raw_entry.get("entryUUID")
+        result["log_index"] = raw_entry.get("logIndex") or raw_entry.get("log_index")
+        result["proof"] = self._normalized_inclusion_proof(raw_entry)
+
+        if result["proof"] is None:
+            result["checkpoint_status"] = "missing"
+            result["reasons"].append("accepted head entry did not include Rekor inclusion proof material")
+            return result
+
+        checkpoint_text = result["proof"].get("checkpoint")
+        if isinstance(checkpoint_text, str) and checkpoint_text.strip():
+            checkpoint_header = checkpoint_text.strip().splitlines()
+            if checkpoint_header:
+                result["checkpoint_origin"] = checkpoint_header[0]
+
+        try:
+            log_entry = self._log_entry_from_raw_entry(log_id, raw_entry)
+            verify_merkle_inclusion(log_entry)
+            result["inclusion_status"] = "verified"
+        except Exception as exc:
+            result["status"] = "failed"
+            result["inclusion_status"] = "failed"
+            result["reasons"].append(f"accepted head inclusion proof was invalid: {exc}")
+            return result
+
+        trust_pem, trust_source = self._load_checkpoint_public_key_pem(checkpoint_public_key_pem)
+        if not trust_pem:
+            result["checkpoint_status"] = "unconfigured"
+            result["reasons"].append("accepted head checkpoint trust source was not configured")
+            return result
+
+        try:
+            keyring = self._rekor_keyring_from_pem(trust_pem)
+            verify_checkpoint(keyring, log_entry)
+        except Exception as exc:
+            result["status"] = "failed"
+            result["checkpoint_status"] = "invalid"
+            result["bootstrap_trust"] = {
+                "configured": True,
+                "source": trust_source,
+                "consistency_proven": False,
+            }
+            result["reasons"].append(f"accepted head checkpoint validation failed: {exc}")
+            return result
+
+        result["status"] = "verified"
+        result["checkpoint_status"] = "verified"
+        result["bootstrap_trust"] = {
+            "configured": True,
+            "source": trust_source,
+            "consistency_proven": False,
+        }
+        return result
 
     @staticmethod
     def _merge_raw_entry_extras(entry_dict: dict[str, Any], raw_entry: Optional[dict[str, Any]]) -> dict[str, Any]:

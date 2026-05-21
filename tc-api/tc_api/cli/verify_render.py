@@ -7,6 +7,7 @@ def render_text(result: Dict[str, Any]) -> str:
     attested_head = result.get("attested_head") or {}
     replay = result.get("replay") or {}
     fallback = result.get("fallback") or {}
+    log_verification = result.get("log_verification") or {}
     lines = [
         f"Chain: {result['target']['chain_id']}",
         f"Status: {result['summary']['status']}",
@@ -24,6 +25,30 @@ def render_text(result: Dict[str, Any]) -> str:
         lines.append("  trust_sources=public_replay(history, baseline) + direct_quote(current_head_binding)")
     else:
         lines.append("  trust_sources=public_replay(history, baseline) + exported_evidence(current_head_binding)")
+
+    lines.append("Head log verification:")
+    lines.append(
+        "  "
+        f"status={log_verification.get('status')} inclusion={log_verification.get('inclusion_status')} "
+        f"checkpoint={log_verification.get('checkpoint_status')} scope={log_verification.get('scope')}"
+    )
+    bootstrap_trust = log_verification.get("bootstrap_trust") or {}
+    if log_verification.get("log_id") is not None:
+        lines.append(
+            "  "
+            f"log_id={log_verification.get('log_id')} entry_uuid={log_verification.get('entry_uuid')} "
+            f"log_index={log_verification.get('log_index')}"
+        )
+    if bootstrap_trust:
+        lines.append(
+            "  "
+            f"bootstrap_trust_configured={bootstrap_trust.get('configured')} source={bootstrap_trust.get('source')} "
+            f"historical_consistency_proven={bootstrap_trust.get('consistency_proven')}"
+        )
+    for limitation in log_verification.get("limitations", []):
+        lines.append(f"  limitation: {limitation}")
+    for reason in log_verification.get("reasons", []):
+        lines.append(f"  reason: {reason}")
 
     if attested_head.get("present"):
         lines.append("Attested head:")

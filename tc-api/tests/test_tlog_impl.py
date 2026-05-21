@@ -674,12 +674,37 @@ def test_decode_dsse_payload_from_proposed_content_envelope():
 
 
 class StubImmutableLog:
-    def __init__(self, entries=None, error=None, candidates=None, lookup_error=None, require_mirror=False):
+    def __init__(
+        self,
+        entries=None,
+        error=None,
+        candidates=None,
+        lookup_error=None,
+        require_mirror=False,
+        head_log_verification=None,
+    ):
         self._entries = entries or []
         self._error = error
         self._candidates = candidates or {}
         self._lookup_error = lookup_error
         self.require_mirror = require_mirror
+        self._head_log_verification = head_log_verification or {
+            "status": "verified",
+            "scope": "accepted-head-only",
+            "log_id": None,
+            "entry_uuid": None,
+            "log_index": None,
+            "inclusion_status": "verified",
+            "checkpoint_status": "verified",
+            "checkpoint_origin": None,
+            "bootstrap_trust": {
+                "configured": False,
+                "source": None,
+                "consistency_proven": False,
+            },
+            "proof": None,
+            "reasons": [],
+        }
 
     def submit_bundle(self, bundle, prev_log_id=None):
         raise NotImplementedError()
@@ -696,6 +721,11 @@ class StubImmutableLog:
         if self._lookup_error:
             raise self._lookup_error
         return self._candidates.get(payload_hash, [])
+
+    def verify_head_entry_inclusion(self, log_id, checkpoint_public_key_pem=None):
+        result = dict(self._head_log_verification)
+        result.setdefault("log_id", log_id)
+        return result
 
 
 _UNSET = object()
@@ -770,6 +800,125 @@ def test_verify_record_returns_structured_entry_details():
     assert len(result.details["entries"]) == 2
     assert result.details["entries"][0]["event_id"] == "evt-2"
     assert result.details["entries"][0]["signer_identity_match"] is True
+    assert result.details["head_log_verification"]["status"] == "verified"
+
+
+def test_sigstore_adapter_verify_head_entry_inclusion_reports_degraded_when_checkpoint_trust_missing(mock_rekor):
+    adapter = SigstoreLogAdapter()
+    raw_entry = {
+        "uuid": "uuid-log-tail",
+        "logIndex": 123,
+        "verification": {
+            "inclusionProof": {
+                "logIndex": 123,
+                "rootHash": "abcd",
+                "treeSize": 1,
+                "hashes": [],
+                "checkpoint": "rekor.sigstore.dev - 2605736670972794746\n1\nabcd\n",
+            },
+            "signedEntryTimestamp": "set",
+        },
+    }
+
+    with patch.object(adapter, "_fetch_raw_rekor_entry", return_value=raw_entry), \
+         patch.object(adapter, "_log_entry_from_raw_entry", return_value=MagicMock()), \
+         patch("tlog.backends.rekor.adapter.verify_merkle_inclusion") as mock_verify_merkle:
+        result = adapter.verify_head_entry_inclusion("log-tail")
+
+    mock_verify_merkle.assert_called_once()
+    assert result["status"] == "degraded"
+    assert result["inclusion_status"] == "verified"
+    assert result["checkpoint_status"] == "unconfigured"
+    assert "not configured" in result["reasons"][0]
+
+
+def test_sigstore_adapter_verify_head_entry_inclusion_reports_failed_checkpoint_validation(mock_rekor):
+    adapter = SigstoreLogAdapter()
+    raw_entry = {
+        "uuid": "uuid-log-tail",
+        "logIndex": 123,
+        "verification": {
+            "inclusionProof": {
+                "logIndex": 123,
+                "rootHash": "abcd",
+                "treeSize": 1,
+                "hashes": [],
+                "checkpoint": "rekor.sigstore.dev - 2605736670972794746\n1\nabcd\n",
+            },
+            "signedEntryTimestamp": "set",
+        },
+    }
+
+    with patch.object(adapter, "_fetch_raw_rekor_entry", return_value=raw_entry), \
+         patch.object(adapter, "_log_entry_from_raw_entry", return_value=MagicMock()), \
+         patch.object(adapter, "_load_checkpoint_public_key_pem", return_value=("pem", "explicit-policy")), \
+         patch.object(adapter, "_rekor_keyring_from_pem", return_value=MagicMock()), \
+         patch("tlog.backends.rekor.adapter.verify_merkle_inclusion"), \
+         patch("tlog.backends.rekor.adapter.verify_checkpoint", side_effect=RuntimeError("invalid signature")):
+        result = adapter.verify_head_entry_inclusion("log-tail")
+
+    assert result["status"] == "failed"
+    assert result["checkpoint_status"] == "invalid"
+    assert result["bootstrap_trust"]["source"] == "explicit-policy"
+    assert "invalid signature" in result["reasons"][0]
+
+
+def test_verify_record_preserves_degraded_head_log_verification_details():
+    first_entry = _make_rekor_entry("evt-1")
+    api = TrustedLogAPI(
+        immutable_log=StubImmutableLog(
+            entries=[first_entry],
+            head_log_verification={
+                "status": "degraded",
+                "scope": "accepted-head-only",
+                "log_id": "tail-log-id",
+                "inclusion_status": "verified",
+                "checkpoint_status": "unconfigured",
+                "bootstrap_trust": {
+                    "configured": False,
+                    "source": None,
+                    "consistency_proven": False,
+                },
+                "proof": None,
+                "reasons": ["accepted head checkpoint trust source was not configured"],
+            },
+        )
+    )
+
+    result = api.verify_record("tail-log-id", policy={"chain_id": "default"})
+
+    assert result.success is True
+    assert result.details["head_log_verification"]["status"] == "degraded"
+    assert result.details["head_log_verification"]["checkpoint_status"] == "unconfigured"
+
+
+def test_verify_record_fails_when_head_log_verification_fails():
+    first_entry = _make_rekor_entry("evt-1")
+    api = TrustedLogAPI(
+        immutable_log=StubImmutableLog(
+            entries=[first_entry],
+            head_log_verification={
+                "status": "failed",
+                "scope": "accepted-head-only",
+                "log_id": "tail-log-id",
+                "inclusion_status": "verified",
+                "checkpoint_status": "invalid",
+                "bootstrap_trust": {
+                    "configured": True,
+                    "source": "explicit-policy",
+                    "consistency_proven": False,
+                },
+                "proof": None,
+                "reasons": ["accepted head checkpoint validation failed: invalid signature"],
+            },
+        )
+    )
+
+    result = api.verify_record("tail-log-id", policy={"chain_id": "default"})
+
+    assert result.success is False
+    assert result.errors == ["Accepted head-entry transparency-log verification failed"]
+    assert result.details["head_log_verification"]["checkpoint_status"] == "invalid"
 
 
 def test_sigstore_payload_hash_lookup_keeps_mirror_candidate_when_public_lookup_succeeds():
