@@ -1,0 +1,11 @@
+{
+  "image_id": "sha256:replace-me",
+  "image_url": "registry.example.com/team/app:latest",
+  "sbom_url": "file:///home/tc_api/builds/bld-replace-me/sbom.spdx.json",
+  "user_id": "replace-with-your-user-id",
+  "attestation_required": true,
+  "metadata": {
+    "environment": "dev",
+    "source": "tc-client-example"
+  }
+}
