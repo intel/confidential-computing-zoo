@@ -1,0 +1,93 @@
+## Purpose
+
+Define the requirements for the monorepo directory structure where each logical unit (tc-api, tlog packages, trust-service) occupies its own top-level directory, with system-level files at the repository root.
+
+## Requirements
+
+### Requirement: Repository has a monorepo directory structure
+The repository root SHALL contain separate top-level directories for each logical unit: `tc-api/` for the API service package, `tlog/` for the standalone trusted-log project (including backend implementations), and `trust-service/` for the attestation trust service. Trusted-log backend implementations SHALL NOT exist as separate top-level Python projects once consolidated.
+
+#### Scenario: tc-api files are in tc-api/ subdirectory
+- **WHEN** inspecting the repository root
+- **THEN** `tc-api/` SHALL contain `pyproject.toml`, `tc_api/`, `tests/`, `docs/`, `examples/`, `openspec/`, `setup.sh`, `start.sh`, `run_tests.sh`, `AGENTS.md`, `README.md`, `.env.example`, `.github/`, and `.vscode/`
+- **AND** none of these files SHALL exist at the repository root
+
+#### Scenario: tlog is the only trusted-log Python project at the repository root
+- **WHEN** inspecting the repository root
+- **THEN** `tlog/` SHALL exist as the standalone trusted-log project
+- **AND** `tlog-rekor/` SHALL NOT exist as a separate top-level Python project
+- **AND** `tlog-onchain/` SHALL NOT exist as a separate top-level Python project
+
+#### Scenario: trust-service is named trust-service
+- **WHEN** inspecting the repository root
+- **THEN** `trust-service/` SHALL exist containing the attestation service Dockerfile and configuration files
+- **AND** `aa_asr_cdh/` SHALL NOT exist
+
+### Requirement: Deployment files live with tc-api while shared infra stays at root
+The core-stack deployment files `tc-api/Dockerfile` and `tc-api/docker-compose.yml` SHALL live under `tc-api/`. Shared workspace infrastructure such as `deploy/` and root-level orchestration scripts SHALL remain at the repository root.
+
+#### Scenario: Dockerfile is under tc-api
+- **WHEN** building the Docker image
+- **THEN** `tc-api/Dockerfile` SHALL exist with build context set to the repository root
+
+#### Scenario: docker-compose.yml is under tc-api
+- **WHEN** running `docker-compose -f tc-api/docker-compose.yml up`
+- **THEN** `tc-api/docker-compose.yml` SHALL exist
+
+### Requirement: Scripts are split between root and tc-api
+System-level orchestration scripts SHALL remain at `scripts/` in the repository root. tc-api-specific scripts SHALL be located at `tc-api/scripts/`.
+
+#### Scenario: System-level scripts stay at root
+- **WHEN** inspecting `scripts/` at the repository root
+- **THEN** it SHALL contain `dev-up.sh`, `trust_service.sh`, `create_encrypted_vfs.sh`, `mount_encrypted_vfs.sh`, and `unmount_encrypted_vfs.sh`
+
+#### Scenario: tc-api scripts are in tc-api/scripts/
+- **WHEN** inspecting `tc-api/scripts/`
+- **THEN** it SHALL contain tc-api-specific operator helpers including `run_docktap_oob_atomic.py`, `verify_current_attested_head.py`, and `tdvm_smoke_test.py`
+
+### Requirement: Dockerfile uses targeted COPY commands
+The Dockerfile SHALL explicitly COPY only the packages needed for the container image, rather than copying the entire repository.
+
+#### Scenario: Dockerfile copies individual packages
+- **WHEN** inspecting the Dockerfile
+- **THEN** it SHALL contain separate COPY commands for `tlog/` and `tc-api/`
+- **AND** it SHALL NOT copy `tlog-rekor/` or `tlog-onchain/` as separate top-level projects
+- **AND** it SHALL NOT use `COPY . /app/` to copy the entire repository
+
+#### Scenario: Dockerfile WORKDIR is tc-api
+- **WHEN** the container starts
+- **THEN** WORKDIR SHALL be `/app/tc-api`
+
+### Requirement: docker-compose volume mounts reference tc-api subdirectory
+Volume mounts for tc-api runtime directories SHALL reference the `tc-api/` subdirectory on the host side.
+
+#### Scenario: uploads volume mount uses tc-api path
+- **WHEN** inspecting the tc-api service in `tc-api/docker-compose.yml`
+- **THEN** the uploads volume mount source SHALL be `./uploads`
+
+#### Scenario: builds volume mount uses tc-api path
+- **WHEN** inspecting the tc-api service in `tc-api/docker-compose.yml`
+- **THEN** the builds volume mount source SHALL be `./builds`
+
+### Requirement: Root README describes monorepo structure
+A `README.md` at the repository root SHALL describe the overall monorepo structure, listing each top-level directory and its purpose.
+
+#### Scenario: Root README exists and describes layout
+- **WHEN** inspecting `README.md` at the repository root
+- **THEN** it SHALL list and describe `tc-api/`, `tlog/`, `trust-service/`, and system-level files
+- **AND** `tc-api/README.md` SHALL contain the original tc-api-specific documentation
+
+### Requirement: No dead remnants exist
+After the restructure, no dead code, tombstone packages, or orphaned directories SHALL remain.
+
+#### Scenario: No docktap pycache remnants
+- **WHEN** inspecting the repository root
+- **THEN** there SHALL be no `docktap/` directory at the root
+
+#### Scenario: No tlog tombstone package
+- **WHEN** inspecting `tc-api/tc_api/`
+- **THEN** there SHALL be no `tlog/` subdirectory (the tombstone package SHALL be removed)
+
+#### Scenario: No stray test files at root
+- **WHEN** inspecting the repository root
+- **THEN** `tdvm_smoke_test.py` SHALL NOT exist at the root (it SHALL be in `tc-api/scripts/`)

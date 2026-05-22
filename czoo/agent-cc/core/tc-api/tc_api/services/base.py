@@ -1,0 +1,549 @@
+import hashlib
+import json
+import logging
+import os
+import subprocess
+import time
+import uuid
+from datetime import datetime
+from typing import Any, Dict, Optional, Tuple
+
+from ..config import (
+    BUILD_DIR,
+    DOCKER_CMD,
+    KBS_FETCH_RETRIES,
+    KBS_FETCH_RETRY_DELAY_SECONDS,
+    KBS_URL,
+)
+from ..models import BuildResult, LaunchResult, LuksResult, PublishResult, TransparencyResult
+from ..transparency.commit_client import TrustedLogAPI
+from tlog.types import Entry
+
+logger = logging.getLogger(__name__)
+
+
+class BaseDockerService:
+    def __init__(self):
+        self.builds: Dict[str, BuildResult] = {}
+        self.launches: Dict[str, LaunchResult] = {}
+        self.publish_results: Dict[str, PublishResult] = {}
+        self.transparency_logs: Dict[str, TransparencyResult] = {}
+        self.luks: Dict[str, LuksResult] = {}
+
+    def generate_uuid(self, prefix: str = "bld") -> str:
+        """
+        Generate a unique ID with specified prefix
+        
+        Args:
+            prefix: Prefix for the ID ("bld" for build, "launch" for launch)
+            
+        Returns:
+            str: Generated ID in format "{prefix}-{uuid}"
+        """
+        return f"{prefix}-{uuid.uuid4().hex[:7]}"
+
+    def _syft_environment(self) -> Dict[str, str]:
+        env = os.environ.copy()
+        if env.get("DOCKER_API_VERSION"):
+            return env
+
+        try:
+            result = subprocess.run(
+                [DOCKER_CMD, "version", "--format", "{{.Server.MinAPIVersion}}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                min_api_version = result.stdout.strip()
+                if min_api_version:
+                    env["DOCKER_API_VERSION"] = min_api_version
+        except Exception:
+            pass
+        return env
+
+    def _validate_public_encryption_key(self, public_key_path: str) -> Tuple[bool, str]:
+        cmd = ["openssl", "pkey", "-pubin", "-in", public_key_path, "-noout"]
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except Exception as exc:
+            return False, f"OpenSSL key validation failed to run: {exc}"
+
+        if result.returncode == 0:
+            return True, result.stdout.strip() or "public key validated"
+
+        failure_detail = result.stderr.strip() or result.stdout.strip() or "OpenSSL rejected the public key"
+        return False, failure_detail
+
+    def _derive_public_key_from_private_key(self, private_key_path: str, public_key_path: str) -> Tuple[bool, str]:
+        cmd = ["openssl", "pkey", "-in", private_key_path, "-pubout", "-out", public_key_path]
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except Exception as exc:
+            return False, f"OpenSSL public key derivation failed to run: {exc}"
+
+        if result.returncode == 0 and os.path.exists(public_key_path):
+            return True, result.stdout.strip() or "public key derived"
+
+        failure_detail = result.stderr.strip() or result.stdout.strip() or "OpenSSL failed to derive a public key"
+        return False, failure_detail
+
+    def _should_retry_kbs_download(self, failure_detail: str) -> bool:
+        transient_markers = [
+            "failed to connect",
+            "connection refused",
+            "connection reset",
+            "timed out",
+            "empty reply from server",
+            "could not resolve host",
+            "recv failure",
+            "returned error: 502",
+            "returned error: 503",
+            "returned error: 504",
+        ]
+        lowered = failure_detail.lower()
+        return any(marker in lowered for marker in transient_markers)
+
+    def _download_kbs_artifact(self, url: str, destination_path: str) -> Tuple[bool, str]:
+        cmd = ["curl", "-fsSL", url, "-o", destination_path]
+        attempts = max(1, KBS_FETCH_RETRIES)
+
+        for attempt in range(1, attempts + 1):
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+            except Exception as exc:
+                failure_detail = f"curl failed to run for {url}: {exc}"
+            else:
+                if result.returncode == 0 and os.path.exists(destination_path):
+                    detail = result.stdout.strip() or f"downloaded {url}"
+                    if attempt > 1:
+                        detail = f"{detail} after {attempt} attempts"
+                    return True, detail
+                failure_detail = result.stderr.strip() or result.stdout.strip() or f"curl failed for {url}"
+
+            if os.path.exists(destination_path):
+                try:
+                    os.remove(destination_path)
+                except OSError:
+                    pass
+
+            is_last_attempt = attempt == attempts
+            if is_last_attempt or not self._should_retry_kbs_download(failure_detail):
+                if attempt > 1:
+                    failure_detail = f"{failure_detail} after {attempt} attempts"
+                return False, failure_detail
+
+            logger.info(
+                "KBS artifact fetch failed for %s (attempt %s/%s): %s. Retrying in %.1fs.",
+                url,
+                attempt,
+                attempts,
+                failure_detail,
+                KBS_FETCH_RETRY_DELAY_SECONDS,
+            )
+            time.sleep(KBS_FETCH_RETRY_DELAY_SECONDS)
+
+    def _download_first_available_kbs_artifact(self, destination_path: str, candidate_names: list[str]) -> Tuple[bool, Optional[str], str]:
+        attempts = []
+        for candidate_name in candidate_names:
+            ok, detail = self._download_kbs_artifact(f"{KBS_URL}{candidate_name}", destination_path)
+            if ok:
+                return True, candidate_name, detail
+            attempts.append(f"{candidate_name}: {detail}")
+        return False, None, "; ".join(attempts)
+
+    def _sha384_digest(self, payload: str) -> str:
+        return "sha384:" + hashlib.sha384(payload.encode("utf-8")).hexdigest()
+
+    def _json_sha384_digest(self, payload: Any) -> str:
+        return self._sha384_digest(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
+
+    def add_tlog_entries(self, tlog: TrustedLogAPI, record_id: str, entries) -> None:
+        for entry in entries:
+            tlog.add_entry(record_id, entry)
+
+    def _file_sha384_digest(self, file_path: str) -> str:
+        with open(file_path, "rb") as handle:
+            return "sha384:" + hashlib.sha384(handle.read()).hexdigest()
+
+    def _directory_sha384_digest(self, directory: str) -> str:
+        digest = hashlib.sha384()
+        for root, _, files in os.walk(directory):
+            for file_name in sorted(files):
+                file_path = os.path.join(root, file_name)
+                rel_path = os.path.relpath(file_path, directory)
+                digest.update(rel_path.encode("utf-8"))
+                with open(file_path, "rb") as handle:
+                    digest.update(handle.read())
+        return "sha384:" + digest.hexdigest()
+
+    def get_build_status(self, build_id: str) -> Optional[BuildResult]:
+        """Get build status by build_id"""
+        return self.builds.get(build_id)
+
+    def update_build_status(self,user_id: str, build_id: str, status: str, step: str = None, **kwargs):
+        """
+        Update build status with enhanced tracking and step information
+        
+        Status can be one of:
+        - submitted: Initial build request received
+        - preparing: Setting up build environment
+        - building: Building container image
+        - generating_sbom: Generating SBOM
+        - encrypting: Encrypting image (if requested)
+        - pushing: Pushing to registry
+        - signing: Signing image and SBOM
+        - success: Build completed successfully
+        - failed: Build failed
+        """
+        try:
+            if build_id in self.builds:
+                build_result = self.builds[build_id]
+                old_status = build_result.status
+                build_result.status = status
+                build_result.updated_at = datetime.now()
+                
+                if step:
+                    build_result.current_step = step
+                
+                # Log status changes
+                if old_status != status:
+                    logger.info(f"Build {build_id} status: {old_status} -> {status}")
+                
+                # Update additional fields
+                for key, value in kwargs.items():
+                    if hasattr(build_result, key):
+                        setattr(build_result, key, value)
+                        logger.debug(f"Updated {key} for build {build_id}")
+                
+                # Successful builds must keep OCI artifacts available for later publish/deploy.
+                if status == 'failed' and status != old_status:
+                    try:
+                        self.cleanup_build_artifacts(build_id, keep_logs=True)
+                    except Exception as e:
+                        logger.warning(f"Cleanup failed for build {build_id}: {e}")
+                        
+            else:
+                # Create new build result
+                logger.info(f"Creating new build status for {build_id}: {status}")
+                self.builds[build_id] = BuildResult(
+                    user_id=user_id,
+                    build_id=build_id,
+                    status=status,
+                    created_at=datetime.now(),
+                    updated_at=datetime.now(),
+                    **kwargs
+                )
+                
+        except Exception as e:
+            logger.error(f"Error updating build status for {build_id}: {str(e)}")
+
+    def cleanup_build_artifacts(self, build_id: str, keep_logs: bool = True) -> bool:
+        """Clean up temporary build artifacts to save disk space"""
+        try:
+            build_path = os.path.join(BUILD_DIR, build_id)
+            
+            if not os.path.exists(build_path):
+                logger.warning(f"Build directory not found: {build_path}")
+                return True
+            
+            logger.info(f"Cleaning up build artifacts for: {build_id}")
+            
+            # List of files/directories to clean up
+            cleanup_items = [
+                "encryption",  # Encryption working directory
+                "plain",       # OCI plain format (if using old method)
+                "encrypted",   # OCI encrypted format (if using old method)
+            ]
+            
+            # Optionally keep logs
+            if not keep_logs:
+                cleanup_items.extend([
+                    f"{build_id}-build.log",
+                    f"{build_id}-error.log"
+                ])
+            
+            for item in cleanup_items:
+                item_path = os.path.join(build_path, item)
+                try:
+                    if os.path.isfile(item_path):
+                        os.remove(item_path)
+                        logger.debug(f"Removed file: {item}")
+                    elif os.path.isdir(item_path):
+                        import shutil
+                        shutil.rmtree(item_path)
+                        logger.debug(f"Removed directory: {item}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove {item}: {e}")
+            
+            logger.info(f"Cleanup completed for build: {build_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error during cleanup: {str(e)}")
+            return False
+
+    def get_image_info(self, image_name: str) -> Optional[Dict[str, Any]]:
+        """Get detailed information about a Docker image"""
+        try:
+            cmd = [DOCKER_CMD, "inspect", image_name]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                import json
+                image_info = json.loads(result.stdout)[0]
+                
+                # Extract useful information
+                info = {
+                    "id": image_info.get("Id", ""),
+                    "created": image_info.get("Created", ""),
+                    "size": image_info.get("Size", 0),
+                    "architecture": image_info.get("Architecture", ""),
+                    "os": image_info.get("Os", ""),
+                    "config": {
+                        "env": image_info.get("Config", {}).get("Env", []),
+                        "cmd": image_info.get("Config", {}).get("Cmd", []),
+                        "exposed_ports": list(image_info.get("Config", {}).get("ExposedPorts", {}).keys())
+                    }
+                }
+                
+                return info
+            else:
+                logger.error(f"Failed to inspect image {image_name}: {result.stderr}")
+                return None
+                
+        except subprocess.TimeoutExpired:
+            logger.error(f"Image inspection timed out: {image_name}")
+            return None
+        except Exception as e:
+            logger.error(f"Error inspecting image: {str(e)}")
+            return None
+
+    def get_pubKey_from_KBS(self, tlog: TrustedLogAPI = None, record_id: str = None):
+        try:
+            kbs_key_dir = os.path.join(BUILD_DIR, "_kbs_keys", record_id or uuid.uuid4().hex[:8])
+            os.makedirs(kbs_key_dir, exist_ok=True)
+
+            key_dict = {
+                "opensslKey": os.path.join(kbs_key_dir, "openssl.key"),
+                "cosignKey": os.path.join(kbs_key_dir, "cosign.key"),
+                "opensslPub": os.path.join(kbs_key_dir, "openssl.pub"),
+                "cosignPub": os.path.join(kbs_key_dir, "cosign.pub"),
+            }
+
+            openssl_key_ok, openssl_key_source, openssl_key_detail = self._download_first_available_kbs_artifact(
+                key_dict["opensslKey"],
+                ["openssl.key", "key.pem"],
+            )
+            cosign_key_ok, cosign_key_source, cosign_key_detail = self._download_first_available_kbs_artifact(
+                key_dict["cosignKey"],
+                ["cosign.key"],
+            )
+            cosign_pub_ok, cosign_pub_source, cosign_pub_detail = self._download_first_available_kbs_artifact(
+                key_dict["cosignPub"],
+                ["cosign.pub"],
+            )
+
+            openssl_pub_ok, openssl_pub_source, openssl_pub_detail = self._download_first_available_kbs_artifact(
+                key_dict["opensslPub"],
+                ["openssl.pub", "pub.pem"],
+            )
+            if openssl_pub_ok:
+                key_valid, key_validation_detail = self._validate_public_encryption_key(key_dict["opensslPub"])
+                if not key_valid:
+                    logger.warning(
+                        "Downloaded KBS public key %s failed validation: %s. Will try deriving from private key.",
+                        openssl_pub_source,
+                        key_validation_detail,
+                    )
+                    openssl_pub_ok = False
+                    openssl_pub_detail = key_validation_detail
+
+            if not openssl_pub_ok and openssl_key_ok:
+                derived, derive_detail = self._derive_public_key_from_private_key(
+                    key_dict["opensslKey"],
+                    key_dict["opensslPub"],
+                )
+                if derived:
+                    openssl_pub_ok = True
+                    openssl_pub_source = f"derived-from:{openssl_key_source}"
+                    openssl_pub_detail = derive_detail
+                else:
+                    openssl_pub_detail = f"{openssl_pub_detail}; {derive_detail}" if openssl_pub_detail else derive_detail
+
+            required_failures = []
+            if not openssl_key_ok:
+                required_failures.append(f"opensslKey: {openssl_key_detail}")
+            if not cosign_key_ok:
+                required_failures.append(f"cosignKey: {cosign_key_detail}")
+            if not openssl_pub_ok:
+                required_failures.append(f"opensslPub: {openssl_pub_detail}")
+
+            if required_failures:
+                failure_detail = "; ".join(required_failures)
+                logger.error("Failed to retrieve valid keys from KBS: %s", failure_detail)
+                if tlog and record_id:
+                    tlog.add_entry(record_id, Entry(key="get_key", value={"status": "failed", "error": failure_detail}))
+                return False, None
+
+            key_dict = {key: os.path.realpath(value) for key, value in key_dict.items() if os.path.exists(value)}
+            logger.info(
+                "Retrieved KBS keys: opensslKey=%s opensslPub=%s cosignKey=%s cosignPub=%s",
+                openssl_key_source,
+                openssl_pub_source,
+                cosign_key_source,
+                cosign_pub_source,
+            )
+            if tlog and record_id:
+                tlog.add_entry(
+                    record_id,
+                    Entry(
+                        key="key",
+                        value={
+                            **key_dict,
+                            "sources": {
+                                "opensslKey": openssl_key_source,
+                                "opensslPub": openssl_pub_source,
+                                "cosignKey": cosign_key_source,
+                                "cosignPub": cosign_pub_source,
+                            },
+                        },
+                    ),
+                )
+            return 'trusted', key_dict
+
+        except Exception as e:
+            logger.error(f"Launch contaioner failed: {str(e)}")
+            if tlog and record_id:
+                tlog.add_entry(record_id, Entry(key="key", value=f"Get key failed: {e}"))
+            return False, None
+
+    def commit_and_save_receipt(self, api_type, build_id, tlog: TrustedLogAPI, record_id: str, identity_token_str: str):
+        """Commit the accumulated entries via TrustedLogAPI and save a receipt file."""
+        try:
+            from tlog.types import CommitResult
+            result = tlog.commit_record(
+                record_id=record_id,
+                event_type=api_type,
+                commit_options={"identity_token": identity_token_str},
+            )
+            receipt = {
+                "record_id": result.record_id,
+                "event_id": result.event_id,
+                "queue_status": result.queue_status.value if result.queue_status else None,
+                "mr_value": result.mr_value,
+            }
+            receipt_path = os.path.join(BUILD_DIR, build_id, f"{api_type}-commit-receipt.json")
+            os.makedirs(os.path.dirname(receipt_path), exist_ok=True)
+            with open(receipt_path, "w", encoding="utf-8") as f:
+                json.dump(receipt, f, ensure_ascii=False, indent=2)
+            logger.info(f"Saved {api_type} commit receipt to {receipt_path}")
+            return True, result.record_id
+        except Exception as e:
+            logger.error(f"Commit failed for {api_type}: {e}")
+            return False, None
+
+    def verify_chain_state(self, api_type, tlog: TrustedLogAPI, chain_id: str = "default"):
+        """Lightweight verification: query TruCon chain-state and check head."""
+        logger.info("Verifying chain state via TruCon...")
+        try:
+            from .trucon.internal_transport import request_json
+
+            data = request_json(
+                "GET",
+                f"/chain-state/{chain_id}",
+                caller_service="tc_api",
+                timeout=10,
+                trucon_url=tlog._trucon_url,
+            )
+            if data.get("head_record_id"):
+                logger.info(f"Chain '{chain_id}' head at record {data['head_record_id']}, seq={data.get('sequence_num')}")
+                return "success"
+            else:
+                logger.warning(f"Chain '{chain_id}' has no head record yet")
+                return "pending"
+        except Exception as e:
+            logger.warning(f"TruCon chain-state query failed: {e}")
+            return "degraded"
+
+    async def get_summaryTransparencylog(self, build_id, launch_id):
+        """"
+        get all transparency log
+        """
+        try:
+            build_path = os.path.join(BUILD_DIR, build_id)
+            logger.info(f"Get build_path: {build_path}")
+            launch_path = os.path.join(BUILD_DIR, launch_id)
+            logger.info(f"Get launch_path: {launch_path}")
+            
+            def get_log(path,api):
+                try:
+                    logid = ''
+                    content = ''
+                    for i in [os.path.join(j) for j in os.listdir(path) if j.startswith(api)]:
+                        if f"{api}-transparency_log" in i:
+                            logid = i.split("-")[-1][:9]
+                            logger.info(f"Get {api}_logId: {api}_{logid}")
+
+                        if f"{api}-transparency.json" == i:
+                            log_path = os.path.join(path,i)
+                            logger.info(f"Get {api}_log for: {i}")
+                            with open(log_path, 'r', encoding='utf-8') as f:
+                                content = json.load(f)
+                            if not content:
+                                logger.error(f"get {api}-transparency log failed")
+                    
+                    if (not logid) or (not content):
+                        logger.debug("Get transparency log failed.")
+                        return None, None
+                    else:
+                        return logid, content
+                
+                except Exception as e:
+                    logger.debug(f"Get transparency log failed. {e}")
+                    return None, None
+
+            # get build transparency log
+            #build_log = [os.path.join(i) for i in os.listdir(build_path) if i.startswith('build')]
+            build_logId, build_content = get_log(build_path,"build")
+            #publish_log = [os.path.join(i) for i in os.listdir(build_path) if i.startswith('publish')]
+            publish_logId, publish_content = get_log(build_path,"publish")
+            #launch_log = [os.path.join(i) for i in os.listdir(launch_path) if i.startswith('launch')]
+            launch_logId, launch_content = get_log(launch_path,"launch")
+            
+            # get log id
+            logids = {"build": build_logId,
+                      "publish": publish_logId,
+                      "launch": launch_logId
+                      }
+
+            summary = {"build": f"{json.dumps(build_content,indent=2)}",
+                       "publish": f"{json.dumps(publish_content,indent=2)}",
+                       "launch": f"{json.dumps(launch_content,indent=2)}"
+                       }
+            #logger.info(f"Workflow transparency log: {json.dumps(summary, indent=2)}")
+            response = {"build_id": build_id, "launch_id": launch_id, "log_id": logids, "transparencylog": summary}
+
+            #logger.info(f"Workflow transparency log: {json.dumps(response, indent=2)}")
+            return response
+        except Exception as e:
+            logger.error(f"Get Workflow transparency log failed")
+            return None
+
+
+__all__ = ['BaseDockerService']
