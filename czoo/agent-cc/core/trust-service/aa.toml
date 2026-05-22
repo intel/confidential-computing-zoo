@@ -1,6 +1,0 @@
-[eventlog_config]
-enable_eventlog = false
-
-[token_configs]
-[token_configs.kbs]
-url = "http://localhost:8080"

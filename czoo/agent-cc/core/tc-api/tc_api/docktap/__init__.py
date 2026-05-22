@@ -1,1 +1,0 @@
-# docktap - Docker operation interception and trusted logging
