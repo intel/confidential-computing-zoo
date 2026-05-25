@@ -17,6 +17,8 @@ OpenClaw prepares context
 
 Failure semantics are fail closed. If evidence is missing, expired, malformed, unverifiable, or policy-incompatible, the skill denies context transfer.
 
+The current reference implementation in this repository lives in `core/tc-api/tc_api/trucon/openviking_context_gate.py` and is exposed as `tc-openviking-verify-context`.
+
 ## Evidence Source Options
 
 Evidence may be exposed by:
@@ -26,6 +28,8 @@ Evidence may be exposed by:
 - a sidecar bound to the same confidential deployment
 
 The low-intrusion path may start with gateway-hosted or sidecar-hosted evidence. The complete target state should bind evidence to the OpenViking confidential core.
+
+For the current minimal implementation slice, the repository uses a dedicated evidence surface and posture surface exposed by the reference service rather than a gateway-only contract.
 
 ## Minimum Evidence and Posture Claims
 
@@ -101,6 +105,8 @@ Recommended default posture:
 - privacy restore requires verified confidential boundary
 - external egress requires explicit allow
 - unavailable policy or evidence denies sensitive operations
+
+The current minimal implementation also reuses successful `send_context` verification for at most five minutes when the cached verification key still matches target URL, service instance, measurement, ledger head, and policy version.
 
 ## Non-Implementation Notice
 

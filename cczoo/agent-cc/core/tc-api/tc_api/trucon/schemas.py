@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -137,3 +137,37 @@ class EventSummary(BaseModel):
 
 class EvidenceErrorResponse(BaseModel):
     detail: str
+
+
+class OpenVikingEvidenceResponse(BaseModel):
+    kind: Literal["openviking-confidential-evidence"] = "openviking-confidential-evidence"
+    chain_id: str
+    deployment_id: str
+    service_instance_id: str
+    tee_type: str
+    measurement_ref: str
+    ledger_chain_id: str
+    ledger_head_id: str
+    evidence_digest: str
+    generated_at: str
+    expires_at: str
+    policy_id: str
+    policy_version: str
+    egress_mode: str
+    privacy_restore_policy: str
+    attested_head_evidence: Dict[str, Any]
+
+
+class OpenVikingPostureResponse(BaseModel):
+    kind: Literal["openviking-confidential-posture"] = "openviking-confidential-posture"
+    chain_id: str
+    deployment_id: str
+    service_instance_id: str
+    tee_type: str
+    policy_id: str
+    policy_version: str
+    egress_mode: str
+    privacy_restore_policy: str
+    generated_at: str
+    has_confirmed_ledger_head: bool
+    latest_ledger_head_id: Optional[str] = None

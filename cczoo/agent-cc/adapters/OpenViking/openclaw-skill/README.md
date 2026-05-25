@@ -1,6 +1,8 @@
 # OpenClaw Local Verify Skill Contract
 
-This directory documents the intended local verify skill for OpenClaw. It does not contain runnable skill code in this change.
+This directory documents the intended local verify skill for OpenClaw.
+
+The reference implementation added by `openviking-minimal-trusted-context-gate` lives under `core/tc-api/tc_api/trucon/openviking_context_gate.py` and is exposed as the `tc-openviking-verify-context` CLI entrypoint. The adapter documentation here remains the OpenViking-facing contract and usage guide.
 
 ## Purpose
 
@@ -67,6 +69,16 @@ The skill must deny context transfer when:
 - expected deployment identity does not match
 - required posture claims are missing
 - verification tooling returns an error
+
+## Reference Implementation Notes
+
+The current reference implementation in `core/tc-api`:
+
+- fetches dedicated OpenViking-style evidence from `/confidential/evidence/{chain_id}`
+- keeps posture separate at `/confidential/posture/{chain_id}`
+- validates required claims, binding compatibility, freshness, and policy fields
+- reuses successful verification results for up to five minutes using a cache key bound to target URL, service instance, measurement, ledger head, and policy version
+- emits metadata-only allow or deny decision records without prompt or context plaintext
 
 ## Non-Goals
 

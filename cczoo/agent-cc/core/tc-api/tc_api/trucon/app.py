@@ -8,6 +8,7 @@ MUST be run with --workers 1 to preserve lock semantics.
 """
 
 import fcntl
+import hashlib
 import hmac
 import json
 import logging
@@ -18,7 +19,7 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request
@@ -101,6 +102,8 @@ from .schemas import (
     InitChainBaselineResponse,
     InitChainRequest,
     InitChainResponse,
+    OpenVikingEvidenceResponse,
+    OpenVikingPostureResponse,
 )
 from .submit_daemon import SubmitDaemon
 from . import submit_daemon as submit_daemon_mod
@@ -119,6 +122,42 @@ from .immutable_fanout import CompositeImmutableLogAdapter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger("trucon")
+
+
+def _openviking_deployment_id(chain_id: str) -> str:
+    return os.environ.get("OPENVIKING_CONFIDENTIAL_DEPLOYMENT_ID", f"openviking-{chain_id}")
+
+
+def _openviking_service_instance_id() -> str:
+    return os.environ.get("OPENVIKING_CONFIDENTIAL_SERVICE_INSTANCE_ID", os.environ.get("HOSTNAME", "local-openviking"))
+
+
+def _openviking_policy_id() -> str:
+    return os.environ.get("OPENVIKING_CONFIDENTIAL_POLICY_ID", "openviking-context-send")
+
+
+def _openviking_policy_version() -> str:
+    return os.environ.get("OPENVIKING_CONFIDENTIAL_POLICY_VERSION", "2026-05-25")
+
+
+def _openviking_egress_mode() -> str:
+    return os.environ.get("OPENVIKING_CONFIDENTIAL_EGRESS_MODE", "explicit-allow-required")
+
+
+def _openviking_privacy_restore_policy() -> str:
+    return os.environ.get(
+        "OPENVIKING_CONFIDENTIAL_PRIVACY_RESTORE_POLICY",
+        "requires-verified-confidential-boundary",
+    )
+
+
+def _json_sha384(payload: Dict[str, Any]) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return "sha384:" + hashlib.sha384(encoded).hexdigest()
+
+
+def _evidence_expiration(generated_at: datetime) -> datetime:
+    return generated_at + timedelta(seconds=INTENT_TTL_SECONDS)
 
 
 def _tdx_environment_hint(message: str) -> str:
@@ -219,6 +258,102 @@ def _intent_response_from_row(intent: Any, committed_record: Optional[Any] = Non
 
 def _get_chain_owner_pub_key(chain_id: str) -> Optional[str]:
     return get_chain_owner_pub_key_from_records(get_chain_records(chain_id))
+
+
+def _build_attested_head_evidence(chain_id: str) -> AttestedHeadEvidence:
+    state = get_chain_state(chain_id)
+    if not state:
+        raise HTTPException(status_code=404, detail=f"No chain state for '{chain_id}'")
+
+    confirmed = get_latest_confirmed_record(chain_id)
+    if not confirmed or not confirmed["log_id"]:
+        raise HTTPException(status_code=409, detail=f"Chain '{chain_id}' has no confirmed immutable-log head")
+    if not confirmed["mr_value"]:
+        raise HTTPException(status_code=409, detail=f"Chain '{chain_id}' has no measured confirmed head state")
+    quote_adapter = _get_quote_adapter()
+
+    expected_value = compute_binding_expected_value(
+        chain_id=chain_id,
+        sequence_num=confirmed["sequence_num"],
+        head_log_id=confirmed["log_id"],
+        mr_value=confirmed["mr_value"],
+    )
+
+    try:
+        quote_material = quote_adapter.quote(expected_value)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=_tdx_environment_hint(f"Quote acquisition failed: {exc}"),
+        ) from exc
+
+    if quote_material.report_data != expected_value:
+        raise HTTPException(
+            status_code=500,
+            detail=_tdx_environment_hint("Quote-backed report data did not match the expected binding value"),
+        )
+
+    return validate_attested_head_evidence_payload(
+        {
+            "version": "v1",
+            "tee_type": "tdx",
+            "chain_id": chain_id,
+            "sequence_num": confirmed["sequence_num"],
+            "head_log_id": confirmed["log_id"],
+            "mr_value": confirmed["mr_value"],
+            "generated_at": datetime.utcnow(),
+            "quote": quote_material.quote,
+            "quote_format": quote_material.quote_format,
+            "head_event_digest": confirmed["event_digest"],
+            "report_data_binding": {
+                "algorithm": BINDING_ALGORITHM,
+                "bound_fields": list(REQUIRED_BOUND_FIELDS),
+                "expected_value": expected_value,
+            },
+        }
+    )
+
+
+def _build_openviking_evidence(chain_id: str) -> OpenVikingEvidenceResponse:
+    attested_evidence = _build_attested_head_evidence(chain_id)
+    evidence_payload = attested_evidence.model_dump(mode="json", exclude_none=True)
+    generated_at = datetime.now(timezone.utc)
+    expires_at = _evidence_expiration(generated_at)
+    return OpenVikingEvidenceResponse(
+        chain_id=chain_id,
+        deployment_id=_openviking_deployment_id(chain_id),
+        service_instance_id=_openviking_service_instance_id(),
+        tee_type=attested_evidence.tee_type,
+        measurement_ref=attested_evidence.mr_value,
+        ledger_chain_id=attested_evidence.chain_id,
+        ledger_head_id=attested_evidence.head_log_id,
+        evidence_digest=_json_sha384(evidence_payload),
+        generated_at=generated_at.isoformat(),
+        expires_at=expires_at.isoformat(),
+        policy_id=_openviking_policy_id(),
+        policy_version=_openviking_policy_version(),
+        egress_mode=_openviking_egress_mode(),
+        privacy_restore_policy=_openviking_privacy_restore_policy(),
+        attested_head_evidence=evidence_payload,
+    )
+
+
+def _build_openviking_posture(chain_id: str) -> OpenVikingPostureResponse:
+    confirmed = get_latest_confirmed_record(chain_id)
+    now = datetime.now(timezone.utc)
+    return OpenVikingPostureResponse(
+        chain_id=chain_id,
+        deployment_id=_openviking_deployment_id(chain_id),
+        service_instance_id=_openviking_service_instance_id(),
+        tee_type="tdx",
+        policy_id=_openviking_policy_id(),
+        policy_version=_openviking_policy_version(),
+        egress_mode=_openviking_egress_mode(),
+        privacy_restore_policy=_openviking_privacy_restore_policy(),
+        generated_at=now.isoformat(),
+        has_confirmed_ledger_head=bool(confirmed and confirmed.get("log_id")),
+        latest_ledger_head_id=confirmed["log_id"] if confirmed and confirmed.get("log_id") else None,
+    )
 
 # ---------------------------------------------------------------------------
 # Single-instance file lock
@@ -1140,58 +1275,30 @@ def commit(req: CommitRequest, request: Request):
 )
 def get_attested_head_evidence(chain_id: str):
     """Return attested-head evidence for the latest confirmed public head of a chain."""
+    return _build_attested_head_evidence(chain_id)
+
+
+@app.get(
+    "/confidential/evidence/{chain_id}",
+    response_model=OpenVikingEvidenceResponse,
+    responses={404: {"model": EvidenceErrorResponse}, 409: {"model": EvidenceErrorResponse}, 500: {"model": EvidenceErrorResponse}},
+)
+def get_openviking_confidential_evidence(chain_id: str):
+    """Return OpenViking-style evidence and trust metadata for context-send verification."""
+    return _build_openviking_evidence(chain_id)
+
+
+@app.get(
+    "/confidential/posture/{chain_id}",
+    response_model=OpenVikingPostureResponse,
+    responses={404: {"model": EvidenceErrorResponse}},
+)
+def get_openviking_confidential_posture(chain_id: str):
+    """Return posture metadata that is separate from attested evidence."""
     state = get_chain_state(chain_id)
     if not state:
         raise HTTPException(status_code=404, detail=f"No chain state for '{chain_id}'")
-
-    confirmed = get_latest_confirmed_record(chain_id)
-    if not confirmed or not confirmed["log_id"]:
-        raise HTTPException(status_code=409, detail=f"Chain '{chain_id}' has no confirmed immutable-log head")
-    if not confirmed["mr_value"]:
-        raise HTTPException(status_code=409, detail=f"Chain '{chain_id}' has no measured confirmed head state")
-    quote_adapter = _get_quote_adapter()
-
-    expected_value = compute_binding_expected_value(
-        chain_id=chain_id,
-        sequence_num=confirmed["sequence_num"],
-        head_log_id=confirmed["log_id"],
-        mr_value=confirmed["mr_value"],
-    )
-
-    try:
-        quote_material = quote_adapter.quote(expected_value)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=_tdx_environment_hint(f"Quote acquisition failed: {exc}"),
-        ) from exc
-
-    if quote_material.report_data != expected_value:
-        raise HTTPException(
-            status_code=500,
-            detail=_tdx_environment_hint("Quote-backed report data did not match the expected binding value"),
-        )
-
-    evidence = validate_attested_head_evidence_payload(
-        {
-            "version": "v1",
-            "tee_type": "tdx",
-            "chain_id": chain_id,
-            "sequence_num": confirmed["sequence_num"],
-            "head_log_id": confirmed["log_id"],
-            "mr_value": confirmed["mr_value"],
-            "generated_at": datetime.utcnow(),
-            "quote": quote_material.quote,
-            "quote_format": quote_material.quote_format,
-            "head_event_digest": confirmed["event_digest"],
-            "report_data_binding": {
-                "algorithm": BINDING_ALGORITHM,
-                "bound_fields": list(REQUIRED_BOUND_FIELDS),
-                "expected_value": expected_value,
-            },
-        }
-    )
-    return evidence
+    return _build_openviking_posture(chain_id)
 
 
 def main() -> None:

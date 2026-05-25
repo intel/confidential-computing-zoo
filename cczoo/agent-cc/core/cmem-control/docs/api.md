@@ -48,6 +48,8 @@ Typical operations:
 
 Evidence-backed flows should be compatible with the repository's existing `tc-verify` and attested-head evidence concepts when TruCon integration is used.
 
+The current minimal OpenViking reference implementation in `core/tc-api/tc_api/trucon/` follows this compatibility model by exposing a dedicated evidence surface, embedding attested-head evidence material, and validating context-send decisions without requiring the full control-plane runtime package.
+
 ## Policy Decision API
 
 Policy APIs answer whether a subject can perform an operation on a memory resource for a stated purpose.
@@ -111,6 +113,8 @@ Typical operations:
 - `exportEvidence(chain_id)`
 
 Ledger entries should contain canonical metadata such as operation, result, policy id, subject hash, resource scope hash, evidence digest, payload digest, lease id hash, and timestamps. They must not contain prompt text, tool-result plaintext, raw memory content, archive plaintext, or privacy-restored values.
+
+The current minimal OpenViking gate narrows this to metadata-only `context_send.allow` and `context_send.deny` decision records.
 
 ## Failure Semantics
 
