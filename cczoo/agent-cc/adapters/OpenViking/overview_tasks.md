@@ -1,7 +1,7 @@
 # OpenViking Confidential Memory Adapter Task Overview
 
 > Purpose: standing future-work ledger for OpenViking/OpenClaw confidential memory adapter work.
-> Status: documentation seed only; no runtime implementation is completed by this change.
+> Status: documentation seed plus a minimal archived trusted-context-gate reference slice; deeper OpenViking and OpenClaw integration work remains open.
 
 ## Current Documentation Tasks
 
@@ -40,7 +40,15 @@
 
 - Priority: HIGH
 - Scope: future OpenClaw skill implementation
-- Status: NOT STARTED
+- Status: IN PROGRESS
+- Current State: The archived change `openspec/changes/archive/2026-05-25-openviking-minimal-trusted-context-gate/` added a reference local verify-skill implementation in `core/tc-api`, but it does not yet wire a real OpenClaw runtime invocation path.
+- Implemented Subtasks:
+  1. ~~`GAP-OV-01A` — Reference local verify-skill implementation~~ ✅ COMPLETED
+     - Completed: 2026-05-25 | Archive: `openspec/changes/archive/2026-05-25-openviking-minimal-trusted-context-gate/`
+     - Outcome: `tc-openviking-verify-context` verifies dedicated evidence before `send_context`, fails closed on verification problems, and reuses successful verification for up to five minutes.
+- Remaining Scope:
+  1. Decide the real OpenClaw integration surface for invoking the local verify skill before context transfer.
+  2. Define the packaging and operator contract for deploying that skill with OpenClaw.
 - Acceptance Criteria:
   1. OpenClaw can invoke the skill before context transfer.
   2. The skill verifies evidence-backed claims and fails closed on errors.
@@ -49,7 +57,15 @@
 
 - Priority: HIGH
 - Scope: OpenViking, gateway, or sidecar evidence surface
-- Status: NOT STARTED
+- Status: IN PROGRESS
+- Current State: The archived trusted-context-gate change added dedicated `/confidential/evidence/{chain_id}` and `/confidential/posture/{chain_id}` reference surfaces in `core/tc-api`, but it does not yet establish an OpenViking-native or sidecar-native provider deployment.
+- Implemented Subtasks:
+  1. ~~`GAP-OV-02A` — Reference evidence and posture surfaces~~ ✅ COMPLETED
+     - Completed: 2026-05-25 | Archive: `openspec/changes/archive/2026-05-25-openviking-minimal-trusted-context-gate/`
+     - Outcome: The reference surface exposes dedicated evidence and posture contracts, required context-send claims, freshness bounds, and attested-head-compatible verification material.
+- Remaining Scope:
+  1. Decide whether the production provider is OpenViking-native, a sidecar, or a gateway-bound surface.
+  2. Clarify how deployment identity, instance identity, and measurement are bound to the actual OpenViking runtime rather than only to the reference service.
 - Acceptance Criteria:
   1. Evidence exposes deployment identity, instance identity, policy version, ledger head, freshness, and egress posture.
   2. Evidence can be verified with `tc-verify`-compatible semantics when TruCon integration is used.

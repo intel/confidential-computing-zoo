@@ -1,7 +1,7 @@
 # Confidential Memory Control Plane Task Overview
 
 > Purpose: standing future-work ledger for the proposed `core/cmem-control` component.
-> Status: documentation seed only; no runtime implementation is completed by this change.
+> Status: documentation seed plus a minimal archived reference slice for OpenViking `send_context`; broader runtime implementation remains open.
 
 ## Task Format
 
@@ -57,7 +57,15 @@ Each item uses:
 
 - Priority: HIGH
 - Scope: evidence verification
-- Status: NOT STARTED
+- Status: IN PROGRESS
+- Current State: The archived change `openspec/changes/archive/2026-05-25-openviking-minimal-trusted-context-gate/` added a reference verification slice in `core/tc-api` for OpenViking `send_context`, including attested-head-compatible evidence validation, freshness checks, binding checks, policy compatibility checks, and fail-closed denial behavior.
+- Implemented Subtasks:
+  1. ~~`GAP-CMEM-02A` — Minimal OpenViking evidence verification slice~~ ✅ COMPLETED
+     - Completed: 2026-05-25 | Archive: `openspec/changes/archive/2026-05-25-openviking-minimal-trusted-context-gate/`
+     - Outcome: A reference verifier accepts OpenViking evidence, validates freshness, ledger binding, policy fields, and failure reasons, and exposes a five-minute trust-cache model for `send_context` decisions.
+- Remaining Scope:
+  1. Generalize the verification surface beyond OpenViking-specific response models.
+  2. Define the future package boundary for a reusable `cmem_control` verification adapter independent of the `tc-api` runtime.
 - Acceptance Criteria:
   1. A future implementation can verify attested-head evidence or call an external verifier.
   2. Verification results include freshness, binding, policy, and failure reasons.
@@ -66,7 +74,15 @@ Each item uses:
 
 - Priority: HIGH
 - Scope: policy decisions
-- Status: NOT STARTED
+- Status: IN PROGRESS
+- Current State: The archived OpenViking context-gate slice now exercises a minimal `allow` or `deny` decision model for `send_context`, but it does not yet define a reusable operation-agnostic policy engine.
+- Implemented Subtasks:
+  1. ~~`GAP-CMEM-03A` — Minimal `send_context` decision slice~~ ✅ COMPLETED
+     - Completed: 2026-05-25 | Archive: `openspec/changes/archive/2026-05-25-openviking-minimal-trusted-context-gate/`
+     - Outcome: The reference implementation supports `allow` and fail-closed `deny` decisions for `send_context`, bound to evidence, policy identifier, policy version, and decision metadata.
+- Remaining Scope:
+  1. Generalize decisions across `observe`, `recall`, `materialize`, `commit`, `privacy_restore`, and `egress`.
+  2. Decide whether `degraded` remains a real runtime verdict or is restricted to non-sensitive paths.
 - Acceptance Criteria:
   1. Policy decisions support allow, deny, fail_closed, and degraded results.
   2. Decisions are bound to subject, resource, operation, purpose, and evidence.
@@ -75,7 +91,15 @@ Each item uses:
 
 - Priority: HIGH
 - Scope: ledger recorder and `tlog` integration
-- Status: NOT STARTED
+- Status: IN PROGRESS
+- Current State: The archived OpenViking context-gate slice now emits metadata-only `context_send.allow` and `context_send.deny` decision records, but it stops short of a generalized `tlog`-backed ledger recorder.
+- Implemented Subtasks:
+  1. ~~`GAP-CMEM-04A` — Minimal context-send decision record~~ ✅ COMPLETED
+     - Completed: 2026-05-25 | Archive: `openspec/changes/archive/2026-05-25-openviking-minimal-trusted-context-gate/`
+     - Outcome: The reference slice records metadata-only allow or deny decisions without prompt, context, archive, or memory plaintext.
+- Remaining Scope:
+  1. Canonicalize the broader decision-event family against `tlog` types and digest helpers.
+  2. Decide whether ledger recording is synchronous, policy-conditional, or best-effort for each operation class.
 - Acceptance Criteria:
   1. Decision events are canonicalized and digestible.
   2. Ledger recording excludes memory plaintext.
