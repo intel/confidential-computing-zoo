@@ -6,11 +6,14 @@ from fastapi import FastAPI
 
 from ..config import (
     BUILD_DIR,
+    BUILD_PACKAGE_MAX_REQUEST_BYTES,
     DEBUG,
     DOCKER_REGISTRY,
     DOCKER_REPOSITORY,
     HOST,
     INIT_DEFAULT_CHAIN_ON_STARTUP,
+    LUKS_MOUNT_BASE_DIR,
+    LUKS_VFS_BASE_DIR,
     LOGS_DIR,
     PORT,
     TRANSPARENCY_SERVICE_CHAIN_ID,
@@ -50,7 +53,7 @@ def log_proxy_configuration(operation: str) -> None:
 
 
 def ensure_runtime_dirs() -> None:
-    for directory in [UPLOAD_DIR, BUILD_DIR, LOGS_DIR]:
+    for directory in [UPLOAD_DIR, BUILD_DIR, LOGS_DIR, LUKS_VFS_BASE_DIR, LUKS_MOUNT_BASE_DIR]:
         os.makedirs(directory, exist_ok=True)
 
 
@@ -83,11 +86,14 @@ async def lifespan(app: FastAPI):
 
 __all__ = [
     "BUILD_DIR",
+    "BUILD_PACKAGE_MAX_REQUEST_BYTES",
     "DEBUG",
     "DOCKER_REGISTRY",
     "DOCKER_REPOSITORY",
     "HOST",
     "INIT_DEFAULT_CHAIN_ON_STARTUP",
+    "LUKS_MOUNT_BASE_DIR",
+    "LUKS_VFS_BASE_DIR",
     "LOGS_DIR",
     "PORT",
     "TRANSPARENCY_SERVICE_CHAIN_ID",

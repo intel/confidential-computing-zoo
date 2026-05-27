@@ -5,6 +5,7 @@ import os
 import shutil
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from fastapi import BackgroundTasks, HTTPException, Request
@@ -22,11 +23,12 @@ from ..models import (
     PublishPackageRequest,
     PublishPackageResponse,
     PublishResult,
+    _validate_runtime_id,
 )
 from ..transparency.commit_client import TrustedLogAPI
 from ..transparency.events import EventEntryKey, launch_security_entries
+from .request_auth import add_authenticated_identity_entries, get_authenticated_caller, require_authenticated_owner
 from . import runtime
-from .sigstore_support import _resolve_required_sigstore_identity_token
 
 
 docker_service = runtime.docker_service
@@ -62,14 +64,15 @@ async def build_package(
 ):
     """Build and package a container image."""
     try:
+        caller = get_authenticated_caller(
+            "build",
+            request=http_request,
+            user_id=request.user_id,
+            identity_token=request.identity_token,
+        )
+        request.user_id = caller.user_id
+        request.identity_token = caller.identity_token
         logger.info("Build package request received for user: %s", request.user_id)
-        if not request.identity_token:
-            request.identity_token = resolve_sigstore_identity_token(
-                "build",
-                logger=logger,
-                allow_interactive=False,
-                min_ttl_seconds=0,
-            )
 
         build_id = docker_service.generate_uuid(prefix="bld")
         logger.debug("Generated build ID: %s", build_id)
@@ -77,6 +80,7 @@ async def build_package(
         tlog = http_request.app.state.trusted_log
         ctx = tlog.init_record(context={"chain_ref": TRANSPARENCY_SERVICE_CHAIN_ID})
         record_id = ctx.record_id
+        add_authenticated_identity_entries(tlog, record_id, caller)
         tlog.add_entry(record_id, Entry(key="build_id", value=build_id))
 
         build_path = os.path.join(BUILD_DIR, build_id)
@@ -319,14 +323,41 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
 async def publish_package(http_request: Request, request: PublishPackageRequest):
     """Publish image and SBOM to the registry with logging."""
     try:
-        request.identity_token = _resolve_required_sigstore_identity_token("publish", request.identity_token, request=http_request)
+        caller = get_authenticated_caller(
+            "publish",
+            request=http_request,
+            user_id=request.user_id,
+            identity_token=request.identity_token,
+        )
+        request.user_id = caller.user_id
+        request.identity_token = caller.identity_token
         image_name = request.image_id.split("/")[-1].split(":")[0]
         registry_repo = f"{DOCKER_REPOSITORY}/{image_name}:latest-encrypted"
         publish_id = "pub-" + request.build_id.split("-")[-1]
 
+        build_result = docker_service.get_build_status(request.build_id)
+        if build_result is None:
+            raise HTTPException(status_code=404, detail=f"Build {request.build_id} not found")
+        if build_result.user_id != caller.user_id:
+            raise HTTPException(status_code=403, detail="Publish request does not own the referenced build artifact")
+
+        expected_build_dir = (Path(BUILD_DIR) / request.build_id).resolve(strict=False)
+        actual_image_ref = _normalize_local_oci_reference(request.image_id)
+        actual_image_path = None
+        if actual_image_ref and actual_image_ref.startswith("oci:"):
+            actual_image_path = Path(actual_image_ref[4:]).resolve(strict=False)
+            try:
+                actual_image_path.relative_to(expected_build_dir)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Publish request image_id must reference the caller-owned OCI artifact for the specified build",
+                ) from exc
+
         tlog = http_request.app.state.trusted_log
         ctx = tlog.init_record(context={"chain_ref": TRANSPARENCY_SERVICE_CHAIN_ID})
         record_id = ctx.record_id
+        add_authenticated_identity_entries(tlog, record_id, caller)
 
         try:
             tlog.add_entry(record_id, Entry(key="publishID", value={"publishID": publish_id}))
@@ -433,11 +464,17 @@ async def publish_package(http_request: Request, request: PublishPackageRequest)
         raise HTTPException(status_code=500, detail=f"Failed to publish package: {exc}") from exc
 
 
-async def get_publish_result(build_id: str):
+async def get_publish_result(http_request: Request, build_id: str):
     try:
+        build_id = _validate_runtime_id(build_id, "build_id")
         publish_result = docker_service.get_publish_status(build_id)
         if not publish_result:
             raise HTTPException(status_code=404, detail="Publish not found")
+        require_authenticated_owner(
+            "publish_result",
+            request=http_request,
+            owner_user_id=publish_result.user_id,
+        )
         return publish_result
     except HTTPException:
         raise
@@ -445,11 +482,17 @@ async def get_publish_result(build_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get publish result: {exc}") from exc
 
 
-async def get_build_result(build_id: str):
+async def get_build_result(http_request: Request, build_id: str):
     try:
+        build_id = _validate_runtime_id(build_id, "build_id")
         build_result = docker_service.get_build_status(build_id)
         if not build_result:
             raise HTTPException(status_code=404, detail="Build not found")
+        require_authenticated_owner(
+            "build_result",
+            request=http_request,
+            owner_user_id=build_result.user_id,
+        )
         return build_result
     except HTTPException:
         raise
@@ -464,12 +507,20 @@ async def deploy_launch(
 ):
     """Deploy and launch a container on worker nodes."""
     try:
-        request.identity_token = _resolve_required_sigstore_identity_token("launch", request.identity_token, request=http_request)
+        caller = get_authenticated_caller(
+            "launch",
+            request=http_request,
+            user_id=request.user_id,
+            identity_token=request.identity_token,
+        )
+        request.user_id = caller.user_id
+        request.identity_token = caller.identity_token
         tlog = http_request.app.state.trusted_log
         workload_id = docker_service.normalize_workload_id(request.user_id, request.image_id, request.metadata)
         transparency_chain_id = workload_transparency_chain_id(workload_id)
         ctx = tlog.init_record(context={"chain_ref": transparency_chain_id})
         record_id = ctx.record_id
+        add_authenticated_identity_entries(tlog, record_id, caller)
 
         launch_id = docker_service.generate_uuid(prefix="launch")
         tlog.add_entry(record_id, Entry(key="launch_id", value={"launch_id": launch_id}))
@@ -652,11 +703,16 @@ async def launch_container_async(
             file_handle.write(f"Error: {exc}\n")
 
 
-async def get_launch_result(launch_id: str):
+async def get_launch_result(http_request: Request, launch_id: str):
     try:
         launch_result = docker_service.get_launch_status(launch_id)
         if not launch_result:
             raise HTTPException(status_code=404, detail="Launch not found")
+        require_authenticated_owner(
+            "launch_result",
+            request=http_request,
+            owner_user_id=launch_result.user_id,
+        )
         return launch_result
     except HTTPException:
         raise

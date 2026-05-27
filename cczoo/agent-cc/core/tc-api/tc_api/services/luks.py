@@ -1,7 +1,8 @@
 import logging
-import random
+import secrets
 import subprocess
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from ..models import LuksResult
@@ -9,52 +10,93 @@ from ..transparency.commit_client import TrustedLogAPI
 from tlog.types import Entry
 
 logger = logging.getLogger(__name__)
+SCRIPT_DIR = Path(__file__).resolve().parents[3] / "config"
+
+
+def _prepare_vfs_file(vfs_path: str, vfs_size: str) -> None:
+    path = Path(vfs_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["truncate", "-s", vfs_size, vfs_path],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Failed to prepare VFS file")
+
+
+def _attach_loop_device(vfs_path: str) -> str:
+    result = subprocess.run(
+        ["losetup", "--find", "--show", vfs_path],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Failed to allocate loop device")
+    loop_device = result.stdout.strip()
+    if not loop_device:
+        raise RuntimeError("Failed to allocate loop device")
+    return loop_device
+
+
+def _detach_loop_device(loop_device: str) -> None:
+    subprocess.run(["losetup", "-d", loop_device], capture_output=True, text=True, timeout=600, check=False)
 
 
 class LuksServiceMixin:
     def create_luks_block(self, user_id, tlog: TrustedLogAPI, record_id: str, passwd, vfs_size, vfs_path):
-        loop_device = subprocess.run(["losetup", "-f"], capture_output=True, text=True, timeout=600).stdout.strip()
-        mapper_dir = f"{random.randint(0, 32767)}{random.randint(0, 32767)}{random.randint(0, 32767)}{random.randint(0, 32767)}"
-        cmd = ["./scripts/create_encrypted_vfs.sh", vfs_path, vfs_size, passwd, mapper_dir, loop_device]
+        _prepare_vfs_file(vfs_path, vfs_size)
+        loop_device = _attach_loop_device(vfs_path)
+        mapper_dir = secrets.token_hex(16)
+        cmd = [str(SCRIPT_DIR / "create_encrypted_vfs.sh"), vfs_path, vfs_size, passwd, mapper_dir, loop_device]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             logger.info(result.stdout)
             if result.returncode == 0:
-                self.update_luks_status(user_id, "creating", step="create_encrypted_vfs: success", passwd=passwd, vfs_size=vfs_size, vfs_path=vfs_path, mapper_dir=mapper_dir, loop_device=loop_device)
+                self.update_luks_status(user_id, "creating", step="create_encrypted_vfs: success", vfs_size=vfs_size, vfs_path=vfs_path, mapper_dir=mapper_dir, loop_device=loop_device)
                 tlog.add_entry(record_id, Entry(key="create_encrypted_vfs", value="completed"))
                 return mapper_dir, loop_device
             else:
                 logger.debug("create_encrypted_vfs failed: %s", result.stderr or result.stdout)
                 self.update_luks_status(user_id, "creating", step="create_encrypted_vfs: failed")
                 tlog.add_entry(record_id, Entry(key="create_encrypted_vfs", value="failed"))
+                _detach_loop_device(loop_device)
                 return
         except Exception as exc:
             logger.debug("create luks failed: %s", exc)
             tlog.add_entry(record_id, Entry(key="create_luks_failed", value=str(exc)))
+            _detach_loop_device(loop_device)
             return
 
     def mount_luks_block(self, user_id, tlog: TrustedLogAPI, record_id: str, mapper_dir, passwd, mount_path, vfs_path, loop_device):
-        cmd = ["./scripts/mount_encrypted_vfs.sh", vfs_path, mount_path, mapper_dir, passwd, loop_device]
+        loop_device = _attach_loop_device(vfs_path)
+        cmd = [str(SCRIPT_DIR / "mount_encrypted_vfs.sh"), vfs_path, mount_path, mapper_dir, passwd, loop_device]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             logger.info(result.stdout)
             if result.returncode == 0:
-                self.update_luks_status(user_id, "mounting", step="mount_encrypted_vfs: success", mount_path=mount_path, vfs_path=vfs_path)
+                self.update_luks_status(user_id, "mounting", step="mount_encrypted_vfs: success", mount_path=mount_path, vfs_path=vfs_path, loop_device=loop_device)
                 tlog.add_entry(record_id, Entry(key="mount_encrypted_vfs", value="completed"))
-                return mount_path
+                return mount_path, loop_device
             else:
                 logger.debug("mount_encrypted_vfs failed: %s", result.stderr or result.stdout)
                 self.update_luks_status(user_id, "mounting", step="mount_encrypted_vfs: failed")
                 tlog.add_entry(record_id, Entry(key="mount_encrypted_vfs", value="failed"))
+                _detach_loop_device(loop_device)
                 return
         except Exception as exc:
             logger.debug("mount luks failed: %s", exc)
             tlog.add_entry(record_id, Entry(key="mount_luks_failed", value=str(exc)))
+            _detach_loop_device(loop_device)
             return
 
     def unmount_luks_block(self, user_id, tlog: TrustedLogAPI, record_id: str, mapper_dir, mount_path, loop_device):
         mapper_path = f"/dev/mapper/{mapper_dir}"
-        cmd = ["./scripts/unmount_encrypted_vfs.sh", mount_path, mapper_path, loop_device]
+        cmd = [str(SCRIPT_DIR / "unmount_encrypted_vfs.sh"), mount_path, mapper_path, loop_device]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode == 0:

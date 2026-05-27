@@ -62,9 +62,12 @@ class SimpleSession:
         url: str,
         timeout: int,
         json_body: Optional[Dict[str, Any]] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         data = None
         headers = dict(self.headers)
+        if extra_headers:
+            headers.update(extra_headers)
         if json_body is not None:
             data = json.dumps(json_body).encode("utf-8")
 
@@ -124,8 +127,9 @@ def session_request(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     json_body = kwargs.get("json")
+    extra_headers = kwargs.get("headers")
     try:
-        return session.request(method=method, url=url, timeout=timeout, json_body=json_body)
+        return session.request(method=method, url=url, timeout=timeout, json_body=json_body, extra_headers=extra_headers)
     except SmokeTestError as exc:
         raise SmokeTestError(f"{action}: {exc}") from exc
 
@@ -137,12 +141,13 @@ def poll_status(
     success_status: str,
     timeout_seconds: int,
     poll_interval: int,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     deadline = time.monotonic() + timeout_seconds
     latest: Dict[str, Any] = {}
 
     while time.monotonic() < deadline:
-        latest = session_request(session, "GET", url, action, DEFAULT_TIMEOUT)
+        latest = session_request(session, "GET", url, action, DEFAULT_TIMEOUT, headers=headers)
         status = latest.get("status")
         step = latest.get("current_step") or latest.get("validation") or latest.get("error_message")
         print(f"[tdvm-smoke] {action} status={status} detail={step}")
@@ -446,6 +451,8 @@ def run_build(
     if identity_token:
         build_payload["identity_token"] = identity_token
 
+    result_headers = {"Authorization": f"Bearer {identity_token}"} if identity_token else None
+
     response = session_request(
         session,
         "POST",
@@ -467,6 +474,7 @@ def run_build(
         success_status="success",
         timeout_seconds=args.build_timeout,
         poll_interval=args.poll_interval,
+        headers=result_headers,
     )
 
     if not result.get("image_id"):
@@ -526,6 +534,7 @@ def run_publish(
         f"{base_url}/api/publish-result/{build_result['build_id']}",
         "publish-result",
         DEFAULT_TIMEOUT,
+        headers={"Authorization": f"Bearer {identity_token}"} if identity_token else None,
     )
     print_json("Publish result", publish_result)
 
@@ -583,6 +592,7 @@ def run_deploy(
         success_status="success",
         timeout_seconds=args.launch_timeout,
         poll_interval=args.poll_interval,
+        headers={"Authorization": f"Bearer {identity_token}"} if identity_token else None,
     )
     print_json("Launch result", result)
     return result

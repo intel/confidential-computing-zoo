@@ -692,11 +692,13 @@ Ensures Docktap authorization readiness for the specified chain using service de
 
 ```json
 {
-    "chain_id": "docktap-runtime"
+    "chain_id": "docktap-runtime",
+    "identity_token": "<paste token here>"
 }
 ```
 
 - `chain_id` (optional): target chain for the readiness check. For Docktap runtime validation the usual value is `docktap-runtime`.
+- `identity_token`: caller-supplied OIDC/Sigstore token used to satisfy readiness or create a delegation when needed.
 
 **Response (200):**
 
@@ -716,8 +718,9 @@ Ensures Docktap authorization readiness for the specified chain using service de
 **Behavioral notes:**
 
 - In `explicit_delegation` mode, the endpoint reuses an active delegation if it already satisfies the current service policy.
-- If no suitable delegation exists and an ambient OIDC token is available, the endpoint creates a new delegation using the configured default TTL and scope.
-- In `delegation_disabled` mode, the endpoint reports readiness from reusable identity-token availability instead of creating a delegation.
+- If no suitable delegation exists and the caller-supplied `identity_token` is valid, the endpoint creates a new delegation using the configured default TTL and scope.
+- In `delegation_disabled` mode, the endpoint reports readiness from the caller-supplied `identity_token` instead of creating a delegation.
+- Missing or invalid caller tokens are rejected before readiness evaluation begins.
 - If readiness cannot be ensured, the endpoint still returns a structured summary with `ready: false` and a machine-readable `source` instead of forcing callers to interpret raw delegation errors.
 
 ### `POST /api/docktap/delegate`
@@ -729,11 +732,13 @@ Creates a session delegation event that authorizes subsequent Docker operations 
 ```json
 {
     "chain_id": "docktap-runtime",
-  "scope": ["pull", "create", "start", "stop", "rm"]
+        "identity_token": "<paste token here>",
+        "scope": ["pull", "create", "start", "stop", "rm"]
 }
 ```
 
 - `chain_id`: target chain for the delegation. For Docktap runtime validation the usual value is `docktap-runtime`.
+- `identity_token`: caller-supplied OIDC/Sigstore token used to sign the delegation event.
 - `scope` (optional, default all submittable operations): allowed operation types.
 
 **Response (200):**
@@ -748,12 +753,13 @@ Creates a session delegation event that authorizes subsequent Docker operations 
 
 **Error responses:**
 
-- `401 Unauthorized`: no valid OIDC token available.
+- `400 Bad Request`: missing caller `identity_token`.
+- `401 Unauthorized`: invalid caller OIDC token.
 - `500 Internal Server Error`: delegation event creation failed.
 
 **Behavioral notes:**
 
-- The endpoint consumes a valid ambient OIDC token to sign the delegation event via Fulcio.
+- The endpoint consumes the caller-supplied OIDC token to sign the delegation event via Fulcio.
 - The delegation event is recorded on-chain with `event_type: "session.delegation"`.
 - The delegation record is stored in the `delegations` table in `/dev/shm/tc_api_queue/queue.db`.
 - Default TTL is 4 hours (14400 seconds), configurable via `DOCKTAP_DELEGATION_TTL_SECONDS`.

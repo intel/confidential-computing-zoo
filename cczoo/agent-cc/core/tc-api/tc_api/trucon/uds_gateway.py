@@ -161,6 +161,7 @@ class TruConUnixSocketGateway:
             os.unlink(self.socket_path)
 
         self._server = _ThreadedUnixHTTPServer(self.socket_path, _GatewayHandler, self)
+        os.chmod(self.socket_path, 0o600)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True, name="trucon-uds-gateway")
         self._thread.start()
         logger.info("TruCon UDS gateway listening at %s", self.socket_path)

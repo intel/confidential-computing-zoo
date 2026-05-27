@@ -328,7 +328,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     identity_token = run_sigstore_oob_login(root, args)
     print("[atomic-oob] acquired fresh Sigstore identity token")
-    readiness = ensure_docktap_authorization(args.base_url, "docktap-runtime")
+    readiness = ensure_docktap_authorization(args.base_url, "docktap-runtime", identity_token=identity_token)
     print(
         "[atomic-oob] authorization preflight ready "
         f"via {readiness.get('source')} for {readiness.get('chain_id')}"

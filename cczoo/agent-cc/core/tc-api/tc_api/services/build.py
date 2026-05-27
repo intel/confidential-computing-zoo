@@ -18,6 +18,15 @@ from tlog.types import Entry
 logger = logging.getLogger(__name__)
 
 
+def _json_or_text(value: str):
+    if not value:
+        return ""
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
 class BuildServiceMixin:
     def build_image(self, dockerfile_content: str, build_id: str, user_id: str, tlog: TrustedLogAPI, record_id: str) -> bool:
         """Build Docker image from dockerfile content with optimized error handling"""
@@ -179,12 +188,12 @@ class BuildServiceMixin:
                 sbom_log = {
                     "command": " ".join(cmd),
                     "exit_code": result.returncode,
-                    "stdout": json.loads(result.stdout),
-                    "stderr": json.loads(result.stderr),
+                    "stdout": _json_or_text(result.stdout),
+                    "stderr": _json_or_text(result.stderr),
                     "status": "failed",
                     "error": {
                         "type": "subprocess.CalledProcessError",
-                        "message": json.loads(result.stderr)
+                        "message": result.stderr or result.stdout or "SBOM generation failed"
                     }
                 }
                 tlog.add_entry(record_id, Entry(key="sbom_generation", value=sbom_log))

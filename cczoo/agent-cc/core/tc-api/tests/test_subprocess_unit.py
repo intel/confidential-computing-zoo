@@ -100,6 +100,32 @@ def test_generate_sbom_timeout(docker_service):
     assert sbom_path is None
 
 
+def test_create_luks_block_prepares_file_before_allocating_loop(tmp_path):
+    tlog = DummyTlog()
+    service = DockerService()
+    vfs_path = str(tmp_path / "vfs" / "disk.img")
+    calls = []
+
+    def fake_run(cmd, capture_output=True, text=True, timeout=600, check=False):
+        calls.append(cmd)
+        if cmd[:2] == ["truncate", "-s"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if cmd[:3] == ["losetup", "--find", "--show"]:
+            return SimpleNamespace(returncode=0, stdout="/dev/loop7\n", stderr="")
+        if str(cmd[0]).endswith("create_encrypted_vfs.sh"):
+            return SimpleNamespace(returncode=0, stdout="created", stderr="")
+        raise AssertionError(f"Unexpected command: {cmd}")
+
+    with patch("tc_api.services.luks.subprocess.run", side_effect=fake_run):
+        mapper_dir, loop_device = service.create_luks_block("alice", tlog, "rec-1", "pw", "8M", vfs_path)
+
+    assert calls[0] == ["truncate", "-s", "8M", vfs_path]
+    assert calls[1] == ["losetup", "--find", "--show", vfs_path]
+    assert str(calls[2][0]).endswith("create_encrypted_vfs.sh")
+    assert len(mapper_dir) == 32
+    assert loop_device == "/dev/loop7"
+
+
 def test_build_result_shows_failed_when_build_step_fails():
     payload = {
         "dockerfile": "FROM python:3.11-slim\nWORKDIR /app\nCOPY . .",
@@ -111,14 +137,27 @@ def test_build_result_shows_failed_when_build_step_fails():
         "identity_token": "token-123",
     }
 
-    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None):
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "unit-user",
+            "subject": "unit-user",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "unit-user",
+        },
+    ):
         with TestClient(app) as client:
             with patch("tc_api.api.workflows.docker_service.build_image", return_value=False):
                 submit_response = client.post("/api/build-package", json=payload)
                 assert submit_response.status_code == 200
                 build_id = submit_response.json()["build_id"]
 
-            result_response = client.get(f"/api/build-result/{build_id}")
+            result_response = client.get(
+                f"/api/build-result/{build_id}",
+                headers={"Authorization": "Bearer token-123"},
+            )
             assert result_response.status_code == 200
             result_payload = result_response.json()
             assert result_payload["status"] == "failed"

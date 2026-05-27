@@ -2,6 +2,9 @@ import asyncio
 import json
 from unittest.mock import patch
 
+import pytest
+from fastapi import HTTPException
+
 from tc_api.api.delegation_support import (
     DocktapAuthorizationRequest,
     docktap_authorization_ready,
@@ -44,8 +47,18 @@ def test_explicit_mode_returns_existing_delegation_when_policy_is_satisfied():
     with patch.dict("os.environ", {"DOCKTAP_AUTH_MODE": "explicit_delegation"}, clear=False), patch(
         "tc_api.trucon.database.get_active_delegation",
         return_value=delegation,
+    ), patch(
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "docktap-user",
+            "subject": "docktap-user",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "docktap-user",
+        },
     ):
-        response = asyncio.run(docktap_authorization_ready(DocktapAuthorizationRequest(chain_id="docktap-runtime")))
+        response = asyncio.run(docktap_authorization_ready(DocktapAuthorizationRequest(chain_id="docktap-runtime", identity_token="token-123")))
 
     assert response.ready is True
     assert response.source == "existing_delegation"
@@ -64,13 +77,20 @@ def test_explicit_mode_creates_delegation_with_service_defaults_when_needed():
         "tc_api.trucon.database.get_active_delegation",
         return_value=None,
     ), patch(
-        "tc_api.api.delegation_support.resolve_sigstore_identity_token",
-        return_value="token-123",
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "docktap-user",
+            "subject": "docktap-user",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "docktap-user",
+        },
     ), patch(
         "tc_api.docktap.trucon_client.TruConCommitter.submit_delegation",
         return_value=created,
     ) as submit_mock:
-        response = asyncio.run(docktap_authorization_ready(DocktapAuthorizationRequest(chain_id="docktap-runtime")))
+        response = asyncio.run(docktap_authorization_ready(DocktapAuthorizationRequest(chain_id="docktap-runtime", identity_token="token-123")))
 
     assert response.ready is True
     assert response.source == "created_delegation"
@@ -82,26 +102,31 @@ def test_explicit_mode_creates_delegation_with_service_defaults_when_needed():
     )
 
 
-def test_explicit_mode_returns_not_ready_when_no_token_is_available():
+def test_explicit_mode_rejects_missing_token_before_readiness_check():
     with patch.dict("os.environ", {"DOCKTAP_AUTH_MODE": "explicit_delegation"}, clear=False), patch(
         "tc_api.trucon.database.get_active_delegation",
         return_value=None,
-    ), patch(
-        "tc_api.api.delegation_support.resolve_sigstore_identity_token",
-        return_value=None,
     ):
-        response = asyncio.run(docktap_authorization_ready(DocktapAuthorizationRequest(chain_id="docktap-runtime")))
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(docktap_authorization_ready(DocktapAuthorizationRequest(chain_id="docktap-runtime")))
 
-    assert response.ready is False
-    assert response.source == "missing_identity_token"
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["operation"] == "docktap_authorize"
 
 
 def test_delegation_disabled_mode_uses_token_readiness():
     with patch.dict("os.environ", {"DOCKTAP_AUTH_MODE": "delegation_disabled"}, clear=False), patch(
-        "tc_api.docktap.trucon_client.has_reusable_identity_token",
-        return_value=True,
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "docktap-user",
+            "subject": "docktap-user",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "docktap-user",
+        },
     ):
-        response = asyncio.run(docktap_authorization_ready(DocktapAuthorizationRequest(chain_id="docktap-runtime")))
+        response = asyncio.run(docktap_authorization_ready(DocktapAuthorizationRequest(chain_id="docktap-runtime", identity_token="token-123")))
 
     assert response.ready is True
     assert response.source == "identity_token"
@@ -117,12 +142,12 @@ def test_preflight_helper_returns_ready_summary():
         return _Response({"ready": True, "chain_id": "docktap-runtime", "source": "created_delegation"})
 
     with patch("tc_api.docktap.preflight.urllib.request.urlopen", side_effect=_urlopen):
-        summary = ensure_docktap_authorization("http://127.0.0.1:8000", "docktap-runtime")
+        summary = ensure_docktap_authorization("http://127.0.0.1:8000", "docktap-runtime", identity_token="token-123")
 
     assert summary["ready"] is True
     assert captured == {
         "url": "http://127.0.0.1:8000/api/docktap/authorize",
-        "body": {"chain_id": "docktap-runtime"},
+        "body": {"chain_id": "docktap-runtime", "identity_token": "token-123"},
         "timeout": 30.0,
     }
 
@@ -133,7 +158,7 @@ def test_preflight_helper_raises_when_authorization_is_not_ready():
         return_value=_Response({"ready": False, "source": "missing_identity_token", "detail": "log in first"}),
     ):
         try:
-            ensure_docktap_authorization("http://127.0.0.1:8000", "docktap-runtime")
+            ensure_docktap_authorization("http://127.0.0.1:8000", "docktap-runtime", identity_token="token-123")
         except RuntimeError as exc:
             assert "log in first" in str(exc)
         else:

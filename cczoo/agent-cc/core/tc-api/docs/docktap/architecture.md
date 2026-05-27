@@ -189,14 +189,14 @@ Docktap now defaults to `DOCKTAP_AUTH_MODE=explicit_delegation`.
 
 ### Authorization Readiness Flow
 
-1. User, wrapper, or agent calls `POST /api/docktap/authorize` with an optional `chain_id`.
+1. User, wrapper, or agent calls `POST /api/docktap/authorize` with an optional `chain_id` and an explicit caller `identity_token`.
 2. tc_api reuses an active delegation if it already satisfies the current service policy.
-3. If no suitable delegation exists and an ambient OIDC token is available, tc_api creates a `session.delegation` chain event signed via Fulcio.
+3. If no suitable delegation exists and the caller-supplied OIDC token is valid, tc_api creates a `session.delegation` chain event signed via Fulcio.
 4. The delegation record is stored in the existing SQLite database at `/dev/shm/tc_api_queue/queue.db`.
 5. The readiness response returns whether authorization is ready, the effective scope, and delegation expiry when applicable.
 6. Subsequent Docker operations on the authorized chain use the owner key signing path instead of Fulcio when explicit delegation is active.
 
-`POST /api/docktap/delegate` remains available as a lower-level operator/debug endpoint when direct delegation creation is needed.
+`POST /api/docktap/delegate` remains available as a lower-level operator/debug endpoint when direct delegation creation is needed, and it also requires an explicit caller `identity_token`.
 
 ### Signing Path Selection
 
