@@ -230,8 +230,8 @@ def test_handle_client_blocks_submittable_requests_without_active_delegation_by_
     assert payload["message"].startswith("Docktap authorization required before docker pull.\n")
     assert "\nBrowser login: http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap" in payload["message"]
     assert "\nRemote login command: tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json\n" in payload["message"]
-    assert "\nEnsure authorization: curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\"}'\n" in payload["message"]
-    assert "\nDirect delegation fallback: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\"}'\n" in payload["message"]
+    assert "\nEnsure authorization: curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\", \"identity_token\": \"<paste token here>\"}'\n" in payload["message"]
+    assert "\nDirect delegation fallback: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\", \"identity_token\": \"<paste token here>\"}'\n" in payload["message"]
     assert "If tc-client is unavailable, from the tc_api repo root run: bash setup.sh" in payload["message"]
     assert payload["message"].endswith("\nThen retry.")
     assert payload["detail"]["auth_mode"] == "explicit_delegation"
@@ -240,9 +240,9 @@ def test_handle_client_blocks_submittable_requests_without_active_delegation_by_
     assert payload["detail"]["oob_login_command"] == "tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json"
     assert payload["detail"]["oob_login_install_hint"] == "If tc-client is unavailable, from the tc_api repo root run: bash setup.sh, then run ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json"
     assert payload["detail"]["authorize_url"] == "http://127.0.0.1:8000/api/docktap/authorize"
-    assert payload["detail"]["authorize_command"] == "curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\"}'"
+    assert payload["detail"]["authorize_command"] == "curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\", \"identity_token\": \"<paste token here>\"}'"
     assert payload["detail"]["delegate_url"] == "http://127.0.0.1:8000/api/docktap/delegate"
-    assert payload["detail"]["delegate_command"] == "curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\"}'"
+    assert payload["detail"]["delegate_command"] == "curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{\"chain_id\": \"docktap-runtime\", \"identity_token\": \"<paste token here>\"}'"
     assert payload["detail"]["remediation"]["browser_login_url"].startswith("http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap")
     assert payload["detail"]["remediation"]["remote_login_command"] == payload["detail"]["oob_login_command"]
     assert payload["detail"]["remediation"]["remote_login_install_hint"] == payload["detail"]["oob_login_install_hint"]

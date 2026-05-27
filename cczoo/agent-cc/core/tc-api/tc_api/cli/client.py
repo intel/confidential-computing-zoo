@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 import requests
 from tc_api.cli.oidc_verification_code import acquire_sigstore_token_via_oob
-from tc_api.identity.sigstore_identity import cache_sigstore_identity_token
+from tc_api.identity.sigstore_identity import cache_sigstore_identity_token, resolve_sigstore_identity_token
 
 
 DEFAULT_BASE_URL = os.environ.get("TC_API_BASE_URL", "http://localhost:8000")
@@ -42,14 +42,23 @@ class ApiClient:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
 
-    def request_json(self, method: str, path: str, payload: Optional[dict[str, Any]] = None) -> JsonResponse:
+    def request_json(
+        self,
+        method: str,
+        path: str,
+        payload: Optional[dict[str, Any]] = None,
+        headers: Optional[dict[str, str]] = None,
+    ) -> JsonResponse:
         url = f"{self.base_url}{path}"
+        request_headers = {"Accept": "application/json"}
+        if headers:
+            request_headers.update(headers)
         response = requests.request(
             method=method.upper(),
             url=url,
             json=payload,
             timeout=self.timeout_seconds,
-            headers={"Accept": "application/json"},
+            headers=request_headers,
         )
         try:
             data = response.json()
@@ -99,14 +108,17 @@ def _build_parser() -> argparse.ArgumentParser:
     add_payload_subcommand("publish", "POST /api/publish-package")
     add_payload_subcommand("deploy", "POST /api/deploy-launch")
 
-    build_result = subparsers.add_parser("build-result", help="GET /api/build-result/{build_id}")
+    build_result = subparsers.add_parser("build-result", help="GET /api/build-result/{build_id} (requires owner Bearer token)")
     build_result.add_argument("build_id")
 
-    publish_result = subparsers.add_parser("publish-result", help="GET /api/publish-result/{build_id}")
+    publish_result = subparsers.add_parser("publish-result", help="GET /api/publish-result/{build_id} (requires owner Bearer token)")
     publish_result.add_argument("build_id")
 
-    launch_result = subparsers.add_parser("launch-result", help="GET /api/launch-result/{launch_id}")
+    launch_result = subparsers.add_parser("launch-result", help="GET /api/launch-result/{launch_id} (requires owner Bearer token)")
     launch_result.add_argument("launch_id")
+
+    luks_result = subparsers.add_parser("luks-result", help="GET /api/luks-result/{user_id} (requires owner Bearer token)")
+    luks_result.add_argument("user_id")
 
     tlog = subparsers.add_parser("transparency-log", help="GET /api/transparency-log/{log_id}")
     tlog.add_argument("log_id")
@@ -417,6 +429,18 @@ def _complete_sigstore_login(
     )
 
 
+def _authorization_headers(identity_token: Optional[str]) -> Optional[dict[str, str]]:
+    token = (identity_token or "").strip()
+    if not token:
+        return None
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _resolve_cached_authorization_headers(operation: str) -> Optional[dict[str, str]]:
+    token = resolve_sigstore_identity_token(operation, allow_interactive=False)
+    return _authorization_headers(token)
+
+
 def _request_with_sigstore_retry(
     client: ApiClient,
     method: str,
@@ -426,8 +450,13 @@ def _request_with_sigstore_retry(
     open_browser: bool,
     browser_base_url: str,
     sigstore_login_mode: str,
+    use_authorization_header: bool = False,
 ) -> Any:
-    response = client.request_json(method, path, payload)
+    request_headers = None
+    if use_authorization_header and sigstore_operation is not None:
+        request_headers = _resolve_cached_authorization_headers(sigstore_operation)
+
+    response = client.request_json(method, path, payload, headers=request_headers)
     if response.ok:
         return response.data
 
@@ -435,8 +464,7 @@ def _request_with_sigstore_retry(
     if detail is None or sigstore_operation is None:
         raise ClientError(json.dumps(response.data, ensure_ascii=False))
 
-    retry_payload = dict(payload or {})
-    retry_payload["identity_token"] = _complete_sigstore_login(
+    refreshed_token = _complete_sigstore_login(
         client,
         detail,
         operation=sigstore_operation,
@@ -444,7 +472,15 @@ def _request_with_sigstore_retry(
         browser_base_url=browser_base_url,
         sigstore_login_mode=sigstore_login_mode,
     )
-    retry_response = client.request_json(method, path, retry_payload)
+    retry_payload = payload
+    retry_headers = request_headers
+    if use_authorization_header:
+        retry_headers = _authorization_headers(refreshed_token)
+    else:
+        retry_payload = dict(payload or {})
+        retry_payload["identity_token"] = refreshed_token
+
+    retry_response = client.request_json(method, path, retry_payload, headers=retry_headers)
     if not retry_response.ok:
         raise ClientError(json.dumps(retry_response.data, ensure_ascii=False))
     return retry_response.data
@@ -492,11 +528,13 @@ def _run_command(args: argparse.Namespace) -> Any:
         payload = _load_json_payload(args)
         return _request_with_sigstore_retry(client, "POST", "/api/deploy-launch", payload, "launch", args.open_browser, args.browser_base_url, args.sigstore_login)
     if args.command == "build-result":
-        return _request_with_sigstore_retry(client, "GET", f"/api/build-result/{args.build_id}", None, None, args.open_browser, args.browser_base_url, args.sigstore_login)
+        return _request_with_sigstore_retry(client, "GET", f"/api/build-result/{args.build_id}", None, "build_result", args.open_browser, args.browser_base_url, args.sigstore_login, use_authorization_header=True)
     if args.command == "publish-result":
-        return _request_with_sigstore_retry(client, "GET", f"/api/publish-result/{args.build_id}", None, None, args.open_browser, args.browser_base_url, args.sigstore_login)
+        return _request_with_sigstore_retry(client, "GET", f"/api/publish-result/{args.build_id}", None, "publish_result", args.open_browser, args.browser_base_url, args.sigstore_login, use_authorization_header=True)
     if args.command == "launch-result":
-        return _request_with_sigstore_retry(client, "GET", f"/api/launch-result/{args.launch_id}", None, None, args.open_browser, args.browser_base_url, args.sigstore_login)
+        return _request_with_sigstore_retry(client, "GET", f"/api/launch-result/{args.launch_id}", None, "launch_result", args.open_browser, args.browser_base_url, args.sigstore_login, use_authorization_header=True)
+    if args.command == "luks-result":
+        return _request_with_sigstore_retry(client, "GET", f"/api/luks-result/{args.user_id}", None, "luks_result", args.open_browser, args.browser_base_url, args.sigstore_login, use_authorization_header=True)
     if args.command == "transparency-log":
         return _request_with_sigstore_retry(client, "GET", f"/api/transparency-log/{args.log_id}", None, None, args.open_browser, args.browser_base_url, args.sigstore_login)
     raise ClientError(f"Unsupported command: {args.command}")

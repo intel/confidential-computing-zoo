@@ -28,29 +28,33 @@ fi
 
 
 # create virtual volume
-truncate -s ${VFS_SIZE} ${VFS_PATH}
+truncate -s "$VFS_SIZE" "$VFS_PATH"
 echo "Create ${VFS_SIZE} block file at ${VFS_PATH}"
 
 # bind loop device to virtual volume
 LOOP_DEVICE=$5
-losetup ${LOOP_DEVICE} ${VFS_PATH}
-echo "Bind ${VFS_PATH} to loop device ${LOOP_DEVICE}"
+if losetup -j "$VFS_PATH" | grep -q "^$LOOP_DEVICE:"; then
+    echo "Reuse loop device ${LOOP_DEVICE} for ${VFS_PATH}"
+else
+    losetup "$LOOP_DEVICE" "$VFS_PATH"
+    echo "Bind ${VFS_PATH} to loop device ${LOOP_DEVICE}"
+fi
 
 # encrypt loop device in luks format, press "YES"
-echo '$3\n$3\n' | cryptsetup --debug -y -v luksFormat -s 512 -c aes-xts-plain64 ${LOOP_DEVICE} --batch-mode
+printf '%s\n%s\n' "$passwd" "$passwd" | cryptsetup --debug -y -v luksFormat -s 512 -c aes-xts-plain64 "$LOOP_DEVICE" --batch-mode
 echo "Encrypt loop device ${LOOP_DEVICE} done"
 
 # luksOpen mapper
 MAPPER_PATH="/dev/mapper/$map"
 
 echo "luksOpen ${LOOP_DEVICE} to luks mapper ${MAPPER_PATH} via password"
-echo '$3\n$3\n' | cryptsetup luksOpen ${LOOP_DEVICE} $map
+printf '%s\n' "$passwd" | cryptsetup luksOpen "$LOOP_DEVICE" "$map"
 
 echo "Format ${MAPPER_PATH} to ext4"
-mkfs.ext4 ${MAPPER_PATH}
+mkfs.ext4 "$MAPPER_PATH"
 sleep 5
 echo "luksClose ${MAPPER_PATH} via password"
-cryptsetup luksClose ${MAPPER_PATH} || true
+cryptsetup luksClose "$MAPPER_PATH" || true
 
-losetup -d ${LOOP_DEVICE}
+losetup -d "$LOOP_DEVICE"
 echo "Unbind ${LOOP_DEVICE}"

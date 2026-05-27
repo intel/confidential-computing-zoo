@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -92,3 +93,24 @@ def test_uds_gateway_rejects_missing_caller_service(tmp_path):
 
     assert response.status == 401
     assert payload["detail"] == "Invalid or missing caller service"
+
+
+def test_uds_gateway_socket_permissions_are_owner_only(tmp_path):
+    echo_server, echo_thread = _start_echo_server()
+    socket_path = str(tmp_path / "trucon.sock")
+    gateway = TruConUnixSocketGateway(
+        socket_path=socket_path,
+        internal_proxy_secret="proxy-secret",
+        forward_port=echo_server.server_port,
+    )
+    gateway.start()
+
+    try:
+        mode = os.stat(socket_path).st_mode & 0o777
+    finally:
+        gateway.stop()
+        echo_server.shutdown()
+        echo_server.server_close()
+        echo_thread.join(timeout=5)
+
+    assert mode == 0o600

@@ -1,7 +1,48 @@
 from enum import Enum
+from pathlib import Path
+import re
 from typing import Optional, Dict, List, Any
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
+
+from .config import LUKS_MOUNT_BASE_DIR, LUKS_VFS_BASE_DIR
+from .utils.registry import validate_external_image_reference
+
+
+_LOOP_DEVICE_RE = re.compile(r"^/dev/loop\d+$")
+_MAPPER_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,63}$")
+
+
+def _normalize_path_in_base(path_value: str, base_dir: str, field_name: str) -> str:
+    path = Path(path_value)
+    if not path.is_absolute():
+        raise ValueError(f"{field_name} must be an absolute path")
+    resolved_path = path.resolve(strict=False)
+    resolved_base = Path(base_dir).resolve(strict=False)
+    try:
+        resolved_path.relative_to(resolved_base)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must stay under {resolved_base}") from exc
+    return str(resolved_path)
+
+
+def _validate_mapper_name(value: str) -> str:
+    if not _MAPPER_NAME_RE.fullmatch(value):
+        raise ValueError("mapper_dir must contain only letters, numbers, dot, dash, or underscore")
+    return value
+
+
+def _validate_loop_device(value: str) -> str:
+    if not _LOOP_DEVICE_RE.fullmatch(value):
+        raise ValueError("loop_device must be a /dev/loopN path")
+    return value
+
+
+def _validate_runtime_id(value: str, field_name: str) -> str:
+    if not _RUNTIME_ID_RE.fullmatch(value):
+        raise ValueError(f"{field_name} must contain only letters, numbers, and dashes")
+    return value
 
 
 class BuildStatus(str, Enum):
@@ -80,6 +121,18 @@ class PublishPackageRequest(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    @field_validator("build_id")
+    @classmethod
+    def validate_build_id(cls, value: str) -> str:
+        return _validate_runtime_id(value, "build_id")
+
+    @field_validator("image_id")
+    @classmethod
+    def validate_publish_image_id(cls, value: str) -> str:
+        if not value.startswith("oci:"):
+            raise ValueError("image_id must use the oci: transport for publish requests")
+        return value
+
 class PublishPackageResponse(BaseModel):
     build_id: str
     status: str
@@ -110,6 +163,13 @@ class LaunchRequest(BaseModel):
     attestation_required: bool = True
     identity_token: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("image_url")
+    @classmethod
+    def validate_image_url(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return validate_external_image_reference(value, "image_url")
 
 class LaunchResponse(BaseModel):
     launch_id: str
@@ -168,16 +228,31 @@ class GetTransparencyRequest(BaseModel):
     build_id: str
     launch_id: str
 
+    @field_validator("build_id")
+    @classmethod
+    def validate_build_id(cls, value: str) -> str:
+        return _validate_runtime_id(value, "build_id")
+
+    @field_validator("launch_id")
+    @classmethod
+    def validate_launch_id(cls, value: str) -> str:
+        return _validate_runtime_id(value, "launch_id")
+
 class CreateLuksRequest(BaseModel):
     user_id: str
     vfs_path: str
     vfs_size: str
     passwd: str
+    identity_token: Optional[str] = None
+
+    @field_validator("vfs_path")
+    @classmethod
+    def validate_vfs_path(cls, value: str) -> str:
+        return _normalize_path_in_base(value, LUKS_VFS_BASE_DIR, "vfs_path")
 
 
 class CreateLuksResponse(BaseModel):
     user_id: str
-    passwd: str
     vfs_path: str
     vfs_size: str
     mapper_dir: str
@@ -187,7 +262,6 @@ class CreateLuksResponse(BaseModel):
 class LuksResult(BaseResult):
     status: str = "creating"
     step: Optional[str] = None
-    passwd: Optional[str] = None
     mapper_dir: Optional[str] = None
     vfs_path: Optional[str] = None
     vfs_size: Optional[str] = None
@@ -201,11 +275,31 @@ class MountLuksRequest(BaseModel):
     mapper_dir: str
     loop_device: str
     mount_path: str
+    identity_token: Optional[str] = None
+
+    @field_validator("vfs_path")
+    @classmethod
+    def validate_vfs_path(cls, value: str) -> str:
+        return _normalize_path_in_base(value, LUKS_VFS_BASE_DIR, "vfs_path")
+
+    @field_validator("mount_path")
+    @classmethod
+    def validate_mount_path(cls, value: str) -> str:
+        return _normalize_path_in_base(value, LUKS_MOUNT_BASE_DIR, "mount_path")
+
+    @field_validator("mapper_dir")
+    @classmethod
+    def validate_mapper_dir(cls, value: str) -> str:
+        return _validate_mapper_name(value)
+
+    @field_validator("loop_device")
+    @classmethod
+    def validate_loop_device(cls, value: str) -> str:
+        return _validate_loop_device(value)
 
 
 class MountLuksResponse(BaseModel):
     user_id: str
-    passwd: str
     vfs_path: str
     loop_device: str
     mapper_dir: str
@@ -217,6 +311,22 @@ class UnmountLuksRequest(BaseModel):
     mapper_dir: str
     loop_device: str
     mount_path: str
+    identity_token: Optional[str] = None
+
+    @field_validator("mount_path")
+    @classmethod
+    def validate_mount_path(cls, value: str) -> str:
+        return _normalize_path_in_base(value, LUKS_MOUNT_BASE_DIR, "mount_path")
+
+    @field_validator("mapper_dir")
+    @classmethod
+    def validate_mapper_dir(cls, value: str) -> str:
+        return _validate_mapper_name(value)
+
+    @field_validator("loop_device")
+    @classmethod
+    def validate_loop_device(cls, value: str) -> str:
+        return _validate_loop_device(value)
 
 class UnmountLuksResponse(BaseModel):
     user_id: str

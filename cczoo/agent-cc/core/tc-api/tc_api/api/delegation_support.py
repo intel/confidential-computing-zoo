@@ -1,9 +1,9 @@
 from typing import List, Optional
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from pydantic import BaseModel
 
-from ..identity.sigstore_identity import resolve_sigstore_identity_token
+from .request_auth import get_authenticated_caller
 from .runtime import TRUCON_URL, logger
 from ..docktap import config as docktap_cfg
 
@@ -24,6 +24,7 @@ class DelegateResponse(BaseModel):
 
 class DocktapAuthorizationRequest(BaseModel):
     chain_id: Optional[str] = None
+    identity_token: Optional[str] = None
 
 
 class DocktapAuthorizationResponse(BaseModel):
@@ -71,17 +72,15 @@ def _build_authorization_response(
     )
 
 
-async def docktap_delegate(request: DelegateRequest):
-    identity_token_str = request.identity_token
-    if not identity_token_str:
-        identity_token_str = resolve_sigstore_identity_token(
-            "docktap",
-            logger=logger,
-            allow_interactive=False,
-            require_token=False,
-        )
-    if not identity_token_str:
-        raise HTTPException(status_code=401, detail="No OIDC identity token available. Please log in first.")
+async def docktap_delegate(request: DelegateRequest, http_request: Optional[Request] = None):
+    caller = get_authenticated_caller(
+        "docktap_delegate",
+        request=http_request,
+        user_id="",
+        identity_token=request.identity_token,
+    )
+    identity_token_str = caller.identity_token
+    request.identity_token = identity_token_str
 
     from tc_api.docktap.trucon_client import TruConCommitter
 
@@ -100,8 +99,15 @@ async def docktap_delegate(request: DelegateRequest):
     return DelegateResponse(**result)
 
 
-async def docktap_authorization_ready(request: DocktapAuthorizationRequest) -> DocktapAuthorizationResponse:
-    from tc_api.docktap.trucon_client import TruConCommitter, has_reusable_identity_token
+async def docktap_authorization_ready(request: DocktapAuthorizationRequest, http_request: Optional[Request] = None) -> DocktapAuthorizationResponse:
+    caller = get_authenticated_caller(
+        "docktap_authorize",
+        request=http_request,
+        user_id="",
+        identity_token=request.identity_token,
+    )
+
+    from tc_api.docktap.trucon_client import TruConCommitter
     from tc_api.trucon.database import get_active_delegation
 
     chain_id = _resolve_chain_id(request.chain_id)
@@ -123,42 +129,17 @@ async def docktap_authorization_ready(request: DocktapAuthorizationRequest) -> D
         )
 
     if not docktap_cfg.delegation_required():
-        if has_reusable_identity_token():
-            return _build_authorization_response(
-                ready=True,
-                chain_id=chain_id,
-                source="identity_token",
-            )
         return _build_authorization_response(
-            ready=False,
+            ready=True,
             chain_id=chain_id,
-            source="missing_identity_token",
-            detail="No reusable Sigstore identity token available for Docktap authorization.",
-        )
-
-    identity_token_str = resolve_sigstore_identity_token(
-        "docktap",
-        logger=logger,
-        allow_interactive=False,
-        require_token=False,
-    )
-    if not identity_token_str:
-        detail = "No OIDC identity token available. Please log in first."
-        if delegation is not None:
-            detail = "Existing delegation does not satisfy the current service policy and no OIDC identity token is available to refresh it."
-        return _build_authorization_response(
-            ready=False,
-            chain_id=chain_id,
-            source="missing_identity_token",
-            scope=required_scope,
-            detail=detail,
+            source="identity_token",
         )
 
     committer = TruConCommitter(trucon_url=TRUCON_URL, start_retry_worker=False)
     try:
         result = committer.submit_delegation(
             chain_id=chain_id,
-            identity_token_str=identity_token_str,
+            identity_token_str=caller.identity_token,
             scope=None,
             ttl_seconds=None,
         )

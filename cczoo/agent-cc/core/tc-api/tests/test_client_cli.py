@@ -18,8 +18,8 @@ class FakeResponse:
 def test_build_command_retries_after_sigstore_login(monkeypatch, capsys):
     calls = []
 
-    def fake_request_json(self, method, path, payload=None):
-        calls.append((method, path, payload))
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
         if len(calls) == 1:
             return FakeResponse(
                 400,
@@ -64,8 +64,8 @@ def test_build_command_retries_after_sigstore_login(monkeypatch, capsys):
 def test_build_command_rewrites_browser_url(monkeypatch, capsys):
     calls = []
 
-    def fake_request_json(self, method, path, payload=None):
-        calls.append((method, path, payload))
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
         if len(calls) == 1:
             return FakeResponse(
                 400,
@@ -105,8 +105,8 @@ def test_build_command_rewrites_browser_url(monkeypatch, capsys):
 def test_build_command_auto_falls_back_to_oob(monkeypatch, capsys):
     calls = []
 
-    def fake_request_json(self, method, path, payload=None):
-        calls.append((method, path, payload))
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
         if len(calls) == 1:
             return FakeResponse(
                 400,
@@ -142,8 +142,10 @@ def test_build_command_auto_falls_back_to_oob(monkeypatch, capsys):
 def test_build_result_command_fetches_expected_path(monkeypatch, capsys):
     calls = []
 
-    def fake_request_json(self, method, path, payload=None):
-        calls.append((method, path, payload))
+    monkeypatch.setattr(client_mod, "resolve_sigstore_identity_token", lambda *args, **kwargs: "cached-token")
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
         return FakeResponse(200, {"build_id": "bld-123", "status": "success"})
 
     monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
@@ -152,7 +154,77 @@ def test_build_result_command_fetches_expected_path(monkeypatch, capsys):
 
     captured = capsys.readouterr()
     assert rc == 0
-    assert calls == [("GET", "/api/build-result/bld-123", None)]
+    assert calls == [(
+        "GET",
+        "/api/build-result/bld-123",
+        None,
+        {"Authorization": "Bearer cached-token"},
+    )]
+    assert '"status": "success"' in captured.out
+
+
+def test_luks_result_command_fetches_expected_path(monkeypatch, capsys):
+    calls = []
+
+    monkeypatch.setattr(client_mod, "resolve_sigstore_identity_token", lambda *args, **kwargs: "cached-token")
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        return FakeResponse(200, {"user_id": "alice@example.com", "status": "success"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+
+    rc = client_mod.main(["luks-result", "alice@example.com"])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls == [(
+        "GET",
+        "/api/luks-result/alice@example.com",
+        None,
+        {"Authorization": "Bearer cached-token"},
+    )]
+    assert '"status": "success"' in captured.out
+
+
+def test_build_result_command_retries_with_authorization_header(monkeypatch, capsys):
+    calls = []
+
+    monkeypatch.setattr(client_mod, "resolve_sigstore_identity_token", lambda *args, **kwargs: None)
+    monkeypatch.setattr(client_mod.time, "sleep", lambda _seconds: None)
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        if len(calls) == 1:
+            return FakeResponse(
+                400,
+                {
+                    "detail": {
+                        "error": "Sigstore identity token is required for build_result.",
+                        "operation": "build_result",
+                        "after_login_open_url": "http://localhost:8000/api/sigstore/interactive-login?operation=build_result&session_id=sess-123",
+                        "session_id": "sess-123",
+                        "login_status_url": "/api/sigstore/login-status/sess-123",
+                    }
+                },
+            )
+        if len(calls) == 2:
+            return FakeResponse(200, {"status": "token_ready", "identity_token": "token-123"})
+        return FakeResponse(200, {"build_id": "bld-123", "status": "success"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+
+    rc = client_mod.main(["--sigstore-login", "server-session", "build-result", "bld-123"])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls[0] == ("GET", "/api/build-result/bld-123", None, None)
+    assert calls[2] == (
+        "GET",
+        "/api/build-result/bld-123",
+        None,
+        {"Authorization": "Bearer token-123"},
+    )
     assert '"status": "success"' in captured.out
 
 
@@ -160,7 +232,7 @@ def test_publish_command_reads_payload_file(monkeypatch, tmp_path, capsys):
     payload_path = tmp_path / "publish.json"
     payload_path.write_text(json.dumps({"build_id": "bld-123", "user_id": "alice"}), encoding="utf-8")
 
-    def fake_request_json(self, method, path, payload=None):
+    def fake_request_json(self, method, path, payload=None, headers=None):
         assert method == "POST"
         assert path == "/api/publish-package"
         assert payload == {"build_id": "bld-123", "user_id": "alice"}
@@ -176,7 +248,7 @@ def test_publish_command_reads_payload_file(monkeypatch, tmp_path, capsys):
 
 
 def test_client_returns_nonzero_on_server_error(monkeypatch, capsys):
-    def fake_request_json(self, method, path, payload=None):
+    def fake_request_json(self, method, path, payload=None, headers=None):
         return FakeResponse(500, {"error": "boom"})
 
     monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
@@ -255,8 +327,8 @@ def test_sigstore_token_command_uses_server_session_flow(monkeypatch, capsys):
     calls = []
     cached = {}
 
-    def fake_request_json(self, method, path, payload=None):
-        calls.append((method, path, payload))
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
         if len(calls) == 1:
             return FakeResponse(
                 200,
@@ -286,7 +358,7 @@ def test_sigstore_token_command_uses_server_session_flow(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert rc == 0
     assert 'export DOCKTAP_SIGSTORE_IDENTITY_TOKEN="token-xyz"' in captured.out
-    assert calls[0] == ("GET", "/api/sigstore/identity-token?operation=docktap&flow=server-callback", None)
+    assert calls[0] == ("GET", "/api/sigstore/identity-token?operation=docktap&flow=server-callback", None, None)
     assert cached["token"] == "token-xyz"
 
 

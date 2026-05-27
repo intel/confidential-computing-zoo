@@ -160,10 +160,10 @@ Current operator contract:
 
 Recommended flows:
 
-- Same-machine browser access: complete browser login, call `POST /api/docktap/authorize`, then retry the Docker command.
+- Same-machine browser access: complete browser login, capture the returned `identity_token`, call `POST /api/docktap/authorize` with that token, then retry the Docker command.
 - Remote SSH with browser reachability: set `DOCKTAP_ATTESTATION_BROWSER_BASE_URL` before startup.
-- Remote SSH without callback reachability: use the out-of-band `tc-client` login command from the challenge, then call `POST /api/docktap/authorize`.
-- Non-interactive launchers: pre-acquire a token and call `POST /api/docktap/authorize` up front, or set `DOCKTAP_AUTH_MODE=delegation_disabled` if delegation reuse is intentionally forbidden.
+- Remote SSH without callback reachability: use the out-of-band `tc-client` login command from the challenge, then call `POST /api/docktap/authorize` with the emitted `identity_token`.
+- Non-interactive launchers: pre-acquire a token and call `POST /api/docktap/authorize` up front with that `identity_token`, or set `DOCKTAP_AUTH_MODE=delegation_disabled` if delegation reuse is intentionally forbidden.
 
 Example OOB flow:
 
@@ -172,7 +172,7 @@ Example OOB flow:
 tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
 curl -X POST http://127.0.0.1:8000/api/docktap/authorize \
 	-H 'Content-Type: application/json' \
-	-d '{"chain_id": "docktap-runtime"}'
+	-d '{"chain_id": "docktap-runtime", "identity_token": "<paste token here>"}'
 docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
 ```
 
@@ -182,8 +182,8 @@ Example challenge error:
 Error response from daemon: Docktap authorization required before docker pull.
 Browser login: http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap&session_id=<session-id>
 Remote login command: tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
-Ensure authorization: curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{"chain_id": "docktap-runtime"}'
-Direct delegation fallback: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{"chain_id": "docktap-runtime"}'
+Ensure authorization: curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{"chain_id": "docktap-runtime", "identity_token": "<paste token here>"}'
+Direct delegation fallback: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{"chain_id": "docktap-runtime", "identity_token": "<paste token here>"}'
 If tc-client is unavailable, from the tc_api repo root run: bash setup.sh
 Then run: ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
 Then retry.
@@ -264,9 +264,48 @@ Common API surfaces:
 | Build | `POST /api/build-package`, `GET /api/build-result/{build_id}` |
 | Publish | `POST /api/publish-package`, `GET /api/publish-result/{build_id}` |
 | Launch | `POST /api/deploy-launch`, `GET /api/launch-result/{launch_id}` |
+| LUKS | `POST /api/create_luks`, `POST /api/mount_luks`, `POST /api/unmount_luks`, `GET /api/luks-result/{user_id}` |
 | Transparency | `GET /api/transparency-log/{log_id}`, `POST /api/get-summaryTransparencylog` |
 
+All result-query endpoints now require `Authorization: Bearer <identity_token>` for the owning caller. `tc-client` reuses a cached Sigstore token when available and otherwise falls back to the existing interactive login flow.
+
 For local manual checks, run the service and use the built-in FastAPI docs or the manual tests in `tests/test_api.py`.
+
+## Result Query Examples
+
+Refresh or acquire a caller token first:
+
+```shell
+tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+```
+
+Result queries over raw HTTP must send the token as a Bearer header:
+
+```shell
+curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/build-result/<build_id>
+curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/publish-result/<build_id>
+curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/launch-result/<launch_id>
+curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/luks-result/<user_id>
+```
+
+Equivalent `tc-client` commands:
+
+```shell
+tc-client --base-url http://127.0.0.1:8000 build-result <build_id>
+tc-client --base-url http://127.0.0.1:8000 publish-result <build_id>
+tc-client --base-url http://127.0.0.1:8000 launch-result <launch_id>
+tc-client --base-url http://127.0.0.1:8000 luks-result <user_id>
+```
+
+## LUKS API Example
+
+LUKS write endpoints follow the same explicit caller-token contract as the build, publish, launch, and Docktap write paths.
+
+```shell
+curl -X POST http://127.0.0.1:8000/api/create_luks \
+	-H 'Content-Type: application/json' \
+	-d '{"user_id": "alice@example.com", "vfs_path": "/absolute/path/under/luks/vfs/alice.img", "vfs_size": "1G", "passwd": "<luks passphrase>", "identity_token": "<paste token here>"}'
+```
 
 ## Docktap Environment Variables
 

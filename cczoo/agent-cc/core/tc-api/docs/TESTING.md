@@ -23,6 +23,34 @@ python -m tc_api.api.app
 
 The service should be running on `http://localhost:8000`
 
+## Authenticated Result Queries
+
+`build-result`, `publish-result`, `launch-result`, and `luks-result` now require the owning caller's Sigstore token in `Authorization: Bearer <identity_token>`.
+
+Fetch or refresh a token first:
+
+```bash
+./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+```
+
+Manual HTTP checks:
+
+```bash
+curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/build-result/<build_id>
+curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/publish-result/<build_id>
+curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/launch-result/<launch_id>
+curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/luks-result/<user_id>
+```
+
+Equivalent CLI checks:
+
+```bash
+./venv/bin/tc-client --base-url http://127.0.0.1:8000 build-result <build_id>
+./venv/bin/tc-client --base-url http://127.0.0.1:8000 publish-result <build_id>
+./venv/bin/tc-client --base-url http://127.0.0.1:8000 launch-result <launch_id>
+./venv/bin/tc-client --base-url http://127.0.0.1:8000 luks-result <user_id>
+```
+
 ## Running Tests
 
 Use a single entrypoint for all test flows:
@@ -100,7 +128,7 @@ Keep the supported OpenClaw validation path narrow:
 ./start.sh restart
 curl -X POST http://127.0.0.1:8000/api/docktap/authorize \
 	-H 'Content-Type: application/json' \
-	-d '{"chain_id": "docktap-runtime"}'
+	-d '{"chain_id": "docktap-runtime", "identity_token": "<paste token here>"}'
 docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
 PYTHONPATH=$PWD ./venv/bin/python scripts/verify_current_attested_head.py docktap-runtime
 ```
@@ -135,7 +163,7 @@ In another terminal:
 ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
 curl -fsS -X POST http://127.0.0.1:8000/api/docktap/authorize \
 	-H 'Content-Type: application/json' \
-	-d '{"chain_id":"docktap-runtime"}'
+	-d '{"chain_id":"docktap-runtime", "identity_token":"<paste token here>"}'
 DOCKER_HOST=unix:///var/run/docktap/docker.sock docker pull hello-world:latest
 PYTHONPATH=$PWD ./venv/bin/python scripts/verify_current_attested_head.py docktap-runtime
 ```

@@ -339,13 +339,13 @@ class DockerProxyServer:
             "curl -X POST "
             f"{authorize_url} "
             "-H 'Content-Type: application/json' "
-            f"-d '{{\"chain_id\": \"{_cfg.RUNTIME_CHAIN_ID}\"}}'"
+            f"-d '{{\"chain_id\": \"{_cfg.RUNTIME_CHAIN_ID}\", \"identity_token\": \"<paste token here>\"}}'"
         )
         delegate_command = (
             "curl -X POST "
             f"{delegate_url} "
             "-H 'Content-Type: application/json' "
-            f"-d '{{\"chain_id\": \"{_cfg.RUNTIME_CHAIN_ID}\"}}'"
+            f"-d '{{\"chain_id\": \"{_cfg.RUNTIME_CHAIN_ID}\", \"identity_token\": \"<paste token here>\"}}'"
         )
         install_hint = (
             "If tc-client is unavailable, from the tc_api repo root run: bash setup.sh, "

@@ -1,14 +1,34 @@
 import base64
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 import tc_api.api.runtime as runtime_mod
+import tc_api.api.request_auth as request_auth_mod
 import tc_api.api.workflows as workflow_mod
 import tc_api.services.build as services_mod
 from tc_api.api.app import app
+
+
+def _jwt(subject: str) -> str:
+    header = {"alg": "none", "typ": "JWT"}
+    payload = {
+        "iss": "https://oauth2.sigstore.dev/auth",
+        "sub": subject,
+        "aud": "sigstore",
+        "iat": 2_000_000_000,
+        "exp": 2_000_000_300,
+    }
+
+    def enc(value: dict) -> str:
+        raw = json.dumps(value, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+
+    return f"{enc(header)}.{enc(payload)}.sig"
 
 
 class ControlPlaneHarness:
@@ -49,14 +69,25 @@ class ControlPlaneHarness:
             lambda *args, **kwargs: None,
         )
         self._monkeypatch.setattr(
-            workflow_mod,
-            "resolve_sigstore_identity_token",
-            lambda *args, **kwargs: "fake-identity-token",
+            request_auth_mod,
+            "inspect_identity_token",
+            lambda _token, expected_identity=None: {
+                "valid_for_sigstore": True,
+                "errors": [],
+                "derived_identity": expected_identity,
+                "subject": expected_identity,
+                "issuer": "https://oauth2.sigstore.dev/auth",
+                "email": expected_identity,
+            },
         )
-        self._monkeypatch.setattr(
-            workflow_mod,
-            "_resolve_required_sigstore_identity_token",
-            lambda operation, supplied_token, request=None: supplied_token or "fake-identity-token",
+
+    def seed_build_result(self, *, user_id: str, build_id: str, image_id: str) -> None:
+        workflow_mod.docker_service.update_build_status(
+            user_id,
+            build_id,
+            "success",
+            image_id=image_id,
+            image_url=image_id,
         )
 
     def client(self) -> TestClient:
@@ -162,6 +193,7 @@ def _publish_payload():
         "sbom_url": "/tmp/fake-sbom.json",
         "image_id": "oci:/tmp/test-image",
         "user_id": "publish-user",
+        "identity_token": "fake-identity-token",
         "log_evidence": True,
     }
 
@@ -172,7 +204,12 @@ def _launch_payload():
         "user_id": "launch-user",
         "image_url": "docker.io/example/test:latest-encrypted",
         "attestation_required": False,
+        "identity_token": "fake-identity-token",
     }
+
+
+def _auth_headers(token: str = "fake-identity-token"):
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.mark.parametrize(
@@ -192,7 +229,7 @@ def test_build_flow_preserves_result_fields(harness, commit_success, verify_stat
         assert data["status"] == "submitted"
         assert data["user_id"] == "build-user"
 
-        result = client.get("/api/build-result/bld-test123")
+        result = client.get("/api/build-result/bld-test123", headers=_auth_headers())
 
     assert result.status_code == 200
     result_data = result.json()
@@ -216,7 +253,7 @@ def test_build_flow_fails_when_transparency_commit_fails(harness, monkeypatch):
         response = client.post("/api/build-package", json=_build_payload())
 
         assert response.status_code == 200
-        result = client.get("/api/build-result/bld-test123")
+        result = client.get("/api/build-result/bld-test123", headers=_auth_headers())
 
     assert result.status_code == 200
     result_data = result.json()
@@ -235,9 +272,13 @@ def test_build_flow_fails_when_transparency_commit_fails(harness, monkeypatch):
 def test_publish_flow_preserves_result_fields(harness, commit_success, verify_status):
     harness.patch_publish_success()
     harness.patch_trucon(commit_success=commit_success, verify_status=verify_status)
+    image_id = f"oci:{harness._build_dir / 'bld-test123' / 'plain'}"
+    harness.seed_build_result(user_id="publish-user", build_id="bld-test123", image_id=image_id)
 
     with harness.client() as client:
-        response = client.post("/api/publish-package", json=_publish_payload())
+        payload = _publish_payload()
+        payload["image_id"] = image_id
+        response = client.post("/api/publish-package", json=payload)
 
         assert response.status_code == 200
         data = response.json()
@@ -245,9 +286,9 @@ def test_publish_flow_preserves_result_fields(harness, commit_success, verify_st
         assert data["status"] == "success"
         assert data["user_id"] == "publish-user"
         assert data["transparencyLog_verify"] == verify_status
-        assert data["image_id"] == "test-image"
+        assert data["image_id"] == "plain"
 
-        result = client.get("/api/publish-result/bld-test123")
+        result = client.get("/api/publish-result/bld-test123", headers=_auth_headers())
 
     assert result.status_code == 200
     result_data = result.json()
@@ -255,6 +296,21 @@ def test_publish_flow_preserves_result_fields(harness, commit_success, verify_st
     assert result_data["status"] == "success"
     assert result_data["current_step"] == "complete publish verify"
     assert result_data["transparencyLog_verify"] == verify_status
+
+
+def test_publish_flow_rejects_cross_owner_access(harness):
+    harness.patch_publish_success()
+    harness.patch_trucon(commit_success=True, verify_status="success")
+    image_id = f"oci:{harness._build_dir / 'bld-test123' / 'plain'}"
+    harness.seed_build_result(user_id="alice", build_id="bld-test123", image_id=image_id)
+
+    with harness.client() as client:
+        payload = _publish_payload()
+        payload["image_id"] = image_id
+        response = client.post("/api/publish-package", json=payload)
+
+    assert response.status_code == 403
+    assert "does not own" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(
@@ -274,7 +330,7 @@ def test_launch_flow_preserves_result_fields(harness, commit_success, verify_sta
         assert data["status"] == "initiated"
         assert data["user_id"] == "launch-user"
 
-        result = client.get("/api/launch-result/launch-test123")
+        result = client.get("/api/launch-result/launch-test123", headers=_auth_headers())
 
     assert result.status_code == 200
     result_data = result.json()
@@ -282,3 +338,44 @@ def test_launch_flow_preserves_result_fields(harness, commit_success, verify_sta
     assert result_data["status"] == "success"
     assert result_data["transparencyLog_verify"] == verify_status
     assert result_data["instance_ids"] == ["container-1"]
+
+
+def test_build_result_rejects_missing_reader_identity_token(harness):
+    harness.patch_build_success()
+    harness.patch_trucon(commit_success=True, verify_status="success")
+
+    with harness.client() as client:
+        response = client.post("/api/build-package", json=_build_payload())
+
+        assert response.status_code == 200
+        result = client.get("/api/build-result/bld-test123")
+
+    assert result.status_code == 400
+    detail = result.json()["detail"]
+    assert detail["operation"] == "build_result"
+    assert "identity token is required" in detail["error"].lower()
+
+
+def test_build_result_rejects_cross_owner_reads(harness, monkeypatch):
+    harness.patch_build_success()
+    harness.patch_trucon(commit_success=True, verify_status="success")
+
+    with harness.client() as client:
+        response = client.post("/api/build-package", json=_build_payload())
+
+        assert response.status_code == 200
+
+        def _inspect_identity_token(_token, expected_identity=None):
+            return {
+                "valid_for_sigstore": True,
+                "errors": [] if expected_identity == "other-user" else ["owner mismatch"],
+                "derived_identity": "other-user",
+                "subject": "other-user",
+                "issuer": "https://oauth2.sigstore.dev/auth",
+                "email": "other-user",
+            }
+
+        monkeypatch.setattr(request_auth_mod, "inspect_identity_token", _inspect_identity_token)
+        result = client.get("/api/build-result/bld-test123", headers=_auth_headers("wrong-token"))
+
+    assert result.status_code == 403
