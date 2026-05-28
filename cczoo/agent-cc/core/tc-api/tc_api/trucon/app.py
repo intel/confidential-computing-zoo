@@ -123,6 +123,14 @@ from .immutable_fanout import CompositeImmutableLogAdapter
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger("trucon")
 
+DEFAULT_CHAIN_ID = "default"
+
+
+def _require_default_chain_id(chain_id: str) -> str:
+    if chain_id != DEFAULT_CHAIN_ID:
+        raise HTTPException(status_code=400, detail=f"Only the '{DEFAULT_CHAIN_ID}' measured chain is supported")
+    return chain_id
+
 
 def _openviking_deployment_id(chain_id: str) -> str:
     return os.environ.get("OPENVIKING_CONFIDENTIAL_DEPLOYMENT_ID", f"openviking-{chain_id}")
@@ -261,6 +269,7 @@ def _get_chain_owner_pub_key(chain_id: str) -> Optional[str]:
 
 
 def _build_attested_head_evidence(chain_id: str) -> AttestedHeadEvidence:
+    _require_default_chain_id(chain_id)
     state = get_chain_state(chain_id)
     if not state:
         raise HTTPException(status_code=404, detail=f"No chain state for '{chain_id}'")
@@ -315,6 +324,7 @@ def _build_attested_head_evidence(chain_id: str) -> AttestedHeadEvidence:
 
 
 def _build_openviking_evidence(chain_id: str) -> OpenVikingEvidenceResponse:
+    _require_default_chain_id(chain_id)
     attested_evidence = _build_attested_head_evidence(chain_id)
     evidence_payload = attested_evidence.model_dump(mode="json", exclude_none=True)
     generated_at = datetime.now(timezone.utc)
@@ -339,7 +349,9 @@ def _build_openviking_evidence(chain_id: str) -> OpenVikingEvidenceResponse:
 
 
 def _build_openviking_posture(chain_id: str) -> OpenVikingPostureResponse:
+    _require_default_chain_id(chain_id)
     confirmed = get_latest_confirmed_record(chain_id)
+    latest_log_id = confirmed["log_id"] if confirmed and "log_id" in confirmed.keys() else None
     now = datetime.now(timezone.utc)
     return OpenVikingPostureResponse(
         chain_id=chain_id,
@@ -351,8 +363,8 @@ def _build_openviking_posture(chain_id: str) -> OpenVikingPostureResponse:
         egress_mode=_openviking_egress_mode(),
         privacy_restore_policy=_openviking_privacy_restore_policy(),
         generated_at=now.isoformat(),
-        has_confirmed_ledger_head=bool(confirmed and confirmed.get("log_id")),
-        latest_ledger_head_id=confirmed["log_id"] if confirmed and confirmed.get("log_id") else None,
+        has_confirmed_ledger_head=bool(latest_log_id),
+        latest_ledger_head_id=latest_log_id,
     )
 
 # ---------------------------------------------------------------------------
@@ -788,6 +800,7 @@ def get_init_chain_baseline(chain_id: str):
     Phase 1 of chain initialization: read platform baseline (RTMR[2], CCEL digest)
     and return an init_token for TOCTOU protection.
     """
+    _require_default_chain_id(chain_id)
     with _sequencer_lock:
         state = get_chain_state(chain_id)
         if state:
@@ -825,6 +838,7 @@ def get_init_chain_baseline(chain_id: str):
 @app.post("/commit-intents/reserve", response_model=CommitIntentReserveResponse)
 def reserve_commit_intent(req: CommitIntentReserveRequest):
     """Allocate a durable predecessor contract that the caller must sign."""
+    _require_default_chain_id(req.chain_id)
     with _sequencer_lock:
         expire_active_commit_intents()
 
@@ -900,6 +914,7 @@ def init_chain(req: InitChainRequest, request: Request):
     Phase 2 of chain initialization: validate init_token and insert Event Log 0
     (baseline record) into the commit queue.
     """
+    _require_default_chain_id(req.chain_id)
     with _sequencer_lock:
         expire_active_commit_intents()
 
@@ -1012,6 +1027,7 @@ def commit(req: CommitRequest, request: Request):
     Sequence a signed bundle: RTMR extend + SQLite INSERT + chain_state update.
     All three operations are serialized behind a threading.Lock().
     """
+    _require_default_chain_id(req.chain_id)
     t0 = time.perf_counter()
     record_id = str(uuid.uuid4())
     event_id = req.event_id or f"evt-{uuid.uuid4().hex[:8]}"
@@ -1269,36 +1285,36 @@ def commit(req: CommitRequest, request: Request):
 
 
 @app.get(
-    "/evidence/{chain_id}",
+    "/evidence",
     response_model=AttestedHeadEvidence,
     responses={404: {"model": EvidenceErrorResponse}, 409: {"model": EvidenceErrorResponse}, 500: {"model": EvidenceErrorResponse}},
 )
-def get_attested_head_evidence(chain_id: str):
-    """Return attested-head evidence for the latest confirmed public head of a chain."""
-    return _build_attested_head_evidence(chain_id)
+def get_attested_head_evidence():
+    """Return attested-head evidence for the latest confirmed public head of the default measured chain."""
+    return _build_attested_head_evidence(DEFAULT_CHAIN_ID)
 
 
 @app.get(
-    "/confidential/evidence/{chain_id}",
+    "/confidential/evidence",
     response_model=OpenVikingEvidenceResponse,
     responses={404: {"model": EvidenceErrorResponse}, 409: {"model": EvidenceErrorResponse}, 500: {"model": EvidenceErrorResponse}},
 )
-def get_openviking_confidential_evidence(chain_id: str):
+def get_openviking_confidential_evidence():
     """Return OpenViking-style evidence and trust metadata for context-send verification."""
-    return _build_openviking_evidence(chain_id)
+    return _build_openviking_evidence(DEFAULT_CHAIN_ID)
 
 
 @app.get(
-    "/confidential/posture/{chain_id}",
+    "/confidential/posture",
     response_model=OpenVikingPostureResponse,
     responses={404: {"model": EvidenceErrorResponse}},
 )
-def get_openviking_confidential_posture(chain_id: str):
+def get_openviking_confidential_posture():
     """Return posture metadata that is separate from attested evidence."""
-    state = get_chain_state(chain_id)
+    state = get_chain_state(DEFAULT_CHAIN_ID)
     if not state:
-        raise HTTPException(status_code=404, detail=f"No chain state for '{chain_id}'")
-    return _build_openviking_posture(chain_id)
+        raise HTTPException(status_code=404, detail=f"No chain state for '{DEFAULT_CHAIN_ID}'")
+    return _build_openviking_posture(DEFAULT_CHAIN_ID)
 
 
 def main() -> None:

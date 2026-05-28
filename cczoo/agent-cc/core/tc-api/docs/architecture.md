@@ -150,53 +150,29 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  subgraph SERVICE[tc-api-service chain]
+  subgraph DEFAULT[default measured chain]
     d0[Event Log 0 baseline]
-    d1[build events]
-    d2[publish events]
-    d0 --> d1 --> d2
+    d1[build publish events]
+    d2[launch events]
+    d3[Docktap runtime events]
+    d0 --> d1 --> d2 --> d3
   end
 
-  subgraph W1[workload chain A]
-    w10[Event Log 0 baseline]
-    w11[launch event]
-    w12[create start stop rm events]
-    w10 --> w11 --> w12
-  end
-
-  subgraph W2[workload chain B]
-    w20[Event Log 0 baseline]
-    w21[launch event]
-    w22[runtime events]
-    w20 --> w21 --> w22
-  end
-
-  buildid[build_id publish_id] -. business correlation .-> SERVICE
-  workloadid[workload_id routed as tc-api-workload-<workload_id>] -. chain key .-> W1
-  workloadid -. chain key .-> W2
-  launchid[launch_id] -. attempt boundary .-> w11
-  instanceid[instance_id or container_id] -. instance correlation inside workload chain .-> w12
-  instanceid -. instance correlation inside workload chain .-> w22
+  buildid[build_id publish_id] -. business correlation .-> DEFAULT
+  workloadid[workload_id metadata] -. workload correlation .-> DEFAULT
+  launchid[launch_id] -. attempt boundary .-> d2
+  instanceid[instance_id or container_id] -. instance correlation .-> d3
 ```
 
 At startup, tc_api initializes the `default` trust chain through the reservation-backed baseline flow: it reads baseline material from `GET /init-chain/{chain_id}/baseline`, reserves a baseline intent, signs Event Log 0 with `sequence_num=1` plus null predecessor fields, and then calls `POST /init-chain`. This captures the current RTMR[2] snapshot and CCEL digest without performing an RTMR extend, anchoring the chain to the platform's boot-time measurement state.
 
-In practice, this means the chain split can be read as follows:
+In practice, this means the measured-chain contract is now:
 
-- The `tc-api-service` chain is the control-plane service chain. tc_api build and publish transparency commits are recorded here.
-- A `tc-api-workload-<workload_id>` chain is the workload-scoped launch chain. tc_api launch transparency commits are recorded here.
-- A Docktap runtime chain is still workload-scoped. Runtime events (`create`, `start`, `stop`, `rm`) are recorded on the workload-derived chain when Docktap can resolve a non-`default` `workload_id`.
-- The routing key for a workload chain is `workload_id`, not `container_id`. Docktap resolves `chain_id` from the `io.trucon.workload-id` label on `create`, then reuses the persisted container-to-workload mapping for later `start`/`stop`/`rm` events.
-- Because of that, multiple containers do not automatically create multiple workload chains. Multiple containers with the same `workload_id` belong to the same workload chain, while different `workload_id` values create different workload chains.
-- A container without `io.trucon.workload-id` falls back to the `default` chain, so `default` is both the control-plane chain and the fallback runtime chain for unlabeled workloads.
-
-For tc_api itself, the historical use of `default` for control-plane receipts is no longer the recommended model. The current operational contract is:
-
-- `tc-api-service` for build / publish receipts;
-- `tc-api-workload-<workload_id>` for launch receipts;
-- `default` only as a legacy or fallback chain unless an explicit migration keeps using it.
-
-So the short answer is: tc_api build/publish receipts land on `tc-api-service`, tc_api launch receipts land on workload-derived chains, Docktap runtime events remain workload-scoped, and the number of workload chains is determined by distinct `workload_id` values rather than by the raw number of containers.
+- `default` is the only RTMR-backed measured chain.
+- tc_api build, publish, and launch transparency commits all append to `default`.
+- Docktap runtime events (`create`, `start`, `stop`, `rm`) also append to `default`.
+- `workload_id`, `launch_id`, `instance_id`, and related labels remain signed metadata for correlation and policy evaluation; they no longer select independent measured chains.
+- Docktap still persists container-to-workload mappings, but only to enrich emitted metadata and later queries.
 
 ### 3.4.1 Owner Key Persistence
 
@@ -210,7 +186,7 @@ Operational implications:
 - restoring TruCon SQLite state without restoring the matching owner keys can strand existing chains.
 - deleting owner keys without re-baselining the affected chain will cause future reservation-backed commits to fail owner-authorization validation.
 
-This persistence requirement is especially important for long-lived control-plane chains such as `tc-api-service`, where service restarts are expected but chain identity must remain stable.
+This persistence requirement is especially important for the long-lived default measured chain, where service restarts are expected but chain identity must remain stable.
 
 For TruCon internal architecture details (lock model, SQLite schema, crash recovery, verification), see [trusted-log/architecture.md](trusted-log/architecture.md).
 
@@ -245,7 +221,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 
 ### 4.2 Docktap Service
 
-> **Status: Implemented.** Deployed as independent container/process with health endpoint, per-workload chain routing, and service auth. Exact local startup and validation commands are kept in `README.md` and `docs/TESTING.md`.
+> **Status: Implemented.** Deployed as independent container/process with health endpoint, workload metadata enrichment on the default measured chain, and service auth. Exact local startup and validation commands are kept in `README.md` and `docs/TESTING.md`.
 
 - Runs as a separate process (Unix socket proxy) with independent lifecycle.
 - Deployed as an independent container (Docker Compose) or background process (`start.sh`).
@@ -253,9 +229,7 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Submits each operation as an independent signed DSSE commit to TruCon `POST /commit`.
 - Shares tc_api's OIDC signing infrastructure (`sigstore.oidc.detect_credential()`); token re-acquired per commit.
 - Uses `Entry(key, value)` objects imported from `tlog.types` for event data (same types as tc_api). Values are native JSON-compatible types (not stringified).
-- Routes events to per-workload chains via `io.trucon.workload-id` container label; containers without the label default to `"default"` chain.
-- The first event routed to a previously unseen non-`default` chain is now preceded by an explicit Event Log 0 bootstrap through the same tc_api trusted-log client. Direct business/runtime commits to an uninitialized non-default chain are rejected.
-- Workload baseline bootstrap uses the same reservation-backed Sigstore flow as the `default` chain: reserve baseline intent, sign Event Log 0 with signed `sequence_num=1` and null predecessor fields, then commit via `intent_token`.
+- Resolves `io.trucon.workload-id` and related container metadata for correlation, but all measured commits use `chain_id="default"`.
 - Emits explicit runtime outcomes (`operation_result`) plus workload, instance, and image-target identity fields required by the `docktap-runtime` verification profile.
 - Persists and propagates `launch_id` for runtime events attributable to a REST-originated launch flow so launch verification can correlate REST launch intent with Docktap `create`/`start` evidence.
 - Best-effort submission: Docktap uses the shared internal transport and identifies as a commit-oriented internal caller; TruCon failures still log a warning and do not block Docker API responses.
@@ -285,14 +259,14 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 ### 4.3 TruCon Core Service
 
 **Currently implemented:**
-- Exposes REST endpoints: `POST /commit`, `POST /init-chain`, `GET /init-chain/{chain_id}/baseline`, `GET /chain-state/{chain_id}`, `GET /evidence/{chain_id}`, `GET /verify-chain/{chain_id}`, and `GET /status`.
+- Exposes REST endpoints: `POST /commit`, `POST /init-chain`, `GET /init-chain/{chain_id}/baseline`, `GET /chain-state`, `GET /evidence`, `GET /verify-chain`, and `GET /status`.
 - Exposes the reservation endpoint `POST /commit-intents/reserve` so callers can allocate a durable predecessor contract before signing.
 - Serializes commit operations (RTMR[2] extend + SQLite INSERT + chain state update) behind a single-process lock.
-- Maintains per-chain state tracking (sequence number, head record, measurement value).
+- Maintains node-wide measured-chain state for `default` (sequence number, head record, measurement value).
 - Runs with `--workers 1` to preserve lock-based serialization.
 - Performs crash recovery on startup based on RTMR extension flags.
 - Only TDX RTMR[2] is supported for measurement extensions (RTMR[0]/[1] are firmware/boot-locked; AMD SEV-SNP is out of scope).
-- Exports a strict v1 attested-head evidence package only for the latest confirmed public head of a chain; pending-only local state is not eligible for external evidence export.
+- Exports a strict v1 attested-head evidence package only for the latest confirmed public head of the default measured chain; pending-only local state is not eligible for external evidence export.
 - Keeps current-head attested evidence separate from baseline owner bootstrap: the exported evidence package proves the latest confirmed public head and its current quote-backed binding, while Event Log 0 carries the owner key declaration and baseline owner-attestation material that establish who is authorized to write the chain.
 
 **Chain initialization (`/init-chain`):**
@@ -300,7 +274,10 @@ For TruCon internal architecture details (lock model, SQLite schema, crash recov
 - Event Log 0 (baseline record) does not perform RTMR extend — it captures the current register value as baseline evidence.
 - Initialization is a logical state: subsequent `/commit` calls can proceed while Event Log 0 is still pending Rekor confirmation. Ordered submission guarantees baseline is published first.
 - If baseline submission fails terminally, the chain is considered dead (no trust anchor).
-- The same `/init-chain` bootstrap is now used for both the startup `default` chain and previously unseen non-`default` workload chains. The tc_api-side trusted-log client performs this bootstrap automatically before the first business/runtime commit on a new workload chain.
+- The same `/init-chain` bootstrap is now used only for the startup `default` chain. The tc_api-side trusted-log client no longer creates measured non-default chains; workload identity remains signed metadata within the global default chain.
+
+**Rollout requirement:**
+- When migrating from older multi-chain deployments, operators must archive or snapshot the existing queue state for diagnostics, then start a fresh `default` chain epoch from the current platform baseline before resuming measured commits. Historical non-default rows are diagnostic only and are not trustworthy RTMR chains.
 
 ### 4.3.1 Operational Notes for Short-Lived OIDC Tokens
 
@@ -336,7 +313,7 @@ The same testing cycle also established that the local image-encryption path can
 
 **Current verifier use of `pub_key`:**
 - The admission path already treats Event Log 0 `pub_key` as authoritative. TruCon extracts the key from the baseline record and uses it to verify each later record's `owner_authorization` before accepting the write.
-- The live fallback verifier (`GET /verify-chain/{chain_id}`) also uses Event Log 0 `pub_key` to verify `owner_authorization` on confirmed records, so live verification does enforce owner-key continuity.
+- The live fallback verifier (`GET /verify-chain`) also uses Event Log 0 `pub_key` to verify `owner_authorization` on confirmed records, so live verification does enforce owner-key continuity.
 - The public immutable replay verifier now enforces the same rule. When Event Log 0 carries `pub_key`, replay verification materializes each later record's published `owner_authorization` from the signed predicate and verifies it under that key.
 - This required the producer contract to publish `owner_authorization` inside the signed predicate so immutable replay can verify writer authority from public material alone, without consulting live TruCon state.
 
@@ -382,7 +359,7 @@ flowchart LR
 
 In this model, `baseline_rtmr` and `ccel_digest` are acquired from TruCon's baseline read path, while `pub_key` is the declared chain owner key produced inside the TEE-backed initialization flow. The baseline owner attestation binds that key to the Event Log 0 bootstrap context, and the explicit `default`-chain init path then signs the Event Log 0 predicate as a Sigstore bundle for immutable-backend compatibility. That bootstrap contract is distinct from the later attested-head evidence export: Event Log 0 establishes who owns the chain, while attested-head evidence proves which confirmed public head is currently bound to the platform.
 
-For non-`default` workload chains, the same bootstrap contract applies before the first business or runtime commit is accepted. The tc_api-side trusted-log client performs that baseline bootstrap automatically; direct commits to an uninitialized workload chain are rejected instead of creating an implicit unsigned baseline.
+No additional measured-chain bootstrap is supported beyond `default`. Workload and instance identifiers remain metadata only; they do not create independent RTMR-backed histories.
 
 **Planned (not yet implemented):**
 - On-chain backend adapter (GAP-07, blocked by target chain selection). Scaffold exists in `tlog/tlog/backends/onchain/` with `OnChainLogAdapter` stub raising `NotImplementedError`.

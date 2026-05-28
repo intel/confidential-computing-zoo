@@ -45,6 +45,10 @@ SUBMITTABLE_OPERATIONS = {"pull", "build", "create", "start", "stop", "rm"}
 DEFAULT_RUNTIME_CHAIN_ID = _cfg.RUNTIME_CHAIN_ID
 
 
+def _resolve_measured_chain_id(_chain_id: Optional[str] = None) -> str:
+    return DEFAULT_RUNTIME_CHAIN_ID
+
+
 def _resolve_identity_token_str() -> Optional[str]:
     """Resolve a Sigstore identity token for non-interactive Docktap use.
 
@@ -83,7 +87,7 @@ def has_reusable_identity_token() -> bool:
 def has_active_delegation(chain_id: Optional[str] = None) -> bool:
     """Check if there is an active delegation for the given chain (or default runtime chain)."""
     from tc_api.trucon.database import get_active_delegation
-    resolved_chain = chain_id or DEFAULT_RUNTIME_CHAIN_ID
+    resolved_chain = _resolve_measured_chain_id(chain_id)
     try:
         return get_active_delegation(resolved_chain) is not None
     except Exception:
@@ -342,7 +346,7 @@ class TruConCommitter:
     def _resolve_chain_id(self, op_record, operation_type: str, workload_id: Optional[str], launch_id: Optional[str] = None) -> str:
         """Determine chain_id for this operation."""
         if operation_type == "pull":
-            return self._runtime_chain_id
+            return _resolve_measured_chain_id()
 
         container_id = op_record.container.get("id") if op_record.container else None
 
@@ -351,16 +355,17 @@ class TruConCommitter:
                 # Persist for future lookups
                 if self._workload_store and container_id:
                     self._workload_store.put(container_id, workload_id, launch_id=launch_id, operation="create")
-                return workload_id
-            return self._runtime_chain_id
+            return _resolve_measured_chain_id()
+            
+            return _resolve_measured_chain_id()
 
         # start / stop / rm — lookup persisted mapping
         if self._workload_store and container_id:
             stored = self._workload_store.get(container_id)
             if stored:
                 self._workload_store.touch(container_id, operation_type)
-                return stored
-        return self._runtime_chain_id
+                return _resolve_measured_chain_id(stored)
+        return _resolve_measured_chain_id()
 
     def _resolve_submission_context(
         self,
@@ -518,6 +523,7 @@ class TruConCommitter:
                 self._pending_submissions.pop(submission.event_id, None)
 
     def _ensure_chain_initialized(self, chain_id: str, identity_token_str: str) -> Optional[Dict[str, object]]:
+        chain_id = _resolve_measured_chain_id(chain_id)
         try:
             baseline = request_json(
                 "GET",
@@ -579,6 +585,7 @@ class TruConCommitter:
         idempotency_key: Optional[str] = None,
         is_baseline: bool = False,
     ) -> Dict[str, object]:
+        chain_id = _resolve_measured_chain_id(chain_id)
         return reserve_commit_intent(
             trucon_url=self._trucon_url,
             caller_service="docktap",
@@ -781,6 +788,7 @@ class TruConCommitter:
         from tc_api.docktap.delegation import build_delegation_predicate
         from tc_api.trucon.database import insert_delegation
 
+        chain_id = _resolve_measured_chain_id(chain_id)
         self._ensure_chain_initialized(chain_id, identity_token_str)
 
         idempotency_key = f"idk-del-{uuid.uuid4().hex[:12]}"

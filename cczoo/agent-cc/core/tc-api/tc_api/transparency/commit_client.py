@@ -7,6 +7,7 @@ import urllib.error
 from sigstore.dsse import StatementBuilder, Subject
 from sigstore.oidc import IdentityToken
 
+from ..config import DEFAULT_MEASURED_CHAIN_ID
 from ..identity.sigstore_baseline import build_baseline_sigstore_bundle, build_signing_context
 from ..identity.sigstore_baseline import get_chain_owner_private_key
 from tlog.types import (
@@ -21,6 +22,10 @@ from .trucon_submitter import post_commit_to_trucon, reserve_commit_intent
 from .dsse_builder import PREDICATE_TYPE, attach_commit_context, build_event_predicate
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_measured_chain_id(_raw_chain_id: Optional[str]) -> str:
+    return DEFAULT_MEASURED_CHAIN_ID
 
 
 def build_statement(chain_id: str, event_digest: str, predicate_payload: Dict[str, Any]):
@@ -99,7 +104,7 @@ class TrustedLogAPI:
         ctx = self._records[record_id]
         entries = self._entries[record_id]
         event_id = event_id or f"evt-{uuid.uuid4().hex[:8]}"
-        chain_id = ctx.chain_ref or "default"
+        chain_id = _resolve_measured_chain_id(ctx.chain_ref)
 
         # Generate idempotency key for retry safety
         idempotency_key = (commit_options or {}).get("idempotency_key") or f"idk-{uuid.uuid4().hex[:12]}"
@@ -193,7 +198,7 @@ class TrustedLogAPI:
 
     def init_chain(
         self,
-        chain_id: str = "default",
+        chain_id: str = DEFAULT_MEASURED_CHAIN_ID,
         identity_token_str: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
@@ -206,6 +211,8 @@ class TrustedLogAPI:
         Returns the init-chain response dict on success, or None if the chain
         already exists (409) or TruCon is unreachable.
         """
+        chain_id = _resolve_measured_chain_id(chain_id)
+
         # Phase 1: Get baseline from TruCon
         try:
             baseline = request_json(

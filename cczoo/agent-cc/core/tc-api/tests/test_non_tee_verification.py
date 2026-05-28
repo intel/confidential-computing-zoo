@@ -14,6 +14,7 @@ from tc_api.trucon.database import (
     update_record_confirmed,
 )
 from tc_api.trucon.owner_authorization import sign_owner_authorization
+from tc_api.trucon.chain_verification import verify_chain_records
 
 
 @pytest.fixture
@@ -89,9 +90,7 @@ class TestPredecessorVerification:
         )
 
         records = get_chain_records("default", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("default")
+        resp = verify_chain_records("default", records=records)
 
         assert resp.valid is True
         assert resp.rtmr_available is False
@@ -115,9 +114,7 @@ class TestPredecessorVerification:
         )
 
         records = get_chain_records("default", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("default")
+        resp = verify_chain_records("default", records=records)
 
         assert resp.valid is False
         assert resp.entries[0].predecessor_ok is True
@@ -146,9 +143,7 @@ class TestPredecessorVerification:
         )
 
         records = get_chain_records("default", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("default")
+        resp = verify_chain_records("default", records=records)
 
         assert resp.entries[0].predecessor_ok is True
         assert resp.entries[1].predecessor_ok is None  # unconfirmed
@@ -174,9 +169,7 @@ class TestPredecessorVerification:
         update_record_confirmed("rec-1", "log-aaa", db_path=db)
 
         records = get_chain_records("default", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("default")
+        resp = verify_chain_records("default", records=records)
 
         assert resp.rtmr_available is True
         for entry in resp.entries:
@@ -198,9 +191,7 @@ class TestPredecessorVerification:
         )
 
         records = get_chain_records("default", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("default")
+        resp = verify_chain_records("default", records=records)
 
         assert resp.entries[1].predecessor_status == "unverifiable"
         assert resp.entries[1].boundary_status == "degraded"
@@ -235,9 +226,7 @@ class TestPredecessorVerification:
         update_record_confirmed("rec-3", "log-ccc", db_path=db)
 
         records = get_chain_records("default", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("default")
+        resp = verify_chain_records("default", records=records)
 
         assert resp.valid is False
         assert resp.entries[2].predecessor_ok is False
@@ -293,9 +282,7 @@ class TestPredecessorVerification:
         update_record_confirmed("rec-3", "log-ccc", db_path=db)
 
         records = get_chain_records("default", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("default")
+        resp = verify_chain_records("default", records=records)
 
         assert resp.rtmr_available is True
         assert resp.entries[2].boundary_status == "invalid"
@@ -303,10 +290,10 @@ class TestPredecessorVerification:
     def test_workload_baseline_snapshot_does_not_fail_rtmr_verification(self, db):
         insert_record(
             record_id="rec-log0",
-            event_id="evt-log0-workload-a",
+            event_id="evt-log0-default",
             payload={"bundle": "test", "is_baseline": True},
             status="PENDING",
-            chain_id="workload-a",
+            chain_id="default",
             rtmr_extended=True,
             prev_event_digest=None,
             prev_lookup_hash=None,
@@ -321,7 +308,7 @@ class TestPredecessorVerification:
             event_id="evt-2",
             payload={"bundle": "test"},
             status="PENDING",
-            chain_id="workload-a",
+            chain_id="default",
             rtmr_extended=True,
             prev_event_digest="sha384:" + ("11" * 48),
             prev_lookup_hash="sha256:" + ("22" * 32),
@@ -332,10 +319,8 @@ class TestPredecessorVerification:
         )
         update_record_confirmed("rec-2", "log-2", db_path=db)
 
-        records = get_chain_records("workload-a", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("workload-a")
+        records = get_chain_records("default", db)
+        resp = verify_chain_records("default", records=records)
 
         assert resp.valid is True
         assert resp.rtmr_available is True
@@ -374,17 +359,17 @@ class TestOwnerAuthorizationVerification:
             db,
             "rec-log0",
             1,
-            "workload-owner-ok",
+            "default",
             None,
             None,
             "log-log0",
             payload=_owner_baseline_payload(owner_pub_key),
         )
-        first_record = get_chain_records("workload-owner-ok", db)[0]
+        first_record = get_chain_records("default", db)[0]
         event_digest = "sha384:" + ("22" * 48)
         owner_authorization = sign_owner_authorization(
             owner_private_key,
-            "workload-owner-ok",
+            "default",
             2,
             first_record["event_digest"],
             _compute_record_lookup_hash(first_record),
@@ -394,7 +379,7 @@ class TestOwnerAuthorizationVerification:
             db,
             "rec-2",
             2,
-            "workload-owner-ok",
+            "default",
             first_record["event_digest"],
             _compute_record_lookup_hash(first_record),
             "log-2",
@@ -402,10 +387,8 @@ class TestOwnerAuthorizationVerification:
             event_digest=event_digest,
         )
 
-        records = get_chain_records("workload-owner-ok", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("workload-owner-ok")
+        records = get_chain_records("default", db)
+        resp = verify_chain_records("default", records=records)
 
         assert resp.valid is True
         assert resp.entries[0].owner_ok is True
@@ -420,17 +403,17 @@ class TestOwnerAuthorizationVerification:
             db,
             "rec-log0",
             1,
-            "workload-owner-bad",
+            "default",
             None,
             None,
             "log-log0",
             payload=_owner_baseline_payload(owner_pub_key),
         )
-        first_record = get_chain_records("workload-owner-bad", db)[0]
+        first_record = get_chain_records("default", db)[0]
         event_digest = "sha384:" + ("22" * 48)
         owner_authorization = sign_owner_authorization(
             wrong_private_key,
-            "workload-owner-bad",
+            "default",
             2,
             first_record["event_digest"],
             _compute_record_lookup_hash(first_record),
@@ -440,7 +423,7 @@ class TestOwnerAuthorizationVerification:
             db,
             "rec-2",
             2,
-            "workload-owner-bad",
+            "default",
             first_record["event_digest"],
             _compute_record_lookup_hash(first_record),
             "log-2",
@@ -448,10 +431,8 @@ class TestOwnerAuthorizationVerification:
             event_digest=event_digest,
         )
 
-        records = get_chain_records("workload-owner-bad", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("workload-owner-bad")
+        records = get_chain_records("default", db)
+        resp = verify_chain_records("default", records=records)
 
         assert resp.valid is False
         assert resp.entries[1].owner_ok is False
@@ -464,17 +445,17 @@ class TestOwnerAuthorizationVerification:
             db,
             "rec-log0",
             1,
-            "workload-owner-pending",
+            "default",
             None,
             None,
             "log-log0",
             payload=_owner_baseline_payload(owner_pub_key),
         )
-        first_record = get_chain_records("workload-owner-pending", db)[0]
+        first_record = get_chain_records("default", db)[0]
         event_digest = "sha384:" + ("22" * 48)
         owner_authorization = sign_owner_authorization(
             owner_private_key,
-            "workload-owner-pending",
+            "default",
             2,
             first_record["event_digest"],
             _compute_record_lookup_hash(first_record),
@@ -485,7 +466,7 @@ class TestOwnerAuthorizationVerification:
             event_id="evt-2",
             payload={"bundle": "test", "owner_authorization": owner_authorization},
             status="PENDING",
-            chain_id="workload-owner-pending",
+            chain_id="default",
             rtmr_extended=True,
             prev_event_digest=first_record["event_digest"],
             prev_lookup_hash=_compute_record_lookup_hash(first_record),
@@ -495,10 +476,8 @@ class TestOwnerAuthorizationVerification:
             db_path=db,
         )
 
-        records = get_chain_records("workload-owner-pending", db)
-        from tc_api.trucon.app import verify_chain
-        with patch("tc_api.trucon.database.get_chain_records", return_value=records):
-            resp = verify_chain("workload-owner-pending")
+        records = get_chain_records("default", db)
+        resp = verify_chain_records("default", records=records)
 
         assert resp.entries[1].owner_ok is None
         assert resp.entries[1].owner_status == "unverifiable"

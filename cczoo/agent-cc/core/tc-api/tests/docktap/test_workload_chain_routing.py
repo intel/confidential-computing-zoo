@@ -98,7 +98,7 @@ class TestChainRouting:
             container={"id": "abc123", "name": "myc"},
         )
         chain = committer._resolve_chain_id(rec, "create", workload_id="my-app")
-        assert chain == "my-app"
+        assert chain == "default"
         # Mapping should be persisted
         assert store.get("abc123") == "my-app"
 
@@ -109,7 +109,7 @@ class TestChainRouting:
             container={"id": "abc123"},
         )
         chain = committer._resolve_chain_id(rec, "create", workload_id=None)
-        assert chain == "docktap-runtime"
+        assert chain == "default"
         assert store.get("abc123") is None
 
     def test_start_resolves_from_store(self, store):
@@ -120,7 +120,7 @@ class TestChainRouting:
             container={"id": "abc123"},
         )
         chain = committer._resolve_chain_id(rec, "start", workload_id=None)
-        assert chain == "my-app"
+        assert chain == "default"
 
     def test_stop_resolves_from_store(self, store):
         store.put("abc123", "my-app")
@@ -130,7 +130,7 @@ class TestChainRouting:
             container={"id": "abc123"},
         )
         chain = committer._resolve_chain_id(rec, "stop", workload_id=None)
-        assert chain == "my-app"
+        assert chain == "default"
 
     def test_rm_resolves_from_store(self, store):
         store.put("abc123", "my-app")
@@ -140,7 +140,7 @@ class TestChainRouting:
             container={"id": "abc123"},
         )
         chain = committer._resolve_chain_id(rec, "rm", workload_id=None)
-        assert chain == "my-app"
+        assert chain == "default"
 
     def test_start_no_mapping_defaults(self, store):
         committer = TruConCommitter(workload_store=store)
@@ -149,7 +149,7 @@ class TestChainRouting:
             container={"id": "unknown"},
         )
         chain = committer._resolve_chain_id(rec, "start", workload_id=None)
-        assert chain == "docktap-runtime"
+        assert chain == "default"
 
     def test_pull_uses_runtime_chain(self, store):
         committer = TruConCommitter(workload_store=store)
@@ -158,7 +158,7 @@ class TestChainRouting:
             image={"name": "nginx"},
         )
         chain = committer._resolve_chain_id(rec, "pull", workload_id=None)
-        assert chain == "docktap-runtime"
+        assert chain == "default"
 
     def test_create_persists_then_start_resolves(self, store):
         """Full lifecycle: create with label → start resolves same chain."""
@@ -169,14 +169,14 @@ class TestChainRouting:
             container={"id": "c1", "name": "myc"},
         )
         chain1 = committer._resolve_chain_id(create_rec, "create", workload_id="svc-a")
-        assert chain1 == "svc-a"
+        assert chain1 == "default"
 
         start_rec = _make_record(
             operation={"type": "start"},
             container={"id": "c1"},
         )
         chain2 = committer._resolve_chain_id(start_rec, "start", workload_id=None)
-        assert chain2 == "svc-a"
+        assert chain2 == "default"
 
     def test_restart_recovery_chain_routing(self, tmp_path):
         """Mapping survives store re-init (Docktap restart simulation)."""
@@ -199,7 +199,7 @@ class TestChainRouting:
             operation={"type": "stop"},
             container={"id": "c1"},
         )
-        assert committer2._resolve_chain_id(rec2, "stop", workload_id=None) == "my-app"
+        assert committer2._resolve_chain_id(rec2, "stop", workload_id=None) == "default"
 
     def test_no_store_defaults_to_default(self):
         """Committer without workload_store still uses the runtime fallback chain."""
@@ -208,4 +208,4 @@ class TestChainRouting:
             operation={"type": "start"},
             container={"id": "c1"},
         )
-        assert committer._resolve_chain_id(rec, "start", workload_id=None) == "docktap-runtime"
+        assert committer._resolve_chain_id(rec, "start", workload_id=None) == "default"

@@ -39,7 +39,7 @@ class DocktapAuthorizationResponse(BaseModel):
 
 
 def _resolve_chain_id(chain_id: Optional[str]) -> str:
-    return (chain_id or docktap_cfg.RUNTIME_CHAIN_ID).strip() or docktap_cfg.RUNTIME_CHAIN_ID
+    return docktap_cfg.RUNTIME_CHAIN_ID
 
 
 def _policy_scope() -> List[str]:

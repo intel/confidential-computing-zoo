@@ -466,7 +466,7 @@ class BaseDockerService:
 
             data = request_json(
                 "GET",
-                f"/chain-state/{chain_id}",
+                "/chain-state",
                 caller_service="tc_api",
                 timeout=10,
                 trucon_url=tlog._trucon_url,

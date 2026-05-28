@@ -179,7 +179,7 @@ class TestCommitInstanceId:
                 client = TestClient(trucon_app_mod.app, raise_server_exceptions=False)
                 resp = client.post("/commit", json={
                     "bundle": "test-bundle",
-                    "chain_id": "workload-a",
+                    "chain_id": "default",
                     "event_digest": "sha384:" + "aa" * 48,
                     "event_id": "evt-test",
                     "instance_id": "c" * 64,
@@ -223,7 +223,7 @@ class TestCommitInstanceId:
                 client = TestClient(trucon_app_mod.app, raise_server_exceptions=False)
                 resp = client.post("/commit", json={
                     "bundle": "test-bundle",
-                    "chain_id": "workload-a",
+                    "chain_id": "default",
                     "event_digest": "sha384:" + "aa" * 48,
                     "event_id": "evt-test2",
                 })

@@ -17,17 +17,17 @@ This allows users and applications to verify both:
 
 ## Chain Conventions
 
-The current tc_api and TruCon integration now uses explicit chain classes instead of relying on the historical `default` chain for every control-plane event.
+The current tc_api and TruCon integration uses a single RTMR-backed measured chain rather than multiple workload-specific measured chains.
 
-- `tc-api-service` is the service-level control-plane chain used by tc_api build and publish transparency commits.
-- `tc-api-workload-<workload_id>` is the workload-scoped chain used by launch transparency commits.
+- `default` is the only measured chain used for tc_api build, publish, launch, and Docktap runtime transparency commits.
+- `workload_id`, `launch_id`, `instance_id`, and related labels remain signed metadata for correlation and policy evaluation.
 - `tdvm-smoke-baseline-<suffix>` remains the explicit Event Log 0 / baseline validation chain used by the real TD VM smoke.
 
 This split is operationally important:
 
-- build and publish receipts are now isolated from older `default`-chain history and stale predecessor state;
-- launch receipts remain workload-scoped and replayable as independent chain epochs;
-- operator tooling can distinguish service-plane trust events from workload-plane trust events without inferring semantics from mixed historical chains.
+- measured RTMR replay is defined only for the node-wide `default` chain;
+- operator tooling distinguishes service-plane and workload-plane events through signed metadata rather than through separate measured-chain IDs;
+- historical non-default chains should be treated as superseded diagnostics rather than as active trust-chain contracts.
 
 The naming is configurable through:
 
@@ -185,7 +185,7 @@ tc-verify --evidence evidence.json --json
 
 In the preferred flow, the CLI loads an exported attested-head evidence package, derives `chain_id` and `head_log_id` from that package, performs immutable-backend replay from the attested public head, and reports replay findings separately from attested-head findings.
 
-The older live `chain_id` path is no longer a supported external verifier entry point. If local diagnostics are needed, the CLI requires an explicit troubleshooting selector before using `GET /chain-state/{chain_id}` and `GET /verify-chain/{chain_id}`, and it labels that run as internal troubleshooting rather than as the normal operator contract.
+The older live `chain_id` path is no longer a supported external verifier entry point. If local diagnostics are needed, the CLI requires an explicit troubleshooting selector before using `GET /chain-state` and `GET /verify-chain`, and it labels that run as internal troubleshooting rather than as the normal operator contract.
 
 `submit_record()` and `get_latest_state()` are no longer part of the tc_api-side API. Submission is handled by the embedded daemon inside the TruCon.
 
@@ -221,14 +221,14 @@ Because operations like `docker push` can be time-consuming and network-dependen
 4. **TruCon Sequencing (Synchronous)**: The TruCon validates the reserved contract, then serializes RTMR extension + SQLite queue INSERT + chain state update under a `threading.Lock()`. The response includes `record_id`, `chain_id`, `sequence_num`, and `mr_value`.
 5. **Daemon Processing (Asynchronous)**: The embedded submit daemon inside the TruCon continuously polls the commit queue. It submits pending records in `sequence_num` order to Rekor via `SigstoreLogAdapter`, with automatic retry (up to 10 attempts) on failure.
 
-In the current deployment contract, that docker-push-style control-plane flow belongs on the `tc-api-service` chain rather than on `default`.
+In the current deployment contract, that docker-push-style control-plane flow belongs on the default measured chain.
 
-Likewise, the tc_api launch flow records its launch transparency receipt on `tc-api-workload-<workload_id>`, where `<workload_id>` is the normalized workload identity already used by the launch/runtime orchestration layer.
+Likewise, the tc_api launch flow records its launch transparency receipt on the default measured chain, while preserving the normalized `workload_id` in signed metadata already used by the launch/runtime orchestration layer.
 
 This means operators should expect:
 
-- service receipts such as build / publish on `tc-api-service`;
-- workload launch receipts on `tc-api-workload-plain`, `tc-api-workload-<other workload>`, and so on;
+- service receipts such as build / publish on `default`;
+- workload launch receipts on `default`, differentiated by signed workload metadata;
 - baseline-only validation chains to remain separate from both.
 
 ## Testing and Regression Verification

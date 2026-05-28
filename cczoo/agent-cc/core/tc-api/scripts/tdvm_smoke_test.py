@@ -349,14 +349,14 @@ def run_baseline_chain_smoke(args: argparse.Namespace) -> Dict[str, Any]:
     while time.monotonic() < deadline:
         state = _trucon_request(
             "GET",
-            f"/chain-state/{chain_id}",
+            "/chain-state",
             DEFAULT_TIMEOUT,
             trucon_url=trucon_url,
             uds_path=trucon_uds_path,
         )
         verify_chain = _trucon_request(
             "GET",
-            f"/verify-chain/{chain_id}",
+            "/verify-chain",
             DEFAULT_TIMEOUT,
             trucon_url=trucon_url,
             uds_path=trucon_uds_path,

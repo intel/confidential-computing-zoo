@@ -45,7 +45,7 @@ def test_init_chain_uses_active_identity_token_for_baseline_signing():
 
     assert result == {"record_id": "rec-123", "sequence_num": 1}
     assert captured["identity_token_str"] == "active-token-123"
-    assert captured["chain_id"] == "tc-api-service"
+    assert captured["chain_id"] == "default"
 
 
 def test_init_chain_raises_when_baseline_bundle_cannot_be_built():

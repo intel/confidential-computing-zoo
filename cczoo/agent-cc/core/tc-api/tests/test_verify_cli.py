@@ -35,9 +35,9 @@ class _Response:
 def _urlopen_factory(chain_state_payload, verify_payload):
     def _urlopen(request, timeout=15):
         url = request.full_url
-        if "/chain-state/" in url:
+        if url.endswith("/chain-state"):
             return _Response(chain_state_payload)
-        if "/verify-chain/" in url:
+        if url.endswith("/verify-chain"):
             return _Response(verify_payload)
         raise AssertionError(f"Unexpected URL: {url}")
 
@@ -458,7 +458,7 @@ def test_normalize_replay_entries_preserves_predicate_entries():
             "replay_provenance": "attestation-storage",
             "history_materialization_provenance": "attestation-storage",
             "predicate_entries": [{"key": "launch_id", "value": "launch-123"}],
-            "subject_names": ["trusted-log-chain_tc-api-workload-oci"],
+            "subject_names": ["trusted-log-chain_default"],
             "signer_identity": "alice@example.com",
             "signer_identity_match": True,
             "errors": [],

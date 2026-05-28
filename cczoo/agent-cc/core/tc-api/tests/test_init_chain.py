@@ -20,6 +20,8 @@ from tests.utils import EchoQuoteAdapter, make_db_patches
 trucon_app_mod = importlib.import_module("tc_api.trucon.app")
 trucon_db_mod = importlib.import_module("tc_api.trucon.database")
 
+DEFAULT_CHAIN_ID = "default"
+
 
 class MockMRAdapter(LocalMRAdapter):
     """Mock MR adapter that returns deterministic values."""
@@ -145,7 +147,7 @@ class TestGetBaseline:
     """Tests for GET /init-chain/{chain_id}/baseline."""
 
     def test_baseline_success(self, trucon_client):
-        resp = trucon_client.get("/init-chain/test-chain/baseline")
+        resp = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         assert resp.status_code == 200
         data = resp.json()
         assert data["rtmr_value"] == "aa" * 48
@@ -154,36 +156,36 @@ class TestGetBaseline:
 
     def test_baseline_returns_ccel_digest(self, trucon_client):
         with patch.object(trucon_app_mod, "compute_ccel_digest", return_value="sha384:bb" + "cc" * 47):
-            resp = trucon_client.get("/init-chain/test-chain/baseline")
+            resp = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
             assert resp.status_code == 200
             data = resp.json()
             assert data["ccel_digest"] == "sha384:bb" + "cc" * 47
 
     def test_baseline_chain_already_exists_409(self, trucon_client):
         # First, successfully init a chain
-        resp1 = trucon_client.get("/init-chain/my-chain/baseline")
+        resp1 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         assert resp1.status_code == 200
         token = resp1.json()["init_token"]
-        reserve = _reserve_baseline_intent(trucon_client, "my-chain", "init-chain-my-chain")
+        reserve = _reserve_baseline_intent(trucon_client, DEFAULT_CHAIN_ID, f"init-chain-{DEFAULT_CHAIN_ID}")
         assert reserve.status_code == 200
         intent_token = reserve.json()["intent_token"]
 
         resp2 = trucon_client.post("/init-chain", json={
-            "chain_id": "my-chain",
+            "chain_id": DEFAULT_CHAIN_ID,
             "init_token": token,
             "intent_token": intent_token,
-            "signed_bundle": _make_baseline_bundle("my-chain"),
+            "signed_bundle": _make_baseline_bundle(DEFAULT_CHAIN_ID),
             "pub_key": "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
         })
         assert resp2.status_code == 200
 
         # Now GET baseline for same chain should return 409
-        resp3 = trucon_client.get("/init-chain/my-chain/baseline")
+        resp3 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         assert resp3.status_code == 409
 
-    def test_baseline_unique_tokens(self, trucon_client):
-        resp1 = trucon_client.get("/init-chain/chain-a/baseline")
-        resp2 = trucon_client.get("/init-chain/chain-b/baseline")
+    def test_baseline_unique_tokens_before_init(self, trucon_client):
+        resp1 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
+        resp2 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         assert resp1.status_code == 200
         assert resp2.status_code == 200
         assert resp1.json()["init_token"] != resp2.json()["init_token"]
@@ -194,19 +196,19 @@ class TestPostInitChain:
 
     def test_init_chain_success(self, trucon_client):
         # Phase 1: get baseline
-        resp1 = trucon_client.get("/init-chain/test-chain/baseline")
+        resp1 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         assert resp1.status_code == 200
         token = resp1.json()["init_token"]
-        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        reserve = _reserve_baseline_intent(trucon_client, DEFAULT_CHAIN_ID, f"init-chain-{DEFAULT_CHAIN_ID}")
         assert reserve.status_code == 200
         intent_token = reserve.json()["intent_token"]
 
         # Phase 2: init chain
         resp2 = trucon_client.post("/init-chain", json={
-            "chain_id": "test-chain",
+            "chain_id": DEFAULT_CHAIN_ID,
             "init_token": token,
             "intent_token": intent_token,
-            "signed_bundle": _make_baseline_bundle("test-chain"),
+            "signed_bundle": _make_baseline_bundle(DEFAULT_CHAIN_ID),
             "pub_key": "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
         })
         assert resp2.status_code == 200
@@ -215,7 +217,7 @@ class TestPostInitChain:
         assert data["sequence_num"] == 1
         payload = _get_record_payload(data["record_id"], trucon_app_mod.app.state.test_db_path)
         assert payload["pub_key"] == "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----"
-        assert payload["owner_attestation"]["chain_id"] == "test-chain"
+        assert payload["owner_attestation"]["chain_id"] == DEFAULT_CHAIN_ID
         assert payload["owner_attestation"]["sequence_num"] == 1
         assert payload["owner_attestation"]["owner_pub_key"] == payload["pub_key"]
         assert payload["owner_attestation"]["report_data_binding"]["bound_fields"] == [
@@ -227,26 +229,24 @@ class TestPostInitChain:
         ]
 
     def test_init_chain_invalid_token_400(self, trucon_client):
-        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        reserve = _reserve_baseline_intent(trucon_client, DEFAULT_CHAIN_ID, f"init-chain-{DEFAULT_CHAIN_ID}")
         assert reserve.status_code == 200
         resp = trucon_client.post("/init-chain", json={
-            "chain_id": "test-chain",
+            "chain_id": DEFAULT_CHAIN_ID,
             "init_token": "bogus-token-that-does-not-exist",
             "intent_token": reserve.json()["intent_token"],
-            "signed_bundle": _make_baseline_bundle("test-chain"),
+            "signed_bundle": _make_baseline_bundle(DEFAULT_CHAIN_ID),
             "pub_key": "test-key",
         })
         assert resp.status_code == 400
         assert "Invalid or expired" in resp.json()["detail"]
 
-    def test_init_chain_token_mismatch_400(self, trucon_client):
-        # Get token for chain-a
-        resp1 = trucon_client.get("/init-chain/chain-a/baseline")
+    def test_init_chain_non_default_rejected_400(self, trucon_client):
+        resp1 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         token = resp1.json()["init_token"]
-        reserve = _reserve_baseline_intent(trucon_client, "chain-a", "init-chain-chain-a")
+        reserve = _reserve_baseline_intent(trucon_client, DEFAULT_CHAIN_ID, f"init-chain-{DEFAULT_CHAIN_ID}")
         assert reserve.status_code == 200
 
-        # Try to use it for chain-b
         resp2 = trucon_client.post("/init-chain", json={
             "chain_id": "chain-b",
             "init_token": token,
@@ -255,51 +255,51 @@ class TestPostInitChain:
             "pub_key": "test-key",
         })
         assert resp2.status_code == 400
-        assert "mismatch" in resp2.json()["detail"]
+        assert "Only the 'default' measured chain is supported" in resp2.json()["detail"]
 
     def test_init_chain_double_init_409(self, trucon_client):
         # Init chain once
-        resp1 = trucon_client.get("/init-chain/test-chain/baseline")
+        resp1 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         token1 = resp1.json()["init_token"]
-        reserve1 = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        reserve1 = _reserve_baseline_intent(trucon_client, DEFAULT_CHAIN_ID, f"init-chain-{DEFAULT_CHAIN_ID}")
         assert reserve1.status_code == 200
         resp2 = trucon_client.post("/init-chain", json={
-            "chain_id": "test-chain",
+            "chain_id": DEFAULT_CHAIN_ID,
             "init_token": token1,
             "intent_token": reserve1.json()["intent_token"],
-            "signed_bundle": _make_baseline_bundle("test-chain"),
+            "signed_bundle": _make_baseline_bundle(DEFAULT_CHAIN_ID),
             "pub_key": "test-key",
         })
         assert resp2.status_code == 200
 
         # Get another token (should fail at GET since chain exists)
-        resp3 = trucon_client.get("/init-chain/test-chain/baseline")
+        resp3 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         assert resp3.status_code == 409
 
     def test_init_chain_token_consumed(self, trucon_client):
         """init_token is single-use — replaying it should fail."""
-        resp1 = trucon_client.get("/init-chain/test-chain/baseline")
+        resp1 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         token = resp1.json()["init_token"]
-        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        reserve = _reserve_baseline_intent(trucon_client, DEFAULT_CHAIN_ID, f"init-chain-{DEFAULT_CHAIN_ID}")
         assert reserve.status_code == 200
         intent_token = reserve.json()["intent_token"]
 
         # First use succeeds
         resp2 = trucon_client.post("/init-chain", json={
-            "chain_id": "test-chain",
+            "chain_id": DEFAULT_CHAIN_ID,
             "init_token": token,
             "intent_token": intent_token,
-            "signed_bundle": _make_baseline_bundle("test-chain"),
+            "signed_bundle": _make_baseline_bundle(DEFAULT_CHAIN_ID),
             "pub_key": "test-key",
         })
         assert resp2.status_code == 200
 
         # Second use fails (token consumed)
         resp3 = trucon_client.post("/init-chain", json={
-            "chain_id": "test-chain",
+            "chain_id": DEFAULT_CHAIN_ID,
             "init_token": token,
             "intent_token": intent_token,
-            "signed_bundle": _make_baseline_bundle("test-chain"),
+            "signed_bundle": _make_baseline_bundle(DEFAULT_CHAIN_ID),
             "pub_key": "test-key",
         })
         assert resp3.status_code == 400
@@ -307,15 +307,15 @@ class TestPostInitChain:
     def test_commit_after_init_gets_sequence_2(self, trucon_client):
         """After init-chain, the next /commit should get sequence_num=2."""
         # Init chain
-        resp1 = trucon_client.get("/init-chain/test-chain/baseline")
+        resp1 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         token = resp1.json()["init_token"]
-        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        reserve = _reserve_baseline_intent(trucon_client, DEFAULT_CHAIN_ID, f"init-chain-{DEFAULT_CHAIN_ID}")
         assert reserve.status_code == 200
         resp2 = trucon_client.post("/init-chain", json={
-            "chain_id": "test-chain",
+            "chain_id": DEFAULT_CHAIN_ID,
             "init_token": token,
             "intent_token": reserve.json()["intent_token"],
-            "signed_bundle": _make_baseline_bundle("test-chain"),
+            "signed_bundle": _make_baseline_bundle(DEFAULT_CHAIN_ID),
             "pub_key": "test-key",
         })
         assert resp2.status_code == 200
@@ -324,7 +324,7 @@ class TestPostInitChain:
         # Commit should get sequence_num=2
         resp3 = trucon_client.post("/commit", json={
             "bundle": '{"payloadType":"test"}',
-            "chain_id": "test-chain",
+            "chain_id": DEFAULT_CHAIN_ID,
             "event_digest": "sha384:" + "ab" * 48,
         })
         assert resp3.status_code == 200
@@ -339,15 +339,15 @@ class TestPostInitChain:
                 self.extend_calls.append((index, digest))
                 return super().extend(index, digest)
 
-        resp1 = trucon_client.get("/init-chain/test-chain/baseline")
+        resp1 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         token = resp1.json()["init_token"]
-        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        reserve = _reserve_baseline_intent(trucon_client, DEFAULT_CHAIN_ID, f"init-chain-{DEFAULT_CHAIN_ID}")
         assert reserve.status_code == 200
         resp2 = trucon_client.post("/init-chain", json={
-            "chain_id": "test-chain",
+            "chain_id": DEFAULT_CHAIN_ID,
             "init_token": token,
             "intent_token": reserve.json()["intent_token"],
-            "signed_bundle": _make_baseline_bundle("test-chain"),
+            "signed_bundle": _make_baseline_bundle(DEFAULT_CHAIN_ID),
             "pub_key": "test-key",
         })
         assert resp2.status_code == 200
@@ -359,7 +359,7 @@ class TestPostInitChain:
                     "event_type": "docker_build",
                     "entries": [{"key": "operation_type", "value": "build"}],
                 }),
-                "chain_id": "test-chain",
+                "chain_id": DEFAULT_CHAIN_ID,
                 "event_digest": "sha384:" + "ab" * 48,
             })
 
@@ -375,18 +375,18 @@ class TestPostInitChain:
         assert row["mr_value"] == "aa" * 48
 
     def test_init_chain_missing_owner_attestation_rejected(self, trucon_client):
-        resp1 = trucon_client.get("/init-chain/test-chain/baseline")
+        resp1 = trucon_client.get(f"/init-chain/{DEFAULT_CHAIN_ID}/baseline")
         assert resp1.status_code == 200
         token = resp1.json()["init_token"]
-        reserve = _reserve_baseline_intent(trucon_client, "test-chain", "init-chain-test-chain")
+        reserve = _reserve_baseline_intent(trucon_client, DEFAULT_CHAIN_ID, f"init-chain-{DEFAULT_CHAIN_ID}")
         assert reserve.status_code == 200
 
         with patch.object(trucon_app_mod, "_quote_adapter", None):
             resp2 = trucon_client.post("/init-chain", json={
-                "chain_id": "test-chain",
+                "chain_id": DEFAULT_CHAIN_ID,
                 "init_token": token,
                 "intent_token": reserve.json()["intent_token"],
-                "signed_bundle": _make_baseline_bundle("test-chain"),
+                "signed_bundle": _make_baseline_bundle(DEFAULT_CHAIN_ID),
                 "pub_key": "test-key",
             })
 
@@ -414,7 +414,7 @@ class TestLazyWorkloadBaseline:
             "chain_id": "workload-a",
             "event_digest": "sha384:" + "ab" * 48,
         })
-        assert resp.status_code == 409
+        assert resp.status_code == 400
 
         records = trucon_db_mod.get_chain_records("workload-a", db_path=trucon_client.app.state.test_db_path)
         assert records == []
@@ -434,7 +434,7 @@ class TestLazyWorkloadBaseline:
             futures = [executor.submit(do_commit, "a"), executor.submit(do_commit, "b")]
             responses = [future.result() for future in futures]
 
-        assert {response.status_code for response in responses} == {409}
+        assert {response.status_code for response in responses} == {400}
 
         records = trucon_db_mod.get_chain_records("workload-race", db_path=trucon_client.app.state.test_db_path)
         assert records == []
@@ -446,11 +446,11 @@ class TestLazyWorkloadBaseline:
             "event_digest": "sha384:" + "ab" * 48,
         })
 
-        assert resp.status_code == 409
+        assert resp.status_code == 400
         records = trucon_db_mod.get_chain_records("workload-fail", db_path=trucon_client.app.state.test_db_path)
         assert records == []
 
-    def test_verify_chain_rejects_non_default_without_baseline(self, trucon_client):
+    def test_old_non_default_verify_route_removed(self, trucon_client):
         trucon_db_mod.insert_record(
             record_id="rec-1",
             event_id="evt-1",
@@ -466,18 +466,15 @@ class TestLazyWorkloadBaseline:
         )
 
         resp = trucon_client.get("/verify-chain/workload-no-baseline")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["valid"] is False
-        assert data["entries"][0]["error"] == "non-default chain 'workload-no-baseline' does not begin with Event Log 0"
+        assert resp.status_code == 404
 
     def test_verify_chain_accepts_pending_baseline_origin(self, trucon_client):
         trucon_db_mod.insert_record(
             record_id="rec-log0",
-            event_id="evt-log0-workload-pending",
-            payload={"bundle": "test", "chain_id": "workload-pending", "is_baseline": True},
+            event_id="evt-log0-default",
+            payload={"bundle": "test", "chain_id": DEFAULT_CHAIN_ID, "is_baseline": True},
             status="PENDING",
-            chain_id="workload-pending",
+            chain_id=DEFAULT_CHAIN_ID,
             rtmr_extended=True,
             prev_log_id=None,
             mr_value=None,
@@ -488,9 +485,9 @@ class TestLazyWorkloadBaseline:
         trucon_db_mod.insert_record(
             record_id="rec-2",
             event_id="evt-2",
-            payload={"bundle": "test", "chain_id": "workload-pending"},
+            payload={"bundle": "test", "chain_id": DEFAULT_CHAIN_ID},
             status="PENDING",
-            chain_id="workload-pending",
+            chain_id=DEFAULT_CHAIN_ID,
             rtmr_extended=True,
             prev_log_id=None,
             mr_value=None,
@@ -499,7 +496,7 @@ class TestLazyWorkloadBaseline:
             db_path=trucon_client.app.state.test_db_path,
         )
 
-        resp = trucon_client.get("/verify-chain/workload-pending")
+        resp = trucon_client.get("/verify-chain")
         assert resp.status_code == 200
         data = resp.json()
         assert data["entries"][0]["error"] is None
@@ -508,6 +505,7 @@ class TestLazyWorkloadBaseline:
 
 class TestCommitIntentLifecycle:
     def _init_chain(self, trucon_client, chain_id: str, pub_key: str = "test-key") -> None:
+        chain_id = DEFAULT_CHAIN_ID
         baseline = trucon_client.get(f"/init-chain/{chain_id}/baseline")
         assert baseline.status_code == 200
         reserve = _reserve_baseline_intent(trucon_client, chain_id, f"init-chain-{chain_id}")
@@ -526,17 +524,17 @@ class TestCommitIntentLifecycle:
 
     def test_commit_accepts_matching_owner_authorization(self, trucon_client):
         owner_private_key, owner_pub_key = _generate_owner_keypair()
-        self._init_chain(trucon_client, "lifecycle-owner-ok", pub_key=owner_pub_key)
+        self._init_chain(trucon_client, DEFAULT_CHAIN_ID, pub_key=owner_pub_key)
         reserve = trucon_client.post(
             "/commit-intents/reserve",
-            json={"chain_id": "lifecycle-owner-ok", "idempotency_key": "commit-owner-ok"},
+            json={"chain_id": DEFAULT_CHAIN_ID, "idempotency_key": "commit-owner-ok"},
         )
         assert reserve.status_code == 200
         intent = reserve.json()
         event_digest = "sha384:" + ("ab" * 48)
         owner_authorization = sign_owner_authorization(
             private_key=owner_private_key,
-            chain_id="lifecycle-owner-ok",
+            chain_id=DEFAULT_CHAIN_ID,
             sequence_num=intent["sequence_num"],
             prev_event_digest=intent["prev_event_digest"],
             prev_lookup_hash=intent["prev_lookup_hash"],
@@ -548,14 +546,14 @@ class TestCommitIntentLifecycle:
             json={
                 "bundle": json.dumps(
                     {
-                        "chain_id": "lifecycle-owner-ok",
+                        "chain_id": DEFAULT_CHAIN_ID,
                         "sequence_num": intent["sequence_num"],
                         "prev_event_digest": intent["prev_event_digest"],
                         "prev_lookup_hash": intent["prev_lookup_hash"],
                         "digest": event_digest,
                     }
                 ),
-                "chain_id": "lifecycle-owner-ok",
+                "chain_id": DEFAULT_CHAIN_ID,
                 "event_digest": event_digest,
                 "intent_token": intent["intent_token"],
                 "owner_authorization": owner_authorization,
@@ -567,11 +565,11 @@ class TestCommitIntentLifecycle:
         assert payload["owner_authorization"]["algorithm"] == "ecdsa-p384-sha384"
 
     def test_commit_rejects_missing_owner_authorization(self, trucon_client):
-        owner_private_key, owner_pub_key = _generate_owner_keypair()
-        self._init_chain(trucon_client, "lifecycle-owner-missing", pub_key=owner_pub_key)
+        _owner_private_key, owner_pub_key = _generate_owner_keypair()
+        self._init_chain(trucon_client, DEFAULT_CHAIN_ID, pub_key=owner_pub_key)
         reserve = trucon_client.post(
             "/commit-intents/reserve",
-            json={"chain_id": "lifecycle-owner-missing", "idempotency_key": "commit-owner-missing"},
+            json={"chain_id": DEFAULT_CHAIN_ID, "idempotency_key": "commit-owner-missing"},
         )
         assert reserve.status_code == 200
         intent = reserve.json()
@@ -582,14 +580,14 @@ class TestCommitIntentLifecycle:
             json={
                 "bundle": json.dumps(
                     {
-                        "chain_id": "lifecycle-owner-missing",
+                        "chain_id": DEFAULT_CHAIN_ID,
                         "sequence_num": intent["sequence_num"],
                         "prev_event_digest": intent["prev_event_digest"],
                         "prev_lookup_hash": intent["prev_lookup_hash"],
                         "digest": event_digest,
                     }
                 ),
-                "chain_id": "lifecycle-owner-missing",
+                "chain_id": DEFAULT_CHAIN_ID,
                 "event_digest": event_digest,
                 "intent_token": intent["intent_token"],
             },
@@ -600,17 +598,17 @@ class TestCommitIntentLifecycle:
 
     def test_commit_reuses_consumed_intent_result_with_owner_authorization(self, trucon_client):
         owner_private_key, owner_pub_key = _generate_owner_keypair()
-        self._init_chain(trucon_client, "lifecycle-owner-reuse", pub_key=owner_pub_key)
+        self._init_chain(trucon_client, DEFAULT_CHAIN_ID, pub_key=owner_pub_key)
         reserve = trucon_client.post(
             "/commit-intents/reserve",
-            json={"chain_id": "lifecycle-owner-reuse", "idempotency_key": "commit-owner-reuse"},
+            json={"chain_id": DEFAULT_CHAIN_ID, "idempotency_key": "commit-owner-reuse"},
         )
         assert reserve.status_code == 200
         intent = reserve.json()
         event_digest = "sha384:" + ("ab" * 48)
         owner_authorization = sign_owner_authorization(
             private_key=owner_private_key,
-            chain_id="lifecycle-owner-reuse",
+            chain_id=DEFAULT_CHAIN_ID,
             sequence_num=intent["sequence_num"],
             prev_event_digest=intent["prev_event_digest"],
             prev_lookup_hash=intent["prev_lookup_hash"],
@@ -620,14 +618,14 @@ class TestCommitIntentLifecycle:
         payload = {
             "bundle": json.dumps(
                 {
-                    "chain_id": "lifecycle-owner-reuse",
+                    "chain_id": DEFAULT_CHAIN_ID,
                     "sequence_num": intent["sequence_num"],
                     "prev_event_digest": intent["prev_event_digest"],
                     "prev_lookup_hash": intent["prev_lookup_hash"],
                     "digest": event_digest,
                 }
             ),
-            "chain_id": "lifecycle-owner-reuse",
+            "chain_id": DEFAULT_CHAIN_ID,
             "event_digest": event_digest,
             "intent_token": intent["intent_token"],
             "owner_authorization": owner_authorization,
@@ -641,10 +639,10 @@ class TestCommitIntentLifecycle:
         assert second.json()["record_id"] == first.json()["record_id"]
 
     def test_commit_rejects_bundle_predecessor_mismatch(self, trucon_client):
-        self._init_chain(trucon_client, "lifecycle-mismatch")
+        self._init_chain(trucon_client, DEFAULT_CHAIN_ID)
         reserve = trucon_client.post(
             "/commit-intents/reserve",
-            json={"chain_id": "lifecycle-mismatch", "idempotency_key": "commit-mismatch"},
+            json={"chain_id": DEFAULT_CHAIN_ID, "idempotency_key": "commit-mismatch"},
         )
         assert reserve.status_code == 200
         intent = reserve.json()
@@ -654,14 +652,14 @@ class TestCommitIntentLifecycle:
             json={
                 "bundle": json.dumps(
                     {
-                        "chain_id": "lifecycle-mismatch",
+                        "chain_id": DEFAULT_CHAIN_ID,
                         "sequence_num": intent["sequence_num"],
                         "prev_event_digest": "sha384:" + ("ff" * 48),
                         "prev_lookup_hash": intent["prev_lookup_hash"],
                         "digest": "sha384:" + ("ab" * 48),
                     }
                 ),
-                "chain_id": "lifecycle-mismatch",
+                "chain_id": DEFAULT_CHAIN_ID,
                 "event_digest": "sha384:" + ("ab" * 48),
                 "intent_token": intent["intent_token"],
             },
@@ -671,10 +669,10 @@ class TestCommitIntentLifecycle:
         assert "prev_event_digest mismatch" in resp.json()["detail"]
 
     def test_commit_rejects_expired_intent(self, trucon_client):
-        self._init_chain(trucon_client, "lifecycle-expired")
+        self._init_chain(trucon_client, DEFAULT_CHAIN_ID)
         reserve = trucon_client.post(
             "/commit-intents/reserve",
-            json={"chain_id": "lifecycle-expired", "idempotency_key": "expired-intent"},
+            json={"chain_id": DEFAULT_CHAIN_ID, "idempotency_key": "expired-intent"},
         )
         assert reserve.status_code == 200
         intent_token = reserve.json()["intent_token"]
@@ -685,14 +683,14 @@ class TestCommitIntentLifecycle:
                 json={
                     "bundle": json.dumps(
                         {
-                            "chain_id": "lifecycle-expired",
+                            "chain_id": DEFAULT_CHAIN_ID,
                             "sequence_num": 2,
                             "prev_event_digest": None,
                             "prev_lookup_hash": None,
                             "digest": "sha384:" + ("ab" * 48),
                         }
                     ),
-                    "chain_id": "lifecycle-expired",
+                    "chain_id": DEFAULT_CHAIN_ID,
                     "event_digest": "sha384:" + ("ab" * 48),
                     "intent_token": intent_token,
                 },

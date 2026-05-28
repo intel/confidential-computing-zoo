@@ -172,7 +172,7 @@ Example OOB flow:
 tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
 curl -X POST http://127.0.0.1:8000/api/docktap/authorize \
 	-H 'Content-Type: application/json' \
-	-d '{"chain_id": "docktap-runtime", "identity_token": "<paste token here>"}'
+	-d '{"chain_id": "default", "identity_token": "<paste token here>"}'
 docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
 ```
 
@@ -182,8 +182,8 @@ Example challenge error:
 Error response from daemon: Docktap authorization required before docker pull.
 Browser login: http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap&session_id=<session-id>
 Remote login command: tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
-Ensure authorization: curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{"chain_id": "docktap-runtime", "identity_token": "<paste token here>"}'
-Direct delegation fallback: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{"chain_id": "docktap-runtime", "identity_token": "<paste token here>"}'
+Ensure authorization: curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{"chain_id": "default", "identity_token": "<paste token here>"}'
+Direct delegation fallback: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{"chain_id": "default", "identity_token": "<paste token here>"}'
 If tc-client is unavailable, from the tc_api repo root run: bash setup.sh
 Then run: ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
 Then retry.

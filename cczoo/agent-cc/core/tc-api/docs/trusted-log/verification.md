@@ -100,7 +100,7 @@ Event Log 0 answers: where did this chain epoch begin, and what trusted platform
 
 Event Log 0 does **not** answer: what is the current attested state of the CVM right now?
 
-For every non-`default` chain, `tc-verify` must require that the first replayed immutable record is Event Log 0. A workload chain that begins with a business or runtime event instead of `chain.init` is structurally invalid even if later records, signatures, and attested-head evidence otherwise look well-formed.
+For the `default` measured chain, `tc-verify` must require that the first replayed immutable record is Event Log 0. A history that begins with a business or runtime event instead of `chain.init` is structurally invalid even if later records, signatures, and attested-head evidence otherwise look well-formed.
 
 ## Attested Head Evidence
 
@@ -193,11 +193,11 @@ The same boundary applies to predecessor continuity: exported evidence does not 
 
 The current producer-side export surface is a strict read-only TruCon endpoint:
 
-- `GET /evidence/{chain_id}`
+- `GET /evidence`
 
 v1 export semantics are intentionally narrow:
 
-- export only the latest confirmed public head for the chain
+- export only the latest confirmed public head for the default measured chain
 - fail if the chain has no confirmed `head_log_id`
 - fail if quote acquisition fails
 - fail if quote-backed report data does not match the producer-computed `expected_value`
@@ -219,10 +219,10 @@ The preferred long-term inputs for `tc-verify` are:
 
 The current implementation treats exported evidence as the supported external operator input. Live TruCon APIs are retained only as explicit internal troubleshooting inputs for tightly coupled or in-CVM workflows:
 
-- `GET /chain-state/{chain_id}`
-- `GET /verify-chain/{chain_id}`
+- `GET /chain-state`
+- `GET /verify-chain`
 
-`GET /evidence/{chain_id}` is no longer just a producer-side bridge in the abstract design; it is the concrete producer surface used to obtain the preferred v1 evidence package. `GET /chain-state/{chain_id}` and `GET /verify-chain/{chain_id}` remain internal operational inputs and should not be treated as the final external verifier contract or a normal operator workflow.
+`GET /evidence` is no longer just a producer-side bridge in the abstract design; it is the concrete producer surface used to obtain the preferred v1 evidence package. `GET /chain-state` and `GET /verify-chain` remain internal operational inputs for the default measured chain and should not be treated as the final external verifier contract or a normal operator workflow.
 
 ## Verification Flow
 

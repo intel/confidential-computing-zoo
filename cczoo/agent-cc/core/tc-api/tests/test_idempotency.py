@@ -323,7 +323,8 @@ class TestClientIdempotencyKeyGeneration:
             captured_payload["idempotency_key"] = idempotency_key
             return {"record_id": "rec-mock", "sequence_num": 1, "mr_value": None, "prev_mr_value": None}
 
-        with patch.object(TrustedLogAPI, '_reserve_commit_intent', mock_reserve), \
+        with patch.object(TrustedLogAPI, 'init_chain', return_value=None), \
+             patch.object(TrustedLogAPI, '_reserve_commit_intent', mock_reserve), \
              patch.object(TrustedLogAPI, '_post_to_trucon', mock_post), \
              patch('tc_api.transparency.commit_client.build_signing_context') as mock_build_ctx, \
              patch('tc_api.transparency.commit_client.IdentityToken') as mock_id_token:
@@ -373,7 +374,8 @@ class TestClientIdempotencyKeyGeneration:
             captured_payload["idempotency_key"] = idempotency_key
             return {"record_id": "rec-mock", "sequence_num": 1, "mr_value": None, "prev_mr_value": None}
 
-        with patch.object(TrustedLogAPI, '_reserve_commit_intent', mock_reserve), \
+        with patch.object(TrustedLogAPI, 'init_chain', return_value=None), \
+             patch.object(TrustedLogAPI, '_reserve_commit_intent', mock_reserve), \
              patch.object(TrustedLogAPI, '_post_to_trucon', mock_post), \
              patch('tc_api.transparency.commit_client.build_signing_context') as mock_build_ctx, \
              patch('tc_api.transparency.commit_client.IdentityToken') as mock_id_token:

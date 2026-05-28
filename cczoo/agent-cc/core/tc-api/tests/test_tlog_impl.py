@@ -502,7 +502,7 @@ def test_sigstore_adapter_traverse_follows_prev_lookup_hash_candidates(mock_reko
     def make_entry(sequence_num, digest, prev_lookup_hash=None):
         payload = {
             "predicate": {
-                "chain_id": "tc-api-workload-oci",
+                "chain_id": "default",
                 "event_type": "chain.init" if sequence_num == 1 else "launch",
                 "sequence_num": sequence_num,
                 "digest": digest,

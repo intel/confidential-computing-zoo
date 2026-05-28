@@ -83,7 +83,7 @@ def _resolve_trucon_service_token(args: argparse.Namespace) -> str | None:
 
 def _fetch_current_evidence(args: argparse.Namespace) -> str:
     token = _resolve_trucon_service_token(args)
-    url = f"{args.trucon_url.rstrip('/')}/evidence/{args.chain_id}"
+    url = f"{args.trucon_url.rstrip('/')}/evidence"
     request = urllib.request.Request(url, method="GET")
     if token:
         request.add_header("Authorization", f"Bearer {token}")

@@ -323,7 +323,7 @@ def test_simulated_tdx_e2e_covers_evidence_export_and_verify(simulated_tdx_harne
 
         trucon_app_mod._submit_daemon_tick()
 
-    evidence_resp = client.get("/evidence/default")
+    evidence_resp = client.get("/evidence")
     assert evidence_resp.status_code == 200
     evidence = evidence_resp.json()
     assert evidence["tee_type"] == "tdx"
