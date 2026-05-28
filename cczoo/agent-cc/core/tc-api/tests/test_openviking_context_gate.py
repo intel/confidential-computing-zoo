@@ -82,7 +82,7 @@ def test_confidential_evidence_endpoint_returns_required_claims(trucon_client):
     expected_value = trucon_app_mod.compute_binding_expected_value("default", 1, "log-1", "aa" * 48)
     trucon_app_mod._quote_adapter = StaticQuoteAdapter(expected_value)
 
-    response = client.get("/confidential/evidence/default")
+    response = client.get("/confidential/evidence")
 
     assert response.status_code == 200
     data = response.json()
@@ -101,7 +101,7 @@ def test_confidential_posture_endpoint_is_separate_from_evidence(trucon_client):
     client, db_path = trucon_client
     _insert_confirmed_record(db_path, "default", 1, "log-1", "aa" * 48)
 
-    response = client.get("/confidential/posture/default")
+    response = client.get("/confidential/posture")
 
     assert response.status_code == 200
     data = response.json()
@@ -116,7 +116,7 @@ def test_verify_context_send_allows_and_reuses_cache(trucon_client):
     _insert_confirmed_record(db_path, "default", 1, "log-1", "aa" * 48)
     expected_value = trucon_app_mod.compute_binding_expected_value("default", 1, "log-1", "aa" * 48)
     trucon_app_mod._quote_adapter = StaticQuoteAdapter(expected_value)
-    payload = client.get("/confidential/evidence/default").json()
+    payload = client.get("/confidential/evidence").json()
     cache = InMemoryTrustCache()
     policy = ContextSendPolicy(
         target_url="http://openviking.test",
@@ -142,7 +142,7 @@ def test_verify_context_send_denies_expired_evidence(trucon_client):
     _insert_confirmed_record(db_path, "default", 1, "log-1", "aa" * 48)
     expected_value = trucon_app_mod.compute_binding_expected_value("default", 1, "log-1", "aa" * 48)
     trucon_app_mod._quote_adapter = StaticQuoteAdapter(expected_value)
-    payload = client.get("/confidential/evidence/default").json()
+    payload = client.get("/confidential/evidence").json()
     policy = ContextSendPolicy(
         target_url="http://openviking.test",
         expected_service_instance_id=payload["service_instance_id"],
@@ -172,7 +172,7 @@ def test_verify_context_send_denies_cache_key_mismatch(trucon_client):
     _insert_confirmed_record(db_path, "default", 1, "log-1", "aa" * 48)
     expected_value = trucon_app_mod.compute_binding_expected_value("default", 1, "log-1", "aa" * 48)
     trucon_app_mod._quote_adapter = StaticQuoteAdapter(expected_value)
-    payload = client.get("/confidential/evidence/default").json()
+    payload = client.get("/confidential/evidence").json()
     cache = InMemoryTrustCache()
     policy = ContextSendPolicy(
         target_url="http://openviking.test",

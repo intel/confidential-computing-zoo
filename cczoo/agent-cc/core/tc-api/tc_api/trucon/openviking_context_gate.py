@@ -247,7 +247,7 @@ def verify_context_send(
     now: Optional[datetime] = None,
     fetcher: Any = _fetch_json,
 ) -> ContextSendDecision:
-    evidence_url = f"{policy.target_url.rstrip('/')}/confidential/evidence/{policy.chain_id}"
+    evidence_url = f"{policy.target_url.rstrip('/')}/confidential/evidence"
     try:
         payload = fetcher(evidence_url)
     except urllib.error.URLError:

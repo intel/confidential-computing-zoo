@@ -49,7 +49,7 @@ def require_attestation() -> bool:
 # TruCon connectivity
 # ---------------------------------------------------------------------------
 TRUCON_URL: str = os.environ.get("TRUCON_URL", "http://127.0.0.1:8001")
-RUNTIME_CHAIN_ID: str = os.environ.get("DOCKTAP_RUNTIME_CHAIN_ID", "docktap-runtime")
+RUNTIME_CHAIN_ID: str = "default"
 
 # ---------------------------------------------------------------------------
 # Retry / queue tuning

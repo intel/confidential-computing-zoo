@@ -173,10 +173,10 @@ Note: `submit_record()` and `get_latest_state()` are no longer exposed on the tc
 
 The current tc_api integration uses explicit `chain_ref` routing when it calls `init_record()`:
 
-- build and publish create records on `TRANSPARENCY_SERVICE_CHAIN_ID`, which defaults to `tc-api-service`;
-- launch creates records on `TRANSPARENCY_WORKLOAD_CHAIN_PREFIX + workload_id`, which defaults to `tc-api-workload-<workload_id>`.
+- build, publish, and launch create measured records on `TRANSPARENCY_SERVICE_CHAIN_ID`, which now resolves to `default`;
+- `workload_id` remains part of the signed payload and surrounding metadata, but it no longer selects a separate measured chain.
 
-This is now the intended caller contract for tc_api-facing transparency operations. Using the legacy `default` chain for new build/publish receipts is no longer the operationally preferred path.
+This is now the intended caller contract for tc_api-facing transparency operations. The RTMR-backed measured history is node-wide and default-only.
 
 ### Chain Owner Key Persistence Contract
 
@@ -219,10 +219,10 @@ The operator-facing CLI result now also includes a top-level `diagnostics` objec
 For producer-side attested evidence export, TruCon also exposes:
 
 ```bash
-GET /evidence/<chain_id>
+GET /evidence
 ```
 
-This endpoint returns a v1 attested-head evidence package for the chain's latest confirmed public head only. It is a strict read-only surface: if the chain has no confirmed `head_log_id`, if quote acquisition fails, or if the quote-backed report-data value does not match the producer-computed binding target, the request fails rather than returning degraded evidence.
+This endpoint returns a v1 attested-head evidence package for the default measured chain's latest confirmed public head only. It is a strict read-only surface: if the default chain has no confirmed `head_log_id`, if quote acquisition fails, or if the quote-backed report-data value does not match the producer-computed binding target, the request fails rather than returning degraded evidence.
 
 For the longer-term operator-facing verification model and evidence-package boundary, see [verification.md](verification.md).
 
@@ -274,9 +274,9 @@ The TruCon is a single-instance FastAPI service (started with `--workers 1`) tha
 | `/commit` | POST | Accept a signed DSSE bundle and optional `intent_token`. Validate the signed bundle against the reserved contract, then serialize RTMR extend + INSERT + chain state under lock. Return `{record_id, chain_id, sequence_num, mr_value, status}`. |
 | `/init-chain/{chain_id}/baseline` | GET | Return Event Log 0 baseline inputs (`rtmr_value`, `ccel_digest`, `init_token`) before signing. |
 | `/init-chain` | POST | Consume a reserved baseline intent plus `init_token` and insert Event Log 0 as `sequence_num=1`. |
-| `/chain-state/{chain_id}` | GET | Return current chain state: `{chain_id, head_record_id, head_log_id, sequence_num, mr_value}`. |
-| `/evidence/{chain_id}` | GET | Return a v1 attested-head evidence package for the chain's latest confirmed public head. Fails if no confirmed immutable-log head exists or if quote acquisition / binding validation fails. |
-| `/verify-chain/{chain_id}` | GET | Return local chain verification details: sequence continuity, RTMR checks, Rekor confirmation state, and signed predecessor diagnostics exposed as `predecessor_ok`, `predecessor_status`, `prev_event_digest`, `prev_lookup_hash`, `candidate_count`, and related pipeline counts. |
+| `/chain-state` | GET | Return current default-chain state: `{chain_id, head_record_id, head_log_id, sequence_num, mr_value}`. |
+| `/evidence` | GET | Return a v1 attested-head evidence package for the default chain's latest confirmed public head. Fails if no confirmed immutable-log head exists or if quote acquisition / binding validation fails. |
+| `/verify-chain` | GET | Return local verification details for the default measured chain: sequence continuity, RTMR checks, Rekor confirmation state, and signed predecessor diagnostics exposed as `predecessor_ok`, `predecessor_status`, `prev_event_digest`, `prev_lookup_hash`, `candidate_count`, and related pipeline counts. |
 | `/status` | GET | Return aggregate queue statistics: total pending, confirmed, and failed counts per chain. |
 
 See `tc_api/trucon/schemas.py` for Pydantic request/response models (`CommitRequest`, `CommitResponse`, `ChainStateResponse`, `CommitQueueStatusResponse`, `ChainVerificationResponse`). `tc_api/trucon/app.py` imports those schemas and binds them to FastAPI routes.
@@ -285,7 +285,7 @@ See `tc_api/trucon/schemas.py` for Pydantic request/response models (`CommitRequ
 
 ```python
 # tc_api side — stateless, multi-worker safe
-ctx = trusted_log.init_record(context={"chain_ref": "tc-api-service"})
+ctx = trusted_log.init_record(context={"chain_ref": "default"})
 trusted_log.add_entry(ctx.record_id, Entry(key="docker-pull", value=image_ref))
 trusted_log.add_entry(ctx.record_id, Entry(key="verify-sbom", value={"digest": sbom_digest, "format": "spdx"}))
 
@@ -304,7 +304,7 @@ queue = trusted_log.get_commit_queue_status()
 event_log = trusted_log.get_event_log(log_uuid="log-uuid-example")
 
 # Resolve the confirmed chain tail from TruCon, then verify immutable-backend entries
-verify = trusted_log.verify_record(target="head_log_id_value", policy={"chain_id": "tc-api-service"})
+verify = trusted_log.verify_record(target="head_log_id_value", policy={"chain_id": "default"})
 ```
 
 The preferred operator-facing surface remains `tc-verify --evidence ...`; direct `verify_record()` usage is best understood as the library-level replay primitive beneath that CLI flow.

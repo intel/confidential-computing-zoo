@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from ..config import (
     BUILD_DIR,
     BUILD_PACKAGE_MAX_REQUEST_BYTES,
+    DEFAULT_MEASURED_CHAIN_ID,
     DEBUG,
     DOCKER_REGISTRY,
     DOCKER_REPOSITORY,
@@ -17,7 +18,6 @@ from ..config import (
     LOGS_DIR,
     PORT,
     TRANSPARENCY_SERVICE_CHAIN_ID,
-    TRANSPARENCY_WORKLOAD_CHAIN_PREFIX,
     TRUCON_URL,
     UPLOAD_DIR,
 )
@@ -32,7 +32,7 @@ docker_service = DockerService()
 
 
 def workload_transparency_chain_id(workload_id: str) -> str:
-    return f"{TRANSPARENCY_WORKLOAD_CHAIN_PREFIX}{workload_id}"
+    return DEFAULT_MEASURED_CHAIN_ID
 
 
 def has_proxy_configuration() -> bool:
@@ -96,8 +96,8 @@ __all__ = [
     "LUKS_VFS_BASE_DIR",
     "LOGS_DIR",
     "PORT",
+    "DEFAULT_MEASURED_CHAIN_ID",
     "TRANSPARENCY_SERVICE_CHAIN_ID",
-    "TRANSPARENCY_WORKLOAD_CHAIN_PREFIX",
     "TRUCON_URL",
     "UPLOAD_DIR",
     "docker_service",

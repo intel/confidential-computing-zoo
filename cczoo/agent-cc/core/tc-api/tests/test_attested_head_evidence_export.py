@@ -79,7 +79,7 @@ def test_evidence_export_success_returns_latest_confirmed_head(trucon_client):
     expected_value = trucon_app_mod.compute_binding_expected_value("default", 2, "log-2", "bb" * 48)
     trucon_app_mod._quote_adapter = StaticQuoteAdapter(expected_value)
 
-    response = client.get("/evidence/default")
+    response = client.get("/evidence")
 
     assert response.status_code == 200
     data = response.json()
@@ -94,7 +94,7 @@ def test_evidence_export_fails_without_confirmed_head(trucon_client):
     update_chain_state(chain_id="default", head_record_id="rec-pending", sequence_num=1, mr_value="aa" * 48, db_path=db_path)
     trucon_app_mod._quote_adapter = StaticQuoteAdapter("head_log_id_bytes:" + "11" * 8)
 
-    response = client.get("/evidence/default")
+    response = client.get("/evidence")
 
     assert response.status_code == 409
     assert "no confirmed immutable-log head" in response.json()["detail"]
@@ -106,7 +106,7 @@ def test_evidence_export_fails_when_quote_acquisition_fails(trucon_client):
     expected_value = trucon_app_mod.compute_binding_expected_value("default", 1, "log-1", "aa" * 48)
     trucon_app_mod._quote_adapter = StaticQuoteAdapter(expected_value, should_fail=True)
 
-    response = client.get("/evidence/default")
+    response = client.get("/evidence")
 
     assert response.status_code == 500
     assert "Quote acquisition failed" in response.json()["detail"]
@@ -117,7 +117,7 @@ def test_evidence_export_fails_on_binding_mismatch(trucon_client):
     _insert_confirmed_record(db_path, "default", 1, "log-1", "aa" * 48)
     trucon_app_mod._quote_adapter = StaticQuoteAdapter("head_log_id_bytes:" + "ff" * 8)
 
-    response = client.get("/evidence/default")
+    response = client.get("/evidence")
 
     assert response.status_code == 500
     assert "report data did not match" in response.json()["detail"]

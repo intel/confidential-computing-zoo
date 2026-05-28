@@ -408,22 +408,22 @@ It captures the environment's pre-existing platform state using the current RTMR
 Event Log 0 is persisted to the immutable log backend, but its creation does not perform a new RTMR extend.
 The purpose of this record is to anchor the trusted-log chain to the pre-existing platform state rather than to mutate that state again during initialization.
 
-For the `default` chain, tc_api creates Event Log 0 during service startup via the explicit `/init-chain` flow. For previously unseen non-`default` workload chains, TruCon creates the same baseline lazily inside `POST /commit` while holding the sequencer lock. In both cases, the baseline record is now constructed as a Sigstore/Rekor-compatible bundle, persisted locally as `sequence_num=1`, and the first business or runtime record for that chain is accepted only afterward as `sequence_num=2`.
+tc_api creates Event Log 0 for the `default` measured chain during service startup via the explicit `/init-chain` flow. That baseline record is constructed as a Sigstore/Rekor-compatible bundle, persisted locally as `sequence_num=1`, and all later business and runtime records append to the same default-chain history.
 
-**Signing model**: For the explicit `default`-chain init path, Event Log 0 is now emitted as a Sigstore DSSE bundle so it can be submitted to Rekor through the same bundle-oriented path as other public entries. tc_api still generates an ephemeral ECDSA P-384 keypair in TEE memory, embeds the derived public key in Event Log 0's `pub_key` field, and discards the private key immediately afterward. Subsequent events continue to use Sigstore OIDC keyless signing. Lazily created workload-chain baselines still retain their existing local baseline-construction path.
+**Signing model**: For the explicit `default`-chain init path, Event Log 0 is now emitted as a Sigstore DSSE bundle so it can be submitted to Rekor through the same bundle-oriented path as other public entries. tc_api still generates an ephemeral ECDSA P-384 keypair in TEE memory, embeds the derived public key in Event Log 0's `pub_key` field, and discards the private key immediately afterward. Subsequent events continue to use Sigstore OIDC keyless signing or the documented owner/delegation flows, but they all remain on the same default measured chain.
 
 **Contents**:
 - Current RTMR[2] snapshot (read, not extended).
 - SHA-384 digest of the raw CCEL binary read from ACPI tables (`/sys/firmware/acpi/tables/CCEL`). Only the digest is stored, not the full CCEL binary. On supported TDX hosts, missing CCEL material should be treated as a platform configuration problem.
 - The TEE-generated ECDSA P-384 public key in PEM format (`pub_key` field).
 
-**Initialization semantics**: Event Log 0 creation is a logical prerequisite, not a blocking gate. Subsequent `/commit` calls can proceed and queue while Event Log 0 is still PENDING. The submit daemon's ordered-submission behavior (ascending `sequence_num`) guarantees that Event Log 0 (sequence_num=1) is published to Rekor before any subsequent records. If Event Log 0 submission fails terminally, the entire chain is dead — no trust anchor exists. For lazily bootstrapped workload chains, failure to create the local baseline rejects the triggering first commit instead of admitting a chain whose first record is not Event Log 0.
+**Initialization semantics**: Event Log 0 creation is a logical prerequisite, not a blocking gate. Subsequent `/commit` calls can proceed and queue while Event Log 0 is still PENDING. The submit daemon's ordered-submission behavior (ascending `sequence_num`) guarantees that Event Log 0 (sequence_num=1) is published to Rekor before any subsequent records. If Event Log 0 submission fails terminally, the default measured chain is dead for that epoch — no trust anchor exists.
 
 **Protocol**: tc_api calls TruCon via a two-phase `/init-chain` protocol:
 1. `GET /init-chain/{chain_id}/baseline` — TruCon reads RTMR[2] (no extend) and computes the CCEL digest. Returns `{rtmr_value, ccel_digest, init_token}`.
 2. `POST /init-chain` — tc_api sends `{chain_id, init_token, signed_bundle, pub_key}`. TruCon verifies no existing chain, INSERTs the baseline record (sequence_num=1), and initializes `chain_state`.
 
-Every subsequent event log created by tc_api or Docktap references Event Log 0, directly or indirectly, as the base entry of the chain. This invariant now applies to both the startup-initialized `default` chain and lazily bootstrapped workload chains.
+Every subsequent event log created by tc_api or Docktap references Event Log 0, directly or indirectly, as the base entry of the default measured chain.
 
 
 #### JSON Mock-Up
@@ -745,7 +745,7 @@ Instead, the commit queue itself drives publication through the embedded daemon:
 - when `commit_record` inserts a record into the queue via the TruCon, the embedded daemon picks it up on the next poll cycle
 - the daemon submits records in `sequence_num` order, respecting chain-level ordering and failure blocking
 - `GET /status` on the TruCon provides queue statistics for health checks and dashboards
-- `GET /chain-state/{chain_id}` on the TruCon provides per-chain state for observability
+- `GET /chain-state` on the TruCon provides default-chain state for observability
 
 In other words, the default control flow is: TruCon commit → queue insert → daemon submits queued records.
 This makes the embedded daemon the sole mutation agent for queue-driven publication, keeps queue inspection read-only and compact, and eliminates cross-process coordination.
@@ -782,7 +782,7 @@ Commit queue entries retain the following metadata for safe resubmission and ope
 
 A companion `chain_state` table maintains one row per `chain_id` with `head_record_id`, `head_log_id`, `sequence_num`, `mr_value`, and `updated_at`.
 
-Commit queue status is exposed through the TruCon's `GET /status` endpoint and, for per-chain detail, `GET /chain-state/{chain_id}`.
+Commit queue status is exposed through the TruCon's `GET /status` endpoint and, for the node-wide measured chain, `GET /chain-state`.
 
 If a worker or operator needs more detail, the queue-specific monitoring view should expose:
 
@@ -917,7 +917,7 @@ If measurement correlation is enabled, verification should additionally check th
 The current implementation exposes a supported external verification path and a separate internal troubleshooting path:
 
 - immutable-backend history from Rekor, used for public replay and signature validation
-- exported attested-head evidence from `GET /evidence/{chain_id}`, used as the supported operator input for current-head binding
+- exported attested-head evidence from `GET /evidence`, used as the supported operator input for current-head binding
 - live TruCon local chain state, retained only for explicit troubleshooting of sequence, RTMR, and pending-status diagnostics
 
 Only the evidence-backed path should be treated as the external verifier contract; the live TruCon path remains an internal troubleshooting aid.
@@ -930,13 +930,13 @@ For remote operators who may not be able to log into the CVM, the design should 
 The external verifier model should therefore be:
 
 1. Replay the public event chain from the immutable backend, starting from `head_log_id`.
-2. Validate Event Log 0 as the epoch baseline anchor (`baseline_rtmr`, `ccel_digest`, `pub_key`). For non-`default` chains, absence of Event Log 0 as the first replayed record is a structural verification failure rather than a warning.
+2. Validate Event Log 0 as the epoch baseline anchor (`baseline_rtmr`, `ccel_digest`, `pub_key`) for the default measured chain.
 3. Consume exported evidence that identifies the current chain head (`chain_id`, `head_log_id`, `sequence_num`) and binds it to the attested local measurement state (for example a quote-backed RTMR snapshot).
 4. Compare the replayed chain result against that attested head evidence rather than trusting live TruCon API responses alone.
 
 In other words, Rekor remains the public audit log, Event Log 0 remains the baseline anchor, and exported attested head evidence bridges the gap between public replay and the current CVM state.
 
-The current TruCon export surface for that evidence is `GET /evidence/{chain_id}`. It is intentionally strict: v1 exports only the latest confirmed public head of a chain and fails when no confirmed `head_log_id` exists, when quote acquisition fails, or when the quote-backed report-data value does not match the producer-computed binding target.
+The current TruCon export surface for that evidence is `GET /evidence`. It is intentionally strict: v1 exports only the latest confirmed public head of the default measured chain and fails when no confirmed `head_log_id` exists, when quote acquisition fails, or when the quote-backed report-data value does not match the producer-computed binding target.
 
 This architecture intentionally keeps detailed evidence-package format, quote field selection, and operator CLI behavior out of the top-level architecture doc. Those details should evolve in verification-specific design docs and OpenSpec changes.
 

@@ -192,14 +192,14 @@ def _run_fallback_verification(args: argparse.Namespace, chain_id: str) -> Dict[
     trucon_result: Dict[str, Any] = {"reachable": False, "data": None, "error": None}
     chain_state: Dict[str, Any] = {}
     try:
-        chain_state = _fetch_trucon_json(f"/chain-state/{chain_id}")
+        chain_state = _fetch_trucon_json("/chain-state")
     except urllib.error.HTTPError as exc:
         trucon_result["error"] = f"TruCon chain-state lookup failed: HTTP {exc.code}"
     except Exception as exc:
         trucon_result["error"] = f"TruCon chain-state lookup failed: {exc}"
 
     try:
-        trucon_result["data"] = _fetch_trucon_json(f"/verify-chain/{chain_id}")
+        trucon_result["data"] = _fetch_trucon_json("/verify-chain")
         trucon_result["reachable"] = True
     except urllib.error.HTTPError as exc:
         trucon_result["error"] = f"TruCon verification failed: HTTP {exc.code}"

@@ -89,7 +89,6 @@ def trucon_client(tmp_path):
 
     init_db(db_path)
     update_chain_state("default", "baseline-default", 0, mr_value="aa" * 48, head_log_id="log0-default", db_path=db_path)
-    update_chain_state("docktap-runtime", "baseline-docktap-runtime", 0, mr_value="aa" * 48, head_log_id="log0-docktap-runtime", db_path=db_path)
 
     old_mr = app_mod._local_mr
     app_mod._local_mr = MockMRAdapter()
@@ -103,9 +102,9 @@ def trucon_client(tmp_path):
     def commit(req: app_mod.CommitRequest, request: Request):
         return app_mod.commit(req, request)
 
-    @test_app.get("/chain-state/{chain_id}", response_model=app_mod.ChainStateResponse)
-    def chain_state(chain_id: str):
-        return app_mod.get_chain_state_endpoint(chain_id)
+    @test_app.get("/chain-state", response_model=app_mod.ChainStateResponse)
+    def chain_state():
+        return app_mod.get_chain_state_endpoint()
 
     client = _TC(test_app)
     yield client, db_path

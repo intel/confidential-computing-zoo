@@ -333,7 +333,7 @@ class TestBestEffortFailureHandling:
             assert committer.submit_operation(rec, "pull") is True
 
         predicate = captured_statement["json"]["predicate"]
-        assert predicate["chain_id"] == "docktap-runtime"
+        assert predicate["chain_id"] == "default"
         assert predicate["sequence_num"] == 7
         assert predicate["prev_event_digest"] == "sha384:prev"
         assert predicate["prev_lookup_hash"] == "sha256:lookup"

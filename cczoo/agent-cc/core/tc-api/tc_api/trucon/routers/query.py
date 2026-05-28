@@ -17,15 +17,17 @@ from ..schemas import (
 
 router = APIRouter()
 
+DEFAULT_CHAIN_ID = "default"
 
-@router.get("/chain-state/{chain_id}", response_model=ChainStateResponse)
-def get_chain_state_endpoint(chain_id: str):
-    """Return current chain state for a given chain_id."""
-    state = _db.get_chain_state(chain_id)
+
+@router.get("/chain-state", response_model=ChainStateResponse)
+def get_chain_state_endpoint():
+    """Return current chain state for the default measured chain."""
+    state = _db.get_chain_state(DEFAULT_CHAIN_ID)
     if not state:
-        raise HTTPException(status_code=404, detail=f"No chain state for '{chain_id}'")
+        raise HTTPException(status_code=404, detail=f"No chain state for '{DEFAULT_CHAIN_ID}'")
     return ChainStateResponse(
-        chain_id=chain_id,
+        chain_id=DEFAULT_CHAIN_ID,
         head_record_id=state['head_record_id'],
         head_log_id=state['head_log_id'],
         sequence_num=state['sequence_num'],
@@ -52,14 +54,14 @@ def get_status():
 @router.get("/state", response_model=LatestStateResponse)
 def get_state():
     """Return LatestState for the default chain."""
-    state = _db.get_latest_state('default')
+    state = _db.get_latest_state(DEFAULT_CHAIN_ID)
     return LatestStateResponse(**state)
 
 
-@router.get("/verify-chain/{chain_id}", response_model=ChainVerificationResponse)
-def verify_chain(chain_id: str):
-    """Return full chain traversal verification for a chain."""
-    return verify_chain_records(chain_id, records=_db.get_chain_records(chain_id))
+@router.get("/verify-chain", response_model=ChainVerificationResponse)
+def verify_chain():
+    """Return full chain traversal verification for the default measured chain."""
+    return verify_chain_records(DEFAULT_CHAIN_ID, records=_db.get_chain_records(DEFAULT_CHAIN_ID))
 
 
 @router.get("/workloads/{workload_id}/instances", response_model=List[InstanceSummary])

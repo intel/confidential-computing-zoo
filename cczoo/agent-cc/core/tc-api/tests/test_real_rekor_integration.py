@@ -414,7 +414,7 @@ def test_public_rekor_init_chain_submit_verify_baseline_smoke(real_rekor_runtime
 
     trucon_app_mod._submit_daemon_tick()
 
-    state = client.get(f"/chain-state/{chain_id}")
+    state = client.get("/chain-state")
     assert state.status_code == 200
     state_data = state.json()
     head_log_id = state_data["head_log_id"]

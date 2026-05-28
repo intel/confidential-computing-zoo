@@ -21,9 +21,9 @@ class TestHasActiveDelegation:
     def test_defaults_to_runtime_chain(self, mock_get):
         has_active_delegation()
         mock_get.assert_called_once()
-        # Should use DEFAULT_RUNTIME_CHAIN_ID (docktap-runtime)
+        # Should use the default measured chain.
         args = mock_get.call_args
-        assert args[0][0] == "docktap-runtime"
+        assert args[0][0] == "default"
 
 
 class TestAttestationGateWithDelegation:

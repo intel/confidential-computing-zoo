@@ -65,7 +65,7 @@ Each task has:
   1. ✅ Event Log 0 signed payload includes `sequence_num = 1`, `prev_event_digest = null`, and `prev_lookup_hash = null`.
   2. ✅ Lazy workload baseline creation participates in the same predecessor protocol rather than acting as an unrelated side effect.
   3. ✅ The first non-baseline event after initialization references the baseline through `prev_event_digest` and `prev_lookup_hash`.
-  4. ✅ Concurrency behavior for first-event workload chains remains deterministic.
+  4. ✅ Historical first-event workload-chain concurrency behavior was deterministic before the default-only rollback. Current measured-chain behavior uses only `default`.
 
 #### Task 13.3: Move tc_api commit flow onto reservation-backed signing
 
@@ -100,7 +100,7 @@ Each task has:
 - **Acceptance Criteria**:
   1. ✅ Immutable replay queries Rekor by `prev_lookup_hash` and treats the result as candidate discovery only.
   2. ✅ Candidate filtering enforces `chain_id`, `sequence_num - 1`, and recomputed `prev_event_digest`.
-  3. ✅ `/verify-chain/{chain_id}` reports `prev_event_digest`-based continuity results and predecessor candidate counts.
+  3. ✅ `/verify-chain` reports `prev_event_digest`-based continuity results and predecessor candidate counts for the default measured chain.
   4. ✅ Pending / unconfirmed records remain representable without falsely reporting predecessor success.
 - **Implementation Note**: verifier-facing continuity now uses `sequence_num`, `prev_event_digest`, and `prev_lookup_hash` as protocol truth. `prev_log_id` remains only in local bookkeeping, compatibility parsing, and some legacy traversal fallbacks.
 - **Implementation Note**: `prev_lookup_hash` discovery is not first-result-wins. When Rekor lookup yields both a public hash-only candidate and a replayable `attestation-storage` or mirror-backed candidate for the same logical predecessor, replay and traversal now keep the materialized candidate.
@@ -132,7 +132,7 @@ Each task has:
 - **Design Decisions** (confirmed 2026-04-17):
   - **Signing identity**: The original implementation shared tc_api's ambient OIDC / Sigstore path. Current runtime authorization has since evolved: Docktap now defaults to explicit delegation for runtime operations, while `delegation_disabled` preserves the stricter token-per-operation posture.
   - **Event granularity**: Each Docker operation = one independent TruCon commit. Uses `Entry(key, value)` objects with native JSON values (FIX-04 completed: `value: Any`).
-  - **Chain assignment**: v1 uses `"default"` chain_id. Per-workload chain_id assignment deferred to GAP-11.
+  - **Chain assignment**: current measured-chain behavior uses `"default"` only. Earlier notes about per-workload chain_id assignment are superseded by the later default-only rollback.
   - **Failure handling**: Synchronous + best-effort — TruCon failure logs a warning but does NOT block the Docker response back to CLI.
   - **Cross-source ordering**: REST and Docktap events on the same chain get serialized `sequence_num` ordering via TruCon's lock. No additional causal ordering enforcement.
   - **Submitted operation types**: `pull`, `create`, `start`, `stop`, `rm` only. Other operations (`wait`, `rmi`, `image_inspect`, `inspect`, `preflight_ping`, `preflight_info`, `unknown`) are not submitted.
@@ -369,13 +369,13 @@ Each task has:
 - **References**: trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow; architecture.md workload-chain model
 - **Dependencies**: GAP-05 ✅, GAP-11 ✅, GAP-17 ✅
 - **Completed**: 2026-04-20 | Change: `openspec/changes/add-workload-chain-baseline/`
-- **Current State**: The startup-initialized `default` chain keeps its explicit Event Log 0 bootstrap path, and previously unseen non-`default` workload chains now receive the same explicit baseline lazily inside TruCon's `/commit` path before the triggering business/runtime event is accepted.
-- **Implemented Outcome**: Workload chains now share the same chain-origin semantics as `default`: Event Log 0 is always `sequence_num=1`, the first business/runtime record is `sequence_num=2`, baseline creation is sequencer-locked and race-safe, and verification fails non-`default` chains whose first record is not the baseline.
+- **Current State**: Superseded by the later default-only measured-chain rollback. The active model keeps the explicit Event Log 0 bootstrap only for `default`, and workload identity remains signed metadata rather than a separate measured chain.
+- **Implemented Outcome**: Historical workload-chain baseline work established explicit baseline semantics, but active runtime behavior now collapses all RTMR-backed history to `default`.
 - **Acceptance Criteria**:
-  1. ✅ The first commit routed to a previously unseen non-`default` `chain_id` ensures a workload-scoped Event Log 0 baseline exists before the first business/runtime event is accepted.
-  2. ✅ Baseline creation for workload chains is idempotent and race-safe across concurrent launch/runtime submissions.
-  3. ✅ Verification and evidence export paths treat workload-chain Event Log 0 the same way they treat the `default` chain baseline.
-  4. ✅ Documentation explains that workload-chain baselines are created lazily on first use while the `default` chain keeps explicit startup initialization.
+  1. ✅ Historical baseline behavior for workload-scoped chains was implemented before the later rollback.
+  2. ✅ That earlier baseline creation path was idempotent and race-safe.
+  3. ✅ The current runtime contract no longer exposes workload-scoped measured chains.
+  4. ✅ Active documentation now treats workload identity as metadata within the default measured chain.
 
 ---
 
@@ -494,7 +494,7 @@ Each task has:
 - **Dependencies**: GAP-05 ✅, GAP-14 ✅
 - **Completed**: 2026-04-19
 - **Sizing**: Implemented across two archived changes; umbrella task now complete.
-- **Current State**: Event Log 0 anchors the chain baseline in Rekor, and TruCon now exports a strict read-only attested-head evidence package for the latest confirmed public head via `GET /evidence/{chain_id}`.
+- **Current State**: Event Log 0 anchors the chain baseline in Rekor, and TruCon now exports a strict read-only attested-head evidence package for the latest confirmed public head via `GET /evidence`.
 - **Suggested Subtasks**:
   1. ~~`GAP-17A` — Attested head evidence contract~~ ✅ COMPLETED
     - Completed: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-attested-head-evidence-contract/`
@@ -908,7 +908,7 @@ FIX-05 (OPEN Dead Code) ✅ ── completed with GAP-12
 27. `GAP-07` — On-chain backend adapter (blocked: target chain selection)
 28. ~~`GAP-08`~~ — CLOSED (Won't Do): legacy path removed, RTMR chain integrity prevents viable fallback
 29. ~~`GAP-12`~~ ✅ completed 2026-04-19 — Service auth Phase B (Unix socket peer credentials / caller identity)
-30. ~~`GAP-20`~~ ✅ completed 2026-04-20 — Add explicit Event Log 0 baseline for workload chains created from new `workload_id`s
+30. ~~`GAP-20`~~ ✅ completed 2026-04-20 — Historical workload-chain baseline work, later superseded by the default-only measured-chain rollback
 
 **Phase 8 — Runtime Observation Model Closure**:
 31. ~~`GAP-21.1`~~ ✅ completed 2026-04-28 — Explicit container-list observation classification
