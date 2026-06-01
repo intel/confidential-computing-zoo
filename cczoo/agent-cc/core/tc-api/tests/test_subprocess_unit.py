@@ -47,6 +47,19 @@ def test_build_image_success_path(docker_service):
     assert docker_service.builds["bld-1234"].status == "building"
 
 
+def test_build_image_uses_build_id_based_local_tag_for_email_identity(docker_service):
+    tlog = DummyTlog()
+    result = SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    with patch("tc_api.services.build.subprocess.run", return_value=result) as run_mock:
+        success = docker_service.build_image("FROM python:3.11-slim", "bld-d95f73b", "qingchengx.zeng@intel.com", tlog, "rec-1")
+
+    assert success is True
+    build_cmd = run_mock.call_args_list[0].args[0]
+    assert build_cmd[0:5] == [services.DOCKER_CMD, "build", "--no-cache", "--force-rm", "-t"]
+    assert build_cmd[5] == "tc-api-build-bld-d95f73b:latest"
+
+
 def test_build_image_nonzero_exit(docker_service):
     tlog = DummyTlog()
     result = SimpleNamespace(returncode=1, stdout="", stderr="docker build failed")
@@ -152,7 +165,10 @@ def test_build_result_shows_failed_when_build_step_fails():
             with patch("tc_api.api.workflows.docker_service.build_image", return_value=False):
                 submit_response = client.post("/api/build-package", json=payload)
                 assert submit_response.status_code == 200
-                build_id = submit_response.json()["build_id"]
+                submit_payload = submit_response.json()
+                assert submit_payload["status"] == "failed"
+                assert submit_payload["build_id"]
+                build_id = submit_payload["build_id"]
 
             result_response = client.get(
                 f"/api/build-result/{build_id}",
@@ -162,6 +178,29 @@ def test_build_result_shows_failed_when_build_step_fails():
             result_payload = result_response.json()
             assert result_payload["status"] == "failed"
             assert result_payload["current_step"] == "Container build failed"
+
+
+        def test_get_build_status_recovers_from_build_directory(docker_service, tmp_path):
+            build_id = "bld-legacy1"
+            build_path = tmp_path / "builds" / build_id
+            artifact_path = build_path / "tc-api-build-bld-legacy1"
+            artifact_path.mkdir(parents=True)
+            (artifact_path / "index.json").write_text("{}", encoding="utf-8")
+            (artifact_path / "oci-layout").write_text('{"imageLayoutVersion":"1.0.0"}', encoding="utf-8")
+            (build_path / f"{build_id}-sbom.json").write_text('{"spdxVersion":"SPDX-2.3"}', encoding="utf-8")
+            (build_path / "build-commit-receipt.json").write_text(
+                '{"record_id":"rec-123","event_id":"evt-123","queue_status":"pending"}',
+                encoding="utf-8",
+            )
+
+            recovered = docker_service.get_build_status(build_id)
+
+            assert recovered is not None
+            assert recovered.build_id == build_id
+            assert recovered.status == "success"
+            assert recovered.image_id == f"oci:{artifact_path}"
+            assert recovered.sbom_url == str(build_path / f"{build_id}-sbom.json")
+            assert recovered.log_id == "rec-123"
 
 
 def test_verify_sbom_accepts_local_oci_layout(docker_service, tmp_path):
@@ -207,16 +246,16 @@ def test_encrypt_image_prefers_docker_daemon_transport(docker_service, tmp_path)
 
     with patch.dict(os.environ, {"DOCKER_API_VERSION": "1.24"}, clear=False):
         with patch("tc_api.services.build.subprocess.run", side_effect=results) as run_mock:
-            encrypted = docker_service.encrypt_image("alice-bld-1:latest", "bld-1", str(public_key), tlog, "rec-1")
+            encrypted = docker_service.encrypt_image("tc-api-build-bld-1:latest", "bld-1", str(public_key), tlog, "rec-1")
 
-    assert encrypted == f"oci:{tmp_path / 'builds' / 'bld-1' / 'alice-bld-1'}"
+    assert encrypted == f"oci:{tmp_path / 'builds' / 'bld-1' / 'tc-api-build-bld-1'}"
     validate_cmd = run_mock.call_args_list[0].args[0]
     first_cmd = run_mock.call_args_list[1].args[0]
     assert validate_cmd == ["openssl", "pkey", "-pubin", "-in", str(public_key), "-noout"]
     assert first_cmd[0:3] == [services.SKOPEO_CMD, "copy", "--encryption-key"]
     assert first_cmd[3] == f"jwe:{public_key}"
-    assert first_cmd[4] == "docker-daemon:alice-bld-1:latest"
-    assert first_cmd[5] == f"oci:{tmp_path / 'builds' / 'bld-1' / 'alice-bld-1'}:latest-encrypted"
+    assert first_cmd[4] == "docker-daemon:tc-api-build-bld-1:latest"
+    assert first_cmd[5] == f"oci:{tmp_path / 'builds' / 'bld-1' / 'tc-api-build-bld-1'}:latest-encrypted"
     assert len(run_mock.call_args_list) == 2
 
 
@@ -233,19 +272,19 @@ def test_encrypt_image_falls_back_to_docker_archive_on_transport_error(docker_se
 
     with patch.dict(os.environ, {"DOCKER_API_VERSION": "1.24"}, clear=False):
         with patch("tc_api.services.build.subprocess.run", side_effect=results) as run_mock:
-            encrypted = docker_service.encrypt_image("alice-bld-2:latest", "bld-2", str(public_key), tlog, "rec-2")
+            encrypted = docker_service.encrypt_image("tc-api-build-bld-2:latest", "bld-2", str(public_key), tlog, "rec-2")
 
-    assert encrypted == f"oci:{tmp_path / 'builds' / 'bld-2' / 'alice-bld-2'}"
+    assert encrypted == f"oci:{tmp_path / 'builds' / 'bld-2' / 'tc-api-build-bld-2'}"
     validate_cmd = run_mock.call_args_list[0].args[0]
     daemon_cmd = run_mock.call_args_list[1].args[0]
     save_cmd = run_mock.call_args_list[2].args[0]
     archive_cmd = run_mock.call_args_list[3].args[0]
     archive_path = tmp_path / 'builds' / 'bld-2' / 'bld-2-image.tar'
     assert validate_cmd == ["openssl", "pkey", "-pubin", "-in", str(public_key), "-noout"]
-    assert daemon_cmd[4] == "docker-daemon:alice-bld-2:latest"
-    assert save_cmd == [services.DOCKER_CMD, "save", "-o", str(archive_path), "alice-bld-2:latest"]
+    assert daemon_cmd[4] == "docker-daemon:tc-api-build-bld-2:latest"
+    assert save_cmd == [services.DOCKER_CMD, "save", "-o", str(archive_path), "tc-api-build-bld-2:latest"]
     assert archive_cmd[4] == f"docker-archive:{archive_path}"
-    assert archive_cmd[5] == f"oci:{tmp_path / 'builds' / 'bld-2' / 'alice-bld-2'}:latest-encrypted"
+    assert archive_cmd[5] == f"oci:{tmp_path / 'builds' / 'bld-2' / 'tc-api-build-bld-2'}:latest-encrypted"
 
 
 def test_encrypt_image_logs_invalid_public_key_before_skopeo(docker_service, tmp_path, caplog):

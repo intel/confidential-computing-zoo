@@ -267,25 +267,21 @@ Common API surfaces:
 | LUKS | `POST /api/create_luks`, `POST /api/mount_luks`, `POST /api/unmount_luks`, `GET /api/luks-result/{user_id}` |
 | Transparency | `GET /api/transparency-log/{log_id}`, `POST /api/get-summaryTransparencylog` |
 
-All result-query endpoints now require `Authorization: Bearer <identity_token>` for the owning caller. `tc-client` reuses a cached Sigstore token when available and otherwise falls back to the existing interactive login flow.
+Result-query endpoints can be queried without Sigstore authentication.
+
+Write endpoints derive the stored owner identity from the caller's Sigstore token. The request `user_id` is normalized server-side and no longer needs to pre-match the token identity.
 
 For local manual checks, run the service and use the built-in FastAPI docs or the manual tests in `tests/test_api.py`.
 
 ## Result Query Examples
 
-Refresh or acquire a caller token first:
+Result queries over raw HTTP can be called directly:
 
 ```shell
-tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
-```
-
-Result queries over raw HTTP must send the token as a Bearer header:
-
-```shell
-curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/build-result/<build_id>
-curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/publish-result/<build_id>
-curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/launch-result/<launch_id>
-curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/luks-result/<user_id>
+curl http://127.0.0.1:8000/api/build-result/<build_id>
+curl http://127.0.0.1:8000/api/publish-result/<build_id>
+curl http://127.0.0.1:8000/api/launch-result/<launch_id>
+curl http://127.0.0.1:8000/api/luks-result/<user_id>
 ```
 
 Equivalent `tc-client` commands:

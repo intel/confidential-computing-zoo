@@ -83,7 +83,12 @@ async def build_package(
         add_authenticated_identity_entries(tlog, record_id, caller)
         tlog.add_entry(record_id, Entry(key="build_id", value=build_id))
 
-        build_path = os.path.join(BUILD_DIR, build_id)
+        if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+            build_path = os.path.join((os.path.join(BUILD_DIR, "luks")), build_id)
+        else:
+            build_path = os.path.join(BUILD_DIR, build_id)
+            logger.info("NOW build not in luks file.")
+        logger.info(f"check path: {build_path}")
         os.makedirs(build_path, exist_ok=True)
         logger.debug("Created build directory: %s", build_path)
         tlog.add_entry(record_id, Entry(key="build_path", value=build_path))
@@ -154,14 +159,30 @@ async def build_package(
             )
 
         docker_service.update_build_status(request.user_id, build_id, "submitted")
-        background_tasks.add_task(build_container_async, request, build_id, tlog, record_id)
-
-        return BuildPackageResponse(
-            build_id=build_id,
-            status="submitted",
-            estimated_time="120s",
-            user_id=request.user_id,
-        )
+        logger.info(f"Starting synchronous build process for build ID: {build_id}")
+        build_result = build_container_sync(request, build_id, tlog, record_id)
+        if build_result is None:
+            build_result = {
+                "success": False,
+                "error_message": "Build failed before producing a result",
+            }
+        
+        # Return result based on build outcome
+        if build_result["success"]:
+            return BuildPackageResponse(
+                build_id=build_id,
+                status="success",
+                user_id=request.user_id,
+                estimated_time="120s",
+                transparencyLog_verify=build_result.get("transparencyLog_verify")
+            )
+        else:
+            return BuildPackageResponse(
+                build_id=build_id,
+                status="failed",
+                user_id=request.user_id,
+                error_message=build_result.get("error_message")
+            )
     except HTTPException:
         raise
     except Exception as exc:
@@ -169,19 +190,19 @@ async def build_package(
         raise HTTPException(status_code=500, detail=f"Failed to start build: {exc}") from exc
 
 
-def build_container_async(request: BuildPackageRequest, build_id: str, tlog: TrustedLogAPI, record_id: str):
+def build_container_sync(request: BuildPackageRequest, build_id: str, tlog: TrustedLogAPI, record_id: str):
     """Build a container in the background with detailed status tracking."""
     tlog_id = None
     try:
         docker_service.update_build_status(request.user_id, build_id, "preparing", step="Initializing build process")
-        image_name = f"{request.user_id}-{build_id}:latest"
+        image_name = docker_service.local_build_image_ref(build_id)
         tlog.add_entry(record_id, Entry(key="image_name", value=image_name))
         docker_service.update_build_status(request.user_id, build_id, "building", step="Building container image")
         build_success = docker_service.build_image(request.dockerfile, build_id, request.user_id, tlog, record_id)
 
         if not build_success:
             docker_service.update_build_status(request.user_id, build_id, "failed", step="Container build failed")
-            return
+            return {"success": False, "error_message": "Container build failed"}
 
         decryption_key = None
         encryption_key_source = "generated"
@@ -195,7 +216,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
                     "failed",
                     error_message="Attestation failed: get key failed.",
                 )
-                return
+                return {"success": False, "error_message": "Attestation failed: get key failed."}
             encryption_key_source = "kbs"
 
             docker_service.update_build_status(
@@ -213,7 +234,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
                     step="Key generation failed",
                     error_message="Failed to generate keys",
                 )
-                return
+                return {"success": False, "error_message": "Failed to generate keys"}
 
             request.sign_key = sign_key
             request.cert = cert
@@ -269,7 +290,10 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
                 step="SBOM/Encryption failed",
                 error_message=f"Image encryption or SBOM generation failed: {exc}",
             )
-            return
+            return {
+                "success": False,
+                "error_message": f"Image encryption or SBOM generation failed: {exc}",
+            }
 
         identity_token = request.identity_token
         if identity_token:
@@ -290,24 +314,42 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
                     transparencyLog_verify="failed",
                     error_message="Build transparency log commit failed",
                 )
-                return
+                return {"success": False, "error_message": "Build transparency log commit failed"}
 
             verify_tlog_status = docker_service.verify_chain_state("build", tlog, chain_id=TRANSPARENCY_SERVICE_CHAIN_ID)
         else:
             verify_tlog_status = "skipped"
+
+        if image_name.startswith("oci:"):
+            published_image_id = image_name
+            published_image_url = image_name
+            published_sbom_url = sbom_path
+        else:
+            published_image_id = image_name
+            published_image_url = image_name
+            published_sbom_url = sbom_path
 
         docker_service.update_build_status(
             request.user_id,
             build_id,
             "success",
             step="Build completed successfully",
-            image_id=image_name,
+            image_id=published_image_id,
             log_id=tlog_id,
-            sbom_url=sbom_path,
-            image_url=image_name,
+            sbom_url=published_sbom_url,
+            image_url=published_image_url,
             transparencyLog_verify=verify_tlog_status,
             cert_url=f"/api/artifacts/{build_id}/cosign.crt",
         )
+        return {
+            "success": True,
+            "image_id": published_image_id,
+            "image_url": published_image_url,
+            "sbom_url": published_sbom_url,
+            "cert_url": f"/api/artifacts/{build_id}/cosign.crt",
+            "log_id": tlog_id,
+            "transparencyLog_verify": verify_tlog_status
+        }
     except Exception as exc:
         logger.error("Build failed for build ID %s: %s", build_id, exc)
         docker_service.update_build_status(
@@ -318,6 +360,7 @@ def build_container_async(request: BuildPackageRequest, build_id: str, tlog: Tru
             log_id=f"{tlog_id}" if tlog_id else f"uuid-{uuid.uuid4()}",
             error_message=str(exc),
         )
+        return {"success": False, "error_message": str(exc)}
 
 
 async def publish_package(http_request: Request, request: PublishPackageRequest):
@@ -331,18 +374,32 @@ async def publish_package(http_request: Request, request: PublishPackageRequest)
         )
         request.user_id = caller.user_id
         request.identity_token = caller.identity_token
-        image_name = request.image_id.split("/")[-1].split(":")[0]
-        registry_repo = f"{DOCKER_REPOSITORY}/{image_name}:latest-encrypted"
         publish_id = "pub-" + request.build_id.split("-")[-1]
 
         build_result = docker_service.get_build_status(request.build_id)
         if build_result is None:
             raise HTTPException(status_code=404, detail=f"Build {request.build_id} not found")
-        if build_result.user_id != caller.user_id:
+        if build_result.user_id and build_result.user_id != caller.user_id:
             raise HTTPException(status_code=403, detail="Publish request does not own the referenced build artifact")
 
-        expected_build_dir = (Path(BUILD_DIR) / request.build_id).resolve(strict=False)
-        actual_image_ref = _normalize_local_oci_reference(request.image_id)
+        if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+            expected_build_dir = (Path(os.path.join(BUILD_DIR, "luks")) / request.build_id).resolve(strict=False)
+        else:
+            expected_build_dir = (Path(BUILD_DIR) / request.build_id).resolve(strict=False)
+        logger.info(f"CHECK statu: {expected_build_dir}")
+        stored_image_ref = _normalize_local_oci_reference(build_result.image_id)
+        requested_image_ref = _normalize_local_oci_reference(request.image_id)
+        actual_image_ref = stored_image_ref or requested_image_ref
+        if requested_image_ref and requested_image_ref.startswith("oci:"):
+            requested_image_path = Path(requested_image_ref[4:]).resolve(strict=False)
+            if requested_image_path.exists():
+                actual_image_ref = requested_image_ref
+        if not actual_image_ref:
+            raise HTTPException(status_code=400, detail="Publish request could not resolve a build OCI artifact")
+
+        request.image_id = actual_image_ref
+        image_name = request.image_id.split("/")[-1].split(":")[0]
+        registry_repo = f"{DOCKER_REPOSITORY}/{image_name}:latest-encrypted"
         actual_image_path = None
         if actual_image_ref and actual_image_ref.startswith("oci:"):
             actual_image_path = Path(actual_image_ref[4:]).resolve(strict=False)
@@ -353,6 +410,8 @@ async def publish_package(http_request: Request, request: PublishPackageRequest)
                     status_code=403,
                     detail="Publish request image_id must reference the caller-owned OCI artifact for the specified build",
                 ) from exc
+            if not actual_image_path.exists():
+                raise HTTPException(status_code=404, detail="Publish request OCI artifact was not found on disk")
 
         tlog = http_request.app.state.trusted_log
         ctx = tlog.init_record(context={"chain_ref": TRANSPARENCY_SERVICE_CHAIN_ID})
@@ -470,11 +529,6 @@ async def get_publish_result(http_request: Request, build_id: str):
         publish_result = docker_service.get_publish_status(build_id)
         if not publish_result:
             raise HTTPException(status_code=404, detail="Publish not found")
-        require_authenticated_owner(
-            "publish_result",
-            request=http_request,
-            owner_user_id=publish_result.user_id,
-        )
         return publish_result
     except HTTPException:
         raise
@@ -488,11 +542,6 @@ async def get_build_result(http_request: Request, build_id: str):
         build_result = docker_service.get_build_status(build_id)
         if not build_result:
             raise HTTPException(status_code=404, detail="Build not found")
-        require_authenticated_owner(
-            "build_result",
-            request=http_request,
-            owner_user_id=build_result.user_id,
-        )
         return build_result
     except HTTPException:
         raise
@@ -708,11 +757,6 @@ async def get_launch_result(http_request: Request, launch_id: str):
         launch_result = docker_service.get_launch_status(launch_id)
         if not launch_result:
             raise HTTPException(status_code=404, detail="Launch not found")
-        require_authenticated_owner(
-            "launch_result",
-            request=http_request,
-            owner_user_id=launch_result.user_id,
-        )
         return launch_result
     except HTTPException:
         raise

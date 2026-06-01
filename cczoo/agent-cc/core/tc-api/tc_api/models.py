@@ -99,7 +99,7 @@ class BuildPackageRequest(BaseModel):
     sign_key: Optional[str] = None
     cert: Optional[str] = None
     encrypt: bool = False
-    user_id: str
+    user_id: Optional[str] = None
     identity_token: Optional[str] = None
 
 class BuildPackageResponse(BaseModel):
@@ -113,7 +113,7 @@ class PublishPackageRequest(BaseModel):
     build_id: str
     sbom_url: str
     image_id: str
-    user_id: str
+    user_id: Optional[str] = None
     log_evidence: bool = True
     image_url: Optional[str] = None
     identity_token: Optional[str] = None
@@ -157,7 +157,7 @@ class BuildResult(BaseResult):
 
 class LaunchRequest(BaseModel):
     image_id: str
-    user_id: str
+    user_id: Optional[str] = None
     image_url: Optional[str] = None
     sbom_url: Optional[str] = None
     attestation_required: bool = True
@@ -239,16 +239,11 @@ class GetTransparencyRequest(BaseModel):
         return _validate_runtime_id(value, "launch_id")
 
 class CreateLuksRequest(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
     vfs_path: str
     vfs_size: str
     passwd: str
     identity_token: Optional[str] = None
-
-    @field_validator("vfs_path")
-    @classmethod
-    def validate_vfs_path(cls, value: str) -> str:
-        return _normalize_path_in_base(value, LUKS_VFS_BASE_DIR, "vfs_path")
 
 
 class CreateLuksResponse(BaseModel):
@@ -269,7 +264,7 @@ class LuksResult(BaseResult):
     mount_path: Optional[str] = None
 
 class MountLuksRequest(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
     passwd: str
     vfs_path: str
     mapper_dir: str
@@ -277,25 +272,10 @@ class MountLuksRequest(BaseModel):
     mount_path: str
     identity_token: Optional[str] = None
 
-    @field_validator("vfs_path")
-    @classmethod
-    def validate_vfs_path(cls, value: str) -> str:
-        return _normalize_path_in_base(value, LUKS_VFS_BASE_DIR, "vfs_path")
-
     @field_validator("mount_path")
     @classmethod
     def validate_mount_path(cls, value: str) -> str:
         return _normalize_path_in_base(value, LUKS_MOUNT_BASE_DIR, "mount_path")
-
-    @field_validator("mapper_dir")
-    @classmethod
-    def validate_mapper_dir(cls, value: str) -> str:
-        return _validate_mapper_name(value)
-
-    @field_validator("loop_device")
-    @classmethod
-    def validate_loop_device(cls, value: str) -> str:
-        return _validate_loop_device(value)
 
 
 class MountLuksResponse(BaseModel):
@@ -307,7 +287,7 @@ class MountLuksResponse(BaseModel):
 
 
 class UnmountLuksRequest(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
     mapper_dir: str
     loop_device: str
     mount_path: str

@@ -15,6 +15,7 @@ from ..config import (
     INIT_DEFAULT_CHAIN_ON_STARTUP,
     LUKS_MOUNT_BASE_DIR,
     LUKS_VFS_BASE_DIR,
+    LOG_LEVEL,
     LOGS_DIR,
     PORT,
     TRANSPARENCY_SERVICE_CHAIN_ID,
@@ -24,7 +25,8 @@ from ..config import (
 from ..services import DockerService
 
 
-logging.basicConfig(level=logging.DEBUG)
+_LOG_LEVEL = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
+logging.basicConfig(level=_LOG_LEVEL)
 logging.getLogger("tuf.api._payload").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 

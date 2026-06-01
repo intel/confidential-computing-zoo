@@ -102,7 +102,6 @@ async def mount_luks(http_request: Request, request: MountLuksRequest, trusted_l
             request.vfs_path,
             request.loop_device,
         )
-
         tlog_id, verify_tlog_status = _commit_luks_receipt(
             "mount_luks",
             request.user_id,
@@ -180,11 +179,6 @@ async def unmount_luks(http_request: Request, request: UnmountLuksRequest, trust
 
 async def get_luks_result(http_request: Request, user_id: str):
     try:
-        require_authenticated_owner(
-            "luks_result",
-            request=http_request,
-            owner_user_id=user_id,
-        )
         luks = docker_service.get_luks_status(user_id)
         if not luks:
             raise HTTPException(status_code=404, detail="User not found")

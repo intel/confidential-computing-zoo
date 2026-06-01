@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 import json
 from typing import Optional
@@ -6,6 +7,10 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ..identity.oidc_preflight import inspect_identity_token
+from ..identity.sigstore_identity import resolve_sigstore_identity_token
+
+
+logger = logging.getLogger(__name__)
 
 
 _PROTECTED_OPERATION_PATHS = {
@@ -54,10 +59,13 @@ def _resolve_bearer_token(request: Optional[Request]) -> Optional[str]:
 def authenticate_request_identity(
     operation: str,
     *,
-    user_id: str,
+    user_id: Optional[str],
     identity_token: Optional[str],
     request: Optional[Request] = None,
+    enforce_user_binding: bool = False,
+    allow_cached_token: bool = False,
 ) -> AuthenticatedCaller:
+    claimed_user_id = user_id.strip() if isinstance(user_id, str) else ""
     header_token = _resolve_bearer_token(request)
     if header_token and identity_token and header_token != identity_token:
         raise HTTPException(
@@ -65,7 +73,16 @@ def authenticate_request_identity(
             detail="Authorization bearer token must match identity_token when both are provided",
         )
 
-    effective_token = header_token or identity_token
+    explicit_token = header_token or identity_token
+    effective_token = explicit_token
+    if not effective_token and allow_cached_token:
+        effective_token = resolve_sigstore_identity_token(
+            operation,
+            allow_interactive=False,
+            min_ttl_seconds=0,
+            require_token=False,
+        )
+
     if not effective_token:
         raise HTTPException(
             status_code=400,
@@ -76,7 +93,7 @@ def authenticate_request_identity(
             },
         )
 
-    expected_identity = user_id or None
+    expected_identity = (claimed_user_id or None) if enforce_user_binding else None
     token_report = inspect_identity_token(effective_token, expected_identity=expected_identity)
     if not token_report.get("valid_for_sigstore"):
         raise HTTPException(
@@ -106,8 +123,16 @@ def authenticate_request_identity(
                 "operation": operation,
                 "issues": token_report["errors"],
                 "derived_identity": derived_identity,
-                "claimed_user_id": user_id,
+                "claimed_user_id": claimed_user_id,
             },
+        )
+
+    if not enforce_user_binding and claimed_user_id and claimed_user_id != derived_identity:
+        logger.warning(
+            "Ignoring caller-supplied user_id %r for %s; using authenticated identity %r",
+            claimed_user_id,
+            operation,
+            derived_identity,
         )
 
     return AuthenticatedCaller(
@@ -148,7 +173,7 @@ def get_authenticated_caller(
     operation: str,
     *,
     request: Optional[Request],
-    user_id: str,
+    user_id: Optional[str],
     identity_token: Optional[str],
 ) -> AuthenticatedCaller:
     if request is not None:
@@ -160,6 +185,8 @@ def get_authenticated_caller(
         user_id=user_id,
         identity_token=identity_token,
         request=request,
+        enforce_user_binding=False,
+        allow_cached_token=True,
     )
 
 
@@ -174,6 +201,8 @@ def require_authenticated_owner(
         user_id=owner_user_id,
         identity_token=None,
         request=request,
+        enforce_user_binding=True,
+        allow_cached_token=False,
     )
 
 
@@ -199,8 +228,6 @@ async def enforce_authenticated_request(request: Request) -> Optional[JSONRespon
 
     user_id = payload.get("user_id")
     if not isinstance(user_id, str) or not user_id.strip():
-        if operation not in _OPERATIONS_WITH_OPTIONAL_USER_BINDING:
-            return None
         user_id = ""
 
     identity_token = payload.get("identity_token")
@@ -213,6 +240,8 @@ async def enforce_authenticated_request(request: Request) -> Optional[JSONRespon
             user_id=user_id,
             identity_token=identity_token,
             request=request,
+            enforce_user_binding=False,
+            allow_cached_token=True,
         )
     except HTTPException as exc:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})

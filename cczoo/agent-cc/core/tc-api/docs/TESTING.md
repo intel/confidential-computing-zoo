@@ -23,23 +23,17 @@ python -m tc_api.api.app
 
 The service should be running on `http://localhost:8000`
 
-## Authenticated Result Queries
+## Result Queries
 
-`build-result`, `publish-result`, `launch-result`, and `luks-result` now require the owning caller's Sigstore token in `Authorization: Bearer <identity_token>`.
-
-Fetch or refresh a token first:
-
-```bash
-./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
-```
+`build-result`, `publish-result`, `launch-result`, and `luks-result` can be queried directly.
 
 Manual HTTP checks:
 
 ```bash
-curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/build-result/<build_id>
-curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/publish-result/<build_id>
-curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/launch-result/<launch_id>
-curl -H 'Authorization: Bearer <paste token here>' http://127.0.0.1:8000/api/luks-result/<user_id>
+curl http://127.0.0.1:8000/api/build-result/<build_id>
+curl http://127.0.0.1:8000/api/publish-result/<build_id>
+curl http://127.0.0.1:8000/api/launch-result/<launch_id>
+curl http://127.0.0.1:8000/api/luks-result/<user_id>
 ```
 
 Equivalent CLI checks:

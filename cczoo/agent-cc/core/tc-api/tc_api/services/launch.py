@@ -20,6 +20,26 @@ from tlog.types import Entry
 logger = logging.getLogger(__name__)
 
 
+def _load_transparency_artifact(build_path: str) -> dict:
+    if not os.path.isdir(build_path):
+        return {}
+
+    candidate_suffixes = (
+        "-commit-receipt.json",
+        "-transparency.json",
+    )
+    for suffix in candidate_suffixes:
+        for name in sorted(os.listdir(build_path)):
+            if not name.endswith(suffix):
+                continue
+            artifact_path = os.path.join(build_path, name)
+            if not os.path.isfile(artifact_path):
+                continue
+            with open(artifact_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    return {}
+
+
 class LaunchServiceMixin:
     def normalize_workload_id(self, user_id: str, image_id: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         metadata = metadata or {}
@@ -250,21 +270,10 @@ class LaunchServiceMixin:
             else:
                 # Create new launch result
                 logger.info(f"Creating new transparency log status for {log_id}: {status}")
-                # get transparency log
                 tlog_path = os.path.join(BUILD_DIR, build_id)
-                tlog_file = ''
-                data = ''
-                for i in os.listdir(tlog_path):
-                    if i.endswith("transparency.json"):
-                        tlog_file = os.path.join(tlog_path,i)
-                        break
-                if os.path.exists(tlog_file):
-                    with open(tlog_file,'r',encoding='utf-8') as f:
-                        #tlog_result.transparency_log = json.load(f)
-                        data = json.load(f)
-                else:
-                    logger.debug(f"Transparency log not found.")
-                #print("CEHCK______",type(json.dumps(data,indent=4)))
+                data = _load_transparency_artifact(tlog_path)
+                if not data:
+                    logger.debug("Transparency artifact not found under %s", tlog_path)
                 self.transparency_logs[log_id] = TransparencyResult(
                     user_id=user_id,
                     build_id=build_id,

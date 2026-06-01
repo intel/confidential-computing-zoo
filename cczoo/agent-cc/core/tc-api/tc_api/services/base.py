@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -170,6 +171,12 @@ class BaseDockerService:
     def _sha384_digest(self, payload: str) -> str:
         return "sha384:" + hashlib.sha384(payload.encode("utf-8")).hexdigest()
 
+    def local_build_image_ref(self, build_id: str) -> str:
+        safe_build_id = re.sub(r"[^a-z0-9._-]+", "-", build_id.lower()).strip(".-")
+        if not safe_build_id:
+            safe_build_id = "build"
+        return f"tc-api-build-{safe_build_id}:latest"
+
     def _json_sha384_digest(self, payload: Any) -> str:
         return self._sha384_digest(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
 
@@ -192,9 +199,125 @@ class BaseDockerService:
                     digest.update(handle.read())
         return "sha384:" + digest.hexdigest()
 
+    def _build_status_path(self, build_id: str) -> str:
+        if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+            return os.path.join(os.path.join(BUILD_DIR, "luks"), build_id, "build-status.json")
+        else:
+            return os.path.join(BUILD_DIR, build_id, "build-status.json")
+
+    def _persist_build_status(self, build_result: BuildResult) -> None:
+        if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+            build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_result.build_id)
+        else:
+            os.makedirs(build_path, exist_ok=True)
+        status_path = self._build_status_path(build_result.build_id)
+        with open(status_path, "w", encoding="utf-8") as handle:
+            json.dump(build_result.model_dump(mode="json"), handle, ensure_ascii=False, indent=2)
+
+    def _load_persisted_build_status(self, build_id: str) -> Optional[BuildResult]:
+        status_path = self._build_status_path(build_id)
+        if not os.path.exists(status_path):
+            return None
+        try:
+            with open(status_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            return BuildResult.model_validate(payload)
+        except Exception as exc:
+            logger.warning("Failed to load persisted build status for %s: %s", build_id, exc)
+            return None
+
+    def _recover_legacy_build_status(self, build_id: str) -> Optional[BuildResult]:
+        if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+            build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+        else:
+            build_path = os.path.join(BUILD_DIR, build_id)
+        if not os.path.isdir(build_path):
+            return None
+
+        created_epoch = os.path.getmtime(build_path)
+        created_at = datetime.fromtimestamp(created_epoch)
+        image_id = None
+        candidate_dirs = []
+        for entry in sorted(os.listdir(build_path)):
+            entry_path = os.path.join(build_path, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            if os.path.exists(os.path.join(entry_path, "index.json")) and os.path.exists(os.path.join(entry_path, "oci-layout")):
+                candidate_dirs.append(entry_path)
+
+        if os.path.isdir(os.path.join(build_path, "plain")):
+            image_id = f"oci:{os.path.join(build_path, 'plain')}"
+        elif candidate_dirs:
+            image_id = f"oci:{candidate_dirs[0]}"
+
+        sbom_url = None
+        for entry in sorted(os.listdir(build_path)):
+            if entry.endswith("-sbom.json"):
+                sbom_url = os.path.join(build_path, entry)
+                break
+
+        status = "success"
+        current_step = "Build completed successfully"
+        error_message = None
+        transparency_verify = None
+        log_id = None
+
+        receipt_path = os.path.join(build_path, "build-commit-receipt.json")
+        if os.path.exists(receipt_path):
+            try:
+                with open(receipt_path, "r", encoding="utf-8") as handle:
+                    receipt = json.load(handle)
+                log_id = receipt.get("record_id")
+                transparency_verify = "pending"
+            except Exception:
+                pass
+
+        error_logs = [entry for entry in os.listdir(build_path) if entry.endswith("-error.log")]
+        if error_logs:
+            status = "failed"
+            current_step = "Build failed"
+            error_message = f"Recovered from {error_logs[0]}"
+
+        if image_id is None and status == "success":
+            status = "failed"
+            current_step = "Build artifact missing"
+            error_message = "Recovered build directory does not contain an OCI artifact"
+
+        return BuildResult(
+            user_id="",
+            build_id=build_id,
+            status=status,
+            current_step=current_step,
+            image_id=image_id,
+            image_url=image_id,
+            sbom_url=sbom_url,
+            log_id=log_id,
+            transparencyLog_verify=transparency_verify,
+            error_message=error_message,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+
     def get_build_status(self, build_id: str) -> Optional[BuildResult]:
         """Get build status by build_id"""
-        return self.builds.get(build_id)
+        build_result = self.builds.get(build_id)
+        if build_result is not None:
+            return build_result
+
+        build_result = self._load_persisted_build_status(build_id)
+        if build_result is not None:
+            self.builds[build_id] = build_result
+            return build_result
+
+        build_result = self._recover_legacy_build_status(build_id)
+        if build_result is not None:
+            self.builds[build_id] = build_result
+            try:
+                self._persist_build_status(build_result)
+            except Exception as exc:
+                logger.warning("Failed to persist recovered build status for %s: %s", build_id, exc)
+            return build_result
+        return None
 
     def update_build_status(self,user_id: str, build_id: str, status: str, step: str = None, **kwargs):
         """
@@ -237,6 +360,7 @@ class BaseDockerService:
                         self.cleanup_build_artifacts(build_id, keep_logs=True)
                     except Exception as e:
                         logger.warning(f"Cleanup failed for build {build_id}: {e}")
+                self._persist_build_status(build_result)
                         
             else:
                 # Create new build result
@@ -249,6 +373,7 @@ class BaseDockerService:
                     updated_at=datetime.now(),
                     **kwargs
                 )
+                self._persist_build_status(self.builds[build_id])
                 
         except Exception as e:
             logger.error(f"Error updating build status for {build_id}: {str(e)}")
@@ -256,7 +381,11 @@ class BaseDockerService:
     def cleanup_build_artifacts(self, build_id: str, keep_logs: bool = True) -> bool:
         """Clean up temporary build artifacts to save disk space"""
         try:
-            build_path = os.path.join(BUILD_DIR, build_id)
+            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+                build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+            else:
+                build_path = os.path.join(BUILD_DIR, build_id)
+                logger.info(f"NOW not in luks files.")
             
             if not os.path.exists(build_path):
                 logger.warning(f"Build directory not found: {build_path}")
@@ -336,7 +465,11 @@ class BaseDockerService:
 
     def get_pubKey_from_KBS(self, tlog: TrustedLogAPI = None, record_id: str = None):
         try:
-            kbs_key_dir = os.path.join(BUILD_DIR, "_kbs_keys", record_id or uuid.uuid4().hex[:8])
+            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+                kbs_key_dir = os.path.join(os.path.join(BUILD_DIR, "luks"), "_kbs_keys", record_id or uuid.uuid4().hex[:8])
+            else:
+                kbs_key_dir = os.path.join(BUILD_DIR, "_kbs_keys", record_id or uuid.uuid4().hex[:8])
+                logger.info("NOW get pubkey not in luks file.")
             os.makedirs(kbs_key_dir, exist_ok=True)
 
             key_dict = {
@@ -448,7 +581,11 @@ class BaseDockerService:
                 "queue_status": result.queue_status.value if result.queue_status else None,
                 "mr_value": result.mr_value,
             }
-            receipt_path = os.path.join(BUILD_DIR, build_id, f"{api_type}-commit-receipt.json")
+            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+                receipt_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id, f"{api_type}-commit-receipt.json")
+            else:
+                receipt_path = os.path.join(BUILD_DIR, build_id, f"{api_type}-commit-receipt.json")
+                logger.info("NOW receipt file not in luks file.")
             os.makedirs(os.path.dirname(receipt_path), exist_ok=True)
             with open(receipt_path, "w", encoding="utf-8") as f:
                 json.dump(receipt, f, ensure_ascii=False, indent=2)
@@ -462,7 +599,7 @@ class BaseDockerService:
         """Lightweight verification: query TruCon chain-state and check head."""
         logger.info("Verifying chain state via TruCon...")
         try:
-            from .trucon.internal_transport import request_json
+            from ..trucon.internal_transport import request_json
 
             data = request_json(
                 "GET",
