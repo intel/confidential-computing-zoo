@@ -113,8 +113,8 @@ This chapter explains how Agent-CC code is organized for deployment and integrat
 **Core Services**
 
 Core services implement the three architecture requirements described above:
-- **TC-API**: Trusted build/publish/launch control path (for build-to-runtime verification and policy enforcement).
-- **Trusted Log (TLog)**: Immutable, signed runtime evidence and audit trail.
+- **[TC-API](core/tc-api)**: Trusted build/publish/launch control path (for build-to-runtime verification and policy enforcement).
+- **[Trusted Log (TLog)](core/tlog)**: Immutable, signed runtime evidence and audit trail.
 - **Argus (Trusted Service Composition)**: Cross-service trust architecture for attested service admission and trusted interaction. Detailed design will be added in the next version.
 
 **Adapters**
@@ -155,7 +155,7 @@ This forms an end-to-end protection flow across orchestration, model inference, 
 ### 🔌 Adapter-Oriented Integration
 
 - **Agent adapters**:
-  - OpenClaw: 
+  - [OpenClaw](adapters/OpenClaw): Reference agent adapter entry point for end-to-end confidential deployment and validation.
 - **LLM adapters**:
   - Ollama: 
 

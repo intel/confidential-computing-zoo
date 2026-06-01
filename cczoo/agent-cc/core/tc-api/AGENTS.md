@@ -31,7 +31,7 @@
 - Runtime config: `tc_api/config.py` centralizes environment-driven settings (paths, commands, registry, KBS).
 - Tests: `tests/` contains pytest modules and manual runners (`test_subprocess_unit.py`, `test_tdx_mr_adapter.py`, `test_api.py`, `test_runner.py`, etc.).
 - Scripts: `scripts/` contains operator helpers such as `run_docktap_oob_atomic.py`, `verify_current_attested_head.py`, and `tdvm_smoke_test.py`.
-- Docs: `docs/` contains architecture documentation and trusted-log module docs.
+- Docs: `docs/` contains tc-api architecture documentation; trusted-log module docs live in `../tlog/docs/trusted-log/`.
 
 ## Conventions
 - Prefer extending logic in `tc_api/services/` and keep endpoint handlers in `tc_api/api/routers/` focused on request/response binding.
@@ -53,4 +53,4 @@
 - Test execution details and coverage expectations: `docs/TESTING.md`.
 - System architecture: `docs/architecture.md`.
 - Docktap architecture: `docs/docktap/architecture.md`.
-- Trusted-log module docs: `docs/trusted-log/`.
+- Trusted-log module docs: `../tlog/docs/trusted-log/`.

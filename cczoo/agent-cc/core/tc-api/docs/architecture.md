@@ -37,7 +37,7 @@ Trusted-log code is organized into independently installable packages:
 | Package | Location | Purpose | Dependencies |
 |---|---|---|---|
 | `tlog` | `tlog/` | Shared domain types, ABCs, digest functions, and backend namespaces (`tlog.backends.rekor`, `tlog.backends.onchain`) | stdlib for base install; optional extras add sigstore, sigstore-rekor-types, cryptography, requests |
-| `tc-api` | `.` (root) | REST API, TruCon service, Docktap sidecar, trust commit client | tlog[rekor], FastAPI, etc. |
+| `tc-api` | `tc-api/` | REST API, TruCon service, Docktap sidecar, trust commit client | tlog[rekor], FastAPI, etc. |
 
 Key layout conventions:
 - `tlog/tlog/`: `types.py` (Entry, Record, SubmitStatus, etc.), `errors.py`, `immutable.py` (ImmutableLogAdapter ABC), `local_mr.py` (LocalMRAdapter ABC), `digest.py` (canonical_json, compute_entry_digest, compute_event_digest), `backends/rekor/` (`SigstoreLogAdapter`, `OciBundleMirror`), and `backends/onchain/` (`OnChainLogAdapter` scaffold)
@@ -188,7 +188,7 @@ Operational implications:
 
 This persistence requirement is especially important for the long-lived default measured chain, where service restarts are expected but chain identity must remain stable.
 
-For TruCon internal architecture details (lock model, SQLite schema, crash recovery, verification), see [trusted-log/architecture.md](trusted-log/architecture.md).
+For TruCon internal architecture details (lock model, SQLite schema, crash recovery, verification), see [../../tlog/docs/trusted-log/architecture.md](../../tlog/docs/trusted-log/architecture.md).
 
 ## 4. Responsibilities by Component
 
@@ -366,7 +366,7 @@ No additional measured-chain bootstrap is supported beyond `default`. Workload a
 **Planned (not yet implemented):**
 - On-chain backend adapter (GAP-07, blocked by target chain selection). Scaffold exists in `tlog/tlog/backends/onchain/` with `OnChainLogAdapter` stub raising `NotImplementedError`.
 
-For implementation details, see [trusted-log/architecture.md](trusted-log/architecture.md).
+For implementation details, see [../../tlog/docs/trusted-log/architecture.md](../../tlog/docs/trusted-log/architecture.md).
 
 ### 4.4 Submission Worker
 
@@ -406,7 +406,8 @@ Record lifecycle states (currently implemented):
 TruCon stores instance correlation data directly in the `commit_queue` table via an `instance_id TEXT` column:
 
 - `instance_id` = full 64-character Docker `container_id`, representing one `create→rm` lifecycle.
-- `chain_id` (= `workload_id` for Docktap events) is the workload dimension.
+- `chain_id` remains the measured-chain selector and is now the node-wide `default` chain for tc_api and Docktap transparency commits.
+- `workload_id` is the workload correlation dimension for Docktap and launch-related queries.
 - Workload→instance→event relationships are derived via SQL aggregation over `commit_queue`.
 - No separate mapping tables — the commit_queue is the single source of truth.
 
@@ -416,7 +417,7 @@ Correlation queries exposed by TruCon:
 - `GET /instances/{instance_id}/events` — events for a container lifecycle, ordered by sequence_num.
 - `GET /workloads/{workload_id}/events` — all events across all instances of a workload.
 
-`instance_id` is caller-provided metadata on `CommitRequest` (same pattern as `chain_id`), outside the DSSE signed predicate. Records without `instance_id` (e.g., REST API events without container context) are included in workload-level queries but excluded from instance-specific queries.
+`instance_id` is caller-provided metadata on `CommitRequest` alongside fields such as `chain_id` and `workload_id`, outside the DSSE signed predicate. Records without `instance_id` (e.g., REST API events without container context) are included in workload-level queries but excluded from instance-specific queries.
 
 Launch-oriented verification additionally uses `launch_id` as the v1 launch-attempt boundary. REST launch commits and attributable Docktap runtime events carry that identifier so the verifier can select and evaluate the latest workload-scoped launch attempt without inventing a separate attempt namespace.
 
@@ -437,7 +438,7 @@ Launch-oriented verification additionally uses `launch_id` as the v1 launch-atte
 1. Docktap intercepts Docker API call (`pull`/`create`/`start`/`stop`/`rm`) on the proxy socket.
 2. Docktap forwards request to Docker daemon, receives response, and returns it to CLI.
 3. Docktap constructs `Entry(key, value)` objects from operation metadata (values are native JSON types) and signs a DSSE bundle using ambient OIDC credentials.
-4. Docktap POSTs the signed bundle to TruCon `POST /commit` with `chain_id` resolved from `io.trucon.workload-id` container label (defaults to `"default"`), plus runtime audit fields including `operation_result`, workload identity, container identity, image identity, and `launch_id` when available.
+4. Docktap POSTs the signed bundle to TruCon `POST /commit` with `chain_id="default"` for the measured chain, while deriving `workload_id` and related correlation labels from `io.trucon.workload-id` container metadata when present. The emitted runtime audit fields include `operation_result`, workload identity, container identity, image identity, and `launch_id` when available.
 5. TruCon performs idempotency and ordering checks, commits and queues event.
 6. If TruCon is unreachable or returns a transient error, Docktap records bounded local retry state after the Docker response is already returned, then retries asynchronously until TruCon acknowledges the commit or retry exhaustion is reached.
 7. Submission worker confirms events to immutable backends asynchronously.
@@ -462,8 +463,8 @@ Launch-oriented verification additionally uses `launch_id` as the v1 launch-atte
 ## 7. Concurrency and Ordering Strategy
 
 - REST and Docktap can emit events concurrently.
-- TruCon serializes chain-relevant ordering within defined chain scope.
-- Ordering semantics are explicit per scope (for example per workload).
+- TruCon serializes chain-relevant ordering within the defined measured-chain scope.
+- In the current design, measured ordering is the node-wide `default` chain, while workload and launch scopes remain signed metadata used for correlation and policy evaluation.
 - Idempotency keys prevent duplicate committed records on retries.
 
 ## 8. Reliability and Observability
@@ -540,37 +541,10 @@ See GAP-12 in `docs/overview_tasks.md`.
 - Internal HTTP + `TRUCON_SERVICE_TOKEN` support remains available only as a compatibility path where the UDS gateway or internal health checks still rely on it.
 - Docktap failure model: Docktap down = Docker CLI unavailable. Automatic restart via `restart: unless-stopped` (compose) or process supervision (bare-metal).
 
-## 11. Migration Plan (Architecture-Level)
+## 11. Related Documents
 
-1. ~~Freeze TruCon contracts for event lifecycle and mapping.~~ ✅
-2. ~~Integrate REST trusted event path through TruCon while preserving external responses.~~ ✅
-3. ~~Integrate Docktap runtime emissions through TruCon.~~ ✅
-4. ~~Activate queue-driven submission and observability baselines.~~ ✅
-5. ~~Gradually retire direct local trust-log mutations after parity checks.~~ ✅ — Legacy `trusted_container_log` module fully removed.
-
-Rollback principle:
-
-- Keep external REST behavior stable.
-- TruCon-only operation is the supported migration target. Availability and degraded-mode handling rely on process supervision, parity checks, and best-effort business-flow continuity rather than legacy write-path fallback.
-
-## 12. Open Architecture Questions
-
-- ~~Internal service auth transport for same-machine deployment.~~ **Resolved and implemented** (2026-04-19): Phase B now uses Unix domain socket transport plus `SO_PEERCRED` caller validation. Internal HTTP + Bearer token remains compatibility-only; mTLS is deferred unless deployment topology changes.
-- ~~Chain scope default: per workload, per tenant, or global.~~ **Resolved** (2026-04-17): Per-workload via `io.trucon.workload-id` container label (GAP-11).
-- Confirmation SLA target from commit accepted to backend confirmed.
-- ~~Canonical mandatory fields for stable instance mapping across restarts/replacements.~~ **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`; one `create→rm` lifecycle = one instance. Cross-restart identity is `workload_id`'s role, not `instance_id`'s.
-- Worker ownership model: local ownership or shared lease coordination.
-- ~~External verification evidence format: which attested fields bind the current chain head to the current CVM state.~~ **Resolved** (2026-04-19): v1 binding covers `chain_id`, `sequence_num`, `head_log_id`, and `mr_value`; exported evidence is now the preferred verifier input.
-- ~~How to handle runtimes that allow quote/report reads but not MR extend.~~ **Resolved** (2026-04-17): Out of scope. Only TDX RTMR[2] is supported. AMD SEV-SNP and quote-only runtimes are not targeted.
-
-## 13. Related Documents
-
-- [trusted-log/architecture.md](trusted-log/architecture.md) — TruCon internal architecture, lock model, SQLite schema, crash recovery, verification.
-- [trusted-log/verification.md](trusted-log/verification.md) — operator-facing verification design, evidence-package boundaries, and chain replay model.
-- [trusted-log/api.md](trusted-log/api.md) — Python API signatures, type contracts, caller lifecycle.
-- [trusted-log/README.md](trusted-log/README.md) — Module overview and core concepts.
+- [../../tlog/docs/trusted-log/architecture.md](../../tlog/docs/trusted-log/architecture.md) — TruCon internal architecture, lock model, SQLite schema, crash recovery, verification.
+- [../../tlog/docs/trusted-log/verification.md](../../tlog/docs/trusted-log/verification.md) — operator-facing verification design, evidence-package boundaries, and chain replay model.
+- [../../tlog/docs/trusted-log/api.md](../../tlog/docs/trusted-log/api.md) — Python API signatures, type contracts, caller lifecycle.
+- [../../tlog/docs/trusted-log/README.md](../../tlog/docs/trusted-log/README.md) — Module overview and core concepts.
 - [docktap/api.md](docktap/api.md) — Docktap Python-side APIs, runtime surfaces, proxy lifecycle, and TruCon commit client behavior.
-- openspec/specs/session-delegation/ — Session delegation mechanism specification.
-- openspec/specs/owner-key-dsse-signing/ — Owner key DSSE signing and Rekor intoto entry specification.
-- openspec/specs/delegation-verification/ — Delegation-aware chain verification specification.
-- openspec/changes/introduce-trucon-event-orchestrator/ — Upstream TruCon vision (proposal, design, specs).

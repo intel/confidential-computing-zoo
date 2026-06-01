@@ -23,6 +23,20 @@ Standalone trusted-log package.
 
 Use this package when you need the trusted-log data model or digest rules without pulling in the rest of the control plane. Install extras when you need backend-specific integrations.
 
+## Architecture Overview
+
+```mermaid
+flowchart TD
+    consumers[Integrating Services and CLIs] --> exports[tlog package exports]
+    exports --> core[Domain Types and Digest Helpers]
+    exports --> contracts[Abstract Interfaces]
+    contracts --> backends[Backend Namespaces]
+    backends --> rekor[Rekor Integrations]
+    backends --> onchain[On-chain Scaffold]
+```
+
+For the detailed package layering and dependency direction, see [docs/architecture.md](docs/architecture.md).
+
 ## Install
 
 ```bash
@@ -50,6 +64,12 @@ tlog/
     │   └── rekor/
     └── types.py
 ```
+
+Documentation entrypoints:
+
+- [docs/architecture.md](docs/architecture.md) for package layering and dependency direction
+- [docs/api.md](docs/api.md) for public API and export reference
+- [docs/verification.md](docs/verification.md) for verification-related concepts and flows
 
 ## Main Exports
 
