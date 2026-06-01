@@ -1,24 +1,22 @@
-# Workspace Root
+# Core Services
 
-This repository root is a workspace-level entry point. It currently contains the `tc-api` / trusted-log / trust-service core stack, and this README intentionally documents that stack as a self-contained area rather than trying to describe every sibling directory that may exist here.
+This directory contains the shared Agent-CC core service stack referenced from the project root. It is the implementation area for the build-to-runtime integrity path and the common trust infrastructure consumed by adapters.
 
-## Core Stack Layout
+## Core Services Layout
 
 | Directory | Description |
 |-----------|-------------|
-| `tc-api/` | TC API service — FastAPI application, TruCon sequencer, Docktap proxy, CLI tools, tests, and docs |
-| `tlog/` | Standalone trusted-log package — core types/ABCs/digests plus backend namespaces under `tlog.backends.*` |
-| `trust-service/` | Attestation trust service — AA, ASR, CDH (Docker-based, independent) |
-| `deploy/` | Deployment configuration (nginx) |
-| `scripts/` | Cross-service orchestration (`dev-up.sh`, `trust_service.sh`, VFS scripts) |
+| `tc-api/` | Trusted build/publish/launch control path (for build-to-runtime verification and policy enforcement) |
+| `tlog/` | Immutable, signed runtime evidence and audit trail |
+| `trust-service/` | Shared attestation support service (AA, ASR, CDH) used by the core stack |
+| `config/` | Shared operational scripts and configuration such as `dev-up.sh`, `nginx.conf`, encrypted VFS helpers, and trust-service wrapper scripts |
+| `openspec/` | Core-scope change proposals, archived changes, and layout specifications |
 
-## Core Stack Entry Points
-
-The root README is intentionally a navigator, not a single quick start.
+## Entry Points
 
 Start with the README that matches the component you want to work on:
 
-| Subproject | README |
+| Component | README |
 |-----------|--------|
 | `tc-api/` | `tc-api/README.md` |
 | `tlog/` | `tlog/README.md` |
@@ -26,31 +24,37 @@ Start with the README that matches the component you want to work on:
 
 Typical workflows:
 
-- API / TruCon / Docktap development: work from `tc-api/`
-- Trusted-log core and backend work: work from `tlog/`
-- Attestation trust stack work: work from `trust-service/`
-- Full local stack via containers: use `tc-api/docker-compose.yml`
+- API, TruCon, and Docktap development: work from `tc-api/`
+- Trusted-log domain model and backend work: work from `tlog/`
+- Attestation container setup and debugging: work from `trust-service/`
+- Shared helper scripts and local orchestration: work from `config/`
 
-## Core Stack Workflows
+## Path Status
+
+`trust-service/` remains under `core/` today because the current monorepo layout spec and helper scripts reference that path.
+
+If you want to relocate it under `adapters/`, update `openspec/specs/monorepo-layout/spec.md` and path consumers such as `config/dev-up.sh` first.
+
+## Common Workflows
 
 ```bash
-# Full local stack
+# Start or restart tc-api, TruCon, and Docktap
 cd tc-api
-docker-compose build
-docker-compose up -d
+./start.sh restart
 
-# API service development
-cd tc-api
-bash setup.sh
-bash run_tests.sh
+# Start the trust-service container wrapper plus tc-api stack
+cd ..
+bash core/config/dev-up.sh restart
 
-# Trust-log core and Rekor backend work
-cd ../tlog
+# Work on the standalone trusted-log package
+cd core/tlog
 python -m pip install -e '.[rekor]'
 ```
 
 ## System-Level Files
 
-- `tc-api/docker-compose.yml` — Core-stack local orchestration for tc-api (:8000), trucon (:8001), docktap (:8002)
-- `tc-api/Dockerfile` — Container image for the tc-api / consolidated tlog service stack
-- `deploy/nginx.conf` — Reverse proxy configuration
+- `config/dev-up.sh` — Starts the trust-service container and then launches the tc-api stack
+- `config/nginx.conf` — Shared reverse-proxy configuration kept with the core service assets
+- `config/trust_service.sh` — Helper entrypoint for trust-service related local operations
+- `config/create_encrypted_vfs.sh` — Encrypted VFS creation helper for lifecycle data protection flows
+- `config/mount_encrypted_vfs.sh` and `config/unmount_encrypted_vfs.sh` — Encrypted VFS mount lifecycle helpers

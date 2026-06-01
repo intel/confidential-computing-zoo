@@ -1,8 +1,8 @@
 # Architecture Gap & Inconsistency Task Overview
 
 > Generated: 2026-04-16
-> Last Updated: 2026-04-28
-> Source: `docs/architecture.md`, `docs/trusted-log/architecture.md`
+> Last Updated: 2026-06-01
+> Source: `docs/architecture.md`, `../../tlog/docs/trusted-log/architecture.md`
 > Purpose: Structured task list for closing gaps between architecture docs and implementation.
 
 ---
@@ -108,7 +108,7 @@ Each task has:
 #### Task 13.6: Finish regression coverage, rollout rules, and operator documentation
 
 - **Priority**: MEDIUM
-- **Scope**: `tests/`, `docs/architecture.md`, `docs/trusted-log/`, public Rekor smoke tests
+- **Scope**: `tests/`, `docs/architecture.md`, `../../tlog/docs/trusted-log/`, public Rekor smoke tests
 - **Dependencies**: Task 13.5
 - **Goal**: Make the protocol change safe to ship and understandable to operators.
 - **Status**: PARTIALLY COMPLETED
@@ -126,7 +126,7 @@ Each task has:
 
 - **Priority**: HIGH
 - **Scope**: `tc_api/docktap/`, `tc_api/trucon/`
-- **References**: architecture.md §4.2, §6.2; trusted-log/architecture.md component diagram
+- **References**: architecture.md §4.2, §6.2; ../../tlog/docs/trusted-log/architecture.md component diagram
 - **Dependencies**: None
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-docktap-trucon-emission/`
 - **Design Decisions** (confirmed 2026-04-17):
@@ -211,7 +211,7 @@ Each task has:
 
 - **Priority**: MEDIUM
 - **Scope**: `tc_api/transparency/commit_client.py`, `tc_api/trucon/app.py`, `tc_api/trucon/adapters/tdx_mr.py`, `tc_api/trucon/adapters/ccel.py`
-- **References**: trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow
+- **References**: ../../tlog/docs/trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow
 - **Dependencies**: None (Q-05 resolved)
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-event-log-0-baseline/`
 - **Design Decisions** (confirmed 2026-04-17):
@@ -256,7 +256,7 @@ Each task has:
 
 - **Priority**: ~~MEDIUM~~ → LOW (long-term)
 - **Scope**: `tc_api/trucon/adapters/`
-- **References**: trusted-log/architecture.md component diagram (OnChain implementation)
+- **References**: ../../tlog/docs/trusted-log/architecture.md component diagram (OnChain implementation)
 - **Dependencies**: External — requires a concrete on-chain target (EVM, Solana, custom, etc.) to be selected before implementation can begin.
 - **Current State**: Only `SigstoreLogAdapter` (Rekor/transparent-log) exists. The `ImmutableLogAdapter` abstract interface is defined in `tc_api/tlog/immutable.py`, but no on-chain implementation exists. Blocked by target chain selection.
 - **Acceptance Criteria**:
@@ -281,7 +281,7 @@ Each task has:
 
 - **Priority**: MEDIUM
 - **Scope**: `tc_api/trucon/app.py`
-- **References**: trusted-log/architecture.md §"Non-TEE Mode: prev_log_id as DB-Level Ordering Verification"
+- **References**: ../../tlog/docs/trusted-log/architecture.md §"Non-TEE Mode: prev_log_id as DB-Level Ordering Verification"
 - **Dependencies**: None
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-non-tee-verification/`
 - **Design Decisions** (confirmed 2026-04-17):
@@ -345,19 +345,20 @@ Each task has:
 
 ---
 
-### ~~GAP-11: Per-Workload Chain Assignment for Docktap~~ ✅ COMPLETED
+### ~~GAP-11: Historical Per-Workload Chain Assignment for Docktap~~ ✅ COMPLETED / SUPERSEDED
 
 - **Priority**: MEDIUM
 - **Scope**: `tc_api/docktap/`, `tc_api/trucon/`
 - **References**: architecture.md §4.2, §7; Q-01
 - **Dependencies**: GAP-01 ✅
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-per-workload-chain-assignment/`
-- **Design Notes**: Container label convention (`--label io.trucon.workload-id=xxx`) extracted from `docker create` request body. Subsequent operations resolve workload_id via Docktap's persisted mapping state. Containers without the label fall back to `"default"` chain.
+- **Current State**: Superseded by the later default-only measured-chain rollback. The historical implementation routed Docktap events onto workload-scoped measured chains, but the active runtime model now commits all measured history to `chain_id="default"` and uses `workload_id` only for correlation.
+- **Design Notes**: Container label convention (`--label io.trucon.workload-id=xxx`) is still extracted from `docker create` request body. Subsequent operations still resolve `workload_id` via Docktap's persisted mapping state, but that label no longer selects an independent measured chain.
 - **Acceptance Criteria**:
   1. ✅ Docktap extracts `io.trucon.workload-id` from container labels during `create` operations.
-  2. ✅ Subsequent lifecycle events for the same container use the resolved `workload_id` as `chain_id`.
-  3. ✅ Containers without `io.trucon.workload-id` label default to `"default"` chain.
-  4. ✅ Tests cover label extraction, cross-operation chain resolution, and fallback behavior.
+  2. ✅ Historical implementation used the resolved `workload_id` as `chain_id` for workload-scoped measured chains before the later rollback.
+  3. ✅ Current runtime behavior keeps measured commits on `"default"`; unlabeled containers still fall back to default correlation behavior.
+  4. ✅ Tests cover label extraction, cross-operation workload resolution, and fallback behavior.
 - **Tests**: `docktap/tests/test_workload_chain_routing.py`
 
 ---
@@ -365,8 +366,8 @@ Each task has:
 ### ~~GAP-20: Event Log 0 Baseline for Implicit Workload Chains~~ ✅ COMPLETED
 
 - **Priority**: MEDIUM
-- **Scope**: `tc_api/transparency/commit_client.py`, `tc_api/trucon/app.py`, `tc_api/docktap/trucon_client.py`, workload-chain verification/docs
-- **References**: trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow; architecture.md workload-chain model
+- **Scope**: `tc_api/transparency/commit_client.py`, `tc_api/trucon/app.py`, `tc_api/docktap/trucon_client.py`, historical workload-chain verification/docs
+- **References**: ../../tlog/docs/trusted-log/architecture.md §Event Log 0, §Trust Log Initialization Flow; architecture.md measured-chain model evolution
 - **Dependencies**: GAP-05 ✅, GAP-11 ✅, GAP-17 ✅
 - **Completed**: 2026-04-20 | Change: `openspec/changes/add-workload-chain-baseline/`
 - **Current State**: Superseded by the later default-only measured-chain rollback. The active model keeps the explicit Event Log 0 bootstrap only for `default`, and workload identity remains signed metadata rather than a separate measured chain.
@@ -385,7 +386,7 @@ Each task has:
 
 - **Priority**: HIGH
 - **Scope**: `tc_api/transparency/commit_client.py`
-- **References**: trusted-log/architecture.md §Digest Algorithm
+- **References**: ../../tlog/docs/trusted-log/architecture.md §Digest Algorithm
 - **Completed**: 2026-04-16 | Archive: `openspec/changes/archive/2026-04-16-two-level-digest-hashing/`
 - **Acceptance Criteria**:
   1. ✅ Each entry is individually hashed: `SHA384(canonical_json({"key": k, "value": v}))`.
@@ -400,7 +401,7 @@ Each task has:
 
 - **Priority**: MEDIUM
 - **Scope**: `tc_api/trucon/app.py`, `tc_api/trucon/database.py`, `tc_api/transparency/commit_client.py`
-- **References**: trusted-log/architecture.md §Data Structures
+- **References**: ../../tlog/docs/trusted-log/architecture.md §Data Structures
 - **Completed**: 2026-04-17 | Archive: `openspec/changes/archive/2026-04-17-status-response-fix/`
 - **Acceptance Criteria**:
   1. ✅ `GET /status` returns `CommitQueueStatusResponse` matching `CommitQueueStatus` contract (`has_queued_records`, `queued_record_count`, `next_record_id`) plus granular GAP-06 counts.
@@ -415,7 +416,7 @@ Each task has:
 
 - **Priority**: LOW
 - **Scope**: `tc_api/tlog/types.py`, `tc_api/trucon/app.py`
-- **References**: trusted-log/architecture.md §Data Structures, §Message Flow step 4
+- **References**: ../../tlog/docs/trusted-log/architecture.md §Data Structures, §Message Flow step 4
 - **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-harden-trucon-internal-auth/`
 - **Implemented Outcome**: The unused `SubmitResult` type was removed during the GAP-12 refactor. No runtime endpoint exposed it, and the current queue-driven submit model does not produce or require a separate queryable submit-result contract.
 - **Acceptance Criteria**:
@@ -428,7 +429,7 @@ Each task has:
 
 - **Priority**: LOW
 - **Scope**: `tlog/tlog/types.py`, `tc_api/transparency/commit_client.py`
-- **References**: trusted-log/architecture.md §JSON Mock-Up
+- **References**: ../../tlog/docs/trusted-log/architecture.md §JSON Mock-Up
 - **Completed**: 2026-04-18 | Archive: `openspec/changes/entry-value-native-json/`
 - **Design Decisions** (confirmed 2026-04-18):
   - **Approach**: `Entry.value` widened from `str` to `Any` (JSON-compatible: str, int, float, bool, None, list, dict). The `key`/`value` wire format is retained; rich structured metadata is passed natively as dicts/lists.
@@ -468,7 +469,7 @@ Each task has:
 
 - **Priority**: MEDIUM
 - **Scope**: `tc_api/cli/verify.py`, `tc_api/transparency/commit_client.py`, package metadata, verification docs
-- **References**: trusted-log/architecture.md §Verification Plane; trusted-log/api.md `verify_record()`; architecture.md §6.3
+- **References**: ../../tlog/docs/trusted-log/architecture.md §Verification Plane; ../../tlog/docs/trusted-log/api.md `verify_record()`; architecture.md §6.3
 - **Dependencies**: None
 - **Completed**: 2026-04-18 | Archive: `openspec/changes/archive/2026-04-18-add-chain-verification-cli/`
 - **Design Decisions** (confirmed 2026-04-18):
@@ -489,8 +490,8 @@ Each task has:
 ### ~~GAP-17: Attested Head Evidence Export~~ ✅ COMPLETED
 
 - **Priority**: HIGH
-- **Scope**: `tc_api/trucon/`, quote/evidence production path, `docs/trusted-log/verification.md`
-- **References**: architecture.md §6.4, §12; trusted-log/architecture.md §Operator Verification Surfaces; trusted-log/verification.md §Attested Head Evidence
+- **Scope**: `tc_api/trucon/`, quote/evidence production path, `../../tlog/docs/trusted-log/verification.md`
+- **References**: architecture.md §6.4, §12; ../../tlog/docs/trusted-log/architecture.md §Operator Verification Surfaces; ../../tlog/docs/trusted-log/verification.md §Attested Head Evidence
 - **Dependencies**: GAP-05 ✅, GAP-14 ✅
 - **Completed**: 2026-04-19
 - **Sizing**: Implemented across two archived changes; umbrella task now complete.
@@ -514,7 +515,7 @@ Each task has:
 
 - **Priority**: HIGH
 - **Scope**: `tc_api/cli/verify.py`, verification support code, package interfaces, tests
-- **References**: trusted-log/verification.md §Verification Inputs, §Verification Flow; architecture.md §6.4
+- **References**: ../../tlog/docs/trusted-log/verification.md §Verification Inputs, §Verification Flow; architecture.md §6.4
 - **Dependencies**: GAP-14 ✅, GAP-17
 - **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-tc-verify-external-evidence-mode/`
 - **Sizing**: Implemented as one archived umbrella change after GAP-17 completed.
@@ -541,7 +542,7 @@ Each task has:
 
 - **Priority**: MEDIUM
 - **Scope**: event producers in `tc_api/`, `tc_api/docktap/`, `tc-verify` verification logic, trusted-log verification docs
-- **References**: trusted-log/verification.md §Verification Profiles; architecture.md §6.1, §6.2
+- **References**: ../../tlog/docs/trusted-log/verification.md §Verification Profiles; architecture.md §6.1, §6.2
 - **Dependencies**: GAP-14 ✅, GAP-18 ✅
 - **Completed**: 2026-04-19 | Archive: `openspec/changes/archive/2026-04-19-add-verification-profiles/`
 - **Current State**: Canonical application-layer verification profiles are now implemented end-to-end. The verifier reports independent verdicts for `build`, `publish`, `launch`, and `docktap-runtime`, and producers now emit the minimum identity and outcome fields required by those profiles.
@@ -593,7 +594,7 @@ Each task has:
 ### ~~GAP-16: Architecture Documentation Sync~~ ✅ COMPLETED
 
 - **Priority**: LOW
-- **Scope**: `docs/architecture.md`, `docs/trusted-log/architecture.md`, `docs/trusted-log/api.md`, `docs/docktap/architecture.md`
+- **Scope**: `docs/architecture.md`, `../../tlog/docs/trusted-log/architecture.md`, `../../tlog/docs/trusted-log/api.md`, `docs/docktap/architecture.md`
 - **References**: All completed GAP/FIX tasks
 - **Dependencies**: None
 - **Completed**: 2026-04-19
@@ -796,12 +797,12 @@ These are not implementation tasks but **design decisions** that should be resol
 
 | ID | Question | Blocks | Architecture Ref | Status |
 |----|----------|--------|------------------|--------|
-| Q-01 | Chain scope default: per workload, per tenant, or global? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): Per-workload via `io.trucon.workload-id` container label. Implemented in GAP-01 (default chain) + GAP-11 (per-workload assignment). |
+| Q-01 | Chain scope default: per workload, per tenant, or global? | GAP-03 | architecture.md §12 | **Resolved** (updated 2026-06-01): global/default measured chain for tc_api and Docktap commits. `workload_id` remains a signed metadata dimension for correlation; GAP-11 is retained as historical work later superseded by the default-only rollback. |
 | Q-02 | Confirmation SLA target from commit to backend confirmed? | GAP-04 | architecture.md §12 | Open |
 | Q-03 | Canonical mandatory fields for stable instance mapping across restarts? | GAP-03 | architecture.md §12 | **Resolved** (2026-04-17): `instance_id` = full 64-char Docker `container_id`. One `create→rm` lifecycle = one instance. No cross-restart identity — that's `workload_id`'s role. |
 | Q-04 | Worker ownership model: local ownership or shared lease? | — | architecture.md §12 | Open |
-| Q-06 | Which quote-backed fields are mandatory to bind the current chain head to the current CVM state? | GAP-18B | architecture.md §12; trusted-log/verification.md §Attested Head Evidence | **Resolved** (2026-04-19): v1 binding covers `chain_id`, `sequence_num`, `head_log_id`, and `mr_value`. `expected_value` is computed by TruCon from canonical serialization of those bound fields and then compared against quote-backed report data; it is not derived from the quote itself. |
-| Q-05 | How to handle runtimes that allow quote/report reads but not MR extend? | GAP-05 | trusted-log/architecture.md §Trust Log Initialization | **Resolved** (2026-04-17): Out of scope. Only TDX RTMR[2] is supported. AMD SEV-SNP and quote-only runtimes are not targeted. |
+| Q-06 | Which quote-backed fields are mandatory to bind the current chain head to the current CVM state? | GAP-18B | architecture.md §12; ../../tlog/docs/trusted-log/verification.md §Attested Head Evidence | **Resolved** (2026-04-19): v1 binding covers `chain_id`, `sequence_num`, `head_log_id`, and `mr_value`. `expected_value` is computed by TruCon from canonical serialization of those bound fields and then compared against quote-backed report data; it is not derived from the quote itself. |
+| Q-05 | How to handle runtimes that allow quote/report reads but not MR extend? | GAP-05 | ../../tlog/docs/trusted-log/architecture.md §Trust Log Initialization | **Resolved** (2026-04-17): Out of scope. Only TDX RTMR[2] is supported. AMD SEV-SNP and quote-only runtimes are not targeted. |
 
 ---
 
@@ -810,7 +811,7 @@ These are not implementation tasks but **design decisions** that should be resol
 ```
 GAP-01 (Docktap → TruCon, v1 default chain) ✅
   │
-  ├──▶ GAP-11 (Per-Workload Chain Assignment) ✅
+  ├──▶ GAP-11 (Historical per-workload chain assignment) ✅
   │         │
   │         ▼
   │    Q-01 ✅ ────┐
@@ -825,7 +826,7 @@ GAP-07 (On-Chain Adapter) ── standalone (blocked: target chain selection)
 GAP-08 (Feature-Flag Fallback) ── CLOSED (Won't Do)
 GAP-09 (Non-TEE Ordering) ✅ ── standalone
 GAP-10 (Service Auth Phase A) ✅ ── standalone
-GAP-11 (Per-Workload Chain) ✅
+GAP-11 (Historical per-workload chain) ✅
 GAP-12 (Service Auth Phase B: UDS + caller identity) ✅ ◀── GAP-10 ✅
 GAP-14 (Verification CLI) ✅ ── standalone
 GAP-17 (Attested Head Evidence Export) ✅ ── umbrella complete
@@ -839,7 +840,7 @@ GAP-19 (Verification Profiles) ✅ ── umbrella complete
   ├──▶ GAP-19A (Profile Contract) ✅ ◀── GAP-18C ✅
   ├──▶ GAP-19B (Producer Payload Alignment) ✅ ◀── GAP-19A ✅
   └──▶ GAP-19C (tc-verify Profile Enforcement) ✅ ◀── GAP-19A ✅, GAP-19B ✅
-GAP-20 (Workload-chain Event Log 0 baseline) ✅ ◀── GAP-05 ✅, GAP-11 ✅, GAP-17 ✅
+GAP-20 (Historical workload-chain Event Log 0 baseline) ✅ ◀── GAP-05 ✅, GAP-11 ✅, GAP-17 ✅
 GAP-21 (Docktap observation classification expansion)
   ├──▶ GAP-21.1 (container list classification) ✅
   ├──▶ GAP-21.2 (exec path coverage) ✅ ◀── GAP-21.1 ✅
@@ -930,7 +931,7 @@ FIX-05 (OPEN Dead Code) ✅ ── completed with GAP-12
 
 The items below are the primary tasks that remain genuinely open after reconciling this table with the live code and archived changes:
 
-Update (2026-04-20): `GAP-20` is now complete in addition to `GAP-12`, `FIX-03`, `FIX-05`, `GAP-17`, `GAP-18`, and `GAP-19`. Workload chains now share the same explicit Event Log 0 origin semantics as the startup-initialized `default` chain.
+Update (2026-04-20, historical): `GAP-20` completed before the later default-only measured-chain rollback. At that point workload chains shared the same explicit Event Log 0 origin semantics as the startup-initialized `default` chain; the active runtime model has since collapsed measured history back to `default`.
 
 Update (2026-04-28): Added `GAP-21` as a documentation-first breakdown for expanding Docktap's read-only runtime observation taxonomy without widening TruCon submission scope. The five sub-tasks are intended to map cleanly onto future OpenSpec propose/apply changes.
 

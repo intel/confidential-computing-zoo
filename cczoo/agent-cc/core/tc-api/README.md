@@ -13,6 +13,23 @@ A RESTful API service framework built with Python and FastAPI for handling Docke
 - **Audit Logging**: Record build and deploy evidence in Transparent Log System
 - **Runtime Security**: Enable secure container upgrades during runtime
 
+## Architecture Overview
+
+```mermaid
+flowchart LR
+	clients[API Clients] --> rest[tc_api REST API]
+	dockercli[Docker CLI or API Clients] --> docktap[Docktap Proxy]
+	rest --> workflows[Build Publish Launch Workflows]
+	workflows --> trucon[TruCon Trust Core]
+	docktap --> trucon
+	trucon --> backends[Immutable Trust Backends]
+	trucon --> mirror[OCI Bundle Mirror]
+	backends --> verify[tc-verify]
+	mirror --> verify
+```
+
+For the full runtime boundary and sequencing design, see [docs/architecture.md](docs/architecture.md).
+
 ## Quick Start
 
 ### Prerequisites
@@ -105,6 +122,11 @@ tc-api/
 ├── start.sh             # local service orchestration
 └── run_tests.sh         # backward-compatible test wrapper
 ```
+
+Documentation entrypoints:
+
+- [docs/architecture.md](docs/architecture.md) for the end-to-end service architecture and trust boundaries
+- [docs/TESTING.md](docs/TESTING.md) for the test matrix and validation workflows
 
 ## Testing
 
@@ -326,5 +348,5 @@ curl -X POST http://127.0.0.1:8000/api/create_luks \
 
 - `docs/TESTING.md` for the full test matrix
 - `docs/architecture.md` for deployment and control-plane architecture
-- `docs/trusted-log/README.md` for TruCon and chain semantics
+- `../tlog/docs/trusted-log/README.md` for TruCon and chain semantics
 - `docs/docktap/architecture.md` for Docktap-specific design details
