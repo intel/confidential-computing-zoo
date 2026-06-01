@@ -290,6 +290,8 @@ That lifetime is not something tc_api can extend client-side. The practical miti
 - reuse the token while its remaining lifetime stays above a safety margin;
 - prefer non-interactive reuse during build / publish / launch rather than forcing each step to call `Issuer.production().identity_token()` independently.
 
+Write-path ownership is derived from the validated caller token rather than trusting a caller-supplied `user_id`. Result-query endpoints are readable without Sigstore authentication.
+
 For remote SSH sessions, the preferred human login path is the out-of-band helper flow documented in `docs/TESTING.md`, rather than relying on a remote-machine `localhost:<port>` callback.
 
 This does not change the issuer's short token lifetime. It does change tc_api's operational behavior from "login per signing site" to "fetch once, reuse until near expiry, refresh only when necessary".

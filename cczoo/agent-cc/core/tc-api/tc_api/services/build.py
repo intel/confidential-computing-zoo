@@ -32,7 +32,11 @@ class BuildServiceMixin:
         """Build Docker image from dockerfile content with optimized error handling"""
         try:
             self.update_build_status(user_id, build_id, "preparing", step="Setting up build environment")
-            build_path = os.path.join(BUILD_DIR, build_id)
+            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+                build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+            else:
+                build_path = os.path.join(BUILD_DIR, build_id)
+                logger.info("NOW build image not in luks.")
             os.makedirs(build_path, exist_ok=True)
             
             # Write dockerfile to build directory
@@ -46,7 +50,7 @@ class BuildServiceMixin:
                 return False
             
             # Build the image with optimized parameters
-            image_name = f"{user_id}-{build_id}:latest"
+            image_name = self.local_build_image_ref(build_id)
             cmd = [
                 DOCKER_CMD, "build",
                 "--no-cache",  # Ensure fresh build
@@ -130,7 +134,11 @@ class BuildServiceMixin:
     def generate_sbom(self, image_name: str, build_id: str, tlog: TrustedLogAPI, record_id: str) -> Optional[str]:
         """Generate SBOM for the image with enhanced error handling"""
         try:
-            build_path = os.path.join(BUILD_DIR, build_id)
+            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+                build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+            else:
+                build_path = os.path.join(BUILD_DIR, build_id)
+                logger.info("NOW generate sbom file not in luks file.")
             sbom_path = os.path.join(build_path, f"{build_id}-sbom.json")
             
             # Ensure build directory exists
@@ -248,11 +256,12 @@ class BuildServiceMixin:
         key_validation_detail = None
         try:
             # Setup paths for encrypted image
-            build_path = os.path.join(BUILD_DIR, build_id)
-            # Extract user_id from image_name (format: user_id-build_id:latest)
-            user_id = image_name.split('-')[0]
-            # Create OCI storage path with user_id-build_id format
-            encrypted_path = os.path.join(build_path, f"{user_id}-{build_id}")
+            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+                build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+            else:
+                build_path = os.path.join(BUILD_DIR, build_id)
+            image_base_name = image_name.rsplit(":", 1)[0].split("/")[-1]
+            encrypted_path = os.path.join(build_path, image_base_name)
             os.makedirs(encrypted_path, exist_ok=True)
             
             # Validate public key exists
@@ -586,7 +595,11 @@ class BuildServiceMixin:
             Returns (None, None, None, None) if generation fails.
         """
         try:
-            key_dir = os.path.join(BUILD_DIR, build_id)
+            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
+                key_dir = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+            else:
+                key_dir = os.path.join(BUILD_DIR, build_id)
+                logger.info("NOW generate key not in luks file.")
             os.makedirs(key_dir, exist_ok=True)
 
             # 1. Generate Cosign signing key pair

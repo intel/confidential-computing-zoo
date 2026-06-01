@@ -216,7 +216,7 @@ def test_sigstore_identity_token_complete_accepts_provider_callback_url():
     assert data["identity_token"] == token
 
 
-def test_build_package_rejects_missing_identity_token_without_fallback():
+def test_build_package_accepts_cached_identity_token_without_request_token():
     payload = {
         "dockerfile": "FROM python:3.11-slim",
         "app_binary": "dGVzdA==",
@@ -227,7 +227,138 @@ def test_build_package_rejects_missing_identity_token_without_fallback():
     fake_ctx = SimpleNamespace(record_id="rec-123")
 
     with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
-        "tc_api.api.workflows.build_container_async",
+        "tc_api.api.request_auth.resolve_sigstore_identity_token",
+        return_value="cached-identity-token",
+    ), patch(
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "alice@example.com",
+            "subject": "alice@example.com",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "alice@example.com",
+        },
+    ), patch(
+        "tc_api.api.workflows.build_container_sync",
+        return_value={"success": True, "transparencyLog_verify": "success"},
+    ), patch(
+        "tc_api.api.workflows.docker_service.generate_uuid",
+        return_value="bld-123",
+    ), patch(
+        "tc_api.api.workflows.docker_service.update_build_status",
+        return_value=None,
+    ):
+        with TestClient(app) as client:
+            client.app.state.trusted_log.init_record = lambda context=None: fake_ctx
+            client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
+            response = client.post("/api/build-package", json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["build_id"] == "bld-123"
+    assert data["status"] == "success"
+    assert data["user_id"] == "alice@example.com"
+
+
+def test_build_package_accepts_missing_user_id_when_cached_identity_exists():
+    payload = {
+        "dockerfile": "FROM python:3.11-slim",
+        "app_binary": "dGVzdA==",
+        "encrypt": False,
+    }
+
+    fake_ctx = SimpleNamespace(record_id="rec-123")
+
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.request_auth.resolve_sigstore_identity_token",
+        return_value="cached-identity-token",
+    ), patch(
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "alice@example.com",
+            "subject": "alice@example.com",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "alice@example.com",
+        },
+    ), patch(
+        "tc_api.api.workflows.build_container_sync",
+        return_value={"success": True, "transparencyLog_verify": "success"},
+    ), patch(
+        "tc_api.api.workflows.docker_service.generate_uuid",
+        return_value="bld-123",
+    ), patch(
+        "tc_api.api.workflows.docker_service.update_build_status",
+        return_value=None,
+    ):
+        with TestClient(app) as client:
+            client.app.state.trusted_log.init_record = lambda context=None: fake_ctx
+            client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
+            response = client.post("/api/build-package", json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["user_id"] == "alice@example.com"
+
+
+def test_build_package_warns_when_user_id_differs_from_cached_identity(caplog):
+    payload = {
+        "dockerfile": "FROM python:3.11-slim",
+        "app_binary": "dGVzdA==",
+        "encrypt": False,
+        "user_id": "test-user",
+    }
+
+    fake_ctx = SimpleNamespace(record_id="rec-123")
+
+    with caplog.at_level("WARNING"):
+        with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+            "tc_api.api.request_auth.resolve_sigstore_identity_token",
+            return_value="cached-identity-token",
+        ), patch(
+            "tc_api.api.request_auth.inspect_identity_token",
+            return_value={
+                "valid_for_sigstore": True,
+                "errors": [],
+                "derived_identity": "alice@example.com",
+                "subject": "alice@example.com",
+                "issuer": "https://oauth2.sigstore.dev/auth",
+                "email": "alice@example.com",
+            },
+        ), patch(
+            "tc_api.api.workflows.build_container_sync",
+            return_value={"success": True, "transparencyLog_verify": "success"},
+        ), patch(
+            "tc_api.api.workflows.docker_service.generate_uuid",
+            return_value="bld-123",
+        ), patch(
+            "tc_api.api.workflows.docker_service.update_build_status",
+            return_value=None,
+        ):
+            with TestClient(app) as client:
+                client.app.state.trusted_log.init_record = lambda context=None: fake_ctx
+                client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
+                response = client.post("/api/build-package", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == "alice@example.com"
+    assert "Ignoring caller-supplied user_id 'test-user' for build; using authenticated identity 'alice@example.com'" in caplog.text
+
+
+def test_build_package_rejects_missing_identity_token_when_no_cached_fallback_exists():
+    payload = {
+        "dockerfile": "FROM python:3.11-slim",
+        "app_binary": "dGVzdA==",
+        "encrypt": False,
+        "user_id": "test-user",
+    }
+
+    fake_ctx = SimpleNamespace(record_id="rec-123")
+
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.request_auth.resolve_sigstore_identity_token",
         return_value=None,
     ), patch(
         "tc_api.api.workflows.docker_service.generate_uuid",
@@ -310,7 +441,7 @@ def test_create_luks_rejects_vfs_path_outside_allowed_directory():
     assert "vfs_path" in response.text
 
 
-def test_luks_result_rejects_missing_reader_identity_token():
+def test_luks_result_allows_unauthenticated_reads():
     with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "tc_api.api.luks_support.docker_service.get_luks_status",
         return_value={
@@ -324,13 +455,11 @@ def test_luks_result_rejects_missing_reader_identity_token():
         with TestClient(app) as client:
             response = client.get("/api/luks-result/test-user")
 
-    assert response.status_code == 400
-    assert response.json()["detail"]["operation"] == "luks_result"
+    assert response.status_code == 200
+    assert response.json()["user_id"] == "test-user"
 
 
-def test_luks_result_requires_matching_reader_identity():
-    token = "reader-token"
-
+def test_luks_result_ignores_reader_identity_headers():
     with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "tc_api.api.luks_support.docker_service.get_luks_status",
         return_value={
@@ -354,7 +483,7 @@ def test_luks_result_requires_matching_reader_identity():
         with TestClient(app) as client:
             response = client.get(
                 "/api/luks-result/alice@example.com",
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": "Bearer reader-token"},
             )
 
     assert response.status_code == 200
@@ -447,7 +576,7 @@ def test_build_package_accepts_missing_app_binary():
     assert data["status"] == "submitted"
 
 
-def test_build_package_rejects_identity_user_mismatch():
+def test_build_package_derives_owner_from_identity_token_when_user_id_differs():
     token = "header.payload.signature"
     payload = {
         "dockerfile": "FROM busybox\nCMD [\"sh\", \"-c\", \"echo ok\"]\n",
@@ -457,10 +586,19 @@ def test_build_package_rejects_identity_user_mismatch():
     }
 
     with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.workflows.build_container_sync",
+        return_value={"success": True, "transparencyLog_verify": "success"},
+    ), patch(
+        "tc_api.api.workflows.docker_service.generate_uuid",
+        return_value="bld-123",
+    ), patch(
+        "tc_api.api.workflows.docker_service.update_build_status",
+        return_value=None,
+    ), patch(
         "tc_api.api.request_auth.inspect_identity_token",
         return_value={
             "valid_for_sigstore": True,
-            "errors": ["Derived signer identity 'alice@example.com' does not match expected 'bob@example.com'"],
+            "errors": [],
             "derived_identity": "alice@example.com",
             "subject": "alice@example.com",
             "issuer": "https://oauth2.sigstore.dev/auth",
@@ -470,10 +608,11 @@ def test_build_package_rejects_identity_user_mismatch():
         with TestClient(app) as client:
             response = client.post("/api/build-package", json=payload)
 
-    assert response.status_code == 403
-    detail = response.json()["detail"]
-    assert detail["claimed_user_id"] == "bob@example.com"
-    assert detail["derived_identity"] == "alice@example.com"
+    assert response.status_code == 200
+    data = response.json()
+    assert data["build_id"] == "bld-123"
+    assert data["user_id"] == "alice@example.com"
+
 
 
 def test_build_container_async_skips_transparency_receipt_when_token_missing():

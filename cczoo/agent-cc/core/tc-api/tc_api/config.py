@@ -4,6 +4,7 @@ from decouple import config
 HOST = config("HOST", default="0.0.0.0")
 PORT = config("PORT", default=8000, cast=int)
 DEBUG = config("DEBUG", default=False, cast=bool)
+LOG_LEVEL = config("LOG_LEVEL", default="DEBUG" if DEBUG else "INFO")
 
 # Docker Configuration
 DOCKER_REGISTRY = config("DOCKER_REGISTRY", default="docker.io")
@@ -14,7 +15,7 @@ UPLOAD_DIR = config("UPLOAD_DIR", default="./uploads")
 BUILD_DIR = config("BUILD_DIR", default="./builds")
 LOGS_DIR = config("LOGS_DIR", default="./logs")
 LUKS_VFS_BASE_DIR = config("LUKS_VFS_BASE_DIR", default="./luks/vfs")
-LUKS_MOUNT_BASE_DIR = config("LUKS_MOUNT_BASE_DIR", default="./luks/mounts")
+LUKS_MOUNT_BASE_DIR = config("LUKS_MOUNT_BASE_DIR", default="./builds/luks")
 BUILD_PACKAGE_MAX_REQUEST_BYTES = config("BUILD_PACKAGE_MAX_REQUEST_BYTES", default=33554432, cast=int)
 ALLOWED_EXTERNAL_IMAGE_REGISTRIES = config(
 	"ALLOWED_EXTERNAL_IMAGE_REGISTRIES",

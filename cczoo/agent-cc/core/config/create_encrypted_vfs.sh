@@ -15,9 +15,7 @@ else
 fi
 
 if  [ -n "$3" ] ; then
-    export passwd=$3
-else
-    export passwd=123456
+    export key_path=$3
 fi
 
 if  [ -n "$4" ] ; then
@@ -41,14 +39,14 @@ else
 fi
 
 # encrypt loop device in luks format, press "YES"
-printf '%s\n%s\n' "$passwd" "$passwd" | cryptsetup --debug -y -v luksFormat -s 512 -c aes-xts-plain64 "$LOOP_DEVICE" --batch-mode
+cryptsetup --debug -v luksFormat -s 512 -c aes-xts-plain64 ${LOOP_DEVICE} --batch-mode --key-file ${key_path}
 echo "Encrypt loop device ${LOOP_DEVICE} done"
 
 # luksOpen mapper
 MAPPER_PATH="/dev/mapper/$map"
 
 echo "luksOpen ${LOOP_DEVICE} to luks mapper ${MAPPER_PATH} via password"
-printf '%s\n' "$passwd" | cryptsetup luksOpen "$LOOP_DEVICE" "$map"
+cryptsetup luksOpen ${LOOP_DEVICE} $map --key-file ${key_path}
 
 echo "Format ${MAPPER_PATH} to ext4"
 mkfs.ext4 "$MAPPER_PATH"

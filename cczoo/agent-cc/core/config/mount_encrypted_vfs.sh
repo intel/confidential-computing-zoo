@@ -19,9 +19,7 @@ else
 fi
 
 if  [ -n "$4" ] ; then
-    export passwd=$4
-else
-    export passwd=123456
+    export key_path=$4
 fi
 
 # bind loop device to virtual volume
@@ -38,7 +36,7 @@ MAPPER_PATH=/dev/mapper/${map}
 
 if  [ "$6" = "" ]; then
     echo "luksOpen ${LOOP_DEVICE} to luks mapper ${MAPPER_PATH} via password"
-    printf '%s\n' "$passwd" | cryptsetup luksOpen "$LOOP_DEVICE" "$map"
+    cryptsetup luksOpen ${LOOP_DEVICE} ${map}  --key-file ${key_path}
 else
     echo "luksOpen ${LOOP_DEVICE} to luks mapper ${MAPPER_PATH} via secretmanager service"
     cd "$(dirname "$0")/get_secret/runtime/ra-client"

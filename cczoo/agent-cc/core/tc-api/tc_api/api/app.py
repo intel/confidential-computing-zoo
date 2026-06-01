@@ -56,7 +56,7 @@ app.include_router(delegation.router)
 def main() -> None:
     import uvicorn
 
-    uvicorn.run(app, host=runtime.HOST, port=runtime.PORT, log_level="debug")
+    uvicorn.run(app, host=runtime.HOST, port=runtime.PORT, log_level=runtime.LOG_LEVEL.lower())
 
 
 __all__ = ["app", "main"]

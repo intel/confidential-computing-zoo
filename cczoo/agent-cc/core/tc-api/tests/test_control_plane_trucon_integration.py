@@ -340,7 +340,7 @@ def test_launch_flow_preserves_result_fields(harness, commit_success, verify_sta
     assert result_data["instance_ids"] == ["container-1"]
 
 
-def test_build_result_rejects_missing_reader_identity_token(harness):
+def test_build_result_allows_unauthenticated_reads(harness):
     harness.patch_build_success()
     harness.patch_trucon(commit_success=True, verify_status="success")
 
@@ -350,13 +350,11 @@ def test_build_result_rejects_missing_reader_identity_token(harness):
         assert response.status_code == 200
         result = client.get("/api/build-result/bld-test123")
 
-    assert result.status_code == 400
-    detail = result.json()["detail"]
-    assert detail["operation"] == "build_result"
-    assert "identity token is required" in detail["error"].lower()
+    assert result.status_code == 200
+    assert result.json()["build_id"] == "bld-test123"
 
 
-def test_build_result_rejects_cross_owner_reads(harness, monkeypatch):
+def test_build_result_ignores_reader_identity_headers(harness, monkeypatch):
     harness.patch_build_success()
     harness.patch_trucon(commit_success=True, verify_status="success")
 
@@ -378,4 +376,5 @@ def test_build_result_rejects_cross_owner_reads(harness, monkeypatch):
         monkeypatch.setattr(request_auth_mod, "inspect_identity_token", _inspect_identity_token)
         result = client.get("/api/build-result/bld-test123", headers=_auth_headers("wrong-token"))
 
-    assert result.status_code == 403
+    assert result.status_code == 200
+    assert result.json()["build_id"] == "bld-test123"
