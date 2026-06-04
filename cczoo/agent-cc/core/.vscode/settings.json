@@ -5,5 +5,7 @@
         "tc-api/uploads": true,
         "tc-api/builds": true,
         "tc-api/logs": true
-    }
+    },
+    "plantuml.render": "PlantUMLServer",
+    "plantuml.server": "https://www.plantuml.com/plantuml"
 }
