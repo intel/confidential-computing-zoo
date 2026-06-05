@@ -4,33 +4,10 @@ This directory is the Agent-CC adapter entry point for OpenClaw.
 
 It represents the deployment-side integration path for running OpenClaw inside the Agent-CC model without requiring invasive framework changes. The adapter is intended to consume the shared core services from `core/` rather than reimplementing trust, build, or attestation flows locally.
 
-## Current Scope
-
-- Use OpenClaw as the reference agent workload for Agent-CC end-to-end validation.
-- Connect OpenClaw runtime deployment to the shared TC-API build, launch, and verification path.
-- Reuse shared trust infrastructure such as trusted logging, attestation-gated secret release, and encrypted storage helpers.
-
-## Related Core Services
-
-- [`../../core/tc-api/`](../../core/tc-api/) for trusted build, publish, launch, and verification orchestration
-- [`../../core/tlog/`](../../core/tlog/) for immutable signed runtime evidence and digest rules
-- [`../../core/trust-service/`](../../core/trust-service/) for attestation support services used by the deployment flow
-
-## Status
-
-This adapter currently serves as a documentation and integration entry point. Concrete OpenClaw-specific deployment assets will be added here as the adapter path is expanded.
-
 ## Start Here
 
-1. Read [`../../README.md`](../../README.md) for the top-level Agent-CC architecture and end-to-end scenario.
-2. Read [`../../core/tc-api/README.md`](../../core/tc-api/README.md) for the trusted build-to-runtime control path.
-3. Read [`../../core/trust-service/README.md`](../../core/trust-service/README.md) if you need the attestation service container setup.
-
-## Deployment Walkthrough
-
-The example below keeps OpenClaw as the workload being built and deployed, but reuses the shared TC-API, TLog, and trust-service stack from `core/`.
-
-Use this README when you want the OpenClaw-specific operator path. Keep [`../../core/tc-api/README.md`](../../core/tc-api/README.md) as the source of truth for the full API surface, testing entrypoints, and runtime configuration.
+1. Read [`Agent-CC doc`](../../README.md) for the top-level Agent-CC architecture and end-to-end scenario.
+2. Read [`tc-api doc`](../../core/tc-api/README.md) for the trusted build-to-runtime control path.
 
 ### Prerequisites
 
@@ -51,6 +28,7 @@ source tcapi_env/bin/activate
 
 cd confidential-computing-zoo/cczoo/agent-cc/core/tc-api/
 pip install -r requirements.txt
+bash setup.sh
 
 # Set registry and Sigstore identity settings.
 vim .env
@@ -58,14 +36,13 @@ vim .env
 # DOCKER_REPOSITORY=<your docker hub account>
 # GIT_EMAIL=<your sigstore email>
 
+vim tc_api/config.py
+# DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="<your docker hub account>")
+# GIT_EMAIL = config("GIT_EMAIL", default="<your sigstore email>")
+
 docker login -u <DOCKER_REPOSITORY>
 export DOCKER_BUILDKIT=1
 
-bash setup.sh
-
-cd ../tlog
-python -m pip install -e .
-python -m pip install -e '.[rekor]'
 ```
 
 ### Start Trust Services
@@ -155,7 +132,24 @@ cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc-api/
 ./start.sh restart --reset-state dev
 ```
 
-If you prefer running the service in a container, build [`../../core/tc-api/Dockerfile`](../../core/tc-api/Dockerfile) and expose the same host sockets and attestation devices described above.
+If you prefer running the service in a container, build the [`Dockerfile`](../../core/tc-api/Dockerfile) and expose the same host sockets and attestation devices described above.
+
+```bash
+# build images
+cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc-api/
+docker build -f ./Dockerfile -t {image_name:image_tag} ../
+
+# start tcapi
+docker run -it --network host --privileged \
+    -v /var/run/docker.sock:/var/run/docker.sock  \
+    -v /dev/tdx_guest:/dev/tdx_guest  \
+    -v /etc/tdx-attest.conf:/etc/tdx-attest.conf \
+    -v <path to dockerfile>:<path to dockerfile> \    # Optional
+    -v <luks mount path>:<luks mount path>  \   # Optional
+    -p 8001:8001 -p 8006:8006 -p 8000:8000 \    
+    {image_name:image_tag}
+
+```
 
 ### OpenClaw Build, Publish, and Launch Flow
 
@@ -187,10 +181,11 @@ venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore
 	publish --payload-json '{"build_id":"<build_id>","image_id":"<image_id>","user_id":"<sigstore account>","sbom_url":"<sbom path>","log_evidence":true,"luks_path":"<mounted luks path>"}'
 
 # Launch the attested OpenClaw workload.
-curl -X POST http://localhost:8000/api/deploy-launch \
-	-H 'Content-Type: application/json' \
-	-d '{"image_id":"tc-api-build-<build_id>","build_id":"<build_id>","user_id":"<sigstore account>","image_url":"docker.io/<repo>/tc-api-build-<build_id>:latest-encrypted","sbom_url":"<sbom path>","attestation_required":true,"luks_path":"<mounted luks path>","dockercmd":"<optional openclaw docker run command>"}'
+venv/bin/python -m tc_api.cli.client   --base-url http://localhost:8000   --sigstore-login oob \
+    deploy --payload-json -d '{"image_id":"tc-api-build-<build_id>","build_id":"<build_id>","user_id":"<sigstore account>","image_url":"docker.io/<repo>/tc-api-build-<build_id>:latest-encrypted","sbom_url":"<sbom path>","attestation_required":true,"luks_path":"<mounted luks path>","dockercmd":"<optional openclaw docker run command>"}'
 ```
+
+Notice: If you do not use tc-api, please refer to `run-sbx.sh`.
 
 ### Result Inspection
 
@@ -203,3 +198,9 @@ After each phase, inspect the corresponding result object and trust evidence:
 - `POST /api/get-summaryTransparencylog` for a single summary over build, publish, and launch log records
 
 The full payload shapes and additional operator notes remain in [`../../core/tc-api/README.md`](../../core/tc-api/README.md).
+
+## Related Core Services
+
+- [`tc-api`](../../core/tc-api/) for trusted build, publish, launch, and verification orchestration
+- [`tlog`](../../core/tlog/) for immutable signed runtime evidence and digest rules
+- [`trust-service`](../../core/trust-service/) for attestation support services used by the deployment flow

@@ -8,7 +8,7 @@ LOG_LEVEL = config("LOG_LEVEL", default="DEBUG" if DEBUG else "INFO")
 
 # Docker Configuration
 DOCKER_REGISTRY = config("DOCKER_REGISTRY", default="docker.io")
-DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="trustedzoo")
+DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="<<your docker hub account>>")
 
 # File Storage Configuration
 UPLOAD_DIR = config("UPLOAD_DIR", default="./uploads")
@@ -40,7 +40,7 @@ KBS_FETCH_RETRIES = config("KBS_FETCH_RETRIES", default=5, cast=int)
 KBS_FETCH_RETRY_DELAY_SECONDS = config("KBS_FETCH_RETRY_DELAY_SECONDS", default=1.0, cast=float)
 
 # Sigstore author Configuration
-GIT_EMAIL = config("GIT_EMAIL", default="")
+GIT_EMAIL = config("GIT_EMAIL", default="<your sigstore email>")
 
 # Runtime feature flags
 INIT_DEFAULT_CHAIN_ON_STARTUP = config("INIT_DEFAULT_CHAIN_ON_STARTUP", default=True, cast=bool)

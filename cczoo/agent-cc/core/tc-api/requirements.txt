@@ -28,6 +28,3 @@ structlog==23.2.0
 
 # Sigstore
 sigstore==3.6.5
-
-# Trusted Log packages (installed editable from local directories)
-tlog[rekor]
