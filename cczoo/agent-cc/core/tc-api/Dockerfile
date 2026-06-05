@@ -49,18 +49,18 @@ RUN apt-get update && apt-get install -y skopeo \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy packages into the image (targeted, not the entire workspace).
-COPY tlog/ /app/tlog/
-COPY tc-api/ /app/tc-api/
+COPY ../tlog /app/tlog
+COPY ../config /app/config
+#COPY ./tc-api/builds  ./tc-api/logs ./tc-api/pyproject.toml ./tc-api/requirements.txt ./tc-api/scripts ./tc-api/setup.sh ./tc-api/start.sh ./tc-api/tc_api ./tc-api/uploads /app/tc-api/
+COPY ./* /app/tc-api/
+
+WORKDIR /app/tlog
+RUN python -m pip install -e .
+RUN python -m pip install -e '.[rekor]'
 
 WORKDIR /app/tc-api
-
-RUN python -m venv /app/venv
-RUN /app/venv/bin/pip install --no-cache-dir \
-    -e /app/tlog[rekor] \
-    .
-
-# Create necessary directories
-RUN mkdir -p /app/tc-api/uploads /app/tc-api/builds /app/tc-api/logs /app/tc-api/certs
+RUN mkdir -p uploads builds logs
+RUN pip install -r requirements.txt
 
 # Expose port
 EXPOSE 8000 8001 8002 8006

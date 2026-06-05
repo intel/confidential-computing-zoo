@@ -486,7 +486,7 @@ class PublishServiceMixin:
         publishID = "pub-" + build_id.split("-")[-1]
         return self.publish_results.get(publishID)
 
-    def update_publish_status(self,user_id: str, build_id: str, status: str, publish_id: str, step: str = None, **kwargs):
+    def update_publish_status(self,user_id: str, build_id: str, status: str, publish_id: str, step: str = None, luks_path: str = '', **kwargs):
         try:
             if publish_id in self.publish_results:
                 publish_result = self.publish_results[publish_id]
@@ -512,7 +512,7 @@ class PublishServiceMixin:
                     # Clean up in background (keep logs for failed builds)
                     try:
                         keep_logs = (status == 'failed')
-                        self.cleanup_build_artifacts(build_id, keep_logs=keep_logs)
+                        self.cleanup_build_artifacts(build_id, luks_path,keep_logs=keep_logs)
                     except Exception as e:
                         logger.warning(f"Cleanup failed for build {publish_id}: {e}")
                         
