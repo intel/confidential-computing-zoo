@@ -125,18 +125,52 @@ def test_create_luks_block_prepares_file_before_allocating_loop(tmp_path):
             return SimpleNamespace(returncode=0, stdout="", stderr="")
         if cmd[:3] == ["losetup", "--find", "--show"]:
             return SimpleNamespace(returncode=0, stdout="/dev/loop7\n", stderr="")
+        if cmd[:2] == ["curl", "-fsSL"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
         if str(cmd[0]).endswith("create_encrypted_vfs.sh"):
             return SimpleNamespace(returncode=0, stdout="created", stderr="")
         raise AssertionError(f"Unexpected command: {cmd}")
 
-    with patch("tc_api.services.luks.subprocess.run", side_effect=fake_run):
+    with patch("tc_api.services.luks.os.path.exists", return_value=True), patch(
+        "tc_api.services.luks.subprocess.run", side_effect=fake_run
+    ):
         mapper_dir, loop_device = service.create_luks_block("alice", tlog, "rec-1", "pw", "8M", vfs_path)
 
     assert calls[0] == ["truncate", "-s", "8M", vfs_path]
     assert calls[1] == ["losetup", "--find", "--show", vfs_path]
-    assert str(calls[2][0]).endswith("create_encrypted_vfs.sh")
+    assert calls[2][:2] == ["curl", "-fsSL"]
+    assert str(calls[3][0]).endswith("create_encrypted_vfs.sh")
     assert len(mapper_dir) == 32
     assert loop_device == "/dev/loop7"
+
+
+def test_create_luks_block_raises_script_error_and_detaches_loop(tmp_path):
+    tlog = DummyTlog()
+    service = DockerService()
+    vfs_path = str(tmp_path / "vfs" / "disk.img")
+    detach_calls = []
+
+    def fake_run(cmd, capture_output=True, text=True, timeout=600, check=False):
+        if cmd[:2] == ["truncate", "-s"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if cmd[:3] == ["losetup", "--find", "--show"]:
+            return SimpleNamespace(returncode=0, stdout="/dev/loop7\n", stderr="")
+        if cmd[:2] == ["curl", "-fsSL"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if str(cmd[0]).endswith("create_encrypted_vfs.sh"):
+            return SimpleNamespace(returncode=1, stdout="Create 8M block file", stderr="losetup: /dev/loop7: failed to set up loop device")
+        if cmd[:2] == ["losetup", "-d"]:
+            detach_calls.append(cmd)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        raise AssertionError(f"Unexpected command: {cmd}")
+
+    with patch("tc_api.services.luks.os.path.exists", return_value=True), patch(
+        "tc_api.services.luks.subprocess.run", side_effect=fake_run
+    ):
+        with pytest.raises(RuntimeError, match="failed to set up loop device"):
+            service.create_luks_block("alice", tlog, "rec-1", "pw", "8M", vfs_path)
+
+    assert detach_calls == [["losetup", "-d", "/dev/loop7"]]
 
 
 def test_build_result_shows_failed_when_build_step_fails():

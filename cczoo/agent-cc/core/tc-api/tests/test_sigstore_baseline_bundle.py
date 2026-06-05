@@ -55,3 +55,41 @@ def test_build_baseline_sigstore_bundle_contains_replay_fields(mock_signing_ctx,
     assert any(entry["key"] == "baseline_rtmr" for entry in captured_predicate["entries"])
     assert any(entry["key"] == "ccel_eventlog_b64" and entry["value"] == "Zm9v" for entry in captured_predicate["entries"])
     assert any(entry["key"] == "pub_key" and entry["value"] == pub_key_pem for entry in captured_predicate["entries"])
+
+
+@patch("tc_api.identity.sigstore_baseline.clear_sigstore_identity_token_cache")
+@patch("tc_api.identity.sigstore_baseline.resolve_sigstore_identity_token_object")
+@patch("tc_api.identity.sigstore_baseline.SigningContext")
+def test_build_baseline_sigstore_bundle_refreshes_token_after_signing_failure(
+    mock_signing_ctx,
+    mock_resolve_token,
+    mock_clear_cache,
+):
+    mock_resolve_token.side_effect = ["cached-token", "fresh-token"]
+
+    mock_bundle = MagicMock()
+    mock_bundle.to_json.return_value = '{"mock":"bundle"}'
+    mock_signer = MagicMock()
+    mock_signer.sign_dsse.return_value = mock_bundle
+    mock_signer.__enter__ = MagicMock(return_value=mock_signer)
+    mock_signer.__exit__ = MagicMock(return_value=False)
+    mock_ctx = MagicMock()
+    mock_ctx.signer.side_effect = [RuntimeError("fulcio rejected cached token"), mock_signer]
+    mock_signing_ctx.production.return_value = mock_ctx
+
+    bundle_json, _, _ = build_baseline_sigstore_bundle(
+        chain_id="default",
+        rtmr_value="11" * 48,
+        ccel_digest="sha384:" + ("22" * 48),
+    )
+
+    assert bundle_json == '{"mock":"bundle"}'
+    mock_clear_cache.assert_called_once()
+    assert mock_resolve_token.call_args_list[0].kwargs == {
+        "allow_interactive": True,
+        "force_refresh": False,
+    }
+    assert mock_resolve_token.call_args_list[1].kwargs == {
+        "allow_interactive": True,
+        "force_refresh": True,
+    }

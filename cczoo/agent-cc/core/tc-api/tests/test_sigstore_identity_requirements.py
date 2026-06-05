@@ -15,6 +15,7 @@ from tc_api.api.app import app
 from tc_api.config import BUILD_PACKAGE_MAX_REQUEST_BYTES, LUKS_VFS_BASE_DIR
 from tc_api.identity.sigstore_identity import MissingSigstoreIdentityTokenError
 from tc_api.models import GetTransparencyRequest, LaunchRequest, PublishPackageRequest
+from tc_api.services.base import BaseDockerService
 
 
 def _jwt(payload: dict) -> str:
@@ -47,6 +48,115 @@ def test_required_sigstore_identity_returns_http_400_when_missing():
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == _missing_sigstore_identity_detail("build")
+
+
+def test_commit_identity_token_resolution_rejects_missing_token_before_sigstore():
+    service = BaseDockerService()
+
+    with patch("tc_api.services.base.resolve_sigstore_identity_token", return_value=None) as resolve_token:
+        with pytest.raises(MissingSigstoreIdentityTokenError, match="Sigstore identity token is required for build"):
+            service._resolve_commit_identity_token("build", None)
+
+    resolve_token.assert_called_once_with("build", allow_interactive=True, require_token=True)
+
+
+def test_commit_identity_token_resolution_refreshes_token_by_default():
+    service = BaseDockerService()
+
+    with patch("tc_api.services.base.resolve_sigstore_identity_token", return_value="fresh-token") as resolve_token, patch(
+        "tc_api.services.base.inspect_identity_token",
+        return_value={"valid_for_sigstore": True, "errors": []},
+    ):
+        token = service._resolve_commit_identity_token("build", None)
+
+    assert token == "fresh-token"
+    resolve_token.assert_called_once_with("build", allow_interactive=True, require_token=True)
+
+
+def test_commit_identity_token_resolution_rejects_malformed_request_token_before_sigstore():
+    service = BaseDockerService()
+
+    with patch("tc_api.services.base.resolve_sigstore_identity_token", return_value=None):
+        with pytest.raises(ValueError, match="malformed or missing claims"):
+            service._resolve_commit_identity_token("build", "not-a-jwt")
+
+
+def test_commit_identity_token_resolution_requires_refresh_for_expired_request_token():
+    service = BaseDockerService()
+
+    with patch("tc_api.services.base.resolve_sigstore_identity_token", return_value=None), patch(
+        "tc_api.services.base.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": False,
+            "errors": ["Identity token is malformed or missing claims", "Token has already expired."],
+        },
+    ):
+        with pytest.raises(MissingSigstoreIdentityTokenError, match="client-side challenge"):
+            service._resolve_commit_identity_token("build", "expired-token")
+
+
+def test_commit_and_save_receipt_stores_specific_commit_error():
+    service = BaseDockerService()
+
+    with patch("tc_api.services.base.resolve_sigstore_identity_token", return_value=None):
+        ok, record_id = service.commit_and_save_receipt(
+            "build",
+            "bld-123",
+            tlog=SimpleNamespace(),
+            record_id="rec-123",
+            identity_token_str="not-a-jwt",
+        )
+
+    assert ok is False
+    assert record_id is None
+    assert "malformed or missing claims" in service.get_commit_error("build", "bld-123")
+
+
+def test_commit_and_save_receipt_reclassifies_blank_signing_failure_as_sigstore_challenge():
+    service = BaseDockerService()
+    tlog = SimpleNamespace(commit_record=lambda **kwargs: (_ for _ in ()).throw(AssertionError()))
+
+    with patch.object(service, "_resolve_commit_identity_token", return_value="expired-token"), patch(
+        "tc_api.services.base.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": False,
+            "errors": ["Token has already expired.", "Identity token is not within its validity period"],
+        },
+    ):
+        ok, record_id = service.commit_and_save_receipt(
+            "publish",
+            "bld-123",
+            tlog=tlog,
+            record_id="rec-123",
+            identity_token_str="expired-token",
+            expected_identity="alice",
+        )
+
+    assert ok is False
+    assert record_id is None
+    assert "client-side challenge flow" in service.get_commit_error("publish", "bld-123")
+
+
+def test_commit_and_save_receipt_preserves_exception_type_when_message_is_blank():
+    service = BaseDockerService()
+    tlog = SimpleNamespace(commit_record=lambda **kwargs: (_ for _ in ()).throw(AssertionError()))
+
+    with patch.object(service, "_resolve_commit_identity_token", return_value="still-valid-token"), patch(
+        "tc_api.services.base.inspect_identity_token",
+        return_value={"valid_for_sigstore": True, "errors": []},
+    ):
+        ok, record_id = service.commit_and_save_receipt(
+            "publish",
+            "bld-123",
+            tlog=tlog,
+            record_id="rec-123",
+            identity_token_str="still-valid-token",
+            expected_identity="alice",
+        )
+
+    assert ok is False
+    assert record_id is None
+    assert service.get_commit_error("publish", "bld-123") == "AssertionError"
 
 
 def test_missing_sigstore_identity_detail_includes_interactive_urls():
@@ -376,6 +486,244 @@ def test_build_package_rejects_missing_identity_token_when_no_cached_fallback_ex
     detail = response.json()["detail"]
     assert detail["operation"] == "build"
     assert "identity token is required" in detail["error"].lower()
+
+
+def test_build_package_returns_sigstore_commit_challenge_for_client_side_retry():
+    payload = {
+        "dockerfile": "FROM python:3.11-slim",
+        "app_binary": "dGVzdA==",
+        "encrypt": False,
+        "user_id": "test-user",
+        "identity_token": "header.payload.signature",
+    }
+
+    fake_ctx = SimpleNamespace(record_id="rec-123")
+
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "test-user",
+            "subject": "test-user",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "test-user",
+        },
+    ), patch(
+        "tc_api.api.workflows.build_container_sync",
+        return_value={"success": False, "sigstore_login_required": True, "build_id": "bld-123"},
+    ), patch(
+        "tc_api.api.workflows.docker_service.generate_uuid",
+        return_value="bld-123",
+    ), patch(
+        "tc_api.api.workflows.docker_service.update_build_status",
+        return_value=None,
+    ):
+        with TestClient(app) as client:
+            client.app.state.trusted_log.init_record = lambda context=None: fake_ctx
+            client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
+            response = client.post("/api/build-package", json=payload)
+
+    assert response.status_code == 428
+    detail = response.json()["detail"]
+    assert detail["build_id"] == "bld-123"
+    assert detail["retry_method"] == "POST"
+    assert detail["retry_path"] == "/api/build-package/commit/bld-123"
+
+
+def test_launch_result_returns_sigstore_commit_challenge_for_client_side_retry():
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.workflows.docker_service.get_launch_status",
+        return_value=SimpleNamespace(launch_id="launch-123", status="signing"),
+    ), patch(
+        "tc_api.api.workflows.docker_service.get_pending_launch_commit",
+        return_value={"record_id": "rec-123", "user_id": "test-user", "chain_id": "default"},
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/launch-result/launch-123")
+
+    assert response.status_code == 428
+    detail = response.json()["detail"]
+    assert detail["launch_id"] == "launch-123"
+    assert detail["retry_method"] == "POST"
+    assert detail["retry_path"] == "/api/deploy-launch/commit/launch-123"
+
+
+def test_publish_package_returns_sigstore_commit_challenge_for_client_side_retry():
+    image_ref = f"oci:{workflow_mod.BUILD_DIR}/bld-123/plain"
+    payload = {
+        "build_id": "bld-123",
+        "sbom_url": "/tmp/sbom.json",
+        "image_id": image_ref,
+        "user_id": "test-user",
+        "identity_token": "header.payload.signature",
+        "luks_path": "",
+    }
+
+    fake_ctx = SimpleNamespace(record_id="rec-123")
+    fake_build = SimpleNamespace(user_id="test-user", image_id=image_ref)
+
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "test-user",
+            "subject": "test-user",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "test-user",
+        },
+    ), patch(
+        "tc_api.api.workflows.docker_service.get_build_status",
+        return_value=fake_build,
+    ), patch(
+        "tc_api.api.workflows.Path.exists",
+        return_value=True,
+    ), patch(
+        "tc_api.api.workflows.docker_service.update_publish_status",
+        return_value=None,
+    ), patch(
+        "tc_api.api.workflows.docker_service.push_image",
+        return_value=True,
+    ), patch(
+        "tc_api.api.workflows.docker_service.get_pubKey_from_KBS",
+        return_value=("trusted", None),
+    ), patch(
+        "tc_api.api.workflows.docker_service.commit_and_save_receipt",
+        return_value=(False, None),
+    ), patch(
+        "tc_api.api.workflows.docker_service.get_commit_error",
+        return_value="Sigstore identity token is required for publish. Defer login to the client-side challenge flow and retry with a fresh identity_token.",
+    ), patch(
+        "tc_api.api.workflows.docker_service.register_pending_publish_commit",
+        return_value=None,
+    ):
+        with TestClient(app) as client:
+            client.app.state.trusted_log.init_record = lambda context=None: fake_ctx
+            client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
+            response = client.post("/api/publish-package", json=payload)
+
+    assert response.status_code == 428
+    detail = response.json()["detail"]
+    assert detail["build_id"] == "bld-123"
+    assert detail["retry_method"] == "POST"
+    assert detail["retry_path"] == "/api/publish-package/commit/bld-123"
+
+
+def test_publish_package_registers_stable_idempotency_key_for_resume():
+    image_ref = f"oci:{workflow_mod.BUILD_DIR}/bld-123/plain"
+    payload = {
+        "build_id": "bld-123",
+        "sbom_url": "/tmp/sbom.json",
+        "image_id": image_ref,
+        "user_id": "test-user",
+        "identity_token": "header.payload.signature",
+        "luks_path": "",
+    }
+
+    fake_ctx = SimpleNamespace(record_id="rec-123")
+    fake_build = SimpleNamespace(user_id="test-user", image_id=image_ref)
+
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "test-user",
+            "subject": "test-user",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "test-user",
+        },
+    ), patch(
+        "tc_api.api.workflows.docker_service.get_build_status",
+        return_value=fake_build,
+    ), patch(
+        "tc_api.api.workflows.Path.exists",
+        return_value=True,
+    ), patch(
+        "tc_api.api.workflows.docker_service.update_publish_status",
+        return_value=None,
+    ), patch(
+        "tc_api.api.workflows.docker_service.push_image",
+        return_value=True,
+    ), patch(
+        "tc_api.api.workflows.docker_service.get_pubKey_from_KBS",
+        return_value=("trusted", None),
+    ), patch(
+        "tc_api.api.workflows.docker_service.commit_and_save_receipt",
+        return_value=(False, None),
+    ) as commit_receipt, patch(
+        "tc_api.api.workflows.docker_service.get_commit_error",
+        return_value="Sigstore identity token is required for publish. Defer login to the client-side challenge flow and retry with a fresh identity_token.",
+    ), patch(
+        "tc_api.api.workflows.docker_service.register_pending_publish_commit",
+        return_value=None,
+    ) as register_pending:
+        with TestClient(app) as client:
+            client.app.state.trusted_log.init_record = lambda context=None: fake_ctx
+            client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
+            response = client.post("/api/publish-package", json=payload)
+
+    assert response.status_code == 428
+    commit_receipt.assert_called_once()
+    assert commit_receipt.call_args.kwargs["idempotency_key"] == "publish-commit-bld-123"
+    register_pending.assert_called_once_with(
+        "bld-123",
+        "rec-123",
+        "test-user",
+        "",
+        "publish-commit-bld-123",
+    )
+
+
+def test_complete_publish_commit_reuses_pending_idempotency_key():
+    pending = {
+        "record_id": "rec-123",
+        "user_id": "test-user",
+        "luks_path": "",
+        "idempotency_key": "publish-commit-bld-123",
+    }
+    publish_result = SimpleNamespace(
+        publish_id="pub-123",
+        image_id="plain",
+        sbom_url="/tmp/sbom.json",
+        image_url="docker.io/example/plain",
+        log_id=None,
+    )
+
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.workflows.docker_service.get_pending_publish_commit",
+        return_value=pending,
+    ), patch(
+        "tc_api.api.workflows.authenticate_request_identity",
+        return_value=SimpleNamespace(user_id="test-user", identity_token="fresh-token"),
+    ), patch(
+        "tc_api.api.workflows.docker_service.get_publish_status",
+        return_value=publish_result,
+    ), patch(
+        "tc_api.api.workflows.docker_service.commit_and_save_receipt",
+        return_value=(True, "rec-committed"),
+    ) as commit_receipt, patch(
+        "tc_api.api.workflows.docker_service.update_transparencylog_status",
+        return_value=None,
+    ), patch(
+        "tc_api.api.workflows.docker_service.verify_chain_state",
+        return_value="success",
+    ), patch(
+        "tc_api.api.workflows.docker_service.update_publish_status",
+        return_value=None,
+    ), patch(
+        "tc_api.api.workflows.docker_service.clear_pending_publish_commit",
+        return_value=None,
+    ):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/publish-package/commit/bld-123",
+                headers={"Authorization": "Bearer fresh-token"},
+            )
+
+    assert response.status_code == 200
+    assert commit_receipt.call_args.kwargs["idempotency_key"] == "publish-commit-bld-123"
 
 
 def test_create_luks_rejects_missing_identity_token():

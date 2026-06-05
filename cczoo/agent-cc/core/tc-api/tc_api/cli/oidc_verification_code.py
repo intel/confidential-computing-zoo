@@ -27,6 +27,10 @@ def acquire_sigstore_token_via_oob(
         "A public Sigstore login URL will be shown next. Open it in your browser, complete login, and paste the verification code back here.",
         file=stream,
     )
+    print(
+        "The verification code is short-lived, usually about 1 minute. Paste it immediately after the browser shows it.",
+        file=stream,
+    )
 
     issuer = Issuer.production()
     token = issuer.identity_token(

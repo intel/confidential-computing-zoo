@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "src" / "tc_api" / "trucon" / "adapters" / "tdx_quote.py"
+MODULE_PATH = Path(__file__).resolve().parents[1] / "tc_api" / "trucon" / "adapters" / "tdx_quote.py"
 SPEC = importlib.util.spec_from_file_location("repo_tdx_quote", MODULE_PATH)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"Unable to load quote adapter module from {MODULE_PATH}")
@@ -160,3 +160,30 @@ def test_quote_raises_when_libtdx_attest_report_fails(monkeypatch):
         assert "get_report failed" in str(exc)
     else:
         raise AssertionError("Expected libtdx_attest report failure")
+
+
+def test_quote_adapter_loads_versioned_libtdx_attest_when_unversioned_name_is_missing(monkeypatch):
+    attempted = []
+    fake_library = FakeLibTdxAttest(b"real-quote")
+
+    def fake_cdll(path):
+        attempted.append(path)
+        if path == "libtdx_attest.so":
+            raise OSError("missing unversioned soname")
+        if path == "/usr/lib/x86_64-linux-gnu/libtdx_attest.so.1":
+            return fake_library
+        raise OSError(f"unexpected path: {path}")
+
+    monkeypatch.setattr(MODULE, "find_library", lambda _name: "/usr/lib/x86_64-linux-gnu/libtdx_attest.so.1")
+    monkeypatch.setattr(MODULE.ctypes, "CDLL", fake_cdll)
+
+    adapter = TdxQuoteAdapter(
+        report_data_path="/missing/reportdata",
+        quote_path="/missing/outblob",
+        report_root_path="/missing/reportroot",
+    )
+
+    result = adapter.quote("head_log_id_bytes:" + ("34" * 24))
+
+    assert attempted[:2] == ["libtdx_attest.so", "/usr/lib/x86_64-linux-gnu/libtdx_attest.so.1"]
+    assert base64.b64decode(result.quote) == b"real-quote"

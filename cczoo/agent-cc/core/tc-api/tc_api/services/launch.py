@@ -294,7 +294,7 @@ class LaunchServiceMixin:
         """Get launch status by launch_id"""
         return self.launches.get(launch_id)
 
-    async def launch_containers(self, tlog, record_id, image_url, image_id, launch_pth, workload_id: Optional[str] = None, launch_id: Optional[str] = None):
+    async def launch_containers(self, tlog, record_id, image_url, image_id, launch_pth, workload_id: Optional[str] = None, launch_id: Optional[str] = None, dockercmd: Optional[str] = None):
         image_dir = 'oci:' + os.path.join(launch_pth,'encrypted')
         if image_id.startswith("oci:"):
             local_tag = launch_id or workload_id or f"local-{uuid.uuid4().hex[:12]}"
@@ -341,18 +341,24 @@ class LaunchServiceMixin:
                 return False
 
             # run docker image
-            docker_cmd = [
-                DOCKER_CMD,
-                "run",
-                "-d",
-                "-it",
-                "--privileged",
-                "-e",
-                "HF_HUB_OFFLINE=1",
-                "-v",
-                "/etc/hosts:/etc/hosts",
-                "--network=host",
-            ]
+            if dockercmd:
+                docker_cmd = dockercmd.strip().split(" ")
+                docker_gid = subprocess.run(["stat", "-c", "'%g'", "/var/run/docktap/docker.sock"], capture_output=True, text=True).stdout.replace('\n', '').strip("'")
+                if docker_gid != None:
+                    docker_cmd.extend(["--group-add", docker_gid])
+            else:
+                docker_cmd = [
+                    DOCKER_CMD,
+                    "run",
+                    "-d",
+                    "-it",
+                    "--privileged",
+                    "-e",
+                    "HF_HUB_OFFLINE=1",
+                    "-v",
+                    "/etc/hosts:/etc/hosts",
+                    "--network=host",
+                ]
             if workload_id:
                 docker_cmd.extend(["--label", f"io.trucon.workload-id={workload_id}"])
             if launch_id:

@@ -3,6 +3,7 @@ import ctypes
 import os
 import uuid
 from dataclasses import dataclass
+from ctypes.util import find_library
 
 from tc_api.trucon.evidence import decode_binding_expected_value
 
@@ -27,6 +28,38 @@ class _TdxReport(ctypes.Structure):
 
 
 _TDX_REPORT_DATA_SIZE = 64
+
+
+def _load_tdx_attest_library(attest_library_path: str):
+    candidate_paths = []
+    seen = set()
+
+    def add_candidate(value: str | None):
+        if not value:
+            return
+        normalized = value.strip()
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        candidate_paths.append(normalized)
+
+    add_candidate(attest_library_path)
+    add_candidate(find_library("tdx_attest"))
+    add_candidate("libtdx_attest.so.1")
+    add_candidate("/usr/lib/x86_64-linux-gnu/libtdx_attest.so.1")
+    add_candidate("/usr/lib64/libtdx_attest.so.1")
+    add_candidate("/usr/lib/libtdx_attest.so.1")
+
+    last_error: OSError | None = None
+    for candidate in candidate_paths:
+        try:
+            return ctypes.CDLL(candidate)
+        except OSError as exc:
+            last_error = exc
+
+    if last_error is not None:
+        raise last_error
+    raise OSError("libtdx_attest could not be located")
 
 
 class TdxQuoteAdapter:
@@ -147,7 +180,7 @@ class TdxQuoteAdapter:
                 pass
 
     def _load_attest_library(self):
-        library = ctypes.CDLL(self.attest_library_path)
+        library = _load_tdx_attest_library(self.attest_library_path)
         library.tdx_att_get_report.argtypes = [ctypes.POINTER(_TdxReportData), ctypes.POINTER(_TdxReport)]
         library.tdx_att_get_report.restype = ctypes.c_uint32
         library.tdx_att_get_quote.argtypes = [

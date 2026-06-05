@@ -1,7 +1,10 @@
 import base64
 import json
+from types import SimpleNamespace
 
-from tc_api import sigstore_identity
+import pytest
+
+from tc_api.identity import sigstore_identity
 
 
 def _jwt(payload: dict) -> str:
@@ -38,3 +41,49 @@ def test_resolve_sigstore_identity_token_respects_min_ttl_override(tmp_path, mon
         )
         == token
     )
+
+
+def test_resolve_sigstore_identity_token_force_refresh_skips_cached_token(tmp_path, monkeypatch):
+    cache_path = tmp_path / "sigstore-token.json"
+    cached_token = _jwt({"exp": 1_777_431_900, "sub": "cached"})
+    fresh_token = _jwt({"exp": 1_777_432_500, "sub": "fresh"})
+
+    monkeypatch.setenv(sigstore_identity.SIGSTORE_IDENTITY_TOKEN_CACHE_ENV, str(cache_path))
+    monkeypatch.delenv(sigstore_identity.SIGSTORE_IDENTITY_TOKEN_ENV, raising=False)
+    monkeypatch.delenv(sigstore_identity.SIGSTORE_INTERACTIVE_LOGIN_ENV, raising=False)
+    monkeypatch.setattr(sigstore_identity.time, "time", lambda: 1_777_431_602)
+    monkeypatch.setattr(sigstore_identity.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr(sigstore_identity.sys, "stdout", SimpleNamespace(isatty=lambda: True))
+
+    sigstore_identity.cache_sigstore_identity_token(cached_token)
+
+    from tc_api.cli import oidc_verification_code
+
+    monkeypatch.setattr(
+        oidc_verification_code,
+        "acquire_sigstore_token_via_oob",
+        lambda operation, cache_token=True: fresh_token,
+    )
+
+    assert sigstore_identity.resolve_sigstore_identity_token(
+        "baseline",
+        allow_interactive=True,
+        force_refresh=True,
+    ) == fresh_token
+
+
+def test_resolve_sigstore_identity_token_rejects_interactive_refresh_without_tty(monkeypatch):
+    monkeypatch.delenv(sigstore_identity.SIGSTORE_IDENTITY_TOKEN_ENV, raising=False)
+    monkeypatch.delenv(sigstore_identity.SIGSTORE_INTERACTIVE_LOGIN_ENV, raising=False)
+    monkeypatch.setattr(sigstore_identity, "_MEMORY_TOKEN", None)
+    monkeypatch.setattr(sigstore_identity, "_MEMORY_EXPIRY", None)
+    monkeypatch.setattr(sigstore_identity, "_load_cached_token_from_disk", lambda: None)
+    monkeypatch.setattr(sigstore_identity.sys, "stdin", SimpleNamespace(isatty=lambda: False))
+    monkeypatch.setattr(sigstore_identity.sys, "stdout", SimpleNamespace(isatty=lambda: False))
+
+    with pytest.raises(sigstore_identity.MissingSigstoreIdentityTokenError, match="client-side challenge flow"):
+        sigstore_identity.resolve_sigstore_identity_token(
+            "build",
+            allow_interactive=True,
+            require_token=True,
+        )
