@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -29,11 +30,14 @@ _MEMORY_EXPIRY: Optional[int] = None
 
 
 class MissingSigstoreIdentityTokenError(RuntimeError):
-    def __init__(self, operation: str):
+    def __init__(self, operation: str, message: Optional[str] = None):
         super().__init__(
-            f"Sigstore identity token is required for {operation}. Provide identity_token in the request, "
-            f"set {SIGSTORE_IDENTITY_TOKEN_ENV}, pre-populate {_cache_path()}, or enable "
-            f"{SIGSTORE_INTERACTIVE_LOGIN_ENV} for interactive refresh."
+            message
+            or (
+                f"Sigstore identity token is required for {operation}. Provide identity_token in the request, "
+                f"set {SIGSTORE_IDENTITY_TOKEN_ENV}, pre-populate {_cache_path()}, or enable "
+                f"{SIGSTORE_INTERACTIVE_LOGIN_ENV} for interactive refresh."
+            )
         )
         self.operation = operation
 
@@ -46,6 +50,13 @@ def _parse_bool(value: Optional[str], default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _has_interactive_stdio() -> bool:
+    try:
+        return bool(sys.stdin.isatty() and sys.stdout.isatty())
+    except Exception:
+        return False
 
 
 def _cache_path() -> Path:
@@ -153,42 +164,57 @@ def cache_sigstore_identity_token(token: str, logger: Optional[logging.Logger] =
     return expiry
 
 
+def clear_sigstore_identity_token_cache(logger: Optional[logging.Logger] = None) -> None:
+    path = _cache_path()
+    with _CACHE_LOCK:
+        global _MEMORY_TOKEN, _MEMORY_EXPIRY
+        _MEMORY_TOKEN = None
+        _MEMORY_EXPIRY = None
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            _get_logger(logger).warning("Failed to remove cached Sigstore identity token %s: %s", path, exc)
+
+
 def resolve_sigstore_identity_token(
     operation: str,
     logger: Optional[logging.Logger] = None,
     allow_interactive: Optional[bool] = None,
     min_ttl_seconds: Optional[int] = None,
     require_token: bool = False,
+    force_refresh: bool = False,
+    suppress_warning: bool = False,
 ) -> Optional[str]:
     log = _get_logger(logger)
     min_ttl = _min_ttl_seconds() if min_ttl_seconds is None else max(0, min_ttl_seconds)
 
-    env_token = os.environ.get(SIGSTORE_IDENTITY_TOKEN_ENV, "").strip()
-    if env_token:
-        if _token_is_usable(env_token, min_ttl):
-            cache_sigstore_identity_token(env_token, logger=log)
-            return env_token
-        remaining = token_seconds_remaining(env_token)
-        log.warning(
-            "Ignoring %s for %s because it expires too soon (%ss remaining, min ttl %ss)",
-            SIGSTORE_IDENTITY_TOKEN_ENV,
-            operation,
-            remaining if remaining is not None else -1,
-            min_ttl,
-        )
+    if not force_refresh:
+        env_token = os.environ.get(SIGSTORE_IDENTITY_TOKEN_ENV, "").strip()
+        if env_token:
+            if _token_is_usable(env_token, min_ttl):
+                cache_sigstore_identity_token(env_token, logger=log)
+                return env_token
+            remaining = token_seconds_remaining(env_token)
+            log.warning(
+                "Ignoring %s for %s because it expires too soon (%ss remaining, min ttl %ss)",
+                SIGSTORE_IDENTITY_TOKEN_ENV,
+                operation,
+                remaining if remaining is not None else -1,
+                min_ttl,
+            )
 
-    with _CACHE_LOCK:
-        memory_token = _MEMORY_TOKEN
-        memory_expiry = _MEMORY_EXPIRY
+        with _CACHE_LOCK:
+            memory_token = _MEMORY_TOKEN
+            memory_expiry = _MEMORY_EXPIRY
 
-    if memory_token:
-        if memory_expiry is None or _token_is_usable(memory_token, min_ttl):
-            return memory_token
+        if memory_token:
+            if memory_expiry is None or _token_is_usable(memory_token, min_ttl):
+                return memory_token
 
-    disk_token = _load_cached_token_from_disk()
-    if disk_token and _token_is_usable(disk_token, min_ttl):
-        cache_sigstore_identity_token(disk_token, logger=log)
-        return disk_token
+        disk_token = _load_cached_token_from_disk()
+        if disk_token and _token_is_usable(disk_token, min_ttl):
+            cache_sigstore_identity_token(disk_token, logger=log)
+            return disk_token
 
     if allow_interactive is None:
         allow_interactive = _parse_bool(os.environ.get(SIGSTORE_INTERACTIVE_LOGIN_ENV), default=False)
@@ -196,20 +222,33 @@ def resolve_sigstore_identity_token(
     if not allow_interactive:
         if require_token:
             raise MissingSigstoreIdentityTokenError(operation)
-        log.warning(
-            "Skipping Sigstore identity acquisition for %s because no reusable token is available. "
-            "Set %s, pre-populate %s, or enable %s for interactive refresh.",
-            operation,
-            SIGSTORE_IDENTITY_TOKEN_ENV,
-            _cache_path(),
-            SIGSTORE_INTERACTIVE_LOGIN_ENV,
+        if not suppress_warning:
+            log.warning(
+                "Skipping Sigstore identity acquisition for %s because no reusable token is available. "
+                "Set %s, pre-populate %s, or enable %s for interactive refresh.",
+                operation,
+                SIGSTORE_IDENTITY_TOKEN_ENV,
+                _cache_path(),
+                SIGSTORE_INTERACTIVE_LOGIN_ENV,
+            )
+        return None
+
+    if not _has_interactive_stdio():
+        hint = (
+            f"Sigstore identity token is required for {operation}, but no interactive terminal is available in the "
+            f"current tc_api process. Deferring Sigstore login to the client-side challenge flow; retry this operation "
+            f"with a fresh identity_token once the client completes login."
         )
+        if require_token:
+            raise MissingSigstoreIdentityTokenError(operation, message=hint)
+        if not suppress_warning:
+            log.warning(hint)
         return None
 
     log.info("Acquiring fresh Sigstore identity token for %s", operation)
-    token = Issuer.production().identity_token()
-    raw_token = str(token).strip() if isinstance(token, IdentityToken) else str(token).strip()
-    cache_sigstore_identity_token(raw_token, logger=log)
+    from ..cli.oidc_verification_code import acquire_sigstore_token_via_oob
+
+    raw_token = acquire_sigstore_token_via_oob(operation=operation, cache_token=True)
     return raw_token
 
 
@@ -218,12 +257,16 @@ def resolve_sigstore_identity_token_object(
     logger: Optional[logging.Logger] = None,
     allow_interactive: Optional[bool] = None,
     min_ttl_seconds: Optional[int] = None,
+    force_refresh: bool = False,
+    suppress_warning: bool = False,
 ) -> Optional[IdentityToken]:
     raw_token = resolve_sigstore_identity_token(
         operation=operation,
         logger=logger,
         allow_interactive=allow_interactive,
         min_ttl_seconds=min_ttl_seconds,
+        force_refresh=force_refresh,
+        suppress_warning=suppress_warning,
     )
     if not raw_token:
         return None

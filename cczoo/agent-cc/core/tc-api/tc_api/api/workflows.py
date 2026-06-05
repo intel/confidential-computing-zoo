@@ -14,20 +14,24 @@ from tlog.types import Entry
 
 from ..identity.sigstore_identity import resolve_sigstore_identity_token
 from ..models import (
+    BuildCommitRequest,
     BuildPackageRequest,
     BuildPackageResponse,
     BuildResult,
+    LaunchCommitRequest,
     LaunchRequest,
     LaunchResponse,
     LaunchResult,
+    PublishCommitRequest,
     PublishPackageRequest,
     PublishPackageResponse,
     PublishResult,
     _validate_runtime_id,
 )
+from .sigstore_support import _missing_sigstore_identity_detail
 from ..transparency.commit_client import TrustedLogAPI
 from ..transparency.events import EventEntryKey, launch_security_entries
-from .request_auth import add_authenticated_identity_entries, get_authenticated_caller, require_authenticated_owner
+from .request_auth import add_authenticated_identity_entries, authenticate_request_identity, get_authenticated_caller, require_authenticated_owner
 from . import runtime
 
 
@@ -184,6 +188,17 @@ async def build_package(
                 transparencyLog_verify=build_result.get("transparencyLog_verify"),
                 luks_path=request.luks_path
             )
+        if build_result.get("sigstore_login_required"):
+            detail = _missing_sigstore_identity_detail("build", request=http_request)
+            detail.update(
+                {
+                    "build_id": build_id,
+                    "retry_path": f"/api/build-package/commit/{build_id}",
+                    "retry_method": "POST",
+                    "message": "Build artifacts are ready, but transparency log commit needs a fresh Sigstore identity token. Complete login client-side and retry the commit path.",
+                }
+            )
+            raise HTTPException(status_code=428, detail=detail)
         else:
             return BuildPackageResponse(
                 build_id=build_id,
@@ -328,6 +343,31 @@ def build_container_sync(request: BuildPackageRequest, build_id: str, tlog: Trus
             if tlog_id is not None:
                 docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", build_id)
             if not tlog_status:
+                commit_error = docker_service.get_commit_error("build", build_id, record_id)
+                if commit_error and ("Sigstore identity token is required" in commit_error or "force_oob=true" in commit_error):
+                    docker_service.register_pending_build_commit(build_id, record_id, request.user_id, request.luks_path or "")
+                    docker_service.update_build_status(
+                        request.user_id,
+                        build_id,
+                        "signing",
+                        request.luks_path,
+                        step="Sigstore login required to commit transparency log",
+                        image_id=image_name,
+                        image_url=image_name,
+                        sbom_url=sbom_path,
+                        cert_url=f"/api/artifacts/{build_id}/cosign.crt",
+                        transparencyLog_verify="pending",
+                        error_message=commit_error,
+                    )
+                    return {
+                        "success": False,
+                        "sigstore_login_required": True,
+                        "build_id": build_id,
+                    }
+
+                error_message = "Build transparency log commit failed"
+                if commit_error:
+                    error_message = f"{error_message}: {commit_error}"
                 docker_service.update_build_status(
                     request.user_id,
                     build_id,
@@ -339,9 +379,9 @@ def build_container_sync(request: BuildPackageRequest, build_id: str, tlog: Trus
                     sbom_url=sbom_path,
                     cert_url=f"/api/artifacts/{build_id}/cosign.crt",
                     transparencyLog_verify="failed",
-                    error_message="Build transparency log commit failed",
+                    error_message=error_message,
                 )
-                return {"success": False, "error_message": "Build transparency log commit failed"}
+                return {"success": False, "error_message": error_message}
 
             verify_tlog_status = docker_service.verify_chain_state("build", tlog, chain_id=TRANSPARENCY_SERVICE_CHAIN_ID)
         else:
@@ -390,6 +430,92 @@ def build_container_sync(request: BuildPackageRequest, build_id: str, tlog: Trus
             error_message=str(exc),
         )
         return {"success": False, "error_message": str(exc)}
+
+
+async def complete_build_commit(
+    http_request: Request,
+    build_id: str,
+    request: Optional[BuildCommitRequest] = None,
+):
+    pending = docker_service.get_pending_build_commit(build_id)
+    if pending is None:
+        raise HTTPException(status_code=404, detail=f"No pending build transparency commit for {build_id}")
+
+    caller = authenticate_request_identity(
+        "build",
+        user_id=pending.get("user_id"),
+        identity_token=request.identity_token if request is not None else None,
+        request=http_request,
+        enforce_user_binding=True,
+        allow_cached_token=False,
+    )
+
+    tlog = http_request.app.state.trusted_log
+    record_id = pending["record_id"]
+    luks_path = pending.get("luks_path") or ""
+    build_result = docker_service.get_build_status(build_id, luks_path)
+    if build_result is None:
+        raise HTTPException(status_code=404, detail=f"Build {build_id} was not found")
+
+    log_proxy_configuration("Build transparency log")
+    tlog_status, tlog_id = docker_service.commit_and_save_receipt(
+        "build",
+        build_id,
+        tlog,
+        record_id,
+        caller.identity_token,
+        luks_path,
+        expected_identity=caller.user_id,
+    )
+
+    if not tlog_status:
+        commit_error = docker_service.get_commit_error("build", build_id, record_id) or "Build transparency log commit failed"
+        if "Sigstore identity token is required" in commit_error or "force_oob=true" in commit_error:
+            detail = _missing_sigstore_identity_detail("build", request=http_request)
+            detail.update(
+                {
+                    "build_id": build_id,
+                    "retry_path": f"/api/build-package/commit/{build_id}",
+                    "retry_method": "POST",
+                    "message": "Build artifacts are ready, but transparency log commit still needs a fresh Sigstore identity token. Complete login client-side and retry the commit path.",
+                }
+            )
+            raise HTTPException(status_code=428, detail=detail)
+
+        docker_service.update_build_status(
+            caller.user_id,
+            build_id,
+            "failed",
+            luks_path,
+            step="Transparency log commit failed",
+            transparencyLog_verify="failed",
+            error_message=f"Build transparency log commit failed: {commit_error}",
+        )
+        docker_service.clear_pending_build_commit(build_id)
+        raise HTTPException(status_code=500, detail=f"Build transparency log commit failed: {commit_error}")
+
+    if tlog_id is not None:
+        docker_service.update_transparencylog_status(caller.user_id, str(tlog_id), "added", build_id)
+    verify_tlog_status = docker_service.verify_chain_state("build", tlog, chain_id=TRANSPARENCY_SERVICE_CHAIN_ID)
+    docker_service.update_build_status(
+        caller.user_id,
+        build_id,
+        "success",
+        luks_path,
+        step="Build completed successfully",
+        log_id=tlog_id,
+        transparencyLog_verify=verify_tlog_status,
+        error_message=None,
+    )
+    docker_service.clear_pending_build_commit(build_id)
+    return BuildPackageResponse(
+        build_id=build_id,
+        status="success",
+        user_id=caller.user_id,
+        estimated_time="0s",
+        transparencyLog_verify=verify_tlog_status,
+        luks_path=luks_path or None,
+    )
 
 
 async def publish_package(http_request: Request, request: PublishPackageRequest):
@@ -520,7 +646,7 @@ async def publish_package(http_request: Request, request: PublishPackageRequest)
                 )
                 raise HTTPException(status_code=500, detail=f"Image signing or SBOM attestation failed: {exc}") from exc
 
-        # tlog_status, tlog_id = docker_service.commit_and_save_receipt("publish", request.build_id, tlog, record_id, request.identity_token, request.luks_path)
+        publish_commit_idempotency_key = f"publish-commit-{request.build_id}"
         tlog_status, tlog_id = docker_service.commit_and_save_receipt(
             "publish",
             request.build_id,
@@ -528,9 +654,51 @@ async def publish_package(http_request: Request, request: PublishPackageRequest)
             record_id,
             request.identity_token,
             request.luks_path,
-            expected_identity=request.user_id
+            expected_identity=request.user_id,
+            idempotency_key=publish_commit_idempotency_key,
         )
-        docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", request.build_id)
+        if tlog_id is not None:
+            docker_service.update_transparencylog_status(request.user_id, str(tlog_id), "added", request.build_id)
+
+        if not tlog_status:
+            commit_error = docker_service.get_commit_error("publish", request.build_id, record_id)
+            if commit_error and ("Sigstore identity token is required" in commit_error or "force_oob=true" in commit_error):
+                docker_service.register_pending_publish_commit(
+                    request.build_id,
+                    record_id,
+                    request.user_id,
+                    request.luks_path or "",
+                    publish_commit_idempotency_key,
+                )
+                docker_service.update_publish_status(
+                    request.user_id,
+                    request.build_id,
+                    "signing",
+                    publish_id,
+                    step="Sigstore login required to commit transparency log",
+                    luks_path=request.luks_path,
+                    transparencyLog_verify="pending",
+                    image_id=request.image_id.split("/")[-1],
+                    sbom_url=request.sbom_url,
+                    image_url=f"docker.io/{registry_repo}",
+                    error_message=commit_error,
+                )
+                detail = _missing_sigstore_identity_detail("publish", request=http_request)
+                detail.update(
+                    {
+                        "build_id": request.build_id,
+                        "retry_path": f"/api/publish-package/commit/{request.build_id}",
+                        "retry_method": "POST",
+                        "message": "Publish artifacts are ready, but transparency log commit needs a fresh Sigstore identity token. Complete login client-side and retry the commit path.",
+                    }
+                )
+                raise HTTPException(status_code=428, detail=detail)
+
+            raise HTTPException(
+                status_code=500,
+                detail=f"Publish transparency log commit failed: {commit_error or 'unknown error'}",
+            )
+
         verify_tlog_status = docker_service.verify_chain_state("publish", tlog, chain_id=TRANSPARENCY_SERVICE_CHAIN_ID)
 
         docker_service.update_publish_status(
@@ -571,11 +739,118 @@ async def get_publish_result(http_request: Request, build_id: str):
         publish_result = docker_service.get_publish_status(build_id)
         if not publish_result:
             raise HTTPException(status_code=404, detail="Publish not found")
+        pending = docker_service.get_pending_publish_commit(build_id)
+        if publish_result.status == "signing" and pending is not None:
+            detail = _missing_sigstore_identity_detail("publish", request=http_request)
+            detail.update(
+                {
+                    "build_id": build_id,
+                    "retry_path": f"/api/publish-package/commit/{build_id}",
+                    "retry_method": "POST",
+                    "message": "Publish artifacts are ready, but transparency log commit needs a fresh Sigstore identity token. Complete login client-side and retry the commit path.",
+                }
+            )
+            raise HTTPException(status_code=428, detail=detail)
         return publish_result
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to get publish result: {exc}") from exc
+
+
+async def complete_publish_commit(
+    http_request: Request,
+    build_id: str,
+    request: Optional[PublishCommitRequest] = None,
+):
+    pending = docker_service.get_pending_publish_commit(build_id)
+    if pending is None:
+        raise HTTPException(status_code=404, detail=f"No pending publish transparency commit for {build_id}")
+
+    caller = authenticate_request_identity(
+        "publish",
+        user_id=pending.get("user_id"),
+        identity_token=request.identity_token if request is not None else None,
+        request=http_request,
+        enforce_user_binding=True,
+        allow_cached_token=False,
+    )
+
+    tlog = http_request.app.state.trusted_log
+    record_id = pending["record_id"]
+    luks_path = pending.get("luks_path") or ""
+    idempotency_key = pending.get("idempotency_key") or f"publish-commit-{build_id}"
+    publish_result = docker_service.get_publish_status(build_id)
+    if publish_result is None:
+        raise HTTPException(status_code=404, detail=f"Publish {build_id} was not found")
+
+    log_proxy_configuration("Publish transparency log")
+    tlog_status, tlog_id = docker_service.commit_and_save_receipt(
+        "publish",
+        build_id,
+        tlog,
+        record_id,
+        caller.identity_token,
+        luks_path,
+        expected_identity=caller.user_id,
+        idempotency_key=idempotency_key,
+    )
+
+    if not tlog_status:
+        commit_error = docker_service.get_commit_error("publish", build_id, record_id) or "Publish transparency log commit failed"
+        if "Sigstore identity token is required" in commit_error or "force_oob=true" in commit_error:
+            detail = _missing_sigstore_identity_detail("publish", request=http_request)
+            detail.update(
+                {
+                    "build_id": build_id,
+                    "retry_path": f"/api/publish-package/commit/{build_id}",
+                    "retry_method": "POST",
+                    "message": "Publish artifacts are ready, but transparency log commit still needs a fresh Sigstore identity token. Complete login client-side and retry the commit path.",
+                }
+            )
+            raise HTTPException(status_code=428, detail=detail)
+
+        docker_service.update_publish_status(
+            caller.user_id,
+            build_id,
+            "failed",
+            publish_result.publish_id,
+            step="Transparency log commit failed",
+            luks_path=luks_path,
+            transparencyLog_verify="failed",
+            error_message=f"Publish transparency log commit failed: {commit_error}",
+        )
+        docker_service.clear_pending_publish_commit(build_id)
+        raise HTTPException(status_code=500, detail=f"Publish transparency log commit failed: {commit_error}")
+
+    if tlog_id is not None:
+        docker_service.update_transparencylog_status(caller.user_id, str(tlog_id), "added", build_id)
+    verify_tlog_status = docker_service.verify_chain_state("publish", tlog, chain_id=TRANSPARENCY_SERVICE_CHAIN_ID)
+    docker_service.update_publish_status(
+        caller.user_id,
+        build_id,
+        "success",
+        publish_result.publish_id,
+        step="complete publish verify",
+        luks_path=luks_path,
+        transparencyLog_verify=verify_tlog_status,
+        log_id=tlog_id,
+        error_message=None,
+    )
+    docker_service.clear_pending_publish_commit(build_id)
+    return PublishPackageResponse(
+        build_id=build_id,
+        publish_id=publish_result.publish_id,
+        status="success",
+        image_id=publish_result.image_id or "",
+        sbom_url=publish_result.sbom_url,
+        image_url=publish_result.image_url or "",
+        user_id=caller.user_id,
+        transparencyLog_verify=verify_tlog_status,
+        log_id=f"{tlog_id}" if tlog_id else publish_result.log_id,
+        published_at=datetime.now(),
+        luks_path=luks_path or None,
+    )
 
 
 async def get_build_result(http_request: Request, build_id: str, luks_path):
@@ -748,6 +1023,7 @@ async def launch_container_async(
             launch_pth=launch_path,
             workload_id=workload_id,
             launch_id=launch_id,
+            dockercmd=request.dockercmd
         )
         tlog.add_entry(record_id, Entry(key="launch_instance_ids", value={"launch_instance_ids": instance_ids}))
         if not instance_ids:
@@ -773,10 +1049,36 @@ async def launch_container_async(
             tlog,
             record_id,
             request.identity_token,
-            request.luks_path,
+            "",
             expected_identity=request.user_id
         )
-        docker_service.update_transparencylog_status(request.user_id, str(log_id), "added", launch_id)
+        if log_id is not None:
+            docker_service.update_transparencylog_status(request.user_id, str(log_id), "added", launch_id)
+
+        if not tlog_status:
+            commit_error = docker_service.get_commit_error("launch", launch_id, record_id)
+            if commit_error and ("Sigstore identity token is required" in commit_error or "force_oob=true" in commit_error):
+                docker_service.register_pending_launch_commit(
+                    launch_id,
+                    record_id,
+                    request.user_id,
+                    transparency_chain_id,
+                )
+                docker_service.update_launch_status(
+                    request.user_id,
+                    launch_id=launch_id,
+                    status="signing",
+                    validation="passed",
+                    attestation=attestation_result,
+                    evidence=evidences,
+                    transparencyLog_verify="pending",
+                    error_message=commit_error,
+                    instance_ids=instance_ids,
+                )
+                return
+
+            raise RuntimeError(f"Launch transparency log commit failed: {commit_error or 'unknown error'}")
+
         verify_tlog_status = docker_service.verify_chain_state("launch", tlog, chain_id=transparency_chain_id)
 
         docker_service.update_launch_status(
@@ -796,11 +1098,100 @@ async def launch_container_async(
             file_handle.write(f"Error: {exc}\n")
 
 
+async def complete_launch_commit(
+    http_request: Request,
+    launch_id: str,
+    request: Optional[LaunchCommitRequest] = None,
+):
+    pending = docker_service.get_pending_launch_commit(launch_id)
+    if pending is None:
+        raise HTTPException(status_code=404, detail=f"No pending launch transparency commit for {launch_id}")
+
+    caller = authenticate_request_identity(
+        "launch",
+        user_id=pending.get("user_id"),
+        identity_token=request.identity_token if request is not None else None,
+        request=http_request,
+        enforce_user_binding=True,
+        allow_cached_token=False,
+    )
+
+    tlog = http_request.app.state.trusted_log
+    record_id = pending["record_id"]
+    transparency_chain_id = pending["chain_id"]
+    launch_result = docker_service.get_launch_status(launch_id)
+    if launch_result is None:
+        raise HTTPException(status_code=404, detail=f"Launch {launch_id} was not found")
+
+    log_proxy_configuration("Launch transparency log")
+    tlog_status, tlog_id = docker_service.commit_and_save_receipt(
+        "launch",
+        launch_id,
+        tlog,
+        record_id,
+        caller.identity_token,
+        expected_identity=caller.user_id,
+    )
+
+    if not tlog_status:
+        commit_error = docker_service.get_commit_error("launch", launch_id, record_id) or "Launch transparency log commit failed"
+        if "Sigstore identity token is required" in commit_error or "force_oob=true" in commit_error:
+            detail = _missing_sigstore_identity_detail("launch", request=http_request)
+            detail.update(
+                {
+                    "launch_id": launch_id,
+                    "retry_path": f"/api/deploy-launch/commit/{launch_id}",
+                    "retry_method": "POST",
+                    "message": "Launch completed, but transparency log commit still needs a fresh Sigstore identity token. Complete login client-side and retry the commit path.",
+                }
+            )
+            raise HTTPException(status_code=428, detail=detail)
+
+        docker_service.update_launch_status(
+            caller.user_id,
+            launch_id,
+            "failed",
+            transparencyLog_verify="failed",
+            error_message=f"Launch transparency log commit failed: {commit_error}",
+        )
+        docker_service.clear_pending_launch_commit(launch_id)
+        raise HTTPException(status_code=500, detail=f"Launch transparency log commit failed: {commit_error}")
+
+    if tlog_id is not None:
+        docker_service.update_transparencylog_status(caller.user_id, str(tlog_id), "added", launch_id)
+    verify_tlog_status = docker_service.verify_chain_state("launch", tlog, chain_id=transparency_chain_id)
+    docker_service.update_launch_status(
+        caller.user_id,
+        launch_id,
+        "success",
+        transparencyLog_verify=verify_tlog_status,
+        log_id=f"{tlog_id}" if tlog_id else launch_result.log_id,
+        error_message=None,
+    )
+    docker_service.clear_pending_launch_commit(launch_id)
+    launch_result = docker_service.get_launch_status(launch_id)
+    if launch_result is None:
+        raise HTTPException(status_code=404, detail=f"Launch {launch_id} was not found after commit")
+    return launch_result
+
+
 async def get_launch_result(http_request: Request, launch_id: str):
     try:
         launch_result = docker_service.get_launch_status(launch_id)
         if not launch_result:
             raise HTTPException(status_code=404, detail="Launch not found")
+        pending = docker_service.get_pending_launch_commit(launch_id)
+        if launch_result.status == "signing" and pending is not None:
+            detail = _missing_sigstore_identity_detail("launch", request=http_request)
+            detail.update(
+                {
+                    "launch_id": launch_id,
+                    "retry_path": f"/api/deploy-launch/commit/{launch_id}",
+                    "retry_method": "POST",
+                    "message": "Launch completed, but transparency log commit needs a fresh Sigstore identity token. Complete login client-side and retry the commit path.",
+                }
+            )
+            raise HTTPException(status_code=428, detail=detail)
         return launch_result
     except HTTPException:
         raise
@@ -823,6 +1214,8 @@ __all__ = [
     "build_package",
     "deploy_launch",
     "docker_service",
+    "complete_launch_commit",
+    "complete_publish_commit",
     "get_build_result",
     "get_launch_result",
     "get_publish_result",

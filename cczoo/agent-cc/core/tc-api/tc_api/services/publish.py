@@ -532,7 +532,7 @@ class PublishServiceMixin:
         except Exception as e:
             logger.error(f"Error updating publish status for {build_id}: {str(e)}")
 
-    async def verify_attestation(self, image_id: str, user_id: str,  tlog: TrustedLogAPI, record_id: str) -> Tuple[str, Optional[str]]:
+    async def verify_attestation(self, image_id: str, user_id: str,  tlog: TrustedLogAPI, record_id: str, luks_path: str = '') -> Tuple[str, Optional[str]]:
         """
         Verify attestation and retrieve decryption key if successful
         
@@ -546,7 +546,7 @@ class PublishServiceMixin:
             decryption_key is None if attestation fails
         """
         try:
-            attestation_result, decryption_key = self.get_pubKey_from_KBS(tlog, record_id)
+            attestation_result, decryption_key = self.get_pubKey_from_KBS(luks_path, tlog, record_id)
             return attestation_result, decryption_key
             
         except Exception as e:

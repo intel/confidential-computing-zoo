@@ -17,3 +17,9 @@ router.add_api_route(
     methods=["GET"],
     response_model=workflows.BuildResult,
 )
+router.add_api_route(
+    "/api/build-package/commit/{build_id}",
+    workflows.complete_build_commit,
+    methods=["POST"],
+    response_model=workflows.BuildPackageResponse,
+)

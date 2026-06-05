@@ -61,6 +61,111 @@ def test_build_command_retries_after_sigstore_login(monkeypatch, capsys):
     assert "points at localhost" in captured.err
 
 
+def test_build_command_retries_via_resume_path_after_sigstore_login(monkeypatch, capsys):
+    calls = []
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        if len(calls) == 1:
+            return FakeResponse(
+                428,
+                {
+                    "detail": {
+                        "error": "Sigstore identity token is required for build.",
+                        "operation": "build",
+                        "after_login_open_url": "http://localhost:8000/api/sigstore/interactive-login?operation=build&session_id=sess-123",
+                        "session_id": "sess-123",
+                        "login_status_url": "/api/sigstore/login-status/sess-123",
+                        "retry_method": "POST",
+                        "retry_path": "/api/build-package/commit/bld-123",
+                        "build_id": "bld-123",
+                    }
+                },
+            )
+        if len(calls) == 2:
+            return FakeResponse(200, {"status": "token_ready", "identity_token": "token-123"})
+        return FakeResponse(200, {"build_id": "bld-123", "status": "success"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+    monkeypatch.setattr(client_mod.time, "sleep", lambda _seconds: None)
+
+    rc = client_mod.main([
+        "--sigstore-login",
+        "server-session",
+        "build",
+        "--payload-json",
+        json.dumps({"dockerfile": "FROM busybox", "user_id": "alice"}),
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls[2] == (
+        "POST",
+        "/api/build-package/commit/bld-123",
+        {"identity_token": "token-123"},
+        None,
+    )
+    assert '"status": "success"' in captured.out
+
+
+def test_build_command_handles_second_sigstore_challenge_for_commit_resume(monkeypatch, capsys):
+    calls = []
+    issued_tokens = iter(["token-1", "token-2"])
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        if len(calls) == 1:
+            return FakeResponse(
+                400,
+                {
+                    "detail": {
+                        "error": "Sigstore identity token is required for build.",
+                        "operation": "build",
+                        "after_login_open_url": "http://localhost:8000/api/sigstore/interactive-login?operation=build&session_id=sess-1",
+                        "session_id": "sess-1",
+                        "login_status_url": "/api/sigstore/login-status/sess-1",
+                    }
+                },
+            )
+        if len(calls) == 2:
+            return FakeResponse(
+                428,
+                {
+                    "detail": {
+                        "error": "Sigstore identity token is required for build.",
+                        "operation": "build",
+                        "after_login_open_url": "http://localhost:8000/api/sigstore/interactive-login?operation=build&session_id=sess-2",
+                        "session_id": "sess-2",
+                        "login_status_url": "/api/sigstore/login-status/sess-2",
+                        "retry_method": "POST",
+                        "retry_path": "/api/build-package/commit/bld-123",
+                        "build_id": "bld-123",
+                    }
+                },
+            )
+        return FakeResponse(200, {"build_id": "bld-123", "status": "success"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+    monkeypatch.setattr(client_mod, "_acquire_sigstore_token_oob", lambda operation="docktap": next(issued_tokens))
+
+    rc = client_mod.main([
+        "--sigstore-login",
+        "oob",
+        "build",
+        "--payload-json",
+        json.dumps({"dockerfile": "FROM busybox", "user_id": "alice"}),
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls == [
+        ("POST", "/api/build-package", {"dockerfile": "FROM busybox", "user_id": "alice"}, None),
+        ("POST", "/api/build-package", {"dockerfile": "FROM busybox", "user_id": "alice", "identity_token": "token-1"}, None),
+        ("POST", "/api/build-package/commit/bld-123", {"identity_token": "token-2"}, None),
+    ]
+    assert '"status": "success"' in captured.out
+
+
 def test_build_command_rewrites_browser_url(monkeypatch, capsys):
     calls = []
 
@@ -137,6 +242,66 @@ def test_build_command_auto_falls_back_to_oob(monkeypatch, capsys):
     assert '"build_id": "bld-123"' in captured.out
     assert len(calls) == 2
     assert calls[1][0] == "POST"
+
+
+def test_build_command_handles_two_sigstore_challenges_with_oob(monkeypatch, capsys):
+    calls = []
+    issued_tokens = iter(["token-one", "token-two"])
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        if len(calls) == 1:
+            return FakeResponse(
+                400,
+                {
+                    "detail": {
+                        "error": "Sigstore identity token is required for build.",
+                        "operation": "build",
+                        "after_login_open_url": "http://localhost:8000/api/sigstore/interactive-login?operation=build&session_id=sess-1",
+                        "session_id": "sess-1",
+                        "login_status_url": "/api/sigstore/login-status/sess-1",
+                    }
+                },
+            )
+        if len(calls) == 2:
+            assert payload["identity_token"] == "token-one"
+            return FakeResponse(
+                428,
+                {
+                    "detail": {
+                        "error": "Sigstore identity token is required for build.",
+                        "operation": "build",
+                        "after_login_open_url": "http://localhost:8000/api/sigstore/interactive-login?operation=build&session_id=sess-2",
+                        "session_id": "sess-2",
+                        "login_status_url": "/api/sigstore/login-status/sess-2",
+                        "retry_method": "POST",
+                        "retry_path": "/api/build-package/commit/bld-123",
+                        "build_id": "bld-123",
+                    }
+                },
+            )
+        assert calls[2] == (
+            "POST",
+            "/api/build-package/commit/bld-123",
+            {"identity_token": "token-two"},
+            None,
+        )
+        return FakeResponse(200, {"build_id": "bld-123", "status": "success"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+    monkeypatch.setattr(client_mod, "_acquire_sigstore_token_oob", lambda operation="docktap": next(issued_tokens))
+
+    rc = client_mod.main([
+        "--sigstore-login",
+        "oob",
+        "build",
+        "--payload-json",
+        json.dumps({"dockerfile": "FROM busybox", "user_id": "alice"}),
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert '"status": "success"' in captured.out
 
 
 def test_build_result_command_fetches_expected_path(monkeypatch, capsys):
@@ -228,6 +393,96 @@ def test_build_result_command_retries_with_authorization_header(monkeypatch, cap
     assert '"status": "success"' in captured.out
 
 
+def test_launch_result_command_retries_via_resume_path_with_authorization_header(monkeypatch, capsys):
+    calls = []
+
+    monkeypatch.setattr(client_mod, "resolve_sigstore_identity_token", lambda *args, **kwargs: None)
+    monkeypatch.setattr(client_mod.time, "sleep", lambda _seconds: None)
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        if len(calls) == 1:
+            return FakeResponse(
+                428,
+                {
+                    "detail": {
+                        "error": "Sigstore identity token is required for launch.",
+                        "operation": "launch",
+                        "after_login_open_url": "http://localhost:8000/api/sigstore/interactive-login?operation=launch&session_id=sess-123",
+                        "session_id": "sess-123",
+                        "login_status_url": "/api/sigstore/login-status/sess-123",
+                        "retry_method": "POST",
+                        "retry_path": "/api/deploy-launch/commit/launch-123",
+                        "launch_id": "launch-123",
+                    }
+                },
+            )
+        if len(calls) == 2:
+            return FakeResponse(200, {"status": "token_ready", "identity_token": "token-123"})
+        return FakeResponse(200, {"launch_id": "launch-123", "status": "success"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+
+    rc = client_mod.main(["--sigstore-login", "server-session", "launch-result", "launch-123"])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls[2] == (
+        "POST",
+        "/api/deploy-launch/commit/launch-123",
+        None,
+        {"Authorization": "Bearer token-123"},
+    )
+    assert '"status": "success"' in captured.out
+
+
+def test_publish_command_retries_via_resume_path_after_sigstore_login(monkeypatch, capsys):
+    calls = []
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        if len(calls) == 1:
+            return FakeResponse(
+                428,
+                {
+                    "detail": {
+                        "error": "Sigstore identity token is required for publish.",
+                        "operation": "publish",
+                        "after_login_open_url": "http://localhost:8000/api/sigstore/interactive-login?operation=publish&session_id=sess-123",
+                        "session_id": "sess-123",
+                        "login_status_url": "/api/sigstore/login-status/sess-123",
+                        "retry_method": "POST",
+                        "retry_path": "/api/publish-package/commit/bld-123",
+                        "build_id": "bld-123",
+                    }
+                },
+            )
+        if len(calls) == 2:
+            return FakeResponse(200, {"status": "token_ready", "identity_token": "token-123"})
+        return FakeResponse(200, {"build_id": "bld-123", "status": "success"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+    monkeypatch.setattr(client_mod.time, "sleep", lambda _seconds: None)
+
+    rc = client_mod.main([
+        "--sigstore-login",
+        "server-session",
+        "publish",
+        "--payload-json",
+        json.dumps({"build_id": "bld-123", "user_id": "alice", "image_id": "oci:/tmp/plain", "sbom_url": "/tmp/sbom.json"}),
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls[2] == (
+        "POST",
+        "/api/publish-package/commit/bld-123",
+        {"identity_token": "token-123"},
+        None,
+    )
+    assert '"status": "success"' in captured.out
+
+
 def test_publish_command_reads_payload_file(monkeypatch, tmp_path, capsys):
     payload_path = tmp_path / "publish.json"
     payload_path.write_text(json.dumps({"build_id": "bld-123", "user_id": "alice"}), encoding="utf-8")
@@ -247,6 +502,163 @@ def test_publish_command_reads_payload_file(monkeypatch, tmp_path, capsys):
     assert '"publish_id": "pub-123"' in captured.out
 
 
+def test_deploy_command_polls_launch_result_until_success(monkeypatch, capsys):
+    calls = []
+
+    monkeypatch.setattr(client_mod, "resolve_sigstore_identity_token", lambda *args, **kwargs: "cached-token")
+    monkeypatch.setattr(client_mod.time, "sleep", lambda _seconds: None)
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        if len(calls) == 1:
+            return FakeResponse(200, {"launch_id": "launch-123", "status": "initiated"})
+        if len(calls) == 2:
+            return FakeResponse(200, {"launch_id": "launch-123", "status": "launching"})
+        return FakeResponse(200, {"launch_id": "launch-123", "status": "success", "instance_ids": ["ctr-1"]})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+
+    rc = client_mod.main([
+        "deploy",
+        "--payload-json",
+        json.dumps({"image_id": "img-123", "user_id": "alice"}),
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls == [
+        ("POST", "/api/deploy-launch", {"image_id": "img-123", "user_id": "alice"}, None),
+        ("GET", "/api/launch-result/launch-123", None, {"Authorization": "Bearer cached-token"}),
+        ("GET", "/api/launch-result/launch-123", None, {"Authorization": "Bearer cached-token"}),
+    ]
+    assert "Deploy accepted as launch launch-123; waiting for launch-result..." in captured.err
+    assert "Launch launch-123 status: launching" in captured.err
+    assert '"status": "success"' in captured.out
+
+
+def test_deploy_command_handles_launch_result_sigstore_resume(monkeypatch, capsys):
+    calls = []
+
+    monkeypatch.setattr(client_mod, "resolve_sigstore_identity_token", lambda *args, **kwargs: None)
+    monkeypatch.setattr(client_mod.time, "sleep", lambda _seconds: None)
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        if len(calls) == 1:
+            return FakeResponse(200, {"launch_id": "launch-123", "status": "initiated"})
+        if len(calls) == 2:
+            return FakeResponse(
+                428,
+                {
+                    "detail": {
+                        "error": "Sigstore identity token is required for launch.",
+                        "operation": "launch",
+                        "after_login_open_url": "http://localhost:8000/api/sigstore/interactive-login?operation=launch&session_id=sess-123",
+                        "session_id": "sess-123",
+                        "login_status_url": "/api/sigstore/login-status/sess-123",
+                        "retry_method": "POST",
+                        "retry_path": "/api/deploy-launch/commit/launch-123",
+                        "launch_id": "launch-123",
+                    }
+                },
+            )
+        if len(calls) == 3:
+            return FakeResponse(200, {"status": "token_ready", "identity_token": "token-123"})
+        return FakeResponse(200, {"launch_id": "launch-123", "status": "success"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+
+    rc = client_mod.main([
+        "--sigstore-login",
+        "server-session",
+        "deploy",
+        "--payload-json",
+        json.dumps({"image_id": "img-123", "user_id": "alice"}),
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls[3] == (
+        "POST",
+        "/api/deploy-launch/commit/launch-123",
+        None,
+        {"Authorization": "Bearer token-123"},
+    )
+    assert '"status": "success"' in captured.out
+
+
+def test_create_luks_command_posts_expected_path(monkeypatch, capsys):
+    calls = []
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        return FakeResponse(200, {"user_id": "alice", "mapper_dir": "/dev/mapper/luks-alice"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+
+    rc = client_mod.main([
+        "create_luks",
+        "--payload-json",
+        json.dumps({
+            "user_id": "alice",
+            "passwd": "secret",
+            "vfs_path": "/mnt/luks_fs/alice.img",
+            "vfs_size": "8M",
+        }),
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls == [(
+        "POST",
+        "/api/create_luks",
+        {
+            "user_id": "alice",
+            "passwd": "secret",
+            "vfs_path": "/mnt/luks_fs/alice.img",
+            "vfs_size": "8M",
+        },
+        None,
+    )]
+    assert '"mapper_dir": "/dev/mapper/luks-alice"' in captured.out
+
+
+def test_umount_luks_command_posts_expected_path(monkeypatch, capsys):
+    calls = []
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        calls.append((method, path, payload, headers))
+        return FakeResponse(200, {"user_id": "alice", "mount_path": "/mnt/luks/alice"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+
+    rc = client_mod.main([
+        "umount_luks",
+        "--payload-json",
+        json.dumps({
+            "user_id": "alice",
+            "mapper_dir": "/dev/mapper/luks-alice",
+            "mount_path": "/mnt/luks/alice",
+            "loop_device": "/dev/loop7",
+        }),
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls == [(
+        "POST",
+        "/api/unmount_luks",
+        {
+            "user_id": "alice",
+            "mapper_dir": "/dev/mapper/luks-alice",
+            "mount_path": "/mnt/luks/alice",
+            "loop_device": "/dev/loop7",
+        },
+        None,
+    )]
+    assert '"mount_path": "/mnt/luks/alice"' in captured.out
+
+
 def test_client_returns_nonzero_on_server_error(monkeypatch, capsys):
     def fake_request_json(self, method, path, payload=None, headers=None):
         return FakeResponse(500, {"error": "boom"})
@@ -258,6 +670,34 @@ def test_client_returns_nonzero_on_server_error(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert rc == 1
     assert '"error": "boom"' in captured.err
+
+
+def test_build_command_uses_long_running_timeout(monkeypatch, capsys):
+    captured = {}
+
+    original_init = client_mod.ApiClient.__init__
+
+    def fake_init(self, base_url, timeout_seconds=client_mod.DEFAULT_TIMEOUT_SECONDS):
+        captured["base_url"] = base_url
+        captured["timeout_seconds"] = timeout_seconds
+        original_init(self, base_url, timeout_seconds=timeout_seconds)
+
+    def fake_request_json(self, method, path, payload=None, headers=None):
+        return FakeResponse(200, {"build_id": "bld-123", "status": "success"})
+
+    monkeypatch.setattr(client_mod.ApiClient, "__init__", fake_init)
+    monkeypatch.setattr(client_mod.ApiClient, "request_json", fake_request_json)
+
+    rc = client_mod.main([
+        "build",
+        "--payload-json",
+        json.dumps({"dockerfile": "FROM busybox", "user_id": "alice"}),
+    ])
+
+    captured_output = capsys.readouterr()
+    assert rc == 0
+    assert captured["timeout_seconds"] == client_mod.DEFAULT_LONG_TIMEOUT_SECONDS
+    assert '"status": "success"' in captured_output.out
 
 
 def test_sigstore_token_command_returns_json(monkeypatch, capsys):

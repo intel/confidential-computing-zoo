@@ -17,12 +17,22 @@ from ..config import (
     KBS_URL,
 )
 from ..identity.oidc_preflight import inspect_identity_token
-from ..identity.sigstore_identity import resolve_sigstore_identity_token
+from ..identity.sigstore_identity import MissingSigstoreIdentityTokenError, resolve_sigstore_identity_token
 from ..models import BuildResult, LaunchResult, LuksResult, PublishResult, TransparencyResult
 from ..transparency.commit_client import TrustedLogAPI
 from tlog.types import Entry
 
 logger = logging.getLogger(__name__)
+
+
+def _exception_message(error: BaseException) -> str:
+    message = str(error).strip()
+    if message:
+        return message
+    rendered = repr(error).strip()
+    if rendered and rendered != f"{type(error).__name__}()":
+        return rendered
+    return type(error).__name__
 
 
 class BaseDockerService:
@@ -32,6 +42,10 @@ class BaseDockerService:
         self.publish_results: Dict[str, PublishResult] = {}
         self.transparency_logs: Dict[str, TransparencyResult] = {}
         self.luks: Dict[str, LuksResult] = {}
+        self.commit_errors: Dict[str, str] = {}
+        self.pending_build_commits: Dict[str, Dict[str, str]] = {}
+        self.pending_publish_commits: Dict[str, Dict[str, str]] = {}
+        self.pending_launch_commits: Dict[str, Dict[str, str]] = {}
 
     def generate_uuid(self, prefix: str = "bld") -> str:
         """
@@ -232,9 +246,9 @@ class BaseDockerService:
             logger.warning("Failed to load persisted build status for %s: %s", build_id, exc)
             return None
 
-    def _recover_legacy_build_status(self, build_id: str) -> Optional[BuildResult]:
-        if os.path.exists(os.path.join(BUILD_DIR, "luks")):
-            build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+    def _recover_legacy_build_status(self, build_id: str, luks_path: str = '') -> Optional[BuildResult]:
+        if os.path.exists(luks_path):
+            build_path = os.path.join(luks_path, build_id)
         else:
             build_path = os.path.join(BUILD_DIR, build_id)
         if not os.path.isdir(build_path):
@@ -298,6 +312,7 @@ class BaseDockerService:
             image_url=image_id,
             sbom_url=sbom_url,
             log_id=log_id,
+            luks_path=luks_path,
             transparencyLog_verify=transparency_verify,
             error_message=error_message,
             created_at=created_at,
@@ -315,7 +330,7 @@ class BaseDockerService:
             self.builds[build_id] = build_result
             return build_result
 
-        build_result = self._recover_legacy_build_status(build_id)
+        build_result = self._recover_legacy_build_status(build_id, luks_path)
         if build_result is not None:
             self.builds[build_id] = build_result
             try:
@@ -581,14 +596,29 @@ class BaseDockerService:
                 tlog.add_entry(record_id, Entry(key="key", value=f"Get key failed: {e}"))
             return False, None
 
-    def commit_and_save_receipt(self, api_type, build_id, tlog: TrustedLogAPI, record_id: str, identity_token_str: str, luks_path: str = '',expected_identity: Optional[str] = None):
+    def commit_and_save_receipt(
+        self,
+        api_type,
+        build_id,
+        tlog: TrustedLogAPI,
+        record_id: str,
+        identity_token_str: str,
+        luks_path: str = '',
+        expected_identity: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ):
         """Commit the accumulated entries via TrustedLogAPI and save a receipt file."""
+        commit_error_key = self._commit_error_key(api_type, build_id, record_id)
+        self.commit_errors.pop(commit_error_key, None)
         try:
             identity_token_str = self._resolve_commit_identity_token(api_type,identity_token_str,expected_identity=expected_identity)
             result = tlog.commit_record(
                 record_id=record_id,
                 event_type=api_type,
-                commit_options={"identity_token": identity_token_str},
+                commit_options={
+                    "identity_token": identity_token_str,
+                    "idempotency_key": idempotency_key,
+                },
             )
             receipt = {
                 "record_id": result.record_id,
@@ -611,8 +641,119 @@ class BaseDockerService:
             logger.info(f"Saved {api_type} commit receipt to {receipt_path}")
             return True, result.record_id
         except Exception as e:
-            logger.error(f"Commit failed for {api_type}: {e}")
+            error_message = self._describe_commit_failure(
+                api_type,
+                e,
+                identity_token_str=identity_token_str,
+                expected_identity=expected_identity,
+            )
+            self.commit_errors[commit_error_key] = error_message
+            logger.error("Commit failed for %s: %s", api_type, error_message)
             return False, None
+
+    def _describe_commit_failure(
+        self,
+        operation: str,
+        error: BaseException,
+        *,
+        identity_token_str: Optional[str],
+        expected_identity: Optional[str],
+    ) -> str:
+        if isinstance(error, MissingSigstoreIdentityTokenError):
+            return str(error)
+
+        error_message = _exception_message(error)
+        token = (identity_token_str or "").strip()
+        if not token:
+            return error_message
+
+        try:
+            token_report = inspect_identity_token(token, expected_identity=expected_identity)
+        except Exception:
+            token_report = None
+
+        token_errors = token_report.get("errors") or [] if token_report else []
+        if token_errors:
+            combined_errors = "; ".join(str(item) for item in token_errors)
+            lower_errors = combined_errors.lower()
+            if (
+                "expired" in lower_errors
+                or "not within its validity period" in lower_errors
+                or "not valid for sigstore" in lower_errors
+            ):
+                return str(
+                    MissingSigstoreIdentityTokenError(
+                        operation,
+                        message=(
+                            f"Sigstore identity token is required for {operation}. The previously supplied token expired or "
+                            f"could not be used for signing in the current tc_api process. Defer login to the client-side "
+                            f"challenge flow and retry with a fresh identity_token."
+                        ),
+                    )
+                )
+            if error_message in {type(error).__name__, type(error).__name__ + "()"}:
+                return f"Sigstore identity token for {operation} is invalid for commit: {combined_errors}"
+
+        return error_message
+
+    def _commit_error_key(self, api_type: str, build_id: str, record_id: str) -> str:
+        return f"{api_type}:{build_id or record_id}"
+
+    def get_commit_error(self, api_type: str, build_id: str, record_id: Optional[str] = None) -> Optional[str]:
+        if build_id:
+            error = self.commit_errors.get(f"{api_type}:{build_id}")
+            if error:
+                return error
+        if record_id:
+            return self.commit_errors.get(f"{api_type}:{record_id}")
+        return None
+
+    def register_pending_build_commit(self, build_id: str, record_id: str, user_id: str, luks_path: str = "") -> None:
+        self.pending_build_commits[build_id] = {
+            "record_id": record_id,
+            "user_id": user_id,
+            "luks_path": luks_path or "",
+        }
+
+    def get_pending_build_commit(self, build_id: str) -> Optional[Dict[str, str]]:
+        return self.pending_build_commits.get(build_id)
+
+    def clear_pending_build_commit(self, build_id: str) -> None:
+        self.pending_build_commits.pop(build_id, None)
+
+    def register_pending_publish_commit(
+        self,
+        build_id: str,
+        record_id: str,
+        user_id: str,
+        luks_path: str = "",
+        idempotency_key: str = "",
+    ) -> None:
+        self.pending_publish_commits[build_id] = {
+            "record_id": record_id,
+            "user_id": user_id,
+            "luks_path": luks_path or "",
+            "idempotency_key": idempotency_key or "",
+        }
+
+    def get_pending_publish_commit(self, build_id: str) -> Optional[Dict[str, str]]:
+        return self.pending_publish_commits.get(build_id)
+
+    def clear_pending_publish_commit(self, build_id: str) -> None:
+        self.pending_publish_commits.pop(build_id, None)
+
+    def register_pending_launch_commit(self, launch_id: str, record_id: str, user_id: str, chain_id: str) -> None:
+        self.pending_launch_commits[launch_id] = {
+            "record_id": record_id,
+            "user_id": user_id,
+            "chain_id": chain_id,
+        }
+
+    def get_pending_launch_commit(self, launch_id: str) -> Optional[Dict[str, str]]:
+        return self.pending_launch_commits.get(launch_id)
+
+    def clear_pending_launch_commit(self, launch_id: str) -> None:
+        self.pending_launch_commits.pop(launch_id, None)
 
     def _resolve_commit_identity_token(
             self,
@@ -624,25 +765,48 @@ class BaseDockerService:
             explicit_token = (identity_token_str or "").strip()
             cached_token = resolve_sigstore_identity_token(
                 operation,
-                allow_interactive=False,
-                require_token=False,
+                allow_interactive=True,
+                require_token=not bool(explicit_token),
             )
-            if not cached_token:
-                return explicit_token
+            candidates = []
+            if cached_token:
+                candidates.append(("cached", cached_token))
+            if explicit_token and explicit_token != cached_token:
+                candidates.append(("request", explicit_token))
 
-            if expected_identity:
-                cached_report = inspect_identity_token(cached_token, expected_identity=expected_identity)
-                if not cached_report.get("valid_for_sigstore") or cached_report.get("errors"):
-                    logger.warning(
-                        "Ignoring cached Sigstore token for %s commit because it does not match expected identity %r",
-                        operation,
-                        expected_identity,
-                    )
-                    return explicit_token
+            if not candidates:
+                raise MissingSigstoreIdentityTokenError(operation)
 
-            if explicit_token and cached_token != explicit_token:
-                logger.info("Using refreshed cached Sigstore token for %s commit", operation)
-            return cached_token
+            invalid_reasons = []
+            refreshable_token_failure = False
+            for source, candidate_token in candidates:
+                token_report = inspect_identity_token(candidate_token, expected_identity=expected_identity)
+                errors = token_report.get("errors") or []
+                if token_report.get("valid_for_sigstore") and not errors:
+                    if source == "cached" and explicit_token and cached_token != explicit_token:
+                        logger.info("Using refreshed cached Sigstore token for %s commit", operation)
+                    return candidate_token
+
+                reason = "; ".join(str(error) for error in errors) or "token is not valid for Sigstore"
+                invalid_reasons.append(f"{source} token: {reason}")
+                if "Token has already expired." in reason or "no interactive terminal is available" in reason:
+                    refreshable_token_failure = True
+                logger.warning("Ignoring %s Sigstore token for %s commit: %s", source, operation, reason)
+
+            if refreshable_token_failure:
+                raise MissingSigstoreIdentityTokenError(
+                    operation,
+                    message=(
+                        f"Sigstore identity token is required for {operation}. The previously supplied token expired or "
+                        f"could not be refreshed in the current tc_api process. Defer login to the client-side challenge "
+                        f"flow and retry with a fresh identity_token."
+                    ),
+                )
+
+            raise ValueError(
+                f"Sigstore identity token for {operation} is invalid for commit: "
+                + " | ".join(invalid_reasons)
+            )
 
     def verify_chain_state(self, api_type, tlog: TrustedLogAPI, chain_id: str = "default"):
         """Lightweight verification: query TruCon chain-state and check head."""

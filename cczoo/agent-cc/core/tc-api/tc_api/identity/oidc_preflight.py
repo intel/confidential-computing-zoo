@@ -115,15 +115,35 @@ def _utc_now_epoch() -> int:
 
 
 def inspect_identity_token(raw_token: str, expected_identity: Optional[str] = None) -> Dict[str, Any]:
-    claims = jwt.decode(
-        raw_token,
-        options={
-            "verify_signature": False,
-            "verify_aud": False,
-            "verify_iat": False,
-            "verify_exp": False,
-        },
-    )
+    try:
+        claims = jwt.decode(
+            raw_token,
+            options={
+                "verify_signature": False,
+                "verify_aud": False,
+                "verify_iat": False,
+                "verify_exp": False,
+            },
+        )
+    except Exception as exc:
+        return {
+            "valid_for_sigstore": False,
+            "errors": [f"Identity token is malformed or missing claims: {exc}"],
+            "warnings": [],
+            "issuer": None,
+            "audience": None,
+            "subject": None,
+            "email": None,
+            "issued_at": None,
+            "not_before": None,
+            "expires_at": None,
+            "sigstore_default_audience": getattr(sigstore_oidc, "_DEFAULT_AUDIENCE", "sigstore"),
+            "known_issuer_identity_claim": None,
+            "derived_identity": None,
+            "federated_issuer": None,
+            "expected_identity": expected_identity,
+            "identity_matches_expected": None,
+        }
 
     result: Dict[str, Any] = {
         "valid_for_sigstore": False,

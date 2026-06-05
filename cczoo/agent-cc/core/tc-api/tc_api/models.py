@@ -69,6 +69,7 @@ class PublishStatus(str, Enum):
 class LaunchStatus(str, Enum):
     pending = "pending"
     launching = "launching"
+    signing = "signing"
     success = "success"
     failed = "failed"
 
@@ -102,6 +103,14 @@ class BuildPackageRequest(BaseModel):
     user_id: Optional[str] = None
     identity_token: Optional[str] = None
     luks_path: Optional[str] = None
+
+
+class BuildCommitRequest(BaseModel):
+    identity_token: Optional[str] = None
+
+
+class PublishCommitRequest(BaseModel):
+    identity_token: Optional[str] = None
 
 class BuildPackageResponse(BaseModel):
     build_id: str
@@ -166,7 +175,7 @@ class LaunchRequest(BaseModel):
     attestation_required: bool = True
     identity_token: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-
+    dockercmd: Optional[str] = None
     @field_validator("image_url")
     @classmethod
     def validate_image_url(cls, value: Optional[str]) -> Optional[str]:
@@ -181,6 +190,10 @@ class LaunchResponse(BaseModel):
     log_id: Optional[str] = None
     transparencyLog_verify: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
+    dockercmd: Optional[str] = None
+
+class LaunchCommitRequest(BaseModel):
+    identity_token: Optional[str] = None
 
 class PublishResult(BaseResult):
     publish_id: str

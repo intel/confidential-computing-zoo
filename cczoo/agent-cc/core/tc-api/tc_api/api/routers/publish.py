@@ -12,6 +12,12 @@ router.add_api_route(
     response_model=workflows.PublishPackageResponse,
 )
 router.add_api_route(
+    "/api/publish-package/commit/{build_id}",
+    workflows.complete_publish_commit,
+    methods=["POST"],
+    response_model=workflows.PublishPackageResponse,
+)
+router.add_api_route(
     "/api/publish-result/{build_id}",
     workflows.get_publish_result,
     methods=["GET"],

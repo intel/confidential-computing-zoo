@@ -1,4 +1,6 @@
 import pytest
+import io
+import urllib.error
 from unittest.mock import patch
 
 from tc_api.transparency.commit_client import TrustedLogAPI
@@ -76,4 +78,43 @@ def test_init_chain_raises_when_baseline_bundle_cannot_be_built():
              side_effect=RuntimeError("missing token"),
          ):
         with pytest.raises(RuntimeError, match="Failed to build baseline Sigstore bundle"):
+            tlog.init_chain("tc-api-service", identity_token_str="active-token-123")
+
+
+def test_init_chain_surfaces_trucon_http_error_detail():
+    responses = [
+        {
+            "init_token": "init-123",
+            "rtmr_value": "aa" * 48,
+            "ccel_digest": "sha384:" + ("bb" * 48),
+            "ccel_eventlog_b64": "Zm9v",
+        },
+    ]
+
+    def fake_request_json(method, path, **kwargs):
+        if path == "/init-chain/default/baseline":
+            return responses.pop(0)
+        raise urllib.error.HTTPError(
+            url=path,
+            code=500,
+            msg="Internal Server Error",
+            hdrs={},
+            fp=io.BytesIO(b'{"detail":"Quote adapter is unavailable"}'),
+        )
+
+    tlog = TrustedLogAPI(immutable_log=_ImmutableLog())
+
+    with patch("tc_api.transparency.commit_client.request_json", side_effect=fake_request_json), \
+         patch.object(tlog, "_reserve_commit_intent", return_value={
+             "intent_token": "intent-123",
+             "sequence_num": 1,
+             "prev_event_digest": None,
+             "prev_lookup_hash": None,
+         }), \
+         patch("tc_api.transparency.commit_client.build_baseline_sigstore_bundle", return_value=(
+             '{"mock":"bundle"}',
+             "test-pub-key",
+             "sha384:" + ("11" * 48),
+         )):
+        with pytest.raises(RuntimeError, match="Quote adapter is unavailable"):
             tlog.init_chain("tc-api-service", identity_token_str="active-token-123")

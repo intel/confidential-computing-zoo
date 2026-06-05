@@ -213,3 +213,40 @@ def test_tdx_mr_adapter_reports_libtdx_attest_extend_errors(monkeypatch):
         assert "libtdx_attest extend failed" in str(exc)
     else:
         raise AssertionError("Expected RuntimeError from failed libtdx_attest extend")
+
+
+def test_tdx_mr_adapter_loads_versioned_libtdx_attest_when_unversioned_name_is_missing(monkeypatch):
+    attempted = []
+
+    class FakeGetReport:
+        argtypes = None
+        restype = None
+
+        def __call__(self, report_data_ptr, report_ptr):
+            return 0
+
+    class FakeExtend:
+        argtypes = None
+        restype = None
+
+    class FakeLibrary:
+        def __init__(self):
+            self.tdx_att_get_report = FakeGetReport()
+            self.tdx_att_extend = FakeExtend()
+
+    def fake_cdll(path):
+        attempted.append(path)
+        if path == "libtdx_attest.so":
+            raise OSError("missing unversioned soname")
+        if path == "/usr/lib/x86_64-linux-gnu/libtdx_attest.so.1":
+            return FakeLibrary()
+        raise OSError(f"unexpected path: {path}")
+
+    monkeypatch.setattr(__import__("tc_api.trucon.adapters.tdx_mr", fromlist=["find_library"]), "find_library", lambda _name: "/usr/lib/x86_64-linux-gnu/libtdx_attest.so.1")
+    monkeypatch.setattr(__import__("tc_api.trucon.adapters.tdx_mr", fromlist=["ctypes"]).ctypes, "CDLL", fake_cdll)
+
+    adapter = TdxMRAdapter(sysfs_base_path="/nonexistent/rtmr")
+    library = adapter._load_attest_library()
+
+    assert attempted[:2] == ["libtdx_attest.so", "/usr/lib/x86_64-linux-gnu/libtdx_attest.so.1"]
+    assert hasattr(library, "tdx_att_get_report")

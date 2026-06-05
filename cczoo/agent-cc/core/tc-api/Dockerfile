@@ -23,6 +23,7 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.l
     gnupg \
     apt-transport-https \
     ca-certificates \
+    cryptsetup \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI
@@ -48,10 +49,19 @@ RUN wget https://github.com/anchore/syft/releases/download/v0.96.0/syft_0.96.0_l
 RUN apt-get update && apt-get install -y skopeo \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Intel TDX attestation runtime used by TruCon quote/RTMR fallbacks.
+RUN wget -q https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/distro/Debian12_temp/sgx_debian_local_repo.tgz \
+    && tar xf sgx_debian_local_repo.tgz \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ./sgx_debian_local_repo/pool/main/libt/libtdx-attest/libtdx-attest_* \
+        ./sgx_debian_local_repo/pool/main/libt/libtdx-attest/libtdx-attest-dev_* \
+    && ldconfig \
+    && rm -rf /var/lib/apt/lists/* sgx_debian_local_repo sgx_debian_local_repo.tgz
+
 # Copy packages into the image (targeted, not the entire workspace).
 COPY ../tlog /app/tlog
 COPY ../config /app/config
-#COPY ./tc-api/builds  ./tc-api/logs ./tc-api/pyproject.toml ./tc-api/requirements.txt ./tc-api/scripts ./tc-api/setup.sh ./tc-api/start.sh ./tc-api/tc_api ./tc-api/uploads /app/tc-api/
 COPY ./* /app/tc-api/
 
 WORKDIR /app/tlog

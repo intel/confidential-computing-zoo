@@ -17,10 +17,14 @@ DEFAULT_BASE_URL = os.environ.get("TC_API_BASE_URL", "http://localhost:8000")
 DEFAULT_BROWSER_BASE_URL = os.environ.get("TC_API_BROWSER_BASE_URL", "").strip()
 DEFAULT_SIGSTORE_LOGIN_MODE = os.environ.get("TC_CLIENT_SIGSTORE_LOGIN", "auto").strip().lower() or "auto"
 DEFAULT_TIMEOUT_SECONDS = 30
+DEFAULT_LONG_TIMEOUT_SECONDS = int(os.environ.get("TC_CLIENT_LONG_TIMEOUT_SECONDS", "7200"))
 DEFAULT_SIGSTORE_WAIT_SECONDS = int(os.environ.get("TC_CLIENT_SIGSTORE_WAIT_SECONDS", "300"))
 SIGSTORE_POLL_INTERVAL_SECONDS = 2
+MAX_SIGSTORE_RETRY_ATTEMPTS = int(os.environ.get("TC_CLIENT_SIGSTORE_RETRY_ATTEMPTS", "4"))
 DEFAULT_DOCKTAP_SOCKET_PATH = os.environ.get("SOCK_BRIDGE_SOCKET", "/var/run/docktap/docker.sock")
 DEFAULT_DOCKER_SOCKET_PATH = os.environ.get("DOCKER_SOCKET", "/var/run/docker.sock")
+LONG_RUNNING_COMMANDS = {"build", "publish", "deploy"}
+DEPLOY_PENDING_STATUSES = {"pending", "initiated", "launching", "signing"}
 
 
 class ClientError(RuntimeError):
@@ -53,11 +57,12 @@ class ApiClient:
         request_headers = {"Accept": "application/json"}
         if headers:
             request_headers.update(headers)
+        timeout = None if self.timeout_seconds <= 0 else self.timeout_seconds
         response = requests.request(
             method=method.upper(),
             url=url,
             json=payload,
-            timeout=self.timeout_seconds,
+            timeout=timeout,
             headers=request_headers,
         )
         try:
@@ -87,7 +92,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_SIGSTORE_LOGIN_MODE,
         help="Sigstore login mode: auto prefers browser-session but falls back to verification-code OOB when needed",
     )
-    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help="HTTP timeout in seconds")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=(
+            f"HTTP timeout in seconds. Short commands default to {DEFAULT_TIMEOUT_SECONDS}s; "
+            f"build/publish/deploy are raised to at least {DEFAULT_LONG_TIMEOUT_SECONDS}s unless you pass 0 for no timeout."
+        ),
+    )
     parser.add_argument(
         "--open-browser",
         action="store_true",
@@ -107,6 +120,9 @@ def _build_parser() -> argparse.ArgumentParser:
     add_payload_subcommand("build", "POST /api/build-package")
     add_payload_subcommand("publish", "POST /api/publish-package")
     add_payload_subcommand("deploy", "POST /api/deploy-launch")
+    add_payload_subcommand("create_luks", "POST /api/create_luks")
+    add_payload_subcommand("mount_luks", "POST /api/mount_luks")
+    add_payload_subcommand("umount_luks", "POST /api/unmount_luks")
 
     build_result = subparsers.add_parser("build-result", help="GET /api/build-result/{build_id} (requires owner Bearer token)")
     build_result.add_argument("build_id")
@@ -452,42 +468,100 @@ def _request_with_sigstore_retry(
     sigstore_login_mode: str,
     use_authorization_header: bool = False,
 ) -> Any:
-    request_headers = None
+    current_method = method.upper()
+    current_path = path
+    current_payload = payload
+    current_headers = None
     if use_authorization_header and sigstore_operation is not None:
-        request_headers = _resolve_cached_authorization_headers(sigstore_operation)
+        current_headers = _resolve_cached_authorization_headers(sigstore_operation)
 
-    response = client.request_json(method, path, payload, headers=request_headers)
-    if response.ok:
-        return response.data
+    for attempt in range(MAX_SIGSTORE_RETRY_ATTEMPTS + 1):
+        response = client.request_json(current_method, current_path, current_payload, headers=current_headers)
+        if response.ok:
+            return response.data
 
-    detail = _extract_sigstore_detail(response.data)
-    if detail is None or sigstore_operation is None:
-        raise ClientError(json.dumps(response.data, ensure_ascii=False))
+        detail = _extract_sigstore_detail(response.data)
+        if detail is None or sigstore_operation is None:
+            raise ClientError(json.dumps(response.data, ensure_ascii=False))
+        if attempt >= MAX_SIGSTORE_RETRY_ATTEMPTS:
+            raise ClientError(
+                f"Sigstore login retry limit exceeded for {sigstore_operation}: {json.dumps(response.data, ensure_ascii=False)}"
+            )
 
-    refreshed_token = _complete_sigstore_login(
-        client,
-        detail,
-        operation=sigstore_operation,
-        open_browser=open_browser,
-        browser_base_url=browser_base_url,
-        sigstore_login_mode=sigstore_login_mode,
-    )
-    retry_payload = payload
-    retry_headers = request_headers
-    if use_authorization_header:
-        retry_headers = _authorization_headers(refreshed_token)
-    else:
-        retry_payload = dict(payload or {})
-        retry_payload["identity_token"] = refreshed_token
+        refreshed_token = _complete_sigstore_login(
+            client,
+            detail,
+            operation=sigstore_operation,
+            open_browser=open_browser,
+            browser_base_url=browser_base_url,
+            sigstore_login_mode=sigstore_login_mode,
+        )
+        current_method = str(detail.get("retry_method") or current_method).upper()
+        current_path = str(detail.get("retry_path") or current_path).strip() or current_path
+        if use_authorization_header:
+            current_headers = _authorization_headers(refreshed_token)
+            current_payload = None
+            continue
+        else:
+            current_headers = None
+            if current_path != path or current_method != method.upper():
+                current_payload = {"identity_token": refreshed_token}
+            else:
+                current_payload = dict(payload or {})
+                current_payload["identity_token"] = refreshed_token
 
-    retry_response = client.request_json(method, path, retry_payload, headers=retry_headers)
-    if not retry_response.ok:
-        raise ClientError(json.dumps(retry_response.data, ensure_ascii=False))
-    return retry_response.data
+    raise ClientError(f"Sigstore login retry loop ended unexpectedly for {sigstore_operation}")
+
+
+def _poll_launch_result_until_terminal(
+    client: ApiClient,
+    launch_id: str,
+    *,
+    open_browser: bool,
+    browser_base_url: str,
+    sigstore_login_mode: str,
+) -> Any:
+    deadline = None if client.timeout_seconds <= 0 else time.monotonic() + client.timeout_seconds
+    last_status = None
+
+    while True:
+        result = _request_with_sigstore_retry(
+            client,
+            "GET",
+            f"/api/launch-result/{launch_id}",
+            None,
+            "launch_result",
+            open_browser,
+            browser_base_url,
+            sigstore_login_mode,
+            use_authorization_header=True,
+        )
+        if not isinstance(result, dict):
+            return result
+
+        status = str(result.get("status") or "").strip().lower()
+        if status not in DEPLOY_PENDING_STATUSES:
+            return result
+
+        if status != last_status:
+            print(f"Launch {launch_id} status: {status}", file=sys.stderr)
+            last_status = status
+
+        if deadline is not None and time.monotonic() >= deadline:
+            raise ClientError(
+                f"Timed out waiting for launch {launch_id} to finish. Check launch-result {launch_id} to continue tracking progress."
+            )
+        time.sleep(SIGSTORE_POLL_INTERVAL_SECONDS)
 
 
 def _run_command(args: argparse.Namespace) -> Any:
-    client = ApiClient(args.base_url, timeout_seconds=args.timeout)
+    timeout_seconds = args.timeout
+    if args.command in LONG_RUNNING_COMMANDS:
+        if timeout_seconds == DEFAULT_TIMEOUT_SECONDS:
+            timeout_seconds = DEFAULT_LONG_TIMEOUT_SECONDS
+        elif timeout_seconds > 0:
+            timeout_seconds = max(timeout_seconds, DEFAULT_LONG_TIMEOUT_SECONDS)
+    client = ApiClient(args.base_url, timeout_seconds=timeout_seconds)
 
     if args.command == "sigstore-token":
         identity_token = _acquire_sigstore_token_for_cli(
@@ -526,7 +600,29 @@ def _run_command(args: argparse.Namespace) -> Any:
         return _request_with_sigstore_retry(client, "POST", "/api/publish-package", payload, "publish", args.open_browser, args.browser_base_url, args.sigstore_login)
     if args.command == "deploy":
         payload = _load_json_payload(args)
-        return _request_with_sigstore_retry(client, "POST", "/api/deploy-launch", payload, "launch", args.open_browser, args.browser_base_url, args.sigstore_login)
+        submission = _request_with_sigstore_retry(client, "POST", "/api/deploy-launch", payload, "launch", args.open_browser, args.browser_base_url, args.sigstore_login)
+        if not isinstance(submission, dict):
+            return submission
+        launch_id = str(submission.get("launch_id") or "").strip()
+        if not launch_id:
+            return submission
+        print(f"Deploy accepted as launch {launch_id}; waiting for launch-result...", file=sys.stderr)
+        return _poll_launch_result_until_terminal(
+            client,
+            launch_id,
+            open_browser=args.open_browser,
+            browser_base_url=args.browser_base_url,
+            sigstore_login_mode=args.sigstore_login,
+        )
+    if args.command == "create_luks":
+        payload = _load_json_payload(args)
+        return _request_with_sigstore_retry(client, "POST", "/api/create_luks", payload, "create_luks", args.open_browser, args.browser_base_url, args.sigstore_login)
+    if args.command == "mount_luks":
+        payload = _load_json_payload(args)
+        return _request_with_sigstore_retry(client, "POST", "/api/mount_luks", payload, "mount_luks", args.open_browser, args.browser_base_url, args.sigstore_login)
+    if args.command == "umount_luks":
+        payload = _load_json_payload(args)
+        return _request_with_sigstore_retry(client, "POST", "/api/unmount_luks", payload, "unmount_luks", args.open_browser, args.browser_base_url, args.sigstore_login)
     if args.command == "build-result":
         return _request_with_sigstore_retry(client, "GET", f"/api/build-result/{args.build_id}", None, "build_result", args.open_browser, args.browser_base_url, args.sigstore_login, use_authorization_header=True)
     if args.command == "publish-result":

@@ -8,6 +8,7 @@ import json
 import logging
 import requests
 import urllib.parse
+import uuid
 from pydantic import BaseModel
 from ..identity.oidc_preflight import inspect_identity_token
 from ..identity.sigstore_oauth import (
@@ -127,6 +128,7 @@ def _start_sigstore_login(operation: str, request: Request, flow: str = "copy-ur
         logger=logger,
         allow_interactive=False,
         min_ttl_seconds=0,
+        suppress_warning=True,
     )
     if cached_token:
         token_report = inspect_identity_token(cached_token)

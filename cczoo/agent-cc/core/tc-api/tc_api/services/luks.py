@@ -15,6 +15,17 @@ logger = logging.getLogger(__name__)
 SCRIPT_DIR = Path(__file__).resolve().parents[3] / "config"
 
 
+def _command_error_message(result, fallback: str) -> str:
+    details = []
+    stderr = (result.stderr or "").strip()
+    stdout = (result.stdout or "").strip()
+    if stderr:
+        details.append(stderr)
+    if stdout:
+        details.append(stdout)
+    return " | ".join(details) or fallback
+
+
 def _prepare_vfs_file(vfs_path: str, vfs_size: str) -> None:
     path = Path(vfs_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -60,28 +71,32 @@ class LuksServiceMixin:
             logger.info("Get luks-key success.")
         else:
             logger.info(" ".join(luks_cmd))
-            logger.error(f"Get luks-key failed. {res.stderr.strip()}")
-            return
+            error_message = _command_error_message(res, "Get luks-key failed")
+            logger.error("Get luks-key failed. %s", error_message)
+            _detach_loop_device(loop_device)
+            raise RuntimeError(error_message)
 
         cmd = [str(SCRIPT_DIR / "create_encrypted_vfs.sh"), vfs_path, vfs_size, passwd, mapper_dir, loop_device]
         try:
+            logger.info(' '.join(cmd))
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-            logger.info(result.stdout)
+            if result.stdout:
+                logger.info(result.stdout)
             if result.returncode == 0:
                 self.update_luks_status(user_id, "creating", step="create_encrypted_vfs: success", vfs_size=vfs_size, vfs_path=vfs_path, mapper_dir=mapper_dir, loop_device=loop_device)
                 tlog.add_entry(record_id, Entry(key="create_encrypted_vfs", value="completed"))
                 return mapper_dir, loop_device
             else:
-                logger.debug("create_encrypted_vfs failed: %s", result.stderr or result.stdout)
+                error_message = _command_error_message(result, "create_encrypted_vfs failed")
+                logger.error("create_encrypted_vfs failed: %s", error_message)
                 self.update_luks_status(user_id, "creating", step="create_encrypted_vfs: failed")
                 tlog.add_entry(record_id, Entry(key="create_encrypted_vfs", value="failed"))
-                _detach_loop_device(loop_device)
-                return
+                raise RuntimeError(error_message)
         except Exception as exc:
             logger.debug("create luks failed: %s", exc)
             tlog.add_entry(record_id, Entry(key="create_luks_failed", value=str(exc)))
             _detach_loop_device(loop_device)
-            return
+            raise
 
     def mount_luks_block(self, user_id, tlog: TrustedLogAPI, record_id: str, mapper_dir, passwd, mount_path, vfs_path, loop_device):
         loop_device = _attach_loop_device(vfs_path)

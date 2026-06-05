@@ -15,7 +15,7 @@ from sigstore.dsse import StatementBuilder, Subject
 from sigstore.oidc import IdentityToken
 from sigstore.sign import SigningContext
 from ..config import OWNER_KEY_DIR
-from .sigstore_identity import resolve_sigstore_identity_token_object
+from .sigstore_identity import clear_sigstore_identity_token_cache, resolve_sigstore_identity_token_object
 from tlog.digest import canonical_json as _canonical_json, compute_entry_digest as _compute_entry_digest, compute_event_digest as _compute_event_digest
 
 
@@ -77,18 +77,32 @@ def _get_or_create_chain_owner_private_key(chain_id: str) -> ec.EllipticCurvePri
         return private_key
 
 
-def _resolve_identity_token(identity_token_str: Optional[str] = None) -> IdentityToken:
+def _resolve_identity_token(identity_token_str: Optional[str] = None, force_refresh: bool = False) -> IdentityToken:
     if identity_token_str:
         return IdentityToken(identity_token_str)
 
-    token = resolve_sigstore_identity_token_object("baseline")
+    token = resolve_sigstore_identity_token_object("baseline", allow_interactive=True, force_refresh=force_refresh)
     if token is None:
         raise RuntimeError(
             "No reusable Sigstore identity token is available for baseline signing. "
             "Set TC_API_REAL_REKOR_IDENTITY_TOKEN, pre-populate the token cache, "
-            "or enable TC_API_SIGSTORE_INTERACTIVE_LOGIN=true."
+            "or run from an interactive terminal so a fresh token can be acquired."
         )
     return token
+
+
+def _sign_baseline_statement(signing_context: SigningContext, statement, identity_token_str: Optional[str]):
+    identity_token = _resolve_identity_token(identity_token_str)
+    try:
+        with signing_context.signer(identity_token, cache=True) as signer:
+            return signer.sign_dsse(statement)
+    except Exception:
+        if identity_token_str:
+            raise
+        clear_sigstore_identity_token_cache()
+        refreshed_identity_token = _resolve_identity_token(force_refresh=True)
+        with signing_context.signer(refreshed_identity_token, cache=True) as signer:
+            return signer.sign_dsse(statement)
 
 
 def generate_chain_owner_pub_key_pem(chain_id: str) -> str:
@@ -201,8 +215,6 @@ def build_baseline_sigstore_bundle(
     )
 
     signing_context = build_signing_context(rekor_url)
-    identity_token = _resolve_identity_token(identity_token_str)
-    with signing_context.signer(identity_token, cache=True) as signer:
-        bundle = signer.sign_dsse(statement)
+    bundle = _sign_baseline_statement(signing_context, statement, identity_token_str)
 
     return bundle.to_json(), pub_key_pem, event_digest

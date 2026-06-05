@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 import urllib.error
+import json
 
 from sigstore.dsse import StatementBuilder, Subject
 from sigstore.oidc import IdentityToken
@@ -22,6 +23,42 @@ from .trucon_submitter import post_commit_to_trucon, reserve_commit_intent
 from .dsse_builder import PREDICATE_TYPE, attach_commit_context, build_event_predicate
 
 logger = logging.getLogger(__name__)
+
+
+def _exception_message(error: BaseException) -> str:
+    message = str(error).strip()
+    if message:
+        return message
+    rendered = repr(error).strip()
+    if rendered and rendered != f"{type(error).__name__}()":
+        return rendered
+    return type(error).__name__
+
+
+def _http_error_with_detail(prefix: str, error: urllib.error.HTTPError) -> RuntimeError:
+    detail = None
+    if error.fp is not None:
+        try:
+            payload = error.read()
+        except Exception:
+            payload = b""
+        if payload:
+            try:
+                decoded = json.loads(payload.decode("utf-8"))
+            except Exception:
+                detail = payload.decode("utf-8", errors="replace").strip()
+            else:
+                if isinstance(decoded, dict):
+                    raw_detail = decoded.get("detail")
+                    if raw_detail is not None:
+                        detail = str(raw_detail)
+                elif decoded is not None:
+                    detail = str(decoded)
+
+    message = f"{prefix}: HTTP {error.code}"
+    if detail:
+        message = f"{message} ({detail})"
+    return RuntimeError(message)
 
 
 def _resolve_measured_chain_id(_raw_chain_id: Optional[str]) -> str:
@@ -166,8 +203,9 @@ class TrustedLogAPI:
             with ctx_prod.signer(identity_token, cache=True) as signer:
                 bundle = signer.sign_dsse(statement)
         except Exception as e:
-            logger.warning(f"Sigstore signing issue: {e}")
-            raise
+            detail = _exception_message(e)
+            logger.warning("Sigstore signing issue: %s", detail)
+            raise RuntimeError(f"Sigstore signing failed: {detail}") from e
 
         bundle_json = bundle.to_json()
         
@@ -226,8 +264,9 @@ class TrustedLogAPI:
             if e.code == 409:
                 logger.info("Chain '%s' already initialized, skipping init-chain", chain_id)
                 return None
-            raise RuntimeError(
-                f"init-chain baseline failed for chain '{chain_id}': HTTP {e.code}"
+            raise _http_error_with_detail(
+                f"init-chain baseline failed for chain '{chain_id}'",
+                e,
             ) from e
         except urllib.error.URLError as e:
             raise RuntimeError(
@@ -250,8 +289,9 @@ class TrustedLogAPI:
             if e.code == 409:
                 logger.info("Chain '%s' already initialized during baseline reservation, skipping", chain_id)
                 return None
-            raise RuntimeError(
-                f"init-chain reservation failed for chain '{chain_id}': HTTP {e.code}"
+            raise _http_error_with_detail(
+                f"init-chain reservation failed for chain '{chain_id}'",
+                e,
             ) from e
         except urllib.error.URLError as e:
             raise RuntimeError(
@@ -306,8 +346,9 @@ class TrustedLogAPI:
             if e.code == 409:
                 logger.info("Chain '%s' already initialized (race), skipping", chain_id)
                 return None
-            raise RuntimeError(
-                f"init-chain POST failed for chain '{chain_id}': HTTP {e.code}"
+            raise _http_error_with_detail(
+                f"init-chain POST failed for chain '{chain_id}'",
+                e,
             ) from e
         except urllib.error.URLError as e:
             raise RuntimeError(

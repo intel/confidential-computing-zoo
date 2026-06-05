@@ -9,6 +9,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/common.sh"
 tc_api_cd_repo_root
 SCRIPT_DIR="$TC_API_REPO_ROOT"
 
+DOCKERHUB_ACCOUNT="trustedzoo"
 PID_DIR="$SCRIPT_DIR/logs/pids"
 TC_API_PID_FILE="$PID_DIR/tc_api.pid"
 TRUCON_PID_FILE="$PID_DIR/trucon.pid"
@@ -25,6 +26,9 @@ TRUCON_DB_PATH="${COMMIT_QUEUE_DB:-$TRUCON_QUEUE_DIR/queue.db}"
 TRUCON_LEGACY_DB_PATH="/dev/shm/commit_queue.db"
 TRUCON_LOCK_PATH="${TRUCON_LOCK_PATH:-$TRUCON_QUEUE_DIR/trucon.lock}"
 DOCKTAP_WORKLOAD_DB_PATH="${DOCKTAP_WORKLOAD_DB:-/dev/shm/docktap/container_map.db}"
+
+echo "Login in Dokcerhub"
+docker login -u $DOCKERHUB_ACCOUNT
 
 echo "Starting TC API Service..."
 
@@ -84,7 +88,9 @@ from tc_api.identity.sigstore_identity import resolve_sigstore_identity_token
 token = resolve_sigstore_identity_token(
     operation="baseline",
     allow_interactive=False,
+    min_ttl_seconds=15,
     require_token=False,
+    suppress_warning=True,
 )
 raise SystemExit(0 if token else 1)
 PY
@@ -95,23 +101,28 @@ ensure_startup_sigstore_token() {
         return 0
     fi
 
+    if [[ -t 0 && -t 1 ]]; then
+        if has_reusable_sigstore_token; then
+            echo "Refreshing Sigstore identity token for default-chain baseline startup."
+        else
+            echo "No reusable Sigstore identity token found for default-chain baseline startup."
+        fi
+        "$PYTHON_BIN" -m tc_api.cli.oidc_verification_code --operation baseline --format none
+
+        if ! has_reusable_sigstore_token; then
+            echo "Error: Sigstore identity token acquisition did not produce a reusable token for baseline startup." >&2
+            exit 1
+        fi
+        return 0
+    fi
+
     if has_reusable_sigstore_token; then
         return 0
     fi
 
-    if [[ ! -t 0 || ! -t 1 ]]; then
-        echo "Error: default-chain baseline startup requires a reusable Sigstore identity token, but no interactive terminal is available." >&2
-        echo "Run '$PYTHON_BIN -m tc_api.cli.oidc_verification_code --operation baseline --format export' first, or set TC_API_REAL_REKOR_IDENTITY_TOKEN." >&2
-        exit 1
-    fi
-
-    echo "No reusable Sigstore identity token found for default-chain baseline startup."
-    "$PYTHON_BIN" -m tc_api.cli.oidc_verification_code --operation baseline --format none
-
-    if ! has_reusable_sigstore_token; then
-        echo "Error: Sigstore identity token acquisition did not produce a reusable token for baseline startup." >&2
-        exit 1
-    fi
+    echo "Error: default-chain baseline startup requires a reusable Sigstore identity token, but no interactive terminal is available." >&2
+    echo "Run '$PYTHON_BIN -m tc_api.cli.oidc_verification_code --operation baseline --format export' first, or set TC_API_REAL_REKOR_IDENTITY_TOKEN." >&2
+    exit 1
 }
 
 pid_is_running() {
@@ -376,8 +387,6 @@ export INIT_DEFAULT_CHAIN_ON_STARTUP=${INIT_DEFAULT_CHAIN_ON_STARTUP:-true}
 export PYTHON_BIN=$(tc_api_default_python_bin)
 tc_api_prepend_repo_root_to_pythonpath
 
-ensure_startup_sigstore_token
-
 if [ "$DOCKTAP_REQUIRE_ATTESTATION" = "1" ]; then
     export DOCKTAP_ATTESTATION_API_URL=${DOCKTAP_ATTESTATION_API_URL:-http://127.0.0.1:${PORT}}
     export DOCKTAP_ATTESTATION_BROWSER_BASE_URL=${DOCKTAP_ATTESTATION_BROWSER_BASE_URL:-$DOCKTAP_ATTESTATION_API_URL}
@@ -444,6 +453,8 @@ echo "  Use 'export DOCKER_HOST=unix://$DOCKTAP_SOCKET' to route Docker CLI thro
 echo "  TruCon internal UDS path: $TRUCON_UDS_PATH"
 
 trap cleanup EXIT INT TERM
+
+ensure_startup_sigstore_token
 
 echo "Starting TC API on $HOST:$PORT"
 echo "Debug mode: $DEBUG"
