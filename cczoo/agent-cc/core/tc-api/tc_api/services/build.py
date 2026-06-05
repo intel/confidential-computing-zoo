@@ -28,21 +28,28 @@ def _json_or_text(value: str):
 
 
 class BuildServiceMixin:
-    def build_image(self, dockerfile_content: str, build_id: str, user_id: str, tlog: TrustedLogAPI, record_id: str) -> bool:
+    def build_image(self, dockerfile_content: str, build_id: str, user_id: str, tlog: TrustedLogAPI, record_id: str, luks_path: str = '') -> bool:
         """Build Docker image from dockerfile content with optimized error handling"""
         try:
-            self.update_build_status(user_id, build_id, "preparing", step="Setting up build environment")
-            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
-                build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+            self.update_build_status(user_id, build_id, "preparing",luks_path, step="Setting up build environment")
+            if luks_path:
+                if os.path.exists(luks_path):
+                    build_path = os.path.join(luks_path, build_id)
+                else:
+                    build_path = os.path.join(BUILD_DIR, build_id)
+                    logger.info("NOW build image not in luks.")
             else:
                 build_path = os.path.join(BUILD_DIR, build_id)
                 logger.info("NOW build image not in luks.")
             os.makedirs(build_path, exist_ok=True)
             
             # Write dockerfile to build directory
-            dockerfile_path = os.path.join(build_path, "Dockerfile")
-            with open(dockerfile_path, 'w', encoding='utf-8') as f:
-                f.write(dockerfile_content)
+            if os.path.exists(dockerfile_content):
+                dockerfile_path = dockerfile_content
+            else:
+                dockerfile_path = os.path.join(build_path, "Dockerfile")
+                with open(dockerfile_path, 'w', encoding='utf-8') as f:
+                    f.write(dockerfile_content)
             
             # Validate dockerfile content
             if not dockerfile_content.strip():
@@ -51,18 +58,30 @@ class BuildServiceMixin:
             
             # Build the image with optimized parameters
             image_name = self.local_build_image_ref(build_id)
-            cmd = [
-                DOCKER_CMD, "build",
-                "--no-cache",  # Ensure fresh build
-                "--force-rm",  # Remove intermediate containers
-                "-t", image_name,
-                build_path
-            ]
+            if luks_path:
+                cmd = [
+                    # "DOCKER_BUILDKIT=1",
+                    DOCKER_CMD, "build",
+                    "-f", dockerfile_path,
+                    "--no-cache",  # Ensure fresh build
+                    "--force-rm",  # Remove intermediate containers
+                    "-t", image_name,
+                    os.path.dirname(dockerfile_path)
+                ]
+            else:
+                cmd = [
+                    DOCKER_CMD, "build",
+                    "--no-cache",  # Ensure fresh build
+                    "--force-rm",  # Remove intermediate containers
+                    "-t", image_name,
+                    build_path
+                ]
             
             logger.info(f"Building image: {image_name}")
-            logger.debug(f"Build command: {' '.join(cmd)}")
+            logger.info(f"Build command: {' '.join(cmd)}")
             
-            self.update_build_status(user_id, build_id, "building", step="Building container image")
+            self.update_build_status(user_id, build_id, "building", luks_path, step="Building container image")
+            
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
             build_log = {
@@ -131,11 +150,15 @@ class BuildServiceMixin:
             logger.error(f"Unexpected error building image: {str(e)}")
             return False
 
-    def generate_sbom(self, image_name: str, build_id: str, tlog: TrustedLogAPI, record_id: str) -> Optional[str]:
+    def generate_sbom(self, image_name: str, build_id: str, tlog: TrustedLogAPI, record_id: str, luks_path: str) -> Optional[str]:
         """Generate SBOM for the image with enhanced error handling"""
         try:
-            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
-                build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+            if luks_path:
+                if os.path.exists(luks_path):
+                    build_path = os.path.join(luks_path, build_id)
+                else:
+                    build_path = os.path.join(BUILD_DIR, build_id)
+                    logger.info("NOW build image not in luks.")
             else:
                 build_path = os.path.join(BUILD_DIR, build_id)
                 logger.info("NOW generate sbom file not in luks file.")
@@ -248,7 +271,7 @@ class BuildServiceMixin:
 
             return None
 
-    def encrypt_image(self, image_name: str, build_id: str, public_key_path: str, tlog: TrustedLogAPI, record_id: str) -> Optional[str]:
+    def encrypt_image(self, image_name: str, build_id: str, public_key_path: str, tlog: TrustedLogAPI, record_id: str, luks_path: str) -> Optional[str]:
         """Encrypt image using skopeo with optimized workflow"""
         archive_path = None
         docker_save_cmd = None
@@ -256,10 +279,15 @@ class BuildServiceMixin:
         key_validation_detail = None
         try:
             # Setup paths for encrypted image
-            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
-                build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+            if luks_path:
+                if os.path.exists(luks_path):
+                    build_path = os.path.join(luks_path, build_id)
+                else:
+                    build_path = os.path.join(BUILD_DIR, build_id)
+                    logger.info("NOW is not in luks.")
             else:
                 build_path = os.path.join(BUILD_DIR, build_id)
+                logger.info("NOW is not in luks.")
             image_base_name = image_name.rsplit(":", 1)[0].split("/")[-1]
             encrypted_path = os.path.join(build_path, image_base_name)
             os.makedirs(encrypted_path, exist_ok=True)
@@ -581,7 +609,7 @@ class BuildServiceMixin:
                 except OSError:
                     logger.debug("Failed to remove temporary archive %s", archive_path)
 
-    def generate_key(self, build_id: str, tlog: TrustedLogAPI, record_id: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    def generate_key(self, build_id: str, tlog: TrustedLogAPI, record_id: str, luks_path: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
         """
         Generate a cosign key pair for signing and an openssl key for encryption.
         
@@ -595,8 +623,12 @@ class BuildServiceMixin:
             Returns (None, None, None, None) if generation fails.
         """
         try:
-            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
-                key_dir = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+            if luks_path:
+                if os.path.exists(luks_path):
+                    key_dir = os.path.join(luks_path, build_id)
+                else:
+                    key_dir = os.path.join(BUILD_DIR, build_id)
+                    logger.info("NOW generate key not in luks file.")
             else:
                 key_dir = os.path.join(BUILD_DIR, build_id)
                 logger.info("NOW generate key not in luks file.")

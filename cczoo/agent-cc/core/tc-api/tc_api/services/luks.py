@@ -8,6 +8,8 @@ from typing import Optional
 from ..models import LuksResult
 from ..transparency.commit_client import TrustedLogAPI
 from tlog.types import Entry
+from ..config import KBS_URL
+import os
 
 logger = logging.getLogger(__name__)
 SCRIPT_DIR = Path(__file__).resolve().parents[3] / "config"
@@ -52,6 +54,15 @@ class LuksServiceMixin:
         _prepare_vfs_file(vfs_path, vfs_size)
         loop_device = _attach_loop_device(vfs_path)
         mapper_dir = secrets.token_hex(16)
+        luks_cmd = ["curl", "-fsSL", KBS_URL+os.path.basename(passwd), "-o", passwd]
+        res = subprocess.run(luks_cmd, capture_output=True, text=True, timeout=600)
+        if res.returncode == 0 and os.path.exists(passwd):
+            logger.info("Get luks-key success.")
+        else:
+            logger.info(" ".join(luks_cmd))
+            logger.error(f"Get luks-key failed. {res.stderr.strip()}")
+            return
+
         cmd = [str(SCRIPT_DIR / "create_encrypted_vfs.sh"), vfs_path, vfs_size, passwd, mapper_dir, loop_device]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)

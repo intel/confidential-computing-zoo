@@ -53,7 +53,7 @@ PY
 	fi
 }
 
-recreate_venv_if_needed
+#recreate_venv_if_needed
 
 # Create virtual environment
 "$PYTHON_BIN" -m venv "$VENV_DIR"

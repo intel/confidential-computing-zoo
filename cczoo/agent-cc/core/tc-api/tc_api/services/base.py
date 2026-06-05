@@ -16,6 +16,8 @@ from ..config import (
     KBS_FETCH_RETRY_DELAY_SECONDS,
     KBS_URL,
 )
+from ..identity.oidc_preflight import inspect_identity_token
+from ..identity.sigstore_identity import resolve_sigstore_identity_token
 from ..models import BuildResult, LaunchResult, LuksResult, PublishResult, TransparencyResult
 from ..transparency.commit_client import TrustedLogAPI
 from tlog.types import Entry
@@ -199,23 +201,27 @@ class BaseDockerService:
                     digest.update(handle.read())
         return "sha384:" + digest.hexdigest()
 
-    def _build_status_path(self, build_id: str) -> str:
-        if os.path.exists(os.path.join(BUILD_DIR, "luks")):
-            return os.path.join(os.path.join(BUILD_DIR, "luks"), build_id, "build-status.json")
+    def _build_status_path(self, build_id: str, luks_path: str) -> str:
+        if luks_path:
+            if os.path.exists(luks_path):
+                return os.path.join(luks_path, build_id, "build-status.json")
+            else:
+                return os.path.join(BUILD_DIR, build_id, "build-status.json")
         else:
             return os.path.join(BUILD_DIR, build_id, "build-status.json")
 
     def _persist_build_status(self, build_result: BuildResult) -> None:
-        if os.path.exists(os.path.join(BUILD_DIR, "luks")):
-            build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_result.build_id)
+        if os.path.exists(build_result.luks_path):
+            build_path = os.path.join(build_result.luks_path, build_result.build_id)
         else:
-            os.makedirs(build_path, exist_ok=True)
-        status_path = self._build_status_path(build_result.build_id)
+            build_path = os.path.join(BUILD_DIR, build_result.build_id)
+        os.makedirs(build_path, exist_ok=True)
+        status_path = self._build_status_path(build_result.build_id, build_result.luks_path)
         with open(status_path, "w", encoding="utf-8") as handle:
             json.dump(build_result.model_dump(mode="json"), handle, ensure_ascii=False, indent=2)
 
-    def _load_persisted_build_status(self, build_id: str) -> Optional[BuildResult]:
-        status_path = self._build_status_path(build_id)
+    def _load_persisted_build_status(self, build_id: str, luks_path: str) -> Optional[BuildResult]:
+        status_path = self._build_status_path(build_id, luks_path)
         if not os.path.exists(status_path):
             return None
         try:
@@ -298,13 +304,13 @@ class BaseDockerService:
             updated_at=created_at,
         )
 
-    def get_build_status(self, build_id: str) -> Optional[BuildResult]:
+    def get_build_status(self, build_id: str, luks_path: str) -> Optional[BuildResult]:
         """Get build status by build_id"""
         build_result = self.builds.get(build_id)
         if build_result is not None:
             return build_result
 
-        build_result = self._load_persisted_build_status(build_id)
+        build_result = self._load_persisted_build_status(build_id, luks_path)
         if build_result is not None:
             self.builds[build_id] = build_result
             return build_result
@@ -319,7 +325,7 @@ class BaseDockerService:
             return build_result
         return None
 
-    def update_build_status(self,user_id: str, build_id: str, status: str, step: str = None, **kwargs):
+    def update_build_status(self,user_id: str, build_id: str, status: str, luks_path: str = '', step: str = None, **kwargs):
         """
         Update build status with enhanced tracking and step information
         
@@ -357,7 +363,7 @@ class BaseDockerService:
                 # Successful builds must keep OCI artifacts available for later publish/deploy.
                 if status == 'failed' and status != old_status:
                     try:
-                        self.cleanup_build_artifacts(build_id, keep_logs=True)
+                        self.cleanup_build_artifacts(build_id, luks_path, keep_logs=True)
                     except Exception as e:
                         logger.warning(f"Cleanup failed for build {build_id}: {e}")
                 self._persist_build_status(build_result)
@@ -371,6 +377,7 @@ class BaseDockerService:
                     status=status,
                     created_at=datetime.now(),
                     updated_at=datetime.now(),
+                    luks_path=luks_path,
                     **kwargs
                 )
                 self._persist_build_status(self.builds[build_id])
@@ -378,11 +385,15 @@ class BaseDockerService:
         except Exception as e:
             logger.error(f"Error updating build status for {build_id}: {str(e)}")
 
-    def cleanup_build_artifacts(self, build_id: str, keep_logs: bool = True) -> bool:
+    def cleanup_build_artifacts(self, build_id: str, luks_path: str, keep_logs: bool = True) -> bool:
         """Clean up temporary build artifacts to save disk space"""
         try:
-            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
-                build_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id)
+            if luks_path:
+                if os.path.exists(luks_path):
+                    build_path = os.path.join(luks_path, build_id)
+                else:
+                    build_path = os.path.join(BUILD_DIR, build_id)
+                    logger.info(f"NOW not in luks files.")
             else:
                 build_path = os.path.join(BUILD_DIR, build_id)
                 logger.info(f"NOW not in luks files.")
@@ -463,10 +474,14 @@ class BaseDockerService:
             logger.error(f"Error inspecting image: {str(e)}")
             return None
 
-    def get_pubKey_from_KBS(self, tlog: TrustedLogAPI = None, record_id: str = None):
+    def get_pubKey_from_KBS(self, luks_path: str = '', tlog: TrustedLogAPI = None, record_id: str = None):
         try:
-            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
-                kbs_key_dir = os.path.join(os.path.join(BUILD_DIR, "luks"), "_kbs_keys", record_id or uuid.uuid4().hex[:8])
+            if luks_path:
+                if os.path.exists(luks_path):
+                    kbs_key_dir = os.path.join(luks_path, "_kbs_keys", record_id or uuid.uuid4().hex[:8])
+                else:
+                    kbs_key_dir = os.path.join(BUILD_DIR, "_kbs_keys", record_id or uuid.uuid4().hex[:8])
+                    logger.info("NOW get pubkey not in luks file.")
             else:
                 kbs_key_dir = os.path.join(BUILD_DIR, "_kbs_keys", record_id or uuid.uuid4().hex[:8])
                 logger.info("NOW get pubkey not in luks file.")
@@ -561,15 +576,15 @@ class BaseDockerService:
             return 'trusted', key_dict
 
         except Exception as e:
-            logger.error(f"Launch contaioner failed: {str(e)}")
+            logger.error(f"Get Keys failed: {str(e)}")
             if tlog and record_id:
                 tlog.add_entry(record_id, Entry(key="key", value=f"Get key failed: {e}"))
             return False, None
 
-    def commit_and_save_receipt(self, api_type, build_id, tlog: TrustedLogAPI, record_id: str, identity_token_str: str):
+    def commit_and_save_receipt(self, api_type, build_id, tlog: TrustedLogAPI, record_id: str, identity_token_str: str, luks_path: str = '',expected_identity: Optional[str] = None):
         """Commit the accumulated entries via TrustedLogAPI and save a receipt file."""
         try:
-            from tlog.types import CommitResult
+            identity_token_str = self._resolve_commit_identity_token(api_type,identity_token_str,expected_identity=expected_identity)
             result = tlog.commit_record(
                 record_id=record_id,
                 event_type=api_type,
@@ -581,8 +596,12 @@ class BaseDockerService:
                 "queue_status": result.queue_status.value if result.queue_status else None,
                 "mr_value": result.mr_value,
             }
-            if os.path.exists(os.path.join(BUILD_DIR, "luks")):
-                receipt_path = os.path.join(os.path.join(BUILD_DIR, "luks"), build_id, f"{api_type}-commit-receipt.json")
+            if luks_path:
+                if os.path.exists(luks_path):
+                    receipt_path = os.path.join(luks_path, build_id, f"{api_type}-commit-receipt.json")
+                else:
+                    receipt_path = os.path.join(BUILD_DIR, build_id, f"{api_type}-commit-receipt.json")
+                    logger.info("NOW receipt file not in luks file.")
             else:
                 receipt_path = os.path.join(BUILD_DIR, build_id, f"{api_type}-commit-receipt.json")
                 logger.info("NOW receipt file not in luks file.")
@@ -594,6 +613,36 @@ class BaseDockerService:
         except Exception as e:
             logger.error(f"Commit failed for {api_type}: {e}")
             return False, None
+
+    def _resolve_commit_identity_token(
+            self,
+            operation: str,
+            identity_token_str: Optional[str],
+            expected_identity: Optional[str] = None,
+        ) -> str:
+            """Prefer a fresh cached token for commit, but never switch caller identity."""
+            explicit_token = (identity_token_str or "").strip()
+            cached_token = resolve_sigstore_identity_token(
+                operation,
+                allow_interactive=False,
+                require_token=False,
+            )
+            if not cached_token:
+                return explicit_token
+
+            if expected_identity:
+                cached_report = inspect_identity_token(cached_token, expected_identity=expected_identity)
+                if not cached_report.get("valid_for_sigstore") or cached_report.get("errors"):
+                    logger.warning(
+                        "Ignoring cached Sigstore token for %s commit because it does not match expected identity %r",
+                        operation,
+                        expected_identity,
+                    )
+                    return explicit_token
+
+            if explicit_token and cached_token != explicit_token:
+                logger.info("Using refreshed cached Sigstore token for %s commit", operation)
+            return cached_token
 
     def verify_chain_state(self, api_type, tlog: TrustedLogAPI, chain_id: str = "default"):
         """Lightweight verification: query TruCon chain-state and check head."""

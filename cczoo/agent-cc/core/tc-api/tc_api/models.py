@@ -92,7 +92,7 @@ class BaseResult(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 class BuildPackageRequest(BaseModel):
-    dockerfile: str  # Base64 encoded or file content
+    dockerfile: str  
     app_binary: Optional[str] = None  # Base64 encoded binary
     configs: Optional[List[str]] = None  # List of Base64 encoded config files
     data: Optional[List[str]] = None  # List of Base64 encoded data files
@@ -101,6 +101,7 @@ class BuildPackageRequest(BaseModel):
     encrypt: bool = False
     user_id: Optional[str] = None
     identity_token: Optional[str] = None
+    luks_path: Optional[str] = None
 
 class BuildPackageResponse(BaseModel):
     build_id: str
@@ -108,6 +109,7 @@ class BuildPackageResponse(BaseModel):
     estimated_time: str
     user_id: str
     transparencyLog_verify: Optional[str] = None
+    luks_path: Optional[str] = None
 
 class PublishPackageRequest(BaseModel):
     build_id: str
@@ -118,7 +120,7 @@ class PublishPackageRequest(BaseModel):
     image_url: Optional[str] = None
     identity_token: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-
+    luks_path: Optional[str] = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @field_validator("build_id")
@@ -143,7 +145,7 @@ class PublishPackageResponse(BaseModel):
     log_id: Optional[str] = None
     transparencyLog_verify: str
     published_at: datetime = Field(default_factory=datetime.now)
-
+    luks_path: Optional[str] = None
 
 
 class BuildResult(BaseResult):
@@ -154,6 +156,7 @@ class BuildResult(BaseResult):
     sbom_url: Optional[str] = None
     image_url: Optional[str] = None
     cert_url: Optional[str] = None
+    luks_path: Optional[str] = None
 
 class LaunchRequest(BaseModel):
     image_id: str
@@ -272,10 +275,6 @@ class MountLuksRequest(BaseModel):
     mount_path: str
     identity_token: Optional[str] = None
 
-    @field_validator("mount_path")
-    @classmethod
-    def validate_mount_path(cls, value: str) -> str:
-        return _normalize_path_in_base(value, LUKS_MOUNT_BASE_DIR, "mount_path")
 
 
 class MountLuksResponse(BaseModel):
@@ -292,12 +291,6 @@ class UnmountLuksRequest(BaseModel):
     loop_device: str
     mount_path: str
     identity_token: Optional[str] = None
-
-    @field_validator("mount_path")
-    @classmethod
-    def validate_mount_path(cls, value: str) -> str:
-        return _normalize_path_in_base(value, LUKS_MOUNT_BASE_DIR, "mount_path")
-
     @field_validator("mapper_dir")
     @classmethod
     def validate_mapper_dir(cls, value: str) -> str:
