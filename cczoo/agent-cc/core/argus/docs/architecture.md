@@ -2,9 +2,9 @@
 
 ## Overview
 
-Argus is an application-non-invasive runtime trust verification framework for agent-to-service (A2S) and service-to-service (S2S) communication in confidential computing environments.
+Argus is an application-non-invasive runtime trust verification framework for agent-to-service (A2S) communication in confidential computing environments.
 
-Before sensitive data, credentials, prompts, memory records, or intermediate results are sent to a peer service, Argus lets the caller verify that the peer is running in an expected trusted execution environment and satisfies caller-side policy.
+Before an agent sends sensitive data, credentials, prompts, memory records, or intermediate results to a peer service, Argus lets the caller verify that the peer is running in an expected trusted execution environment and satisfies caller-side policy.
 
 Argus is application-non-invasive by default:
 
@@ -12,11 +12,16 @@ Argus is application-non-invasive by default:
 - Existing communication paths can be protected through direct evidence endpoints, Envoy/Nginx evidence routing, or SPIRE-based workload identity.
 - The caller keeps control of the final allow or deny decision.
 
+Current scope note:
+
+- This document specifies the A2S path only.
+- Service-to-service triggering and cache semantics are intentionally excluded from the v1 baseline.
+
 Argus is not automatically platform-non-invasive. Profiles that require cgroup, namespace, socket inode, process start-time, container runtime, or node-level observations may need elevated sidecar permissions, shared namespaces, or a node-scoped runtime collector.
 
 ## Problem And Goals
 
-In a confidential computing deployment, a single trusted component is not enough to guarantee an end-to-end trusted data path. An agent, API gateway, or backend service may run inside a TEE while the peer service it calls remains unverified.
+In a confidential computing deployment, a single trusted component is not enough to guarantee an end-to-end trusted data path. An agent may run inside a TEE while the peer service it calls remains unverified.
 
 Without Argus, prompts, credentials, memory records, tokens, and intermediate results may be sent to peer services whose runtime state, TCB level, workload identity, or measurements are unverified.
 
@@ -27,7 +32,7 @@ Design goals:
 | Application-non-invasive deployment | Add trust verification without modifying business logic while making platform privilege requirements explicit in the deployment profile |
 | Pluggable infrastructure | Support direct evidence endpoints, Envoy/Nginx routing, and SPIRE workload identity integration |
 | Verifier independence | Work with Trustee, Attestation Service, SPIRE Server, or other verifier APIs through adapters |
-| A2S and S2S reuse | Use the same trust model for agent-to-service and service-to-service checks |
+| A2S-first verification | Optimize the first protocol and implementation draft for agent-to-service checks before expanding to other caller shapes |
 
 ## Trust And Threat Model
 
@@ -48,7 +53,7 @@ Argus exists to stop a caller from sending sensitive data to a peer whose runtim
 
 | Runtime Shape | In Argus authentication protection scope? | Reason |
 |---------------|-------------------------------------------|--------|
-| Remote peer service | Yes | Canonical A2S or S2S target with an independent peer boundary |
+| Remote peer service | Yes | Canonical A2S target with an independent peer boundary |
 | Same-host separate process | Yes | Separable local peer boundary when the process can be bound to its own runtime identity |
 | Same-pod / same-VM sidecar service | Yes | Preferred local deployment shape for peer evidence production |
 | In-process extension / plugin / skill | No | Internal implementation boundary of the host runtime |
@@ -158,7 +163,7 @@ Argus is organized around three responsibilities:
 
 The baseline Argus decision path is:
 
-1. The caller-side Guard identifies a target service and the local policy that applies to that call.
+1. The caller-side Guard inside the agent runtime identifies a target service and the local policy that applies to that call.
 2. The Guard generates a fresh nonce and sends an evidence request to the peer's Evidence Provider.
 3. The Evidence Provider gathers local runtime facts through the Service Runtime Binding layer and asks the platform attestation stack to produce quote material.
 4. The Evidence Provider returns nonce-bound evidence plus selected binding claims.
@@ -318,7 +323,7 @@ Recommended deny-reason precedence:
 
 ### Caller Side: Argus Guard
 
-Argus Guard is the caller-side enforcement point. Before a sensitive call is made, it:
+Argus Guard is the caller-side enforcement point. In the current A2S scope, it runs in or next to the agent runtime. Before a sensitive call is made, it:
 
 1. Generates a fresh nonce and builds an evidence request.
 2. Fetches target evidence.
