@@ -1,8 +1,10 @@
 # Argus
 
-Argus is an application-non-invasive runtime trust verification framework for agent-to-service (A2S) and service-to-service (S2S) communication in confidential computing environments.
+Argus is an application-non-invasive runtime trust verification framework for agent-to-service (A2S) communication in confidential computing environments.
 
 Its job is narrow: before a caller sends sensitive data to a peer service, Argus fetches evidence for that peer, verifies the evidence through an external attestation or identity system, and evaluates caller-local policy to decide whether the call should proceed.
+
+Current document scope: Argus v1 is specified only for A2S. Service-to-service triggering, caching, and rollout semantics are intentionally left out of the current draft.
 
 ## Status
 
