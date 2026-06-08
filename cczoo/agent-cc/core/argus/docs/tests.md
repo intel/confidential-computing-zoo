@@ -4,6 +4,8 @@
 
 This document defines how Argus v1 should be validated across canonicalization, evidence binding, verifier normalization, policy evaluation, governance inputs, and rollout safety.
 
+Current validation scope targets the A2S path only. S2S-specific triggering, session models, and caller-shared state behavior are out of scope for the current draft.
+
 Argus is a protocol-heavy system. Validation must prove more than code correctness:
 
 - Different implementations must compute the same canonical bytes.

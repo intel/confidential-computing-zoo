@@ -6,11 +6,13 @@ This document defines the normative request, response, verifier, profile, and po
 
 Argus keeps verifier-specific APIs behind an RA adapter. Trustee, an Attestation Service, and SPIRE do not expose the same interface or prove exactly the same thing. The adapter normalizes their result into one `VerifiedClaims` contract for the caller-side Guard Engine.
 
+Current API scope: the caller is an agent or agent-hosting runtime. This draft does not yet specify a separate service-to-service caller model.
+
 ## Core Interfaces
 
 ### Phase 1: Caller Orchestration And Request Construction
 
-This phase covers the caller-side objects that decide whether a remote call should proceed and how the evidence request is constructed.
+This phase covers the caller-side objects that decide whether an agent-originated remote call should proceed and how the evidence request is constructed.
 
 ```rust
 pub trait GuardEngine {
@@ -34,9 +36,9 @@ pub trait GuardEngine {
   ) -> Result<GuardDecision, ArgusError>;
 }
 
-/// Caller-side inputs that influence request construction and policy evaluation.
+/// Caller-side inputs that influence agent-originated request construction and policy evaluation.
 pub struct GuardContext {
-  /// Stable caller identity used for local policy and audit correlation.
+  /// Stable agent or agent-runtime identity used for local policy and audit correlation.
   pub caller_id: String,
   /// Intended audience carried into the evidence request and binding hash.
   pub audience: String,
@@ -58,7 +60,7 @@ pub struct TargetService {
   pub expected_identity: Option<String>,
 }
 
-/// Protocol request sent by the caller to the peer Evidence Provider.
+/// Protocol request sent by the agent-side Guard to the peer Evidence Provider.
 pub struct EvidenceRequest {
   /// Argus protocol version for request parsing.
   pub version: String,
