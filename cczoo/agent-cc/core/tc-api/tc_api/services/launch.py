@@ -357,9 +357,41 @@ class LaunchServiceMixin:
             # run docker image
             if dockercmd:
                 docker_cmd = dockercmd.strip().split(" ")
-                docker_gid = subprocess.run(["stat", "-c", "'%g'", "/var/run/docktap/docker.sock"], capture_output=True, text=True).stdout.replace('\n', '').strip("'")
+                docker_gid = subprocess.run(["stat", "-c", "'%g'", "/var/run/docker.sock"], capture_output=True, text=True).stdout.replace('\n', '').strip("'")
                 if docker_gid != None:
                     docker_cmd.extend(["--group-add", docker_gid])
+                
+                # image settings
+                # Fix volume ownership
+                cmd = [DOCKER_CMD, "run", "--rm", "--user", "root", "-v", "openclaw-config:/home/node/.openclaw", "-v", "openclaw-workspace:/home/node/.openclaw/workspace", "--entrypoint", "sh", loaded_image_ref, "-c"]
+                cmd.append('find /home/node/.openclaw -xdev -exec chown node:node {} + 2>/dev/null; [ -d /home/node/.openclaw/workspace/.openclaw ] &&  chown -R node:node /home/node/.openclaw/workspace/.openclaw 2>/dev/null || true')
+                fix_vol = subprocess.run(cmd, capture_output=True, text=True)
+                if fix_vol.returncode == 0:
+                    logger.info(f"Fix volume ownership.")
+                    logger.info(" ".join(cmd))
+                else:
+                    logger.info("Fix volume ownership failed.")
+                    logger.info(f"{fix_vol.stderr}")
+
+                # Seed directory structure
+                cmd1 = [DOCKER_CMD, "run",  "--rm", "--user", "node", "-v", "openclaw-config:/home/node/.openclaw", "-v", "openclaw-workspace:/home/node/.openclaw/workspace", "--entrypoint", "sh", loaded_image_ref, "-c"]
+                cmd1.append('mkdir -p /home/node/.openclaw/identity /home/node/.openclaw/agents/main/agent /home/node/.openclaw/agents/main/sessions')
+                makedir = subprocess.run(cmd1, capture_output=True, text=True)
+                if makedir.returncode == 0:
+                    logger.info(f"Seed directory structure.")
+                    logger.info(" ".join(cmd1))
+                else:
+                    logger.info("Seed directory structure failed.")
+                    logger.info(f"{makedir.stderr}")
+
+                # Gateway defaults
+                cmd2 = [DOCKER_CMD, "run",  "--rm", "--user", "node", "-v", "openclaw-config:/home/node/.openclaw", "-v", "openclaw-workspace:/home/node/.openclaw/workspace", "--entrypoint", "node", loaded_image_ref, "/app/dist/index.js"]
+                for conf in [['config', 'set', 'gateway.mode',  'local'],['config', 'set', 'gateway.bind', 'lan'],['config', 'set', 'agents.defaults.sandbox.mode', 'all'],['config', 'set', 'agents.defaults.sandbox.scope', 'session'],['config', 'set', 'agents.defaults.sandbox.workspaceAccess', 'rw'],['config', 'set', 'agents.defaults.sandbox.backend', 'docker']]:
+                    set_res = subprocess.run(cmd2+conf, capture_output=True, text=True)
+                    if (set_res.returncode != 0):
+                        logger.info(f"Seting failed.")
+                        logger.info(" ".join(cmd2+conf))
+                        logger.info(f"{set_res.stderr}")
             else:
                 docker_cmd = [
                     DOCKER_CMD,
