@@ -4,12 +4,11 @@ This directory is the Agent-CC adapter entry point for OpenClaw.
 
 It represents the deployment-side integration path for running OpenClaw inside the Agent-CC model without requiring invasive framework changes. The adapter is intended to consume the shared core services from `core/` rather than reimplementing trust, build, or attestation flows locally.
 
-## Start Here
 
 1. Read [`Agent-CC doc`](../../README.md) for the top-level Agent-CC architecture and end-to-end scenario.
 2. Read [`tc-api doc`](../../core/tc-api/README.md) for the trusted build-to-runtime control path.
 
-### Prerequisites
+## Prerequisites
 
 - A TDX-capable guest with `/dev/tdx_guest` and quote generation available
 - Docker, Skopeo, Syft, and Cosign installed on the deployment host
@@ -17,7 +16,7 @@ It represents the deployment-side integration path for running OpenClaw inside t
 - A Sigstore-capable identity for OIDC login flows
 - Reachable trust-service and KBS dependencies for attested launch flows
 
-### Local Environment Setup
+## Local Environment Setup
 
 ```bash
 cd <workdir>
@@ -45,11 +44,11 @@ export DOCKER_BUILDKIT=1
 
 ```
 
-### Start Trust Services
+## Start Trust Services
 
 The OpenClaw example assumes the trust-service container and a local KBS are available before TC-API starts.
 
-Start trust-service from [`../../core/trust-service/`](../../core/trust-service/):
+Start trust-service from [`trust-service`](../../core/trust-service/):
 
 ```bash
 cd <workdir>
@@ -123,9 +122,9 @@ docker run -d -p 8080:8080 --network host \
 	/usr/local/bin/kbs --config-file /etc/kbs/kbs-config.toml
 ```
 
-### Start TC-API
+## Start TC-API
 
-For the OpenClaw walkthrough, start the shared control plane from [`../../core/tc-api/`](../../core/tc-api/):
+For the OpenClaw walkthrough, start the shared control plane from [`tc-api`](../../core/tc-api/):
 
 ```bash
 cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc-api/
@@ -151,7 +150,7 @@ docker run -it --network host --privileged \
 
 ```
 
-### OpenClaw Build, Publish, and Launch Flow
+## OpenClaw Build, Publish, and Launch Flow
 
 The shared TC-API flow below is the path OpenClaw is expected to use.
 
@@ -171,23 +170,39 @@ venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore
 
 venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore-login oob \
 	mount_luks --payload-json '{"user_id":"<sigstore account>","vfs_path":"<luks file>","vfs_size":"<size>","mapper_dir":"<mapper>","loop_device":"<loop>","mount_path":"<mount path>","passwd":"<luks key file>"}'
+```
 
+```bash
 # Build the OpenClaw image from artifacts staged in the mounted workspace.
 venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore-login oob \
 	build --payload-json '{"dockerfile":"<path or content>","app_binary":"<openclaw artifact>","configs":["<config file>"],"data":["<data file>"],"encrypt":true,"user_id":"<sigstore account>","luks_path":"<mounted luks path>"}'
+```
+### tc-api server show build logs
 
+**Notice: when log show as sigstore toekn is malformed or missing, need to refresh the token by interactivate mode.**
+
+![Build logs](./images/build.png)
+
+```bash
 # Publish the encrypted image.
 venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore-login oob \
 	publish --payload-json '{"build_id":"<build_id>","image_id":"<image_id>","user_id":"<sigstore account>","sbom_url":"<sbom path>","log_evidence":true,"luks_path":"<mounted luks path>"}'
-
-# Launch the attested OpenClaw workload.
-venv/bin/python -m tc_api.cli.client   --base-url http://localhost:8000   --sigstore-login oob \
-    deploy --payload-json -d '{"image_id":"tc-api-build-<build_id>","build_id":"<build_id>","user_id":"<sigstore account>","image_url":"docker.io/<repo>/tc-api-build-<build_id>:latest-encrypted","sbom_url":"<sbom path>","attestation_required":true,"luks_path":"<mounted luks path>","dockercmd":"<optional openclaw docker run command>"}'
 ```
 
-Notice: If you do not use tc-api, please refer to `run-sbx.sh`.
+### tc-api server show launch logs
 
-### Result Inspection
+![Build logs](./images/publish.png)
+
+```bash
+# Launch the attested OpenClaw workload.
+venv/bin/python -m tc_api.cli.client   --base-url http://localhost:8000   --sigstore-login oob \
+	deploy --payload-json -d '{"image_id":"tc-api-build-<build_id>","build_id":"<build_id>","user_id":"<sigstore account>","image_url":"docker.io/<repo>/tc-api-build-<build_id>:latest-encrypted","sbom_url":"<sbom path>","attestation_required":true,"luks_path":"<mounted luks path>","dockercmd":"<optional openclaw docker run command>"}'
+```
+### tc-api server show deploy logs
+
+![Build logs](./images/deploy.png)
+
+## Result Inspection
 
 After each phase, inspect the corresponding result object and trust evidence:
 
@@ -197,7 +212,63 @@ After each phase, inspect the corresponding result object and trust evidence:
 - `GET /api/transparency-log/{log_id}` for the concrete immutable log entry
 - `POST /api/get-summaryTransparencylog` for a single summary over build, publish, and launch log records
 
-The full payload shapes and additional operator notes remain in [`../../core/tc-api/README.md`](../../core/tc-api/README.md).
+The full payload shapes and additional operator notes remain in [`README.md`](../../core/tc-api/README.md).
+
+## OpenClaw runtime measurements
+
+### Build and run gateway Docker container
+
+**Notice: If you do not use tc-api, please refer to `run-sbx.sh`.**
+
+
+```bash
+cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/adapters/Openclaw/scripts
+
+# make slim image
+vim .env
+# OPENCLAW_GATEWAY_PORT=18789
+# OPENCLAW_BRIDGE_PORT=18790
+# OPENCLAW_GATEWAY_BIND=lan
+# OPENCLAW_GATEWAY_TOKEN=3eec2b1cdc012236e58e464f08b6092dc41f0cf6681670cf98bc2edf000e6182
+# OPENCLAW_IMAGE=openclaw:local
+# OPENCLAW_DOCKER_SOCKET=/var/run/docker.sock
+# DOCKER_GID=113
+# OPENCLAW_INSTALL_DOCKER_CLI=1
+# OPENCLAW_TZ=
+# OPENCLAW_CONFIG_VOLUME=openclaw-config
+# OPENCLAW_WORKSPACE_VOLUME=openclaw-workspace
+
+bahs setup.sh
+
+# make gateway image
+bash run-sbx.sh
+```
+
+**Notice: You can set openclaw configurate(such as mode & the api key) by interactivate:**
+
+```bash
+docker run --rm -i --tty --user node -v openclaw-config:{.openclaw path} -v openclaw-workspace:{workspace path} --entrypoint node {image:tag}t /app/dist/index.js onboard --mode local --no-install-daemon
+```
+
+```bash
+vim xxx/.openclaw.json
+# "models": {
+#     "providers": {
+#       "qwen": {
+#         "baseUrl": "https://xxxxxxxxx",
+#		  "apiKey": "skxxxxxxx",
+#         "api": "openai-completions",
+```
+
+### Run OpenClaw sandbox Docker container
+
+After launching openclaw-gateway and completing the configuration, you can access the openclaw address `http://127.0.0.1:18789/token=xxxx` to perform operations; the system will then create an openclaw-slim Docker container to execute the operation, and all Docker-related actions will be recorded in transparency log.
+
+![openclaw logs](./images/openclaw.png)
+
+All docker operation transparency log can be show in `https://rekor.sigstore.dev/api/v1/log/entries?logIndex={log_index}`. And the `log_index` can be checked in `<workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc-api/logs/trucon-latest.log`
+
+![openclaw logs](./images/openclawLog.png)
 
 ## Related Core Services
 

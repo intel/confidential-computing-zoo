@@ -42,7 +42,11 @@ TRUCON_LOCK_PATH="${TRUCON_LOCK_PATH:-$TRUCON_QUEUE_DIR/trucon.lock}"
 DOCKTAP_WORKLOAD_DB_PATH="${DOCKTAP_WORKLOAD_DB:-/dev/shm/docktap/container_map.db}"
 
 echo "Login in Dokcerhub"
-docker login -u $DOCKERHUB_ACCOUNT
+if docker info 2>/dev/null | grep -q "Username:"; then
+	echo "Docker logined"
+else
+	docker login -u $DOCKERHUB_ACCOUNT
+fi
 
 echo "Starting TC API Service..."
 
