@@ -10,11 +10,11 @@
 
 Agent-CC is a **deployment architecture and reference implementation** for running agentic AI workloads on Intel Xeon processors with Intel TDX (Trust Domain Extensions): it is designed to be agnostic for agent-framework and services, and combines runtime isolation, trusted execution controls, and service-to-service trust verification as one coherent system.
 
-Agent-CC addresses this through three interconnected pillars: **Lifecycle Data Protection** (hardware memory encryption, attestation-gated encrypted storage, immutable audit log), **Build-to-Runtime Integrity** (supply chain verification connected to runtime measurements via TC-API), and **Trusted Service Composition** (mutual attestation before sensitive data is exchanged with external services).
+- Agent-CC addresses this through three interconnected pillars: **Lifecycle Data Protection** (hardware memory encryption, attestation-gated encrypted storage, immutable audit log), **Build-to-Runtime Integrity** (supply chain verification connected to runtime measurements via TC-API), and **Trusted Service Composition** (mutual attestation before sensitive data is exchanged with external services).
 
-Agent frameworks (OpenClaw, Hermes-Agent, etc.) and their dependent services run **unmodified**. Agent-CC introduces confidential computing through deployment-side plugins or service sidecars, requiring only minimal changes to the frameworks and services themselves. This low-intrusion, and in some cases near-zero-intrusion, approach preserves existing agent and service deployments while significantly reducing adoption cost and operational complexity. 
+- Agent frameworks (OpenClaw, Hermes-Agent, etc.) and their dependent services run **unmodified**. Agent-CC introduces confidential computing through deployment-side plugins or service sidecars, requiring only minimal changes to the frameworks and services themselves. This low-intrusion, and in some cases near-zero-intrusion, approach preserves existing agent and service deployments while significantly reducing adoption cost and operational complexity. 
 
-Confidential Computing, or Intel TDX-based deployment here, is an enabling foundation layer: it is designed to augment existing agent deployment and security mechanisms for working alongside existing sandboxing, policy enforcement, supply-chain controls, and service authorization, extending those mechanisms with hardware-rooted isolation, verifiable runtime evidence, and attestation-bound access control to collectively meet the higher security demands of confidential agent deployments.
+- Confidential Computing, or Intel TDX-based deployment here, is an enabling foundation layer: it is designed to augment existing agent deployment and security mechanisms for working alongside existing sandboxing, policy enforcement, supply-chain controls, and service authorization, extending those mechanisms with hardware-rooted isolation, verifiable runtime evidence, and attestation-bound access control to collectively meet the higher security demands of confidential agent deployments.
 
 ## 🏗️ Agentic AI Architecture & Security Threats
 
@@ -84,7 +84,7 @@ Together, these controls provide a coherent protection path: sensitive data is e
 
 ![Full data lifecycle protection](./images/full-data-lifecycle-protection.png)
 
-**Figure 2: Full data lifecycle protection - OpenClaw as example**
+**Figure 1: Full data lifecycle protection - OpenClaw as example**
 
 
 #### Build-to-Runtime Integrity
@@ -100,11 +100,7 @@ In agent systems, build-time intent and deployment policy are not sufficient on 
 
 ![Build to runtime](./images/build-2-runtime.png)
 
-**Figure 3: From Build Artifacts to Attested Runtime**
-
-### Trusted Service Composition
-
-Detailed design and integration guidance will be added in the next version.
+**Figure 2: From Build Artifacts to Attested Runtime**
 
 ## Reference Code Structure
 
@@ -127,59 +123,8 @@ The following components form the Agent-CC project additions. Each plays a disti
 
 #### TC-API (Trusted Container Pipeline)
 
-
+- **[TC-API](core/tc-api/README.md)** : provides build image, publish image, and deploy image workflows.
 
 #### Trusted Log
 
-
-## Reference Implementation & Setup
-
-### 📋 Prerequisites
-
-- **Hardware**: Intel TDX-capable CPU and Server
-- **OS**: TDX-enabled Linux guest OS (TDVM)
-- **Services**: Trustee (KBS, AS, RVPS) deployment
-- **Tools**: Docker/containerd, Cosign, cryptsetup
-- **Network**: Access to Rekor, OCI registry, KBS services
-
-### 🧩 E2E Reference Scenario (Agent + LLM + Memory)
-
-This guide is organized by concrete services. A typical Agent-CC deployment path is:
-
-1. **Agent runtime** runs inside a TDVM (for example OpenClaw).
-2. **LLM service** is accessed through an attested and policy-governed path (for example Ollama).
-3. **Memory service** is encrypted at rest and released only to attested runtimes.
-
-This forms an end-to-end protection flow across orchestration, model inference, and memory persistence.
-
-### 🔌 Adapter-Oriented Integration
-
-- **Agent adapters**:
-  - [OpenClaw](adapters/OpenClaw): Reference agent adapter entry point for end-to-end confidential deployment and validation.
-- **LLM adapters**:
-  - Ollama: 
-
-
-### 🛠️ Quick Start by Service
-
-#### 1. Prepare shared trust infrastructure
-
-Deploy TDVM prerequisites, Trustee services, and TC-API control components.
-
-#### 2. OpenClaw CC deployment Agent adapter
-
-ToDo: Use the OpenClaw adapter path first, then follow the same pattern for other frameworks.
-
-
-#### 3. Verify E2E protection flow
-
-Validate that build evidence, runtime attestation, and service access policies are enforced end-to-end.
-
-
-
-
-
-
----
-
-**Agent-CC**: Bringing confidential computing to AI agents on Intel TDX.
+- **[Trusted Log](core/tlog/README.md)** : provides the core domain types, abstract interfaces, error classes, deterministic digest helpers, and the backend namespaces used by TruCon and verification tooling.
