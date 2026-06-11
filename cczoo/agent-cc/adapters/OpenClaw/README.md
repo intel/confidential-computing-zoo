@@ -222,7 +222,7 @@ The full payload shapes and additional operator notes remain in [`README.md`](..
 
 
 ```bash
-cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/adapters/Openclaw/scripts
+cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/scripts
 
 # make slim image
 vim .env

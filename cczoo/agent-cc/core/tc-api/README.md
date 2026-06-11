@@ -30,6 +30,41 @@ flowchart LR
 
 For the full runtime boundary and sequencing design, see [docs/architecture.md](docs/architecture.md).
 
+## Project Structure
+
+```text
+tc-api/
+├── tc_api/              # tc_api, TruCon, Docktap, CLI, and shared models
+├── tests/               # focused pytest modules and manual checks
+├── scripts/             # operator helpers such as tdvm_smoke_test.py
+├── docs/                # architecture and testing docs
+├── pyproject.toml       # packaging and entrypoints
+├── setup.sh             # local environment setup
+├── start.sh             # local service orchestration
+└── run_tests.sh         # backward-compatible test wrapper
+```
+
+Documentation entrypoints:
+
+- [docs/architecture.md](docs/architecture.md) for the end-to-end service architecture and trust boundaries
+- [docs/TESTING.md](docs/TESTING.md) for the test matrix and validation workflows
+
+
+## Configuration
+
+Primary runtime configuration comes from environment variables:
+
+- `HOST`: service listen address, default `0.0.0.0`
+- `PORT`: service port, default `8000`
+- `DOCKER_REGISTRY`: image registry address
+- `UPLOAD_DIR`: upload directory
+- `BUILD_DIR`: build working directory
+- `TRUCON_UDS_PATH`: preferred same-machine Unix socket path for internal TruCon traffic
+- `TRUCON_SERVICE_TOKEN`: shared Bearer token for tc_api and Docktap
+- `TRUCON_BUNDLE_MIRROR_DIR`: optional local OCI-layout bundle mirror
+
+Docktap-specific variables are listed later in this README.
+
 ## Quick Start
 
 ### Prerequisites
@@ -37,6 +72,7 @@ For the full runtime boundary and sequencing design, see [docs/architecture.md](
 - TDX guest support is mandatory. The runtime expects `/dev/tdx_guest`, RTMR extend support, and quote generation to be available.
 - Docker, Cosign, Syft, and Skopeo must be installed.
 - KBS / trust-service dependencies must be reachable for full build and launch flows.
+- Tcapi dependencies script [`setup.sh`](./setup.sh) should be operated.
 
 ### Local Startup
 
@@ -81,52 +117,6 @@ For direct API-only development you can still run:
 ```bash
 python -m tc_api.api.app
 ```
-
-### TDVM Smoke Path
-
-Use the smallest supported acceptance flow on a real TD VM:
-
-```bash
-PYTHONPATH=$PWD python tests/check_real_tdx_quote.py
-./start.sh restart
-PYTHONPATH=$PWD python scripts/tdvm_smoke_test.py --summary-file /tmp/tdvm-smoke-summary.json
-```
-
-For a shorter run, add `--skip-publish` or `--skip-deploy` to `scripts/tdvm_smoke_test.py`.
-
-## Configuration
-
-Primary runtime configuration comes from environment variables:
-
-- `HOST`: service listen address, default `0.0.0.0`
-- `PORT`: service port, default `8000`
-- `DOCKER_REGISTRY`: image registry address
-- `UPLOAD_DIR`: upload directory
-- `BUILD_DIR`: build working directory
-- `TRUCON_UDS_PATH`: preferred same-machine Unix socket path for internal TruCon traffic
-- `TRUCON_SERVICE_TOKEN`: shared Bearer token for tc_api and Docktap
-- `TRUCON_BUNDLE_MIRROR_DIR`: optional local OCI-layout bundle mirror
-
-Docktap-specific variables are listed later in this README.
-
-## Project Structure
-
-```text
-tc-api/
-├── tc_api/              # tc_api, TruCon, Docktap, CLI, and shared models
-├── tests/               # focused pytest modules and manual checks
-├── scripts/             # operator helpers such as tdvm_smoke_test.py
-├── docs/                # architecture and testing docs
-├── pyproject.toml       # packaging and entrypoints
-├── setup.sh             # local environment setup
-├── start.sh             # local service orchestration
-└── run_tests.sh         # backward-compatible test wrapper
-```
-
-Documentation entrypoints:
-
-- [docs/architecture.md](docs/architecture.md) for the end-to-end service architecture and trust boundaries
-- [docs/TESTING.md](docs/TESTING.md) for the test matrix and validation workflows
 
 ## Testing
 
