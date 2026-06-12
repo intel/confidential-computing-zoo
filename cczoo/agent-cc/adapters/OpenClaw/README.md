@@ -12,8 +12,7 @@ OpenClaw Adapter is the Agent-CC integration path for deploying OpenClaw workloa
 
 - **Non-Invasive Integration:** All without requiring invasive framework changes
 
-1. Read [`Agent-CC doc`](../../README.md) for the top-level Agent-CC architecture and end-to-end scenario.
-2. Read [`tc_api doc`](../../core/tc_api/README.md) for the trusted build-to-runtime control path.
+See Also: [`Agent-CC doc`](../../README.md) for the top-level architecture and [`tc_api doc`](../../core/tc_api/README.md) for the trusted build-to-runtime control path.
 
 ## Prerequisites
 
