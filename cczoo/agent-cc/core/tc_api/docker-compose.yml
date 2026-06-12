@@ -1,10 +1,10 @@
 version: '3.8'
 
 services:
-  tc-api:
+  tc_api:
     build:
       context: ..
-      dockerfile: tc-api/Dockerfile
+      dockerfile: tc_api/Dockerfile
       args:
         - http_proxy=${http_proxy:-}
         - https_proxy=${https_proxy:-}
@@ -30,9 +30,9 @@ services:
       - HTTPS_PROXY=${HTTPS_PROXY:-}
       - NO_PROXY=${NO_PROXY:-}
     volumes:
-      - ./uploads:/app/tc-api/uploads
-      - ./builds:/app/tc-api/builds
-      - ./logs:/app/tc-api/logs
+      - ./uploads:/app/tc_api/uploads
+      - ./builds:/app/tc_api/builds
+      - ./logs:/app/tc_api/logs
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/run/trucon:/var/run/trucon
     tmpfs:
@@ -51,7 +51,7 @@ services:
   trucon:
     build:
       context: ..
-      dockerfile: tc-api/Dockerfile
+      dockerfile: tc_api/Dockerfile
       args:
         - http_proxy=${http_proxy:-}
         - https_proxy=${https_proxy:-}
@@ -66,7 +66,7 @@ services:
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-}
     volumes:
-      - ./logs:/app/tc-api/logs
+      - ./logs:/app/tc_api/logs
       - /var/run/trucon:/var/run/trucon
     tmpfs:
       - /dev/shm
@@ -82,7 +82,7 @@ services:
   docktap:
     build:
       context: ..
-      dockerfile: tc-api/Dockerfile
+      dockerfile: tc_api/Dockerfile
       args:
         - http_proxy=${http_proxy:-}
         - https_proxy=${https_proxy:-}
@@ -104,7 +104,7 @@ services:
       - /var/run/docker.sock:/var/run/docker-daemon.sock
       - /var/run/docktap:/var/run/docktap
       - /var/run/trucon:/var/run/trucon
-      - ./logs:/app/tc-api/logs
+      - ./logs:/app/tc_api/logs
     tmpfs:
       - /dev/shm
     mem_swappiness: 0
@@ -126,5 +126,5 @@ services:
     volumes:
       - ../deploy/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - tc-api
+      - tc_api
     restart: unless-stopped

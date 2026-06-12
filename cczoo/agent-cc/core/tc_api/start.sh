@@ -23,7 +23,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/common.sh"
 tc_api_cd_repo_root
 SCRIPT_DIR="$TC_API_REPO_ROOT"
 
-DOCKERHUB_ACCOUNT="trustedzoo"
+DOCKERHUB_ACCOUNT="<your dockerhub account>"
 PID_DIR="$SCRIPT_DIR/logs/pids"
 TC_API_PID_FILE="$PID_DIR/tc_api.pid"
 TRUCON_PID_FILE="$PID_DIR/trucon.pid"

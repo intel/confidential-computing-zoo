@@ -75,13 +75,13 @@ RUN wget -q https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/distro/Debian1
 # Copy packages into the image (targeted, not the entire workspace).
 COPY ../tlog /app/tlog
 COPY ../config /app/config
-COPY ./* /app/tc-api/
+COPY ./* /app/tc_api/
 
 WORKDIR /app/tlog
 RUN python -m pip install -e .
 RUN python -m pip install -e '.[rekor]'
 
-WORKDIR /app/tc-api
+WORKDIR /app/tc_api
 RUN mkdir -p uploads builds logs
 RUN pip install -r requirements.txt
 
@@ -91,14 +91,14 @@ EXPOSE 8000 8001 8002 8006
 # Set environment variables
 ENV HOST=0.0.0.0
 ENV PORT=8000
-ENV UPLOAD_DIR=/app/tc-api/uploads
-ENV BUILD_DIR=/app/tc-api/builds
-ENV LOGS_DIR=/app/tc-api/logs
+ENV UPLOAD_DIR=/app/tc_api/uploads
+ENV BUILD_DIR=/app/tc_api/builds
+ENV LOGS_DIR=/app/tc_api/logs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
 #Run the application
-RUN chmod +x /app/tc-api/start.sh
-ENTRYPOINT ["bash","/app/tc-api/start.sh"]
+RUN chmod +x /app/tc_api/start.sh
+ENTRYPOINT ["bash","/app/tc_api/start.sh"]
