@@ -1,9 +1,16 @@
 # OpenClaw Adapter
 
-This directory is the Agent-CC adapter entry point for OpenClaw.
+OpenClaw Adapter is the Agent-CC integration path for deploying OpenClaw workloads within TDX trusted execution environments, providing comprehensive protection through:
 
-It represents the deployment-side integration path for running OpenClaw inside the Agent-CC model without requiring invasive framework changes. The adapter is intended to consume the shared core services from `core/` rather than reimplementing trust, build, or attestation flows locally.
+- **Trusted Build-to-Runtime Control:** Complete trust chain control via TC API, supporting Docker image encryption signing (Cosign/Sigstore) and remote attestation
 
+- **LUKS Encrypted Workspace:** Isolating sensitive materials during build using create_luks / mount_luks API
+
+- **SBOM & Evidence Verification:** Generating SBOM and recording build evidence via transparency log during publish, supporting post-deployment verification
+
+- **Dependency Services:** Requiring trust-service container and local KBS (Key Broker Service) for key management and remote attestation
+
+- **Non-Invasive Integration:** All without requiring invasive framework changes
 
 1. Read [`Agent-CC doc`](../../README.md) for the top-level Agent-CC architecture and end-to-end scenario.
 2. Read [`tc_api doc`](../../core/tc_api/README.md) for the trusted build-to-runtime control path.

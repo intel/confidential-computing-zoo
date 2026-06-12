@@ -120,6 +120,4 @@ In agent systems, build-time intent and deployment policy are not sufficient on 
 
 **Adapters** 
 
- - **[OpenClaw](./adapters/OpenClaw/README.md)** : povides a way to independently build the openclaw-gateway image and customize relevant configurations.This allows OpenClaw to run in a secure/isolated environment, avoiding any unnecessary impact on the host machine.
-
-
+ - **[OpenClaw](./adapters/OpenClaw/README.md)** : povides a way to deploy OpenClaw workloads within TDX trusted execution environments, providing comprehensive protection through encrypted workspace isolation (LUKS), cryptographic image signing (Cosign/Sigstore), remote attestation via trust-service and KBS, SBOM generation with transparency logging, and end-to-end build-to-runtime trust chain control—all without requiring invasive framework changes.
