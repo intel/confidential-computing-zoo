@@ -172,5 +172,5 @@ For local manual checks, run the service and use the built-in FastAPI docs or th
 ## Further Reading
 
 - [architecture.md](docs/architecture.md) for deployment and control-plane architecture
-- [trusted-log/README.md](../tlog/docs/trusted-log/README.md) for TruCon and chain semantics
+- [trusted-log/README.md](../tlog/docs/architecture.md) for TruCon and chain semantics
 - [docktap/architecture.md](docs/docktap/architecture.md) for Docktap-specific design details
