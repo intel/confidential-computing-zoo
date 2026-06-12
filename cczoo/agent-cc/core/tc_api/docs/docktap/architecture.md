@@ -98,6 +98,73 @@ Docker CLI (DOCKER_HOST=unix:///tmp/test-stream.sock)
 - `test_suite.py`
   - unified test harness that starts proxy runtime and executes scenarios
 
+
+### Docktap Authorization
+
+Docktap uses the same OIDC / Sigstore identity model as the rest of the control plane, but runtime authorization is now delegation-first by default.
+
+Current operator contract:
+
+- `./start.sh restart` starts `tc_api`, TruCon, and Docktap together.
+- `DOCKTAP_REQUIRE_ATTESTATION=1` is enabled by default.
+- `DOCKTAP_AUTH_MODE=explicit_delegation` is the default.
+- In `explicit_delegation` mode, submittable Docker operations such as `pull` are blocked until the user completes OIDC login and passes Docktap authorization readiness for the target chain. The readiness path reuses a valid delegation when possible and creates one with service defaults when needed.
+- `DOCKTAP_AUTH_MODE=delegation_disabled` is the stricter override for environments that want per-operation OIDC-backed authorization instead of delegation reuse.
+- The older local lifecycle grant shortcut for follow-up `start`/`stop`/`rm` operations has been removed. Runtime reuse now happens only through an explicit delegation record.
+
+Recommended flows:
+
+- Same-machine browser access: complete browser login, capture the returned `identity_token`, call `POST /api/docktap/authorize` with that token, then retry the Docker command.
+- Remote SSH with browser reachability: set `DOCKTAP_ATTESTATION_BROWSER_BASE_URL` before startup.
+- Remote SSH without callback reachability: use the out-of-band `tc-client` login command from the challenge, then call `POST /api/docktap/authorize` with the emitted `identity_token`.
+- Non-interactive launchers: pre-acquire a token and call `POST /api/docktap/authorize` up front with that `identity_token`, or set `DOCKTAP_AUTH_MODE=delegation_disabled` if delegation reuse is intentionally forbidden.
+
+Example OOB flow:
+
+```shell
+./start.sh restart
+tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+curl -X POST http://127.0.0.1:8000/api/docktap/authorize \
+	-H 'Content-Type: application/json' \
+	-d '{"chain_id": "default", "identity_token": "<paste token here>"}'
+docker exec -e DOCKER_HOST=unix:///var/run/docktap/docker.sock openclaw-gateway sh -lc 'docker pull hello-world:latest'
+```
+
+Example challenge error:
+
+```text
+Error response from daemon: Docktap authorization required before docker pull.
+Browser login: http://127.0.0.1:8000/api/sigstore/interactive-login?operation=docktap&session_id=<session-id>
+Remote login command: tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+Ensure authorization: curl -X POST http://127.0.0.1:8000/api/docktap/authorize -H 'Content-Type: application/json' -d '{"chain_id": "default", "identity_token": "<paste token here>"}'
+Direct delegation fallback: curl -X POST http://127.0.0.1:8000/api/docktap/delegate -H 'Content-Type: application/json' -d '{"chain_id": "default", "identity_token": "<paste token here>"}'
+If tc-client is unavailable, from the tc_api repo root run: bash setup.sh
+Then run: ./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format json
+Then retry.
+```
+
+`delegation_id` is intentionally kept in runtime predicates. Chain continuity is still enforced by the reserved predecessor fields (`prev_event_digest` and `prev_lookup_hash`), but `delegation_id` separately binds an owner-key-signed runtime event back to the specific `session.delegation` grant that authorized it. Verification uses that reference to prove scope and TTL, which predecessor linkage alone cannot express.
+
+### Docktap Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRUCON_URL` | `http://127.0.0.1:8001` | TruCon endpoint for event submission |
+| `TRUCON_UDS_PATH` | `/var/run/trucon/trucon.sock` | Preferred same-machine Unix socket path for tc_api and Docktap internal TruCon traffic |
+| `TRUCON_SERVICE_TOKEN` | (generated) | Shared Bearer token for TruCon auth |
+| `SOCK_BRIDGE_SOCKET` | `/tmp/docker-proxy.sock` | Proxy socket listen path |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker daemon socket path |
+| `DOCKTAP_HEALTH_PORT` | `8002` | HTTP health endpoint port |
+| `DOCKTAP_SOCKET` | `/var/run/docktap/docker.sock` | Proxy socket path (bare-metal `start.sh`) |
+| `DOCKTAP_REQUIRE_ATTESTATION` | `1` | Keep the Docktap authorization gate enabled for submittable runtime operations |
+| `DOCKTAP_AUTH_MODE` | `explicit_delegation` | Runtime authorization mode: explicit delegation by default, or `delegation_disabled` for stricter per-operation OIDC-only behavior |
+| `DOCKTAP_DELEGATION_TTL_SECONDS` | `14400` | Default delegation lifetime in seconds for `POST /api/docktap/delegate` |
+| `DOCKTAP_ATTESTATION_API_URL` | `http://127.0.0.1:8000` | Base API URL embedded in the attestation-login challenge |
+| `DOCKTAP_ATTESTATION_BROWSER_BASE_URL` | `http://127.0.0.1:8000` | Browser-visible base URL embedded in the attestation-login challenge |
+| `DOCKTAP_LOG_FILE` | `./logs/docktap-latest.log` | Docktap runtime log path used by `start.sh` |
+| `TRUCON_LOG_FILE` | `./logs/trucon-latest.log` | TruCon runtime log path used by `start.sh` |
+
+
 ## Request Lifecycle
 
 1. Client connects to proxy Unix socket.

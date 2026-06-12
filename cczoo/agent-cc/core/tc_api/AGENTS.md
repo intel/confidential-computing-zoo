@@ -1,20 +1,20 @@
 # Project Guidelines
 
 ## Build and Test
-- Setup environment: `cd tc-api && bash setup.sh` (creates `venv`, installs `tlog[rekor]` and `tc-api` in editable mode).
-- Start service: `cd tc-api && ./start.sh restart` (preferred local lifecycle entrypoint for tc_api, TruCon, and Docktap).
+- Setup environment: `cd tc_api && bash setup.sh` (creates `venv`, installs `tlog[rekor]` and `tc_api` in editable mode).
+- Start service: `cd tc_api && ./start.sh restart` (preferred local lifecycle entrypoint for tc_api, TruCon, and Docktap).
 - Alternate start: `python -m tc_api.api.app`.
-- Run all tests: `cd tc-api && ./run_tests.sh --type all --verbose`.
+- Run all tests: `cd tc_api && ./run_tests.sh --type all --verbose`.
 - Run manual API checks: `python -m tests.test_api` (or `python -m tests.test_api health|build|publish|register`).
 - Run automated tests: `pytest tests/test_subprocess_unit.py tests/test_tdx_mr_adapter.py -v`.
-- Docker build: `cd tc-api && docker-compose build` (uses `tc-api/docker-compose.yml` and `tc-api/Dockerfile`).
+- Docker build: `cd tc_api && docker-compose build` (uses `tc_api/docker-compose.yml` and `tc_api/Dockerfile`).
 
 ## Repository Layout
-- This file lives in `tc-api/`, one of several top-level packages in the monorepo.
+- This file lives in `tc_api/`, one of several top-level packages in the monorepo.
 - Standalone package at repo root: `tlog/`.
 - Trust service: `trust-service/` (attestation agent/CDH).
 - Workspace-level files at repo root: `deploy/`, `scripts/dev-up.sh`.
-- tc-api deployment files: `tc-api/Dockerfile`, `tc-api/docker-compose.yml`.
+- tc_api deployment files: `tc_api/Dockerfile`, `tc_api/docker-compose.yml`.
 
 ## Architecture
 - API layer: `tc_api/api/app.py` defines the FastAPI application and registers routers from `tc_api/api/routers/`.
@@ -31,7 +31,7 @@
 - Runtime config: `tc_api/config.py` centralizes environment-driven settings (paths, commands, registry, KBS).
 - Tests: `tests/` contains pytest modules and manual runners (`test_subprocess_unit.py`, `test_tdx_mr_adapter.py`, `test_api.py`, `test_runner.py`, etc.).
 - Scripts: `scripts/` contains operator helpers such as `run_docktap_oob_atomic.py`, `verify_current_attested_head.py`, and `tdvm_smoke_test.py`.
-- Docs: `docs/` contains tc-api architecture documentation; trusted-log module docs live in `../tlog/docs/trusted-log/`.
+- Docs: `docs/` contains tc_api architecture documentation; trusted-log module docs live in `../tlog/docs/trusted-log/`.
 
 ## Conventions
 - Prefer extending logic in `tc_api/services/` and keep endpoint handlers in `tc_api/api/routers/` focused on request/response binding.

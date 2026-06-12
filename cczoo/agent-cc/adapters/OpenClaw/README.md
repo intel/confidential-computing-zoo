@@ -6,7 +6,7 @@ It represents the deployment-side integration path for running OpenClaw inside t
 
 
 1. Read [`Agent-CC doc`](../../README.md) for the top-level Agent-CC architecture and end-to-end scenario.
-2. Read [`tc-api doc`](../../core/tc-api/README.md) for the trusted build-to-runtime control path.
+2. Read [`tc_api doc`](../../core/tc_api/README.md) for the trusted build-to-runtime control path.
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ git clone --branch dev/v1.5 https://github.com/intel/confidential-computing-zoo.
 python3 -m venv tcapi_env
 source tcapi_env/bin/activate
 
-cd confidential-computing-zoo/cczoo/agent-cc/core/tc-api/
+cd confidential-computing-zoo/cczoo/agent-cc/core/tc_api/
 pip install -r requirements.txt
 bash setup.sh
 
@@ -46,7 +46,7 @@ export DOCKER_BUILDKIT=1
 
 ## Start Trust Services
 
-The OpenClaw example assumes the trust-service container and a local KBS are available before TC-API starts.
+The OpenClaw example assumes the trust-service container and a local KBS are available before TC API starts.
 
 Start trust-service from [`trust-service`](../../core/trust-service/):
 
@@ -122,20 +122,20 @@ docker run -d -p 8080:8080 --network host \
 	/usr/local/bin/kbs --config-file /etc/kbs/kbs-config.toml
 ```
 
-## Start TC-API
+## Start TC API
 
-For the OpenClaw walkthrough, start the shared control plane from [`tc-api`](../../core/tc-api/):
+For the OpenClaw walkthrough, start the shared control plane from [`tc_api`](../../core/tc_api/):
 
 ```bash
-cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc-api/
+cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc_api/
 ./start.sh restart --reset-state dev
 ```
 
-If you prefer running the service in a container, build the [`Dockerfile`](../../core/tc-api/Dockerfile) and expose the same host sockets and attestation devices described above.
+If you prefer running the service in a container, build the [`Dockerfile`](../../core/tc_api/Dockerfile) and expose the same host sockets and attestation devices described above.
 
 ```bash
 # build images
-cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc-api/
+cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc_api/
 docker build -f ./Dockerfile -t {image_name:image_tag} ../
 
 # start tcapi
@@ -152,7 +152,7 @@ docker run -it --network host --privileged \
 
 ## OpenClaw Build, Publish, and Launch Flow
 
-The shared TC-API flow below is the path OpenClaw is expected to use.
+The shared TC API flow below is the path OpenClaw is expected to use.
 
 1. Create an encrypted workspace with `POST /api/create_luks` if you want build material, generated artifacts, and deployment data isolated under LUKS.
 2. Mount the encrypted workspace with `POST /api/mount_luks` before uploading Dockerfiles, binaries, configs, or data for the OpenClaw image.
@@ -177,7 +177,7 @@ venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore
 venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore-login oob \
 	build --payload-json '{"dockerfile":"<path or content>","app_binary":"<openclaw artifact>","configs":["<config file>"],"data":["<data file>"],"encrypt":true,"user_id":"<sigstore account>","luks_path":"<mounted luks path>"}'
 ```
-### tc-api server show build logs
+### tc_api server show build logs
 
 **Notice: when log show as sigstore toekn is malformed or missing, need to refresh the token by interactivate mode.**
 
@@ -189,7 +189,7 @@ venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore
 	publish --payload-json '{"build_id":"<build_id>","image_id":"<image_id>","user_id":"<sigstore account>","sbom_url":"<sbom path>","log_evidence":true,"luks_path":"<mounted luks path>"}'
 ```
 
-### tc-api server show launch logs
+### tc_api server show launch logs
 
 ![Build logs](./images/publish.png)
 
@@ -198,7 +198,7 @@ venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore
 venv/bin/python -m tc_api.cli.client   --base-url http://localhost:8000   --sigstore-login oob \
 	deploy --payload-json -d '{"image_id":"tc-api-build-<build_id>","build_id":"<build_id>","user_id":"<sigstore account>","image_url":"docker.io/<repo>/tc-api-build-<build_id>:latest-encrypted","sbom_url":"<sbom path>","attestation_required":true,"luks_path":"<mounted luks path>","dockercmd":"<optional openclaw docker run command>"}'
 ```
-### tc-api server show deploy logs
+### TC API server show deploy logs
 
 ![Build logs](./images/deploy.png)
 
@@ -212,13 +212,13 @@ After each phase, inspect the corresponding result object and trust evidence:
 - `GET /api/transparency-log/{log_id}` for the concrete immutable log entry
 - `POST /api/get-summaryTransparencylog` for a single summary over build, publish, and launch log records
 
-The full payload shapes and additional operator notes remain in [`README.md`](../../core/tc-api/README.md).
+The full payload shapes and additional operator notes remain in [`README.md`](../../core/tc_api/README.md).
 
 ## OpenClaw runtime measurements
 
 ### Build and run gateway Docker container
 
-**Notice: If you do not use tc-api, please refer to `run-sbx.sh`.**
+**Notice: If you do not use TC API service, please refer to `run-sbx.sh`.**
 
 
 ```bash
@@ -266,12 +266,12 @@ After launching openclaw-gateway and completing the configuration, you can acces
 
 ![openclaw logs](./images/openclaw.png)
 
-All docker operation transparency log can be show in `https://rekor.sigstore.dev/api/v1/log/entries?logIndex={log_index}`. And the `log_index` can be checked in `<workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc-api/logs/trucon-latest.log`
+All docker operation transparency log can be show in `https://rekor.sigstore.dev/api/v1/log/entries?logIndex={log_index}`. And the `log_index` can be checked in `<workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc_api/logs/trucon-latest.log`
 
 ![openclaw logs](./images/openclawLog.png)
 
 ## Related Core Services
 
-- [`tc-api`](../../core/tc-api/) for trusted build, publish, launch, and verification orchestration
+- [`tc_api`](../../core/tc_api/) for trusted build, publish, launch, and verification orchestration
 - [`tlog`](../../core/tlog/) for immutable signed runtime evidence and digest rules
 - [`trust-service`](../../core/trust-service/) for attestation support services used by the deployment flow

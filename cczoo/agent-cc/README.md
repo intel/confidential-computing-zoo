@@ -10,11 +10,15 @@
 
 Agent-CC is a **deployment architecture and reference implementation** for running agentic AI workloads on Intel Xeon processors with Intel TDX (Trust Domain Extensions): it is designed to be agnostic for agent-framework and services, and combines runtime isolation, trusted execution controls, and service-to-service trust verification as one coherent system.
 
-- Agent-CC addresses this through three interconnected pillars: **Lifecycle Data Protection** (hardware memory encryption, attestation-gated encrypted storage, immutable audit log), **Build-to-Runtime Integrity** (supply chain verification connected to runtime measurements via TC-API), and **Trusted Service Composition** (mutual attestation before sensitive data is exchanged with external services).
+Agent-CC addresses this through three interconnected pillars: 
+  - **Lifecycle Data Protection** (hardware memory encryption, attestation-gated encrypted storage, immutable audit log)
+  - **Build-to-Runtime Integrity** (supply chain verification connected to runtime measurements via TC-API)
+  - **Trusted Service Composition** (mutual attestation before sensitive data is exchanged with external services).
 
-- Agent frameworks (OpenClaw, Hermes-Agent, etc.) and their dependent services run **unmodified**. Agent-CC introduces confidential computing through deployment-side plugins or service sidecars, requiring only minimal changes to the frameworks and services themselves. This low-intrusion, and in some cases near-zero-intrusion, approach preserves existing agent and service deployments while significantly reducing adoption cost and operational complexity. 
+Agent frameworks (OpenClaw, Hermes-Agent, etc.) and their dependent services run **unmodified**.
+Agent-CC introduces confidential computing through deployment-side plugins or service sidecars, requiring only minimal changes to the frameworks and services themselves. This low-intrusion, and in some cases near-zero-intrusion, approach preserves existing agent and service deployments while significantly reducing adoption cost and operational complexity. 
 
-- Confidential Computing, or Intel TDX-based deployment here, is an enabling foundation layer: it is designed to augment existing agent deployment and security mechanisms for working alongside existing sandboxing, policy enforcement, supply-chain controls, and service authorization, extending those mechanisms with hardware-rooted isolation, verifiable runtime evidence, and attestation-bound access control to collectively meet the higher security demands of confidential agent deployments.
+Confidential Computing, or Intel TDX-based deployment here, is an enabling foundation layer: it is designed to augment existing agent deployment and security mechanisms for working alongside existing sandboxing, policy enforcement, supply-chain controls, and service authorization, extending those mechanisms with hardware-rooted isolation, verifiable runtime evidence, and attestation-bound access control to collectively meet the higher security demands of confidential agent deployments.
 
 ## 🏗️ Agentic AI Architecture & Security Threats
 
@@ -83,9 +87,7 @@ This model protects three critical data surfaces:
 Together, these controls provide a coherent protection path: sensitive data is encrypted by default, decrypted only inside verified TD boundaries, and shared only after trust verification succeeds.
 
 ![Full data lifecycle protection](./images/full-data-lifecycle-protection.png)
-
-**Figure 1: Full data lifecycle protection - OpenClaw as example**
-
+<center>Figure 1: Full data lifecycle protection - OpenClaw as example</center>
 
 #### Build-to-Runtime Integrity
 
@@ -100,31 +102,18 @@ In agent systems, build-time intent and deployment policy are not sufficient on 
 
 ![Build to runtime](./images/build-2-runtime.png)
 
-**Figure 2: From Build Artifacts to Attested Runtime**
+<center>Figure 2: From Build Artifacts to Attested Runtime**</center>
 
-## Reference Code Structure
-
-This chapter explains how Agent-CC code is organized for deployment and integration. The structure is split into `Core Services` and `Adapters`, so users can follow this guide to migrate existing agents and services into the Agent-CC model with minimal changes and achieve an end-to-end (E2E) protection flow.
+## Key components
 
 **Core Services**
 
-Core services implement the three architecture requirements described above:
-- **[TC-API](core/tc-api)**: Trusted build/publish/launch control path (for build-to-runtime verification and policy enforcement).
+[Core Services](core/README.md) implement the three architecture requirements described above:
+- **[TC-API](core/tc_api)**: Trusted build/publish/launch control path (for build-to-runtime verification and policy enforcement).
 - **[Trusted Log (TLog)](core/tlog)**: Immutable, signed runtime evidence and audit trail.
 - **Argus (Trusted Service Composition)**: Cross-service trust architecture for attested service admission and trusted interaction. Detailed design will be added in the next version.
 
-**Adapters**
+**Adapters** 
 
-Adapters contain agent- or service-specific integration logic. Their goal is to make existing frameworks and external services easier to onboard into Agent-CC without major business-logic refactoring, while still binding execution, identity, and data access to attestation-based trust controls.
+ - **[Openclaw](./adapters/OpenClaw/scripts)** : povides a way to independently build the openclaw-gateway image and customize relevant configurations.This allows OpenClaw to run in a secure/isolated environment, avoiding any unnecessary impact on the host machine.
 
-### Key Components
-
-The following components form the Agent-CC project additions. Each plays a distinct role in the trust chain—from build-time orchestration to runtime measurement and agent-accessible TEE primitives.
-
-#### TC-API (Trusted Container Pipeline)
-
-- **[TC-API](core/tc-api/README.md)** : provides build image, publish image, and deploy image workflows.
-
-#### Trusted Log
-
-- **[Trusted Log](core/tlog/README.md)** : provides the core domain types, abstract interfaces, error classes, deterministic digest helpers, and the backend namespaces used by TruCon and verification tooling.
