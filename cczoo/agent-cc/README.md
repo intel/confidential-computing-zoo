@@ -12,7 +12,9 @@ Agent-CC is a **deployment architecture and reference implementation** for runni
 
 Agent-CC addresses this through three interconnected pillars: 
   - **Lifecycle Data Protection** (hardware memory encryption, attestation-gated encrypted storage, immutable audit log)
-  - **Build-to-Runtime Integrity** (supply chain verification connected to runtime measurements via TC-API)
+
+  - **Build-to-Runtime Integrity** (supply chain verification connected to runtime measurements via TC API)
+
   - **Trusted Service Composition** (mutual attestation before sensitive data is exchanged with external services).
 
 Agent frameworks (OpenClaw, Hermes-Agent, etc.) and their dependent services run **unmodified**.
@@ -87,11 +89,12 @@ This model protects three critical data surfaces:
 Together, these controls provide a coherent protection path: sensitive data is encrypted by default, decrypted only inside verified TD boundaries, and shared only after trust verification succeeds.
 
 ![Full data lifecycle protection](./images/full-data-lifecycle-protection.png)
-<center>Figure 1: Full data lifecycle protection - OpenClaw as example</center>
+
+<div align="center">Figure 1: Full data lifecycle protection - OpenClaw as example</div>
 
 #### Build-to-Runtime Integrity
 
-In agent systems, build-time intent and deployment policy are not sufficient on their own: the system must prove what is actually running, detect runtime deviation from approved software and policy, and provide verifiable execution claims to verifiers and peer services. Through **TC-API**, Agent-CC connects supply chain evidence to attested runtime state so trust decisions are enforced in execution, not only in design.
+In agent systems, build-time intent and deployment policy are not sufficient on their own: the system must prove what is actually running, detect runtime deviation from approved software and policy, and provide verifiable execution claims to verifiers and peer services. Through **TC API**, Agent-CC connects supply chain evidence to attested runtime state so trust decisions are enforced in execution, not only in design.
 
 
 - **End-to-end trust chain**: Connects build artifacts to attested runtime execution, ensuring workloads are verified before execution.
@@ -102,18 +105,21 @@ In agent systems, build-time intent and deployment policy are not sufficient on 
 
 ![Build to runtime](./images/build-2-runtime.png)
 
-<center>Figure 2: From Build Artifacts to Attested Runtime**</center>
+<div align="center">Figure 2: From Build Artifacts to Attested Runtime</div>
 
 ## Key components
 
 **Core Services**
 
 [Core Services](core/README.md) implement the three architecture requirements described above:
-- **[TC-API](core/tc_api)**: Trusted build/publish/launch control path (for build-to-runtime verification and policy enforcement).
+
+- **[TC API](core/tc_api)**: Trusted build/publish/launch control path (for build-to-runtime verification and policy enforcement).
+
 - **[Trusted Log (TLog)](core/tlog)**: Immutable, signed runtime evidence and audit trail.
 - **Argus (Trusted Service Composition)**: Cross-service trust architecture for attested service admission and trusted interaction. Detailed design will be added in the next version.
 
 **Adapters** 
 
- - **[Openclaw](./adapters/OpenClaw/scripts)** : povides a way to independently build the openclaw-gateway image and customize relevant configurations.This allows OpenClaw to run in a secure/isolated environment, avoiding any unnecessary impact on the host machine.
+ - **[OpenClaw](./adapters/OpenClaw/README.md)** : povides a way to independently build the openclaw-gateway image and customize relevant configurations.This allows OpenClaw to run in a secure/isolated environment, avoiding any unnecessary impact on the host machine.
+
 
