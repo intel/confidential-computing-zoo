@@ -38,14 +38,12 @@ pub trait GuardEngine {
 
 /// Caller-side inputs that influence agent-originated request construction and policy evaluation.
 pub struct GuardContext {
-  /// Stable agent or agent-runtime identity used for local policy and audit correlation.
+  /// Stable caller agent identifier used for local policy, audit correlation, and request binding.
   pub caller_id: String,
-  /// Intended audience carried into the evidence request and binding hash.
-  pub audience: String,
   /// Optional local policy selector when multiple policies exist.
   pub policy_id: Option<String>,
   /// Claim classes the caller wants returned by the peer and verifier.
-  pub requested_claims: Vec<String>,
+  pub requested_claims: Vec<RequestedClaim>,
   /// Verification strictness knobs enforced by the Guard and RA adapter.
   pub verification_options: VerificationOptions,
 }
@@ -54,10 +52,10 @@ pub struct GuardContext {
 pub struct TargetService {
   /// Logical service name used in policy and target matching.
   pub service_name: String,
-  /// Network location of the peer evidence endpoint.
-  pub evidence_endpoint: EvidenceEndpoint,
-  /// Optional expected peer identity, such as a SPIFFE ID.
-  pub expected_identity: Option<String>,
+  /// Concrete URI the caller intends to contact.
+  pub target_uri: String,
+  /// Optional transport hint such as `https`, `unix`, or `mesh`.
+  pub target_transport: Option<String>,
 }
 
 /// Protocol request sent by the agent-side Guard to the peer Evidence Provider.
@@ -66,51 +64,39 @@ pub struct EvidenceRequest {
   pub version: String,
   /// Fresh caller-generated challenge that must be bound into returned evidence.
   pub nonce: String,
-  /// Intended audience for the request and returned evidence.
-  pub audience: String,
+  /// Stable caller agent identifier copied from `GuardContext.caller_id`.
+  pub caller_id: String,
   /// Human-readable profile identifier used to select deployment semantics.
   pub profile_version: String,
   /// Digest of the exact profile body the caller expects the peer to follow.
   pub profile_digest: String,
-  /// Peer description used to scope the request and its binding hash.
-  pub target: EvidenceTarget,
+  /// Target service descriptor used to scope the request and its binding hash.
+  pub target: TargetService,
   /// Specific claim families requested from the peer.
   pub requested_claims: Vec<RequestedClaim>,
 }
 
-/// Request-scoped target view embedded into `EvidenceRequest` and binding.
-pub struct EvidenceTarget {
-  /// Policy-relevant logical service identifier.
-  pub service_name: String,
-  /// Concrete URI the caller intends to contact.
-  pub target_uri: String,
-  /// Optional expected SPIFFE identity for identity-aware deployments.
-  pub expected_spiffe_id: Option<String>,
-}
-
-/// Abstract endpoint reference used by the fetcher to contact the peer.
-pub struct EvidenceEndpoint {
-  /// Canonical endpoint URI for evidence retrieval.
-  pub uri: String,
-  /// Optional transport hint such as `https`, `unix`, or `mesh`.
-  pub transport: Option<String>,
+pub enum GuardDecision {
+  Allow { claims: VerifiedClaims },
+  Deny { reason: DenyReason, claims: Option<VerifiedClaims> },
 }
 
 pub enum RequestedClaim {
   TeeQuote,
-  RuntimeClaims,
   IdentityClaims,
 }
 
 /// Caller-controlled verification requirements applied before allow or deny.
 pub struct VerificationOptions {
   /// Maximum accepted age for nonce-bound evidence when freshness is enforced.
+  /// `None` means freshness is checked only through any profile-defined defaults.
   pub nonce_max_age_seconds: Option<u64>,
   /// Require quote-backed evidence instead of identity-only verification.
   pub require_quote: bool,
   /// Require attested identity issuance when L3 authorization is needed.
   pub require_attested_identity: bool,
   /// Optional verifier instance or trust authority identifier.
+  /// `None` means the caller accepts the verifier selected by local Argus configuration.
   pub expected_verifier: Option<String>,
 }
 
@@ -125,9 +111,21 @@ pub enum DenyReason {
   PolicyRejected,
 }
 
-pub enum GuardDecision {
-  Allow { claims: VerifiedClaims },
-  Deny { reason: DenyReason, claims: Option<VerifiedClaims> },
+pub enum ArgusError {
+  InvalidRequest,
+  EvidenceFetchFailed,
+  VerificationFailed,
+  PolicyEvaluationFailed,
+  UnsupportedVerifier,
+  Timeout,
+}
+
+pub enum EvidenceError {
+  UnsupportedClaim,
+  LocalCollectionFailed,
+  BindingConstructionFailed,
+  QuoteGenerationFailed,
+  Timeout,
 }
 ```
 
@@ -139,7 +137,6 @@ This phase sends the already-constructed `EvidenceRequest` to the peer's evidenc
 pub trait EvidenceFetcher {
   async fn request_evidence(
     &self,
-    endpoint: EvidenceEndpoint,
     request: EvidenceRequest,
   ) -> Result<Evidence, ArgusError>;
 }
@@ -160,7 +157,7 @@ sequenceDiagram
 
   C->>G: verify_target(target, context)
   G->>G: build_evidence_request()
-  G->>F: request_evidence(endpoint, EvidenceRequest)
+  G->>F: request_evidence(EvidenceRequest)
   alt Direct mode
     F->>P: POST /ra/v1/evidence
   else Nginx / Envoy / mesh mode
@@ -169,7 +166,7 @@ sequenceDiagram
   end
   P->>E: get_evidence(request)
   E->>R: collect local identity and posture
-  R-->>E: runtime facts / identity material
+  R-->>E: runtime facts / service credentials
   E-->>P: Evidence
   alt Direct mode
     P-->>F: Evidence
@@ -188,18 +185,17 @@ sequenceDiagram
 
 This phase runs inside the peer-side Evidence Provider. It accepts the request, collects local runtime facts, and emits the evidence envelope.
 
-The service-side model is easier to read if you separate it into four layers:
+The service-side model is easier to read if you separate it into three layers:
 
 1. Collection layer: raw local facts obtained from the protected workload through `ServiceRuntimeBinding`.
-2. Bound claim layer: the subset of those facts that is bound into quote `report_data` and returned as `BindingClaims`.
+2. Bound claim layer: the subset of those facts returned as `BindingClaims` (which may participate in quote binding depending on the assurance level).
 3. Response layer: the `Evidence` envelope returned to the caller.
-4. Export layer: additional runtime or identity facts returned for verifier normalization even when they are not the primary bound identity surface.
 
 Practical placement rule:
 
-- If a fact is part of the service identity the caller may authorize against, put it under `BindingClaims.service_identity`.
-- If a fact is posture or freshness metadata for that bound claim set, put it elsewhere inside `BindingClaims`.
-- If a fact is emitted mainly for verifier normalization or diagnostics outside the bound identity bundle, put it in `runtime_claims` or `identity_claims`.
+- If a fact is part of the service identity the caller may authorize against (including logical service attributes and image/launch digests), put it under `BindingClaims.service_identity`.
+- If a fact is posture or freshness metadata for that local claim set, put it elsewhere inside `BindingClaims`.
+- If a standard workload identity credential (like an SVID or token) is extracted and verified on the peer side, it is validated and returned under `identity_claims` as standard export claims.
 
 #### Collection Layer
 
@@ -215,10 +211,10 @@ pub trait ServiceRuntimeBinding {
   /// Return the local logical service identifier from deployment-owned metadata or
   /// configuration, not from remote user input or ordinary application payloads.
   async fn service_name(&self) -> Result<String, EvidenceError>;
-  /// Return the stable workload identifier from the deployment domain, such as a
+  /// Return the stable service identifier from the deployment domain, such as a
   /// Kubernetes workload label, pod owner mapping, VM role identifier, or another
   /// profile-defined local identity source.
-  async fn workload_id(&self) -> Result<String, EvidenceError>;
+  async fn service_id(&self) -> Result<String, EvidenceError>;
   /// Return the resolved image digest from local runtime or orchestrator metadata,
   /// such as CRI, containerd, or Kubernetes container status. This should be the
   /// deployed OCI digest like `sha256:...`, not a hash recomputed from the live
@@ -229,16 +225,13 @@ pub trait ServiceRuntimeBinding {
   /// or profile-defined boot inputs. If no stable, locally observable launch
   /// source exists, return `None` rather than inventing an ad hoc digest.
   async fn launch_digest(&self) -> Result<Option<String>, EvidenceError>;
-  /// Return the local runtime engine name from host or platform inspection, such
-  /// as `containerd`, `kata`, `qemu`, or another profile-defined runtime label.
-  async fn runtime_engine(&self) -> Result<Option<String>, EvidenceError>;
-  /// Return locally accessible identity material, such as SPIFFE credentials,
+  /// Return locally accessible service credentials, such as SPIFFE credentials,
   /// mounted certificates, or workload tokens, when the runtime exposes them.
-  async fn identity_material(&self) -> Result<Option<IdentityMaterial>, EvidenceError>;
+  async fn service_credentials(&self) -> Result<Option<ServiceCredentials>, EvidenceError>;
 }
 
-/// Raw identity material accessible from the local runtime binding layer.
-pub struct IdentityMaterial {
+/// Raw service credentials accessible from the local runtime binding layer.
+pub struct ServiceCredentials {
   pub spiffe_id: Option<String>,
   pub certificate_chain_pem: Option<Vec<String>>,
   pub token: Option<String>,
@@ -254,20 +247,14 @@ These structures represent the part of the local service view that the Evidence 
 pub struct BindingClaims {
   /// Overall assurance floor claimed for this binding bundle.
   pub assurance_level: BindingAssuranceLevel,
-  /// Monotonic collection marker used for freshness and replay diagnostics.
+  /// Opaque monotonic collection marker, such as RFC3339 time plus a collector-local sequence.
   pub collection_epoch: String,
-  /// Deployment profile identifier used when collecting and normalizing claims.
-  pub profile_version: String,
-  /// Optional digest of the exact profile body governing this collection.
-  pub profile_digest: Option<String>,
   /// Stable and instance-scoped service identity facts.
-  pub service_identity: ServiceIdentityClaims,
+  pub service_identity: BindingIdentityClaims,
   /// Optional posture signals exposed by the local workload.
-  pub posture: PostureClaims,
+  pub posture: BindingPostureClaims,
   /// Freshness assertions for the bound claim set.
   pub freshness: BindingFreshness,
-  /// High-level summary of which local sources were consulted.
-  pub source_summary: Option<SourceSummary>,
   /// Claim-to-source mapping before verifier normalization.
   pub claim_support: ClaimSupportMap,
   /// Claim-to-source mapping elevated by verifier-validated support.
@@ -284,50 +271,63 @@ pub enum BindingAssuranceLevel {
 }
 
 /// Stable service identity and live-instance facts carried in binding claims.
-pub struct ServiceIdentityClaims {
+pub struct BindingIdentityClaims {
   /// Logical service identifier used in policy matching; canonical form is lowercase ASCII.
   pub service_name: String,
-  /// Stable workload identifier in the deployment domain after profile-defined normalization.
-  pub workload_id: String,
+  /// Stable service identifier in the deployment domain after profile-defined normalization.
+  pub service_id: String,
   /// Live instance identifier such as pod UID or VM instance ID in canonical scoped form.
   pub instance_id: String,
   /// Scope of the instance identifier, such as `pod`, `vm`, or `process`.
   pub instance_scope: String,
   /// Optional image digest for reference-value or workload matching in `sha256:<64-lowercase-hex>` form.
   pub image_digest: Option<String>,
+  /// Optional launch digest of boot-state/launch-setup inputs.
+  pub launch_digest: Option<String>,
   /// Optional SPIFFE identity when available locally as exactly one normalized SPIFFE ID URI.
   pub spiffe_id: Option<String>,
 }
 
 /// Service posture facts that may be policy-relevant under a profile.
-pub struct PostureClaims {
-  /// Optional gateway posture enum in lowercase profile-defined canonical form.
-  pub gateway_mode: Option<String>,
+pub struct BindingPostureClaims {
+  /// Optional gateway posture enum in profile-defined canonical form.
+  pub gateway_mode: Option<GatewayMode>,
   /// Immutable policy content identifier preferred for canonical binding.
   pub policy_version: Option<String>,
+}
+
+pub enum GatewayMode {
+  /// Serializes as `private`.
+  Private,
+  /// Serializes as `public`.
+  Public,
+  /// Serializes as `loopback_only`.
+  LoopbackOnly,
+  /// Serializes as `mesh`.
+  Mesh,
 }
 
 /// Freshness assertions attached to the binding claim set.
 pub struct BindingFreshness {
   /// Whether binding is request-scoped, session-scoped, or profile-defined.
-  pub binding_mode: String,
+  /// Canonical serialized values are `request_scoped`, `session_scoped`, and `profile_defined`.
+  pub binding_mode: BindingMode,
   /// Observation timestamp used for staleness checks.
   pub observed_at: String,
   /// Maximum acceptable age for this claim bundle.
   pub max_age_seconds: u64,
 }
 
-pub struct SourceSummary {
-  pub mounted_metadata: bool,
-  pub runtime_introspection: bool,
-  pub spiffe_identity: bool,
-  pub local_socket_posture: bool,
+pub enum BindingMode {
+  RequestScoped,
+  SessionScoped,
+  ProfileDefined,
 }
 ```
 
 #### Response And Export Layer
 
-These structures are returned to the caller. `Evidence` is the envelope; `runtime_claims` and `identity_claims` are auxiliary exported claim surfaces used by verifier normalization and caller-side policy.
+These structures are returned to the caller. `Evidence` is the envelope; `identity_claims` is an auxiliary exported claim surface used by verifier normalization and caller-side policy.
 
 ```rust
 /// Service-produced response envelope returned to the caller.
@@ -348,10 +348,8 @@ pub struct Evidence {
   pub report_data: String,
   /// Metadata describing how the request nonce and target context were bound.
   pub nonce_binding: NonceBinding,
-  /// Runtime facts exported by the service for verifier normalization and policy.
-  pub runtime_claims: RuntimeClaims,
   /// Optional identity artifacts or normalized identity hints from the service side.
-  pub identity_claims: Option<IdentityClaims>,
+  pub identity_claims: Option<ExportIdentityClaims>,
   /// Service-side generation timestamp.
   pub generated_at: String,
   /// Optional response expiry for freshness enforcement.
@@ -370,17 +368,8 @@ pub struct NonceBinding {
   pub bound_fields: Vec<String>,
 }
 
-/// Service-emitted runtime facts outside the binding-claims wrapper.
-pub struct RuntimeClaims {
-  pub service_name: String,
-  pub workload_id: String,
-  pub image_digest: Option<String>,
-  pub launch_digest: Option<String>,
-  pub runtime_engine: Option<String>,
-}
-
-/// Identity values emitted or normalized for the target workload.
-pub struct IdentityClaims {
+/// Identity values emitted or normalized for the target workload (Export Layer).
+pub struct ExportIdentityClaims {
   /// Canonical SPIFFE ID when workload identity exists.
   pub spiffe_id: Option<String>,
   /// SPIFFE trust domain or equivalent issuer namespace.
@@ -396,7 +385,8 @@ pub enum VerifierKind {
   Composite,
 }
 
-pub struct MeasurementClaims {
+/// Measurement results used for reference-value and launch verification (Export Layer).
+pub struct ExportMeasurementClaims {
   pub image_digest: Option<String>,
   pub launch_digest: Option<String>,
   pub rtmr0: Option<String>,
@@ -405,8 +395,8 @@ pub struct MeasurementClaims {
   pub rtmr3: Option<String>,
 }
 
-/// Verifier assertion that an identity artifact was issued through attested flow.
-pub struct AttestedIssuanceClaims {
+/// Verifier assertion that an identity artifact was issued through attested flow (Export Layer).
+pub struct ExportAttestedIssuanceClaims {
   pub identity_type: String,
   pub issuer: String,
   pub issued_identity: String,
@@ -432,23 +422,19 @@ pub trait RaAdapter {
   async fn verify_evidence(
     &self,
     evidence: Evidence,
-    expected_binding: EvidenceBinding,
+    expected_binding: ExpectedBinding,
     options: VerificationOptions,
   ) -> Result<VerifiedClaims, ArgusError>;
 }
 
 /// Inputs the verifier must check when validating the response against caller intent.
-pub struct EvidenceBinding {
+pub struct ExpectedBinding {
   /// Binding algorithm expected by the caller.
   pub algorithm: String,
   /// Expected report-data digest or encoding derived from the request.
   pub report_data: String,
   /// Digest of the caller-side canonical request bytes.
   pub canonical_request_digest: String,
-  /// Optional profile identifier that should match the evidence payload.
-  pub profile_version: Option<String>,
-  /// Optional profile digest that should match the evidence payload.
-  pub profile_digest: Option<String>,
 }
 
 /// Verifier-normalized output consumed by caller-side policy.
@@ -470,15 +456,13 @@ pub struct VerifiedClaims {
   /// Normalized TCB status if the verifier exposes one.
   pub tcb_status: Option<String>,
   /// Measurement results used for reference-value and launch verification.
-  pub measurements: MeasurementClaims,
-  /// Runtime facts accepted into the normalized verifier result.
-  pub runtime_claims: RuntimeClaims,
+  pub measurements: ExportMeasurementClaims,
   /// Bound local claims when the verifier accepts and preserves them.
   pub binding_claims: Option<BindingClaims>,
   /// Evidence that workload identity was issued through attested flow.
-  pub attested_issuance: Option<AttestedIssuanceClaims>,
+  pub attested_issuance: Option<ExportAttestedIssuanceClaims>,
   /// Normalized workload identity claims.
-  pub identity_claims: Option<IdentityClaims>,
+  pub identity_claims: Option<ExportIdentityClaims>,
   /// Verifier decision timestamp.
   pub verified_at: String,
   /// Optional expiry of the normalized verification result.
@@ -557,23 +541,22 @@ The conceptual binding model now lives in [Architecture](./architecture.md#evide
 
 ### Evidence Request
 
-The JSON example below corresponds directly to `EvidenceRequest` plus nested `EvidenceTarget` and `RequestedClaim` values.
+The JSON example below corresponds directly to `EvidenceRequest` plus nested `TargetService` and `RequestedClaim` values.
 
 ```json
 {
   "version": "v1",
   "nonce": "base64url-random-challenge",
-  "audience": "caller-service-or-agent-id",
+  "caller_id": "agent-cc-01.prod",
   "profile_version": "k8s-sidecar-profile/v3",
   "profile_digest": "sha256:<profile-digest>",
   "target": {
     "service_name": "memory-service",
     "target_uri": "https://memory-service.prod:8443",
-    "expected_spiffe_id": "spiffe://agent-cc.local/ns/prod/sa/memory-service"
+    "target_transport": "https"
   },
   "requested_claims": [
     "tee_quote",
-    "runtime_claims",
     "identity_claims"
   ]
 }
@@ -581,19 +564,19 @@ The JSON example below corresponds directly to `EvidenceRequest` plus nested `Ev
 
 ### Canonical Binding Claims Example
 
-The JSON example below corresponds directly to `BindingClaims` plus nested `ServiceIdentityClaims`, `PostureClaims`, `BindingFreshness`, and `SourceSummary` values.
+The JSON example below corresponds directly to `BindingClaims` plus nested `BindingIdentityClaims`, `BindingPostureClaims`, and `BindingFreshness` values.
 
 ```json
 {
   "assurance_level": "L2",
   "collection_epoch": "2026-06-01T00:00:00Z#1",
-  "profile_version": "k8s-sidecar-profile/v3",
   "service_identity": {
     "service_name": "memory-service",
-    "workload_id": "memory-service-prod",
+    "service_id": "memory-service-prod",
     "instance_id": "pod-7f8d9c6d8b-rx2bz",
     "instance_scope": "pod",
     "image_digest": "sha256:...",
+    "launch_digest": "sha384:<launch-digest>",
     "spiffe_id": "spiffe://agent-cc.local/ns/prod/sa/memory-service"
   },
   "posture": {
@@ -601,15 +584,9 @@ The JSON example below corresponds directly to `BindingClaims` plus nested `Serv
     "policy_version": "2026-06-argus-default"
   },
   "freshness": {
-    "binding_mode": "request-scoped",
+    "binding_mode": "request_scoped",
     "observed_at": "2026-06-01T00:00:00Z",
     "max_age_seconds": 60
-  },
-  "source_summary": {
-    "mounted_metadata": true,
-    "runtime_introspection": true,
-    "spiffe_identity": true,
-    "local_socket_posture": false
   },
   "claim_support": {
     "service_name": ["runtime_introspection", "mounted_metadata"],
@@ -631,7 +608,7 @@ The JSON example below corresponds directly to `BindingClaims` plus nested `Serv
 
 ### Evidence Response
 
-The JSON example below corresponds directly to `Evidence` plus nested `BindingClaims`, `NonceBinding`, `RuntimeClaims`, and `IdentityClaims` values.
+The JSON example below corresponds directly to `Evidence` plus nested `BindingClaims`, `NonceBinding`, and `ExportIdentityClaims` values.
 
 ```json
 {
@@ -642,14 +619,13 @@ The JSON example below corresponds directly to `Evidence` plus nested `BindingCl
   "binding_claims": {
     "assurance_level": "L2",
     "collection_epoch": "2026-06-01T00:00:00Z#1",
-    "profile_version": "k8s-sidecar-profile/v3",
-    "profile_digest": "sha256:<profile-digest>",
     "service_identity": {
       "service_name": "memory-service",
-      "workload_id": "memory-service-prod",
+      "service_id": "memory-service-prod",
       "instance_id": "pod-7f8d9c6d8b-rx2bz",
       "instance_scope": "pod",
       "image_digest": "sha256:...",
+      "launch_digest": "sha384:<launch-digest>",
       "spiffe_id": "spiffe://agent-cc.local/ns/prod/sa/memory-service"
     },
     "posture": {
@@ -657,7 +633,7 @@ The JSON example below corresponds directly to `Evidence` plus nested `BindingCl
       "policy_version": "2026-06-argus-default"
     },
     "freshness": {
-      "binding_mode": "request-scoped",
+      "binding_mode": "request_scoped",
       "observed_at": "2026-06-01T00:00:00Z",
       "max_age_seconds": 60
     },
@@ -685,18 +661,12 @@ The JSON example below corresponds directly to `Evidence` plus nested `BindingCl
     "canonical_request_digest": "sha384:<hex-digest>",
     "bound_fields": [
       "nonce",
-      "audience",
+      "caller_id",
       "profile_version",
       "profile_digest",
       "target",
       "requested_claims"
     ]
-  },
-  "runtime_claims": {
-    "service_name": "memory-service",
-    "workload_id": "memory-service-prod",
-    "image_digest": "sha256:<image-digest>",
-    "launch_digest": "sha384:<launch-digest>"
   },
   "identity_claims": {
     "spiffe_id": "spiffe://agent-cc.local/ns/prod/sa/memory-service"
@@ -710,7 +680,7 @@ The JSON example below corresponds directly to `Evidence` plus nested `BindingCl
 
 ### Normalized Verifier Output
 
-The authoritative `EvidenceBinding` and `VerifiedClaims` interface definitions are declared in [Phase 4: Verifier Normalization](./api.md#phase-4-verifier-normalization). This section focuses on verifier semantics, adapter classes, and merge behavior.
+The authoritative `ExpectedBinding` and `VerifiedClaims` interface definitions are declared in [Phase 4: Verifier Normalization](./api.md#phase-4-verifier-normalization). This section focuses on verifier semantics, adapter classes, and merge behavior.
 
 The architectural verifier semantics, verifier classes, and composite merge rules now live in [Architecture](./architecture.md#verifier-contract). This API document keeps the concrete adapter interface and normalized output structures.
 
@@ -806,7 +776,6 @@ deployment_profile: k8s-sidecar
 
 claim_classes:
   - tee_quote
-  - runtime_claims
   - identity_claims
 performance_profile: strict-per-request
 extensions: []
@@ -830,7 +799,7 @@ claim_assurance_rules:
   service_identity.spiffe_id: L3
 policy_required_claims:
   - service_identity.service_name
-  - service_identity.workload_id
+  - service_identity.service_id
 optional_claims:
   - posture.gateway_mode
 
@@ -894,7 +863,7 @@ So policy is typically caller-local authorization configuration, even when the p
 | TCB status | Minimum accepted TCB level |
 | Measurements | Expected RTMR or reference values |
 | Nonce freshness | Proof that the response is bound to the caller challenge |
-| Workload identity | SPIFFE ID, trust domain, service name, workload ID, or image digest |
+| Workload identity | SPIFFE ID, trust domain, service name, service ID, or image digest |
 | Claim freshness | Maximum evidence age and timestamp validation |
 | Authorization subject | Whether the policy is authorizing the workload, the proxy, or a composite path |
 
@@ -911,7 +880,6 @@ policies:
     target:
       service_name: memory-service
       target_uri: https://memory-service.prod:8443
-      spiffe_id: spiffe://agent-cc.local/ns/prod/sa/memory-service
     evidence:
       tee_type: tdx
       require_nonce_bound: true
@@ -933,8 +901,8 @@ policies:
         - sha384:<expected-rtmr0>
       rtmr1:
         - sha384:<expected-rtmr1>
-    runtime_claims:
-      workload_id: memory-service-prod
+    service_identity:
+      service_id: memory-service-prod
       image_digest: sha256:<expected-image-digest>
     decision:
       fail_closed: true
@@ -949,7 +917,7 @@ Policy rules:
 
 - Fail closed when required fields are missing.
 - Fail closed when nonce binding is absent but required.
-- Fail closed when a runtime claim used by policy is not evidence-bound.
+- Fail closed when an identity or posture claim used by policy is not evidence-bound.
 - Fail closed when verifier results are incomplete.
 - If `authorization_subject.kind` is `CompositePath`, the policy must specify which proxy and workload claims are jointly required.
 
