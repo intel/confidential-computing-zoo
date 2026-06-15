@@ -106,7 +106,7 @@ An independently verified identity fact means the value is not only carried thro
 2. an image or launch identity accepted only after measurement-to-reference-value verification, or
 3. an endpoint or instance join accepted only after the profile's continuity and endpoint-binding predicates succeed.
 
-This distinction matters because quote binding proves integrity of the statement, not universal truth of the statement. A service can still attest to a wrong `service_name`, `workload_id`, or `spiffe_id` if those values come only from its own local view. Argus therefore treats such values as policy-authoritative only when they reach the minimum assurance required by the profile through quote binding, verifier normalization, attested issuance, reference-value matching, or another explicitly governed external authority.
+This distinction matters because quote binding proves integrity of the statement, not universal truth of the statement. A service can still attest to a wrong `service_name`, `service_id`, `image_digest`, `launch_digest`, or `spiffe_id` if those values come only from its own local view. Argus therefore treats such values as policy-authoritative only when they reach the minimum assurance required by the profile through quote binding, verifier normalization, attested issuance, reference-value matching, or another explicitly governed external authority.
 
 Operationally:
 
@@ -189,7 +189,7 @@ This split is deliberate: service-side components produce evidence, verifier-sid
 
 This section exists only to guarantee that the caller, service, and verifier hash the same bytes. It is not a separate feature.
 
-Field-specific normalization constraints for `service_name`, `workload_id`, `instance_id`, `image_digest`, `spiffe_id`, `policy_version`, and posture enums are documented on the corresponding Rust API fields in [API Contract](./api.md).
+Field-specific normalization constraints for `service_name`, `service_id`, `instance_id`, `image_digest`, `launch_digest`, `spiffe_id`, `policy_version`, and posture enums are documented on the corresponding Rust API fields in [API Contract](./api.md).
 
 Only these generic rules matter here:
 
@@ -242,7 +242,7 @@ $$
 These three inputs are bound into `report_data` for different reasons:
 
 1. `domain` gives domain separation. Without it, the same byte concatenation might be misinterpreted as belonging to another protocol.
-2. `canonical_request` binds the quote to this caller challenge and target context, especially the `nonce`, audience, profile, and target fields.
+2. `canonical_request` binds the quote to this caller challenge and target context, especially the `nonce`, `caller_id`, profile, and target fields.
 3. `canonical_binding_claims` binds the quote to the exact local identity and posture claims returned in the response, so the service cannot return one quote and a different unbound claim set.
 
 `report_data` is the right place for this binding because it is the caller-chosen data field that becomes covered by the attestation quote. Once the verifier confirms that the quote is valid and that its `report_data` matches the recomputed digest, the caller gains one attested statement tying together:
@@ -276,10 +276,10 @@ Argus closes that loop in three checks:
 The verifier recomputes the expected `report_data` from the caller's original `EvidenceRequest` and the returned `BindingClaims`. If the quote's `report_data` does not match, the evidence is not bound to this caller request.
 
 2. Service claim binding check.
-Because `BindingClaims` are part of the `report_data` hash input, the service cannot return a valid quote for one identity and then attach a different unbound `service_name`, `workload_id`, `image_digest`, or `spiffe_id` alongside it.
+Because `BindingClaims` are part of the `report_data` hash input, the service cannot return a valid quote for one identity and then attach a different unbound `service_name`, `service_id`, `image_digest`, `launch_digest`, or `spiffe_id` alongside it.
 
 3. Policy target match check.
-After verifier normalization, the caller compares `VerifiedClaims` against the intended target, such as `target.service_name`, `target.expected_spiffe_id`, required workload identifiers, reference values, and minimum assurance levels.
+After verifier normalization, the caller compares `VerifiedClaims` against the intended target, such as `target.service_name`, required service identifiers, reference values, and minimum assurance levels.
 
 This means the caller's confidence does not come from the quote alone. It comes from one attested chain:
 
