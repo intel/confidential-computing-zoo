@@ -1,0 +1,119 @@
+# syntax=docker/dockerfile:1.7
+
+# Copyright (c) 2026 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Dockerfile.sbx — OpenClaw Gateway, sandbox mode
+#
+# Extends ghcr.io/openclaw/openclaw:latest with:
+#   1. Docker CLI        — lets the gateway launch sandbox/skill sibling
+#                          containers via the mounted docker.sock (DooD).
+#   2. gosu              — used by the entrypoint to drop from root to node
+#                          after fixing named-volume ownership.
+#   3. entrypoint-sbx.sh — handles first-boot config init + privilege drop.
+#
+# Build:
+#   docker build -f Dockerfile.sbx -t openclaw-sbx:latest .
+#
+# Run (see scripts/docker/run-sbx.sh for a full example):
+#   DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+#   docker run -d --name openclaw-gateway --init --restart unless-stopped \
+#     -v openclaw-config:/home/node/.openclaw \
+#     -v openclaw-workspace:/home/node/.openclaw/workspace \
+#     -v /var/run/docker.sock:/var/run/docker.sock \
+#     --group-add "$DOCKER_GID" \
+#     -p 18789:18789 -p 18790:18790 \
+#     -e OPENCLAW_GATEWAY_TOKEN=<your-token> \
+#     openclaw-sbx:latest
+
+FROM ghcr.io/openclaw/openclaw:latest
+
+# Re-elevate to root for installation steps.
+# The base image ends with USER node; we need root to install packages.
+USER root
+
+# Install Docker CLI and gosu.
+#
+# Docker CLI (docker-ce-cli):
+#   Required for the gateway to issue `docker run` commands that create
+#   sandbox / skill sibling containers via the mounted docker.sock.
+#   Only the CLI binary is installed — no Docker daemon runs in the container.
+#   Adds ~50 MB to the image.
+#
+# gosu:
+#   Used by entrypoint-sbx.sh to permanently drop from root to the 'node'
+#   user after performing the chown step.  Preferred over `su -c` because
+#   it replaces the root process (exec semantics) with no shell wrapper.
+#
+# GPG fingerprint: verified before the Docker apt signing key is trusted.
+# Update DOCKER_GPG_FINGERPRINT if Docker rotates their release key.
+ARG DOCKER_GPG_FINGERPRINT="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+
+RUN --mount=type=cache,id=openclaw-sbx-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=openclaw-sbx-apt-lists,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ca-certificates curl gnupg gosu && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg.asc && \
+    expected="$(printf '%s' "$DOCKER_GPG_FINGERPRINT" | tr '[:lower:]' '[:upper:]' | tr -d '[:space:]')" && \
+    actual="$(gpg --batch --show-keys --with-colons /tmp/docker.gpg.asc \
+               | awk -F: '$1=="fpr"{print toupper($10); exit}')" && \
+    if [ -z "$actual" ] || [ "$actual" != "$expected" ]; then \
+      echo "ERROR: Docker apt key fingerprint mismatch (expected $expected, got ${actual:-<empty>})" >&2; \
+      rm -f /tmp/docker.gpg.asc; \
+      exit 1; \
+    fi && \
+    gpg --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.gpg.asc && \
+    rm -f /tmp/docker.gpg.asc && \
+    chmod a+r /etc/apt/keyrings/docker.gpg && \
+    printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable\n' \
+      "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      docker-ce-cli
+
+# Install openclaw skills
+RUN apt-get update && apt-get install -y python3 python3-pip wget
+RUN pip install Cython --break-system-packages
+RUN wget https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/distro/Debian12_temp/sgx_debian_local_repo.tgz && tar xf sgx_debian_local_repo.tgz && dpkg -i sgx_debian_local_repo/pool/main/libt/libtdx-attest/*
+RUN git clone https://github.com/intel/confidential-computing-zoo.git
+WORKDIR /app/confidential-computing-zoo/cczoo/openclaw-cc/tdx_utility
+RUN python3 -m pip install ./ --break-system-packages
+
+RUN cp -r /app/confidential-computing-zoo/cczoo/openclaw-cc/cc_tdx_skills/* /app/skills
+WORKDIR /app/skills/get_td_quote/scripts
+RUN python3 setup.py build_ext --inplace
+
+WORKDIR /app
+# Copy entrypoint script (expected alongside this Dockerfile in the build context).
+COPY entrypoint-sbx.sh /usr/local/bin/entrypoint-sbx.sh
+RUN chmod 755 /usr/local/bin/entrypoint-sbx.sh
+
+# ── Runtime environment defaults ─────────────────────────────────────────
+# All values are overridable at `docker run` time via -e.
+ENV HOME=/home/node
+ENV OPENCLAW_GATEWAY_PORT=18789
+ENV OPENCLAW_BRIDGE_PORT=18790
+# lan = bind to 0.0.0.0, accessible from the local network.
+# Use "loopback" for localhost-only access.
+ENV OPENCLAW_GATEWAY_BIND=lan
+
+# ── Entrypoint ─────────────────────────────────────────────────────────────
+# Runs as root; entrypoint-sbx.sh handles:
+#   1. chown named volumes → node:node
+#   2. First-boot config init (sandbox policy, gateway mode/bind, token)
+#   3. exec gosu node <gateway>  — drops root permanently
+ENTRYPOINT ["/usr/local/bin/entrypoint-sbx.sh"]
+CMD []

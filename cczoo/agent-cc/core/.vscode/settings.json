@@ -1,0 +1,9 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "files.exclude": {
+        "tc-api/venv": true,
+        "tc-api/uploads": true,
+        "tc-api/builds": true,
+        "tc-api/logs": true
+    }
+}

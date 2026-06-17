@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tc-api"
+version = "0.1.0"
+description = "Trusted Container Build and Publish Service"
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+# tlog is installed as an editable local package with Rekor extras
+# (pip install -e tlog[rekor]/)
+
+[project.optional-dependencies]
+dev = [
+	"pytest==7.4.3",
+	"pytest-asyncio==0.21.1",
+	"pytest-cov==4.1.0",
+	"pytest-mock==3.12.0",
+	"coverage==7.3.2",
+]
+
+[project.scripts]
+tc-api = "tc_api.api.app:main"
+tc-trucon = "tc_api.trucon.app:main"
+tc-docktap = "tc_api.docktap.main:main"
+tc-verify = "tc_api.cli.verify:main"
+tc-openviking-verify-context = "tc_api.trucon.openviking_context_gate:main"
+tc-oidc-preflight = "tc_api.identity.oidc_preflight:main"
+tc-oidc-verification-code = "tc_api.cli.oidc_verification_code:main"
+tc-client = "tc_api.cli.client:main"
+
+[tool.setuptools.packages.find]
+include = ["tc_api*"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+	"integration: opt-in or broader workflow tests that may require external services",
+]

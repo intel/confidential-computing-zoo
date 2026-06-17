@@ -1,0 +1,10 @@
+{
+  "dockerfile": "FROM busybox\nCMD [\"sh\", \"-c\", \"echo hello from tc-client\"]\n",
+  "app_binary": null,
+  "configs": [],
+  "data": [],
+  "sign_key": null,
+  "cert": null,
+  "encrypt": false,
+  "user_id": "replace-with-your-user-id"
+}
