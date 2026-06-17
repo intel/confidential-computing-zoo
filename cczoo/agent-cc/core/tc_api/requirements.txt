@@ -7,7 +7,7 @@ pydantic-settings==2.1.0
 
 # HTTP Clients
 httpx==0.25.2
-requests==2.31.0
+requests==2.33.0
 
 # Configuration and Utils
 python-decouple==3.8
