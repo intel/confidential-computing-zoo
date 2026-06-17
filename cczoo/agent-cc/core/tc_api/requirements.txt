@@ -11,7 +11,7 @@ requests==2.33.0
 
 # Configuration and Utils
 python-decouple==3.8
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.4.0
 PyYAML==6.0.1
 
 # Docker Integration
