@@ -1,0 +1,38 @@
+[package]
+name = "tdx-quote"
+version = "0.1.0"
+edition = "2021"
+description = "TDX Quote Generation for Intel TDX Attestation"
+license = "MIT"
+authors = ["Intel Corporation"]
+repository = "https://github.com/intel/cczoo/agent-cc"
+homepage = "https://github.com/intel/cczoo/agent-cc"
+readme = "README.md"
+rust-version = "1.75"
+
+[dependencies]
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Base64 encoding
+base64 = "0.21"
+
+# Hex encoding
+hex = "0.4"
+
+# UUID for instance-based generation
+uuid = { version = "1.7", features = ["v4", "serde"] }
+
+# Dynamic library loading
+libloading = "0.8"
+
+# Logging
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
