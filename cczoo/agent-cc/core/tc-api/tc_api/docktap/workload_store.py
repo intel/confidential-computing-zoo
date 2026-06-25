@@ -81,6 +81,14 @@ class WorkloadStore:
             self._conn.execute(
                 "ALTER TABLE container_workload ADD COLUMN launch_id TEXT"
             )
+        if "image_digest" not in existing_columns:
+            self._conn.execute(
+                "ALTER TABLE container_workload ADD COLUMN image_digest TEXT"
+            )
+        if "service_name" not in existing_columns:
+            self._conn.execute(
+                "ALTER TABLE container_workload ADD COLUMN service_name TEXT"
+            )
 
     # ------------------------------------------------------------------
     # Public API
@@ -155,6 +163,32 @@ class WorkloadStore:
                 FROM container_workload WHERE container_id = ?
                 """,
                 (container_id,),
+            ).fetchone()
+            if not row:
+                return None
+            return {
+                "workload_id": row[0],
+                "created_at": row[1],
+                "last_seen_at": row[2],
+                "removed_at": row[3],
+                "last_operation": row[4],
+                "launch_id": row[5],
+            }
+
+    def get_workload_by_container(self, container_id: str) -> Optional[Dict[str, Any]]:
+        """Return full metadata for a container ID (alias for get_metadata)."""
+        return self.get_metadata(container_id)
+
+    def get_workload_by_id(self, workload_id: str) -> Optional[Dict[str, Any]]:
+        """Return full metadata for a workload ID."""
+        with self._lock:
+            assert self._conn is not None, "call init_db() before get_workload_by_id"
+            row = self._conn.execute(
+                """
+                SELECT workload_id, created_at, last_seen_at, removed_at, last_operation, launch_id
+                FROM container_workload WHERE workload_id = ?
+                """,
+                (workload_id,),
             ).fetchone()
             if not row:
                 return None
