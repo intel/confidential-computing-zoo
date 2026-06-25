@@ -119,6 +119,101 @@ services:
       trucon:
         condition: service_healthy
 
+  argus:
+    build:
+      context: ../argus
+      dockerfile: Dockerfile
+      args:
+        - http_proxy=${http_proxy:-}
+        - https_proxy=${https_proxy:-}
+        - no_proxy=${no_proxy:-}
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - NO_PROXY=${NO_PROXY:-}
+    ports:
+      - "8006:8006"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8006
+      - TC_API_URL=http://tc-api:8000
+      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
+      - ARGUS_SERVICE_NAME=${ARGUS_SERVICE_NAME:-}
+      - ARGUS_SERVICE_ID=${ARGUS_SERVICE_ID:-}
+      - ARGUS_IMAGE_DIGEST=${ARGUS_IMAGE_DIGEST:-}
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=${no_proxy:-}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
+    volumes:
+      - /var/run/trucon:/var/run/trucon
+      - /dev/shm:/dev/shm
+    tmpfs:
+      - /dev/shm
+    mem_swappiness: 0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8006/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      tc-api:
+        condition: service_healthy
+    networks:
+      - argus-network
+
+  # Argus Guard - Caller-side verification service
+  # Only needed when Agent itself is also a TDX workload requiring remote attestation
+  argus-guard:
+    build:
+      context: ../argus
+      dockerfile: Dockerfile
+      args:
+        - http_proxy=${http_proxy:-}
+        - https_proxy=${https_proxy:-}
+        - no_proxy=${no_proxy:-}
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - NO_PROXY=${NO_PROXY:-}
+    ports:
+      - "8007:8007"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8007
+      # Peer Evidence Provider endpoint (Service-side argus)
+      - EVIDENCE_ENDPOINT=http://argus:8006
+      # Agent-side TC-API (optional - only when Agent is a TDX workload)
+      # If not set, Guard operates in caller-only mode without self-attestation
+      - AGENT_TC_API_URL=${AGENT_TC_API_URL:-}
+      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN:-}
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=${no_proxy:-}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
+    volumes:
+      - /var/run/trucon:/var/run/trucon
+      - /dev/shm:/dev/shm
+    tmpfs:
+      - /dev/shm
+    mem_swappiness: 0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8007/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      argus:
+        condition: service_healthy
+    networks:
+      - argus-network
+
   nginx:
     image: nginx:alpine
     ports:
@@ -128,3 +223,12 @@ services:
     depends_on:
       - tc-api
     restart: unless-stopped
+    networks:
+      - argus-network
+
+networks:
+  argus-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

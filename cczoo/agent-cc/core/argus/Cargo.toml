@@ -1,0 +1,76 @@
+[package]
+name = "argus"
+version = "0.1.0"
+edition = "2021"
+description = "Application-non-invasive runtime trust verification framework for Intel TDX"
+license = "MIT"
+authors = ["Intel Corporation"]
+repository = "https://github.com/intel/cczoo/agent-cc"
+homepage = "https://github.com/intel/cczoo/agent-cc"
+readme = "README.md"
+rust-version = "1.75"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Cryptography
+sha2 = "0.10"
+hex = "0.4"
+getrandom = "0.2"
+
+# HTTP client (for evidence fetching and tc-api client)
+reqwest = { version = "0.11", features = ["json"] }
+
+# HTTP server (for evidence provider endpoint)
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Async trait support
+async-trait = "0.1"
+
+# Base64 encoding
+base64 = "0.21"
+
+# TDX Quote generation
+tdx-quote = { path = "../tdx-quote" }
+
+[dev-dependencies]
+tokio-test = "0.4"
+proptest = "1.4"
+tower = { version = "0.4", features = ["util"] }
+http-body-util = "0.1"
+hyper = "1.0"
+hyper-util = "0.1"
+
+[[bin]]
+name = "argus-evidence-provider"
+path = "src/bin/evidence_provider.rs"
+
+[[bin]]
+name = "argus-guard"
+path = "src/bin/guard.rs"
+
+[lib]
+name = "argus"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 
 from . import runtime
 from .request_auth import enforce_authenticated_request
-from .routers import build, delegation, launch, luks, publish, results, sigstore
+from .routers import build, delegation, launch, luks, publish, results, service_metadata, sigstore
 
 
 app = FastAPI(
@@ -51,6 +51,7 @@ app.include_router(launch.router)
 app.include_router(results.router)
 app.include_router(luks.router)
 app.include_router(delegation.router)
+app.include_router(service_metadata.router)
 
 
 def main() -> None:
