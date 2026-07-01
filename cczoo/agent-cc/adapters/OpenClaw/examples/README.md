@@ -15,15 +15,59 @@ OpenClaw is an agent runtime that runs inside a TDVM (Trust Domain Virtual Machi
 
 ## Quick Start
 
+### Prerequisites
+
+Before running the full e2e test, ensure:
+- Intel TDX-enabled platform with `/dev/tdx_guest`
+- TSM configfs at `/sys/kernel/config/tsm/report/`
+- Docker & docker-compose installed
+- Argus binaries built (see [core/argus README](../../core/argus/README.md))
+- TC-API identity token (set `TC_API_IDENTITY_TOKEN` or `TC_API_BEARER_TOKEN`)
+
+### Step 1: Validate Environment
+
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+./start_argus.sh validate
+```
+
+Expected output:
+```
+[INFO] Validating environment...
+[INFO] TDX device found at /dev/tdx_guest
+[INFO] TSM configfs found
+```
+
+### Step 2: Build Argus (if not already built)
+
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+cargo build --release
+```
+
+### Step 3: Run Full End-to-End Test
+
 ```bash
 # One-shot real quote path: compose stack + tc-api launch + real Guard + OpenClaw.
-cd ../../OpenViking/examples
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
 export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
 ./run_openclaw_openviking_e2e.sh
 ```
 
+This script:
+1. Starts Docker Compose stack (registry + tc-api + argus-provider)
+2. Launches OpenViking workload via tc-api
+3. Starts argus-guard in real-verifier mode
+4. Runs OpenClaw verification with full TDX attestation
+
+### Skip Workload Launch (if already running)
+
 If the OpenViking workload is already running and healthy on `:8010`, rerun the
-same script with `SKIP_LAUNCH=1` to skip the tc-api launch step.
+same script with `SKIP_LAUNCH=1` to skip the tc-api launch step:
+
+```bash
+SKIP_LAUNCH=1 ./run_openclaw_openviking_e2e.sh
+```
 
 For the real tc-api-backed Docker flow, the OpenViking side can now use
 `docker-compose.tc-api.yml` plus `launch_openviking_via_tc_api.sh` from the
