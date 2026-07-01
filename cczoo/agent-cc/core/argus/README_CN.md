@@ -16,6 +16,76 @@ Argus v1 已经用 Rust 实现，并在真实的 Intel TDX 硬件上完成了端
 - 已经与 [OpenClaw](../../adapters/OpenClaw) 和 [OpenViking](../../adapters/OpenViking) 适配器以及 `core/tc-api` 一起完成端到端验证，验证脚本见 `adapters/OpenViking/examples/run_openclaw_openviking_e2e.sh`。
 - TCB/collateral（基于 PCCS 的新鲜度校验）在 v1 中被有意排除在范围之外——原因见 [设计决策](./docs/design-decisions.md)。
 
+## 快速开始
+
+### 前置条件
+
+运行 Argus 需要：
+- Intel TDX 启用平台
+- Linux kernel 5.15+ 且支持 TDX
+- Rust 1.75+
+- `/dev/tdx_guest` 设备
+- TSM configfs 接口位于 `/sys/kernel/config/tsm/report/`
+
+### 步骤 1: 构建 Argus
+
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+cargo build --release
+```
+
+### 步骤 2: 验证环境
+
+```bash
+./start_argus.sh validate
+```
+
+预期输出：
+```
+[INFO] Validating environment...
+[INFO] Rust version: 1.96.0
+[INFO] TDX device found at /dev/tdx_guest
+[INFO] TSM configfs found
+[INFO] TSM report interface available
+```
+
+### 步骤 3: 启动服务
+
+```bash
+# 启动 Evidence Provider 和 Guard
+./start_argus.sh start
+
+# 检查服务状态
+./start_argus.sh status
+```
+
+### 步骤 4: 测试证明流程
+
+```bash
+# 运行证明测试
+./start_argus.sh test
+```
+
+预期输出：
+```
+[INFO] Testing attestation flow...
+[INFO] Attestation test: PASSED
+TEE type: tdx
+Quote valid: True
+```
+
+### 完整端到端测试
+
+要运行完整的 OpenClaw + OpenViking + Argus + TDX 验证流程：
+
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
+export TC_API_IDENTITY_TOKEN=<your-token>
+./run_openclaw_openviking_e2e.sh
+```
+
+详细说明见 [OpenViking examples README](../../adapters/OpenViking/examples/README.md)。
+
 ## 文档
 
 - [快速开始](./docs/quickstart.md)：在本地或通过 Docker 构建、运行并冒烟测试 Argus。
