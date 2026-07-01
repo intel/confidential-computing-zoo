@@ -1,0 +1,10 @@
+{
+  "image_id": "openviking-cmem",
+  "image_url": "docker://registry:5000/openviking-cmem:latest",
+  "user_id": "openviking-demo",
+  "attestation_required": false,
+  "metadata": {
+    "workload_id": "openviking-cmem",
+    "service_name": "openviking-cmem"
+  }
+}
