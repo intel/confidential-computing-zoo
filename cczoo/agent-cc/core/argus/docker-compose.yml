@@ -1,0 +1,111 @@
+# Copyright (c) 2026 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+version: '3.8'
+
+# Argus Evidence Provider and Guard Service
+# Docker Compose configuration for local development and testing
+#
+# Usage:
+#   docker-compose up -d          # Start services in background
+#   docker-compose ps             # Check service status
+#   docker-compose logs -f        # Follow logs
+#   docker-compose down           # Stop services
+
+services:
+  # Argus Evidence Provider - generates TDX quotes and serves evidence
+  argus-provider:
+    image: argus:latest
+    container_name: argus-evidence-provider
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8008:8008"
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+      - HOST=0.0.0.0
+      - PORT=8008
+      - TC_API_URL=${TC_API_URL:-http://localhost:8080}
+    volumes:
+      # Mount TDX device if available
+      - /dev/tdx_guest:/dev/tdx_guest
+      # Mount TSM configfs if available
+      - /sys/kernel/config/tsm:/sys/kernel/config/tsm:ro
+    devices:
+      - /dev/tdx_guest:/dev/tdx_guest
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8008/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - argus-net
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+
+  # Argus Guard Service - verifies evidence and enforces policy
+  argus-guard:
+    image: argus:latest
+    container_name: argus-guard
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8007:8007"
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+      - HOST=0.0.0.0
+      - PORT=8007
+      - EVIDENCE_ENDPOINT=http://argus-provider:8008
+      - AGENT_TC_API_URL=${AGENT_TC_API_URL:-}
+      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN:-}
+    depends_on:
+      argus-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - argus-net
+
+  # Optional: TC-API service for key management
+  # Uncomment if you need TC-API for key management operations
+  #
+  # tc-api:
+  #   image: tc-api:latest
+  #   container_name: tc-api
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - RUST_LOG=info
+  #   depends_on:
+  #     - argus-provider
+  #   networks:
+  #     - argus-net
+
+networks:
+  argus-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
