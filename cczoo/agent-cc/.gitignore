@@ -1,0 +1,30 @@
+# Build outputs
+target/
+build/
+dist/
+*.egg-info/
+
+# Temporary files
+*.pid
+*.log
+logs/pids/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Cargo lock files (usually not needed in repo)
+**/Cargo.lock
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/

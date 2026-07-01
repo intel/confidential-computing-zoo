@@ -1,3 +1,17 @@
+// Copyright (c) 2026 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //! Service-side Evidence Engine
 //!
 //! Implements evidence generation for the service/provider side.
@@ -7,7 +21,7 @@ use crate::binding::ServiceRuntimeBinding;
 use crate::tc_api_client::{ServiceMetadataFetcher, TcApiClient, TcApiServiceMetadataFetcher};
 use anyhow::Result;
 use std::sync::Arc;
-use tdx_quote::{QuoteGenerator, ReportData, tsm::TsmQuoteGenerator};
+use tdx_quote::{QuoteGenerator, ReportData, tsm::TsmInstanceQuoteGenerator};
 
 /// Evidence generation engine for service/provider side.
 ///
@@ -100,7 +114,7 @@ impl EvidenceEngine {
         let report_data = ReportData::from_digest(&digest)
             .map_err(|e| anyhow::anyhow!("Failed to create report data: {}", e))?;
         
-        let quote_generator = TsmQuoteGenerator::new();
+        let quote_generator = TsmInstanceQuoteGenerator::new();
         let quote_material = quote_generator.generate_quote(&report_data)
             .map_err(|e| anyhow::anyhow!("Failed to generate TDX quote: {}", e))?;
         
