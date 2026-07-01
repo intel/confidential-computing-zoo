@@ -120,4 +120,94 @@ In agent systems, build-time intent and deployment policy are not sufficient on 
 
 **Adapters** 
 
- - **[OpenClaw](./adapters/OpenClaw/README.md)** : povides a way to deploy OpenClaw workloads within TDX trusted execution environments, providing comprehensive protection through encrypted workspace isolation (LUKS), cryptographic image signing (Cosign/Sigstore), remote attestation via trust-service and KBS, SBOM generation with transparency logging, and end-to-end build-to-runtime trust chain control—all without requiring invasive framework changes.
+Adapters contain agent- or service-specific integration logic. Their goal is to make existing frameworks and external services easier to onboard into Agent-CC without major business-logic refactoring, while still binding execution, identity, and data access to attestation-based trust controls.
+
+### Key Components
+
+The following components form the Agent-CC project additions. Each plays a distinct role in the trust chain—from build-time orchestration to runtime measurement and agent-accessible TEE primitives.
+
+#### TC-API (Trusted Container Pipeline)
+
+
+
+#### Trusted Log
+
+
+## Reference Implementation & Setup
+
+### 📋 Prerequisites
+
+- **Hardware**: Intel TDX-capable CPU and Server
+- **OS**: TDX-enabled Linux guest OS (TDVM)
+- **Services**: Trustee (KBS, AS, RVPS) deployment
+- **Tools**: Docker/containerd, Cosign, cryptsetup
+- **Network**: Access to Rekor, OCI registry, KBS services
+
+### 🧩 E2E Reference Scenario (Agent + LLM + Memory)
+
+This guide is organized by concrete services. A typical Agent-CC deployment path is:
+
+1. **Agent runtime** runs inside a TDVM (for example OpenClaw).
+2. **LLM service** is accessed through an attested and policy-governed path (for example Ollama).
+3. **Memory service** is encrypted at rest and released only to attested runtimes.
+
+This forms an end-to-end protection flow across orchestration, model inference, and memory persistence.
+
+### 🔌 Adapter-Oriented Integration
+
+- **Agent adapters**:
+  - [OpenClaw](./adapters/OpenClaw/) : povides a way to deploy OpenClaw workloads within TDX trusted execution environments, providing comprehensive protection through encrypted workspace isolation (LUKS), cryptographic image signing (Cosign/Sigstore), remote attestation via trust-service and KBS, SBOM generation with transparency logging, and end-to-end build-to-runtime trust chain control—all without requiring invasive framework changes.
+  - [OpenViking](./adapters/OpenViking): Confidential memory control plane for attestation-gated context storage.
+- **LLM adapters**:
+  - Ollama: (Coming soon)
+
+### 🛠️ Quick Start by Service
+
+#### 1. Prepare shared trust infrastructure
+
+Deploy TDVM prerequisites, Trustee services, and TC-API control components.
+
+#### 2. OpenClaw CC deployment Agent adapter
+
+To run the complete end-to-end flow with OpenClaw + OpenViking + Argus + TDX:
+
+```bash
+# Step 1: Validate TDX environment
+cd core/argus
+./start_argus.sh validate
+
+# Step 2: Build Argus binaries
+cargo build --release
+
+# Step 3: Start Docker Compose stack and run e2e test
+cd adapters/OpenViking/examples
+export TC_API_IDENTITY_TOKEN=<your-token>
+./run_openclaw_openviking_e2e.sh
+```
+
+See [OpenViking Examples README](adapters/OpenViking/examples/README.md) for detailed step-by-step instructions.
+
+#### 3. Verify E2E protection flow
+
+Validate that build evidence, runtime attestation, and service access policies are enforced end-to-end:
+
+```bash
+# Check service health
+curl http://127.0.0.1:8007/health   # argus-guard
+curl http://127.0.0.1:8008/health   # argus-provider
+curl http://127.0.0.1:8010/health   # openviking-workload
+
+# View guard logs for attestation details
+cat core/argus/guard-real.log
+```
+
+Expected output shows TCB status, quote validation, and context transfer confirmation.
+
+
+
+
+
+
+---
+
+**Agent-CC**: Bringing confidential computing to AI agents on Intel TDX.

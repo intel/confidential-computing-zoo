@@ -1,5 +1,7 @@
 # OpenClaw Adapter
 
+This directory is the Agent-CC adapter entry point for OpenClaw.
+
 OpenClaw Adapter is the Agent-CC integration path for deploying OpenClaw workloads within TDX trusted execution environments, providing comprehensive protection through:
 
 - **Trusted Build-to-Runtime Control:** Complete trust chain control via TC API, supporting Docker image encryption signing (Cosign/Sigstore) and remote attestation
@@ -278,6 +280,16 @@ All docker operation transparency log can be show in `https://rekor.sigstore.dev
 
 ## Related Core Services
 
-- [`tc_api`](../../core/tc_api/) for trusted build, publish, launch, and verification orchestration
-- [`tlog`](../../core/tlog/) for immutable signed runtime evidence and digest rules
-- [`trust-service`](../../core/trust-service/) for attestation support services used by the deployment flow
+- [`core/tc-api/`](../../core/tc-api/) for trusted build, publish, launch, and verification orchestration
+- [`core/tlog/`](../../core/tlog/) for immutable signed runtime evidence and digest rules
+- [`core/trust-service/`](../../core/trust-service/) for attestation support services used by the deployment flow
+
+## Status
+
+This adapter currently serves as a documentation and integration entry point. Concrete OpenClaw-specific deployment assets will be added here as the adapter path is expanded.
+
+## Start Here
+
+1. Read [`README.md`](../../README.md) for the top-level Agent-CC architecture and end-to-end scenario.
+2. Read [`core/tc-api/README.md`](../../core/tc-api/README.md) for the trusted build-to-runtime control path.
+3. Read [`core/trust-service/README.md`](../../core/trust-service/README.md) if you need the attestation service container setup.

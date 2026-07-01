@@ -19,29 +19,85 @@ OpenViking is a confidential memory control plane service that provides attestat
 
 ## Quick Start
 
+### Prerequisites
+
+Before running, ensure you have:
+- Intel TDX-enabled platform with `/dev/tdx_guest`
+- Linux kernel 5.15+ with TSM configfs at `/sys/kernel/config/tsm/report/`
+- Rust 1.75+
+- Docker & docker-compose
+- TC-API identity token (set `TC_API_IDENTITY_TOKEN` or `TC_API_BEARER_TOKEN`)
+
+### Step 1: Validate TDX Environment
+
 ```bash
-# On the OpenViking side, start only the Evidence Provider.
-cd ../../../core/argus
-export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
-./start_argus.sh start-provider
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+./start_argus.sh validate
+```
 
-# Then run the OpenViking example.
-cd ../../../adapters/OpenViking/examples
+Expected output:
+```
+[INFO] Validating environment...
+[INFO] Rust version: 1.96.0
+[INFO] TDX device found at /dev/tdx_guest
+[INFO] TSM configfs found
+[INFO] TSM report interface available
+```
 
-# Run the self-contained demo
+### Step 2: Build Argus Binaries
+
+```bash
+cargo build --release
+```
+
+### Step 3: Start Docker Compose Stack
+
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
+docker-compose -f docker-compose.tc-api.yml up -d
+```
+
+Wait for services to be healthy:
+```bash
+curl http://127.0.0.1:8000/      # tc-api
+curl http://127.0.0.1:8008/health  # argus-provider
+```
+
+### Step 4: Run Full End-to-End Test
+
+For the complete real TDX quote attestation flow:
+
+```bash
+# Set your TC-API token
+export TC_API_IDENTITY_TOKEN="your-token-here"
+
+# Run the e2e test
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
+./run_openclaw_openviking_e2e.sh
+```
+
+This script:
+1. Starts the compose stack (registry + tc-api + argus-provider)
+2. Launches the OpenViking workload via tc-api
+3. Starts argus-guard in real-verifier mode
+4. Runs the OpenClaw example with full TDX attestation
+
+### Alternative: Run OpenViking Service Only (Demo Mode)
+
+For a quick in-memory demo without full attestation:
+
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
 python3 openviking_service.py
+```
 
-# Or start the HTTP service mode
+Or start the HTTP gateway for manual testing:
+
+```bash
 python3 openviking_service.py --serve
 ```
 
-The default command runs a short in-memory demo and exits. `--serve` starts the
-HTTP gateway for manual testing.
-
-For the full real quote path, use `run_openclaw_openviking_e2e.sh` in this
-directory. It starts the compose stack, launches the tc-api-managed workload if
-needed, restarts Guard in real-verifier mode, and runs the OpenClaw example end
-to end.
+> **Note**: The demo mode (`openviking_service.py`) runs in-memory without real TDX quotes. For production or full attestation validation, use `run_openclaw_openviking_e2e.sh`.
 
 OpenViking itself does not start the Argus Evidence Provider. The intended flow
 is to start only the provider on the OpenViking side with
