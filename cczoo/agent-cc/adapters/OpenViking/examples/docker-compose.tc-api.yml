@@ -1,0 +1,129 @@
+# Copyright (c) 2026 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+version: '3.8'
+
+services:
+  registry:
+    image: registry:2
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    volumes:
+      - openviking-registry-data:/var/lib/registry
+
+  tc-api:
+    build:
+      context: ../../../core
+      dockerfile: tc-api/Dockerfile
+      args:
+        - http_proxy=${http_proxy:-}
+        - https_proxy=${https_proxy:-}
+        - no_proxy=${no_proxy:-}
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - NO_PROXY=${NO_PROXY:-}
+    ports:
+      - "8000:8000"
+      - "8002:8002"
+    privileged: true
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - PYTHON_BIN=/app/venv/bin/python
+      - TRUCON_PORT=8001
+      - DOCKER_REGISTRY=registry:5000
+      - DOCKER_REPOSITORY=registry:5000/openviking
+      - ALLOWED_EXTERNAL_IMAGE_REGISTRIES=localhost:5000,registry:5000,docker.io
+      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN:-openviking-dev-token}
+      - DOCKTAP_REQUIRE_ATTESTATION=0
+      - INIT_DEFAULT_CHAIN_ON_STARTUP=false
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=${no_proxy:-}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
+    volumes:
+      - ../../../core/tc-api/uploads:/app/tc-api/uploads
+      - ../../../core/tc-api/builds:/app/tc-api/builds
+      - ../../../core/tc-api/logs:/app/tc-api/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/trucon:/var/run/trucon
+      - /dev/tdx_guest:/dev/tdx_guest
+      - /sys/kernel/config:/sys/kernel/config
+      - /etc/tdx-attest.conf:/etc/tdx-attest.conf:ro
+      - /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf:ro
+    tmpfs:
+      - /dev/shm
+    mem_swappiness: 0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - registry
+
+  argus-provider:
+    build:
+      context: ../../../core
+      dockerfile: argus/Dockerfile
+      args:
+        - http_proxy=${http_proxy:-}
+        - https_proxy=${https_proxy:-}
+        - no_proxy=${no_proxy:-}
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - NO_PROXY=${NO_PROXY:-}
+    ports:
+      - "8008:8008"
+    privileged: true
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8008
+      - TC_API_URL=http://tc-api:8000
+      - ARGUS_WORKLOAD_IDENTITY=${ARGUS_WORKLOAD_IDENTITY:-openviking-cmem}
+      - ARGUS_SERVICE_ID=${ARGUS_SERVICE_ID:-openviking-cmem}
+      - TC_API_WORKLOAD_ID=${TC_API_WORKLOAD_ID:-openviking-cmem}
+      - RUST_LOG=${RUST_LOG:-info}
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=${no_proxy:-}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
+    volumes:
+      - /dev/tdx_guest:/dev/tdx_guest
+      - /sys/kernel/config:/sys/kernel/config
+      - /etc/tdx-attest.conf:/etc/tdx-attest.conf:ro
+      - /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf:ro
+    tmpfs:
+      - /dev/shm
+    mem_swappiness: 0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8008/health >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      tc-api:
+        condition: service_healthy
+
+volumes:
+  openviking-registry-data:
