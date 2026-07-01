@@ -156,9 +156,9 @@ This forms an end-to-end protection flow across orchestration, model inference, 
 
 - **Agent adapters**:
   - [OpenClaw](adapters/OpenClaw): Reference agent adapter entry point for end-to-end confidential deployment and validation.
+  - [OpenViking](adapters/OpenViking): Confidential memory control plane for attestation-gated context storage.
 - **LLM adapters**:
-  - Ollama: 
-
+  - Ollama: (Coming soon)
 
 ### 🛠️ Quick Start by Service
 
@@ -168,12 +168,39 @@ Deploy TDVM prerequisites, Trustee services, and TC-API control components.
 
 #### 2. OpenClaw CC deployment Agent adapter
 
-ToDo: Use the OpenClaw adapter path first, then follow the same pattern for other frameworks.
+To run the complete end-to-end flow with OpenClaw + OpenViking + Argus + TDX:
 
+```bash
+# Step 1: Validate TDX environment
+cd core/argus
+./start_argus.sh validate
+
+# Step 2: Build Argus binaries
+cargo build --release
+
+# Step 3: Start Docker Compose stack and run e2e test
+cd adapters/OpenViking/examples
+export TC_API_IDENTITY_TOKEN=<your-token>
+./run_openclaw_openviking_e2e.sh
+```
+
+See [OpenViking Examples README](adapters/OpenViking/examples/README.md) for detailed step-by-step instructions.
 
 #### 3. Verify E2E protection flow
 
-Validate that build evidence, runtime attestation, and service access policies are enforced end-to-end.
+Validate that build evidence, runtime attestation, and service access policies are enforced end-to-end:
+
+```bash
+# Check service health
+curl http://127.0.0.1:8007/health   # argus-guard
+curl http://127.0.0.1:8008/health   # argus-provider
+curl http://127.0.0.1:8010/health   # openviking-workload
+
+# View guard logs for attestation details
+cat core/argus/guard-real.log
+```
+
+Expected output shows TCB status, quote validation, and context transfer confirmation.
 
 
 

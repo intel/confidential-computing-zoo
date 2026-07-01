@@ -8,6 +8,42 @@ It represents the service-side integration path for running OpenViking inside th
 
 OpenViking is a confidential memory control plane service that provides attestation-gated context storage and retrieval. It works with OpenClaw agents through a trust gate mechanism.
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   OpenViking Service (TDVM)                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  OpenViking Confidential Memory Control Plane               │ │
+│  │  - Context Gateway                                          │ │
+│  │  - Encrypted Storage                                        │ │
+│  │  - Trust Policy Engine                                      │ │
+│  │  - Attestation Verifier                                     │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ Attestation-gated context transfer
+┌─────────────────────────────────────────────────────────────────┐
+│                     Agent-CC Core Services                      │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │   Argus     │  │   TC-API    │  │  Trust      │              │
+│  │  Verifier   │  │  Service    │  │  Service    │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Context Gateway Operations
+
+OpenViking exposes context operations that are gated by attestation:
+
+| Operation | Description | Attestation Required |
+|-----------|-------------|---------------------|
+| `observe` | Read context metadata (no materialization) | Yes |
+| `recall` | Materialize context for processing | Yes |
+| `commit` | Store context with attestation binding | Yes |
+| `privacy_restore` | Restore encrypted context | Yes |
+
 ## Current Scope
 
 - Use OpenViking as the reference service workload for Agent-CC end-to-end validation.
@@ -46,16 +82,12 @@ See [OpenViking Trusted Context Gate Specification](../../openspec/specs/openvik
 
 ## Status
 
-This adapter has a working, validated example under `examples/`: a
-tc-api-managed Docker launch path (`docker-compose.tc-api.yml` +
-`launch_openviking_via_tc_api.sh`), a real Argus Evidence Provider sidecar,
-and `openviking_service.py` serving the context gateway API end to end (see
-[`examples/README.md`](examples/README.md) for details). Further
-OpenViking-specific deployment assets can still be added here as the adapter
-path expands.
+✅ **Validated** - OpenViking adapter has been tested with real TDX quotes on Intel TDX hardware.
+
+See [examples/README.md](examples/README.md) for running the full e2e test.
 
 ## Start Here
 
-1. Read [`examples/README.md`](examples/README.md) for a complete integration example.
+1. Read [`examples/README.md`](examples/README.md) for a complete integration example with step-by-step instructions.
 2. Read [`../../README.md`](../../README.md) for the top-level Agent-CC architecture and end-to-end scenario.
 3. Read [`../../openspec/specs/openviking-trusted-context-gate/spec.md`](../../openspec/specs/openviking-trusted-context-gate/spec.md) for trust gate specification.
