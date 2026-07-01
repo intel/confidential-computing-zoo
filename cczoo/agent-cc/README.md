@@ -90,6 +90,22 @@ Trusted service composition extends trust from the agent's local runtime to exte
 
 The identity verification system supports Non-SPIFFE and SPIFFE strategies. In the Non-SPIFFE strategy, services are launched through TC API, and the Evidence Engine binds TEE information and custom service-instance identity information to the interaction flow; the Trust Guard on the agent side then authenticates the service identity. In the SPIFFE strategy, TEE information is bound to the service instance's SPIFFE identity and then authenticated through Trust Guard.
 
+## Quick Start
+
+For a complete OpenClaw + OpenViking attestation flow, follow the [OpenViking example guide](./adapters/OpenViking/examples/README.md). It covers the TDX and Docker prerequisites, TC-API credentials, and the end-to-end startup steps.
+
+From the repository root, after meeting those prerequisites:
+
+```bash
+cd cczoo/agent-cc/adapters/OpenViking/examples
+read -rsp 'TC-API identity token: ' TC_API_IDENTITY_TOKEN
+printf '\n'
+export TC_API_IDENTITY_TOKEN
+./run_openclaw_openviking_e2e.sh
+```
+
+The script starts the required services, launches the workload through TC-API, and runs the attestation-backed example. Keep the token out of source files and logs.
+
 ## Project Status
 
 Status: ✅ Completed　🚧 In progress
