@@ -14,8 +14,16 @@ OpenViking is a confidential memory control plane service that provides attestat
 | [Dockerfile.tc-api-workload](Dockerfile.tc-api-workload) | Container image for tc-api-managed OpenViking workload |
 | [docker-compose.tc-api.yml](docker-compose.tc-api.yml) | tc-api + registry + Argus Provider stack for the real Docker launch flow |
 | [launch_openviking_via_tc_api.sh](launch_openviking_via_tc_api.sh) | Builds, pushes, and launches the OpenViking workload through tc-api |
-| [run_openclaw_openviking_e2e.sh](run_openclaw_openviking_e2e.sh) | One-shot real quote e2e runner for tc-api + Provider + Guard + OpenClaw |
-| [README.md](README.md) | This documentation |
+
+## Running Steps
+
+**For complete end-to-end testing, see [OpenClaw Examples README](../../OpenClaw/examples/README.md)**
+
+That document includes:
+- Prerequisites checklist
+- Environment validation steps
+- Build instructions
+- Full e2e test run commands
 
 ## Quick Start
 
