@@ -1,4 +1,4 @@
-# OpenClaw Adapter
+# OpenClaw Agent Example
 
 This directory is the Agent-CC adapter entry point for OpenClaw.
 
@@ -288,8 +288,30 @@ All docker operation transparency log can be show in `https://rekor.sigstore.dev
 
 This adapter currently serves as a documentation and integration entry point. Concrete OpenClaw-specific deployment assets will be added here as the adapter path is expanded.
 
-## Start Here
+## tc-api-backed OpenViking Deployment
 
-1. Read [`README.md`](../../README.md) for the top-level Agent-CC architecture and end-to-end scenario.
-2. Read [`core/tc-api/README.md`](../../core/tc-api/README.md) for the trusted build-to-runtime control path.
-3. Read [`core/trust-service/README.md`](../../core/trust-service/README.md) if you need the attestation service container setup.
+To surface `image_digest`, `launch_id`, and Rekor identifiers in Argus claims,
+the OpenViking side needs to be launched through tc-api or another Docktap-managed
+Docker path instead of only running the Python demo directly.
+
+1. Start tc-api on the OpenViking side.
+2. Launch the OpenViking workload through `POST /api/deploy-launch` and set `metadata.workload_id` to `openviking-cmem`.
+3. Start the sidecar/provider process with both `ARGUS_SERVICE_ID=openviking-cmem` and `TC_API_WORKLOAD_ID=openviking-cmem` so Argus queries tc-api by workload ID instead of its own container ID.
+4. Point the OpenClaw-side Guard at that provider with `EVIDENCE_ENDPOINT=http://<openviking-provider-host>:8008`.
+
+Example provider-side environment:
+
+```bash
+export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
+export ARGUS_SERVICE_ID=openviking-cmem
+export TC_API_WORKLOAD_ID=openviking-cmem
+export TC_API_URL=http://127.0.0.1:8000
+./start_argus.sh start-provider
+```
+
+## See Also
+
+- [OpenClaw Adapter](../README.md) - Main adapter documentation
+- [Argus Verifier](../../core/argus/README.md) - TDX quote verification
+- [TC-API Service](../../core/tc-api/README.md) - Build-to-runtime trust
+- [Trust Service](../../core/trust-service/README.md) - Attestation support
