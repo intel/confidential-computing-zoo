@@ -6,6 +6,42 @@
 
 OpenViking 是一个机密内存控制平面服务，提供基于证明的上下文存储和检索。本示例展示 OpenViking 如何使用 Agent-CC 的核心服务进行可信上下文传输。
 
+## 架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   OpenViking Service (TDVM)                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  OpenViking Confidential Memory Control Plane               │ │
+│  │  - Context Gateway                                          │ │
+│  │  - Encrypted Storage                                        │ │
+│  │  - Trust Policy Engine                                      │ │
+│  │  - Attestation Verifier                                     │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ 基于证明的上下文传输
+┌─────────────────────────────────────────────────────────────────┐
+│                     Agent-CC Core Services                      │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │   Argus     │  │   TC-API    │  │  Trust      │              │
+│  │  Verifier   │  │  Service    │  │  Service    │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## 上下文网关操作
+
+OpenViking 暴露的上下文操作均基于证明：
+
+| 操作 | 描述 | 需要证明 |
+|------|------|----------|
+| `observe` | 读取上下文元数据（不物化） | 是 |
+| `recall` | 物化上下文以供处理 | 是 |
+| `commit` | 存储带证明绑定的上下文 | 是 |
+| `privacy_restore` | 恢复加密上下文 | 是 |
+
 ## 实现文件
 
 | 文件 | 描述 |
@@ -14,90 +50,48 @@ OpenViking 是一个机密内存控制平面服务，提供基于证明的上下
 | [Dockerfile.tc-api-workload](Dockerfile.tc-api-workload) | 用于 tc-api 管理启动路径的 OpenViking workload 镜像 |
 | [docker-compose.tc-api.yml](docker-compose.tc-api.yml) | 真实 Docker 启动流程所需的 tc-api + registry + Argus Provider 编排 |
 | [launch_openviking_via_tc_api.sh](launch_openviking_via_tc_api.sh) | 构建、推送并通过 tc-api 启动 OpenViking workload |
-| [README.md](README.md) | 英文文档 |
-| [README_CN.md](README_CN.md) | 中文文档 |
 
-## 快速开始
+## OpenClaw 集成
+
+OpenViking 通过 verify-skill trust gate 与 OpenClaw 配合工作：
+
+- OpenClaw 在发送上下文前调用本地 verify skill
+- Verify skill 验证 OpenViking 或网关证明
+- 当验证失败或不可用时，上下文传输被拒绝
+
+详见 [OpenViking Trusted Context Gate 规范](../../openspec/specs/openviking-trusted-context-gate/spec.md)。
+
+## 部署模式
+
+### 1. Python Demo 模式
+
+`openviking_service.py` 提供内存态演示，用于验证 trust-gate 流程：
 
 ```bash
-# 在 OpenViking 一侧，只启动 Evidence Provider。
-cd ../../../core/argus
-export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
-./start_argus.sh start-provider
-
-# 再运行 OpenViking 示例。
-cd ../../../adapters/OpenViking/examples
-
-# 运行内存态演示并自动退出
+# 内存态演示（自动退出）
 python3 openviking_service.py
 
-# 或启动 HTTP 服务模式
+# HTTP 服务模式
 python3 openviking_service.py --serve
 ```
 
-默认命令会跑一个内存态 demo 并退出；`--serve` 会启动 HTTP 网关，便于手工联调。
+### 2. tc-api 管理模式
 
-OpenViking 自身并不会代为启动 Argus Evidence Provider。推荐流程是先用
-`ARGUS_WORKLOAD_IDENTITY=openviking-cmem` 在 OpenViking 一侧单独启动 provider，
-同时由 OpenClaw 一侧运行自己的本地 Guard，并通过 `EVIDENCE_ENDPOINT`
-指向这个远端 provider。之后再运行 `openviking_service.py`。
+通过 tc-api 管理的 Docker 启动路径运行时，Argus claims 才能带出 tc-api 元数据：
 
-如果希望在 Argus claims 里带出 `image_digest`、`launch_id`、`Rekor UUID`
-这类 tc-api 相关元数据，provider 还需要设置 `ARGUS_SERVICE_ID` 和
-`TC_API_WORKLOAD_ID`，并且这两个值必须与 tc-api 为 OpenViking Docker workload
-分配或接收的 workload ID 一致。
+1. `docker-compose.tc-api.yml`：启动本地 registry、tc-api，以及 Argus Evidence Provider
+2. `Dockerfile.tc-api-workload`：打包 `openviking_service.py --serve` 成真正的 service workload 镜像
+3. `launch_openviking_via_tc_api.sh`：构建镜像、推送到本地 registry，并提交 deploy-launch 请求
 
-当前可运行示例默认采用 `STRICT_MODE=false`。在现在的 live TSM 路径下，
-只要 quote 结构校验和请求绑定校验通过，Argus 就会返回 `TCB Status: UpToDate`。
-这个状态可以满足示例里的默认策略流转，但它仍然不代表已经完成
-collateral-backed 的 TCB 新鲜度判定。
+## 运行步骤
 
-## 手工验证
+**完整端到端测试请参考 [OpenClaw Examples README](../../OpenClaw/examples/README.md)**
 
-启动服务：
-
-```bash
-python3 openviking_service.py --serve
-```
-
-写入一段上下文：
-
-```bash
-curl -X POST http://localhost:8010/context \
-    -H 'Content-Type: application/json' \
-    -H 'X-Binding-Digest: demo-binding-123' \
-    -H 'X-TCB-Status: UpToDate' \
-    -H 'X-RTMR0: demo-rtmr0' \
-    -d '{"context_id":"session-001","data":"hello from openclaw"}'
-```
-
-读取 metadata：
-
-```bash
-curl http://localhost:8010/context/session-001/metadata \
-    -H 'X-Binding-Digest: demo-binding-123' \
-    -H 'X-TCB-Status: UpToDate' \
-    -H 'X-RTMR0: demo-rtmr0'
-```
-
-## 基于 tc-api 的部署方式
-
-当前这个 Python demo 主要用于验证 trust-gate 流程；只有当 OpenViking 通过
-tc-api 管理的 Docker 启动路径运行时，Argus claims 才能带出 tc-api 元数据。
-
-### 真实 tc-api + Docker 资产
-
-本目录现在补齐了这条真实路径对应的落地资产：
-
-1. `docker-compose.tc-api.yml`：启动本地 registry、tc-api，以及按
-    workload ID 查询 tc-api 的 Argus Evidence Provider。tc-api 容器会通过
-    `start.sh` 在内部拉起 TruCon 和 Docktap 进程。
-2. `Dockerfile.tc-api-workload`：把 `openviking_service.py --serve` 打包成真正
-    的 service workload 镜像。
-3. `launch_openviking_via_tc_api.sh`：构建镜像、推送到宿主机侧的本地
-    registry `localhost:5000`，并提交 `POST /api/deploy-launch`，其中
-    `metadata.workload_id=openviking-cmem`，且 tc-api 容器内实际拉取使用
-    `docker://registry:5000/openviking-cmem:latest`。
+该文档包含：
+- 前置条件检查
+- 环境验证步骤
+- 构建说明
+- 完整 e2e 测试运行命令
 
 Provider 一侧环境变量示例：
 

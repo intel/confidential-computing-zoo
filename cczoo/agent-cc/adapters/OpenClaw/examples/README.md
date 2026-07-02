@@ -11,6 +11,7 @@ OpenClaw is an agent runtime that runs inside a TDVM (Trust Domain Virtual Machi
 | File | Description |
 |------|-------------|
 | [openclaw_agent.py](openclaw_agent.py) | Working Python implementation |
+| [run_openclaw_openviking_e2e.sh](run_openclaw_openviking_e2e.sh) | One-shot real quote e2e runner for tc-api + Provider + Guard + OpenClaw |
 | [README.md](README.md) | This documentation |
 
 ## Quick Start
@@ -49,7 +50,7 @@ cargo build --release
 
 ```bash
 # One-shot real quote path: compose stack + tc-api launch + real Guard + OpenClaw.
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/examples
 export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
 ./run_openclaw_openviking_e2e.sh
 ```
