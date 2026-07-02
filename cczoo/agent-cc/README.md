@@ -184,7 +184,7 @@ export TC_API_IDENTITY_TOKEN=<your-token>
 ./run_openclaw_openviking_e2e.sh
 ```
 
-See [OpenViking Examples README](adapters/OpenViking/examples/README.md) for detailed step-by-step instructions.
+See [OpenClaw Scripts README](adapters/OpenClaw/scripts/README.md) for detailed step-by-step instructions.
 
 #### 3. Verify E2E protection flow
 
