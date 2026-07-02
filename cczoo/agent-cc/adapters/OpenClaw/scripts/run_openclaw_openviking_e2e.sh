@@ -17,10 +17,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-OPENCLAW_DIR="$REPO_ROOT/adapters/OpenClaw/examples"
+OPENCLAW_DIR="$REPO_ROOT/adapters/OpenClaw/scripts"
 ARGUS_DIR="$REPO_ROOT/core/argus"
-COMPOSE_FILE="$SCRIPT_DIR/docker-compose.tc-api.yml"
-LAUNCH_SCRIPT="$SCRIPT_DIR/launch_openviking_via_tc_api.sh"
+COMPOSE_FILE="$REPO_ROOT/adapters/OpenViking/configs/docker-compose.tc-api.yml"
+LAUNCH_SCRIPT="$REPO_ROOT/adapters/OpenViking/scripts/launch_openviking_via_tc_api.sh"
 
 TC_API_URL="${TC_API_URL:-http://127.0.0.1:8000}"
 PROVIDER_URL="${PROVIDER_URL:-http://127.0.0.1:8008}"

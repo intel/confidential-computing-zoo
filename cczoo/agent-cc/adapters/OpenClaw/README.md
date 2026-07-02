@@ -122,6 +122,22 @@ For comprehensive API request specifications, see the [TC-API Documentation](../
 
 ---
 
+## End-to-End OpenViking Example
+
+The [OpenClaw end-to-end runner](scripts/run_openclaw_openviking_e2e.sh) exercises the TC-API, OpenViking, Argus Provider and Guard, and OpenClaw flow with TDX evidence. It requires an Intel TDX TDVM, TSM configfs, Docker Compose (`docker-compose`), and a TC-API identity token. See the [OpenViking adapter guide](../OpenViking/README.md) for service details.
+
+From the repository root, enter the token without echoing it, then run the workflow:
+
+```bash
+cd cczoo/agent-cc/adapters/OpenClaw/scripts
+read -rsp 'TC-API identity token: ' TC_API_IDENTITY_TOKEN
+printf '\n'
+export TC_API_IDENTITY_TOKEN
+./run_openclaw_openviking_e2e.sh
+```
+
+Keep the token out of source files, command-line arguments, and logs.
+
 ## Security Boundaries & Operational Considerations
 
 1. **Docker Daemon Boundary**: The Docker daemon running inside the TDVM controls container execution. Access to `/var/run/docker.sock` must be restricted to trusted processes, as access to the Docker socket allows full root control over the TDVM.
@@ -132,6 +148,9 @@ For comprehensive API request specifications, see the [TC-API Documentation](../
 
 ## Related References
 
+- [OpenViking Adapter](../OpenViking/README.md) - Confidential memory service integration
+- [Argus](../../core/argus/README.md) - Service identity and TDX evidence verification
+- [OpenClaw end-to-end runner](scripts/run_openclaw_openviking_e2e.sh) - Full attestation-backed example
 - [OpenClaw Best Practices Guide](../../best-practices/README.md) - Production architecture and deployment recommendations
 - [TC-API Control Plane](../../core/tc_api/README.md) - Complete documentation of the build/publish/launch API
 - [Trusted Log (TLog)](../../core/tlog/README.md) - Immutable signed audit logging

@@ -1,41 +1,195 @@
-# OpenClaw 适配器
+# OpenClaw Agent 示例
 
-本文档目录是 Agent-CC 适配器的 OpenClaw 入口点。
+本目录包含一个示例适配器，演示 OpenClaw 如何与 Agent-CC 集成作为运行时信任验证框架。
 
-它代表了在 Agent-CC 模型中运行 OpenClaw 的部署侧集成路径，无需进行侵入性的框架修改。该适配器旨在使用 `core/` 中的共享核心服务，而不是在本地重新实现信任、构建或证明流程。
+## 概述
 
-## 当前范围
+OpenClaw Agent 是一个在 Intel TDX 虚拟机中运行的 AI agent 运行时，它利用 Agent-CC 的核心服务进行可信的 agent-to-service 通信。
 
-- 使用 OpenClaw 作为 Agent-CC 端到端验证的参考 agent 工作负载。
-- 将 OpenClaw 运行时部署连接到共享的 TC-API 构建、启动和验证路径。
-- 重用共享信任基础设施，如可信日志记录、基于证明的受控密钥释放和加密存储助手。
+## 架构
 
-在真实双侧部署中，OpenClaw 运行在调用方一侧，并搭配本地 Argus Guard；
-OpenViking 一侧则暴露远端 Argus Evidence Provider，供这个 Guard 通过
-`EVIDENCE_ENDPOINT` 拉取证据。
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    OpenClaw Agent Runtime                        │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  OpenClaw Agent (TDVM)                                      │ │
+│  │  - LLM Client                                               │ │
+│  │  - Context Manager                                          │ │
+│  │  - Tool Executor                                            │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                              │ Attestation-gated context transfer
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   OpenViking Service (TDVM)                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  OpenViking Confidential Memory Control Plane              │ │
+│  │  - Context Gateway                                          │ │
+│  │  - Encrypted Storage                                        │ │
+│  │  - Trust Policy Engine                                      │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     Agent-CC Core Services                      │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │   Argus     │  │   TC-API    │  │  Trust      │              │
+│  │  Verifier   │  │  Service    │  │  Service    │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-## 示例
+## 实现文件
 
-- **[OpenClaw Agent 示例](examples/README_CN.md)** - 完整的集成示例，展示：
-  - 本地 Guard + 远端 provider 的双侧部署
-  - 基于证明的受控密钥释放
-  - 加密上下文存储
-  - Docker Compose 配置
+| 文件 | 描述 |
+|------|-------------|
+| [scripts/openclaw_agent.py](scripts/openclaw_agent.py) | 工作 Python 实现 |
+| [scripts/run_openclaw_openviking_e2e.sh](scripts/run_openclaw_openviking_e2e.sh) | 一键真实 quote e2e 运行脚本 |
+| [README.md](README.md) | 英文文档 |
+| [README_CN.md](README_CN.md) | 中文文档 |
 
-## 相关核心服务
+## 快速开始
 
-- [`../../core/tc-api/`](../../core/tc-api/) 用于可信构建、发布、启动和验证编排
-- [`../../core/tlog/`](../../core/tlog/) 用于不可篡改签名的运行时证据和摘要规则
-- [`../../core/trust-service/`](../../core/trust-service/) 用于部署流程使用的证明支持服务
-- [`../../core/argus/`](../../core/argus/) 用于 TDX 引用验证
+### 前置条件
 
-## 状态
+运行完整 e2e 测试前，确保：
+- Intel TDX 启用平台（`/dev/tdx_guest`）
+- TSM configfs 位于 `/sys/kernel/config/tsm/report/`
+- 已安装 Docker & docker-compose
+- 已构建 Argus 二进制（见 [core/argus README](../../core/argus/README.md)）
+- 设置 TC-API identity token（`TC_API_IDENTITY_TOKEN` 或 `TC_API_BEARER_TOKEN`）
 
-此适配器目前作为文档和集成入口点。随着适配器路径的扩展，这里将添加具体的 OpenClaw 特定部署资产。
+### 步骤 1: 验证环境
 
-## 开始使用
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+./start_argus.sh validate
+```
 
-1. 阅读 [`examples/README_CN.md`](examples/README_CN.md) 获取完整的集成示例。
-2. 阅读 [`../../README_CN.md`](../../README_CN.md) 了解顶层 Agent-CC 架构和端到端场景。
-3. 阅读 [`../../core/tc-api/README_CN.md`](../../core/tc-api/README_CN.md) 了解从构建到运行时的可信控制路径。
-4. 如果需要证明服务容器设置，请阅读 [`../../core/trust-service/README_CN.md`](../../core/trust-service/README_CN.md)。
+预期输出：
+```
+[INFO] Validating environment...
+[INFO] TDX device found at /dev/tdx_guest
+[INFO] TSM configfs found
+```
+
+### 步骤 2: 构建 Argus（如未构建）
+
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+cargo build --release
+```
+
+### 步骤 3: 运行完整端到端测试
+
+```bash
+# 一键真实 quote 路径：compose 栈 + tc-api launch + real Guard + OpenClaw。
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/scripts
+export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
+./run_openclaw_openviking_e2e.sh
+```
+
+该脚本：
+1. 启动 Docker Compose 栈（registry + tc-api + argus-provider）
+2. 通过 tc-api 启动 OpenViking workload
+3. 以 real-verifier 模式启动 argus-guard
+4. 运行带完整 TDX 证明的 OpenClaw 验证
+
+### 跳过 workload 启动（如已运行）
+
+如果 OpenViking workload 已在 `:8010` 健康运行，可以追加
+`SKIP_LAUNCH=1` 复用现有 workload，跳过 tc-api launch：
+
+```bash
+SKIP_LAUNCH=1 ./run_openclaw_openviking_e2e.sh
+```
+
+## 验证状态
+
+截至 2026-06-29，已经真实验证：
+
+- 交互式 Sigstore 登录下的 tc-api `deploy-launch` 成功，并拉起了运行中的
+    OpenViking workload，监听 `http://127.0.0.1:8010`。
+- Argus provider 已能返回带 tc-api 元数据的 claims，包括 `launch_id`、
+    `image_digest` 和 `transparency_log_id`。
+- Argus provider 已通过 tc-api `POST /v1/attestation` 生成真实 TDX quote，
+    不再回退到 mock evidence。
+- Guard 已在不设置 `ARGUS_ALLOW_MOCK_VERIFIER=1` 的 real verifier 模式下
+    成功接受 provider 返回的 quote。
+- `openclaw_agent.py` 已真实完成以下端到端链路：
+    OpenClaw -> Guard -> Provider -> OpenViking `POST /verify/caller` ->
+    `POST /context` -> `GET /context/{id}/metadata` -> `GET /context/{id}`。
+
+- OpenClaw 一侧可访问本地 Argus Guard：`http://localhost:8007`
+- OpenViking 一侧单独运行 Argus Evidence Provider，并且 Guard 能访问到它
+- 如果希望走真实 quote 路径，需要当前机器具备 Intel TDX 和 TSM 支持
+
+## 真实双侧部署步骤
+
+```bash
+# 在 OpenViking 示例目录一键拉起 compose、launch workload、启动 real Guard，并执行 OpenClaw。
+cd ../../OpenViking/examples
+export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
+./run_openclaw_openviking_e2e.sh
+```
+
+## 预期输出
+
+```text
+OpenClaw Agent - Agent-CC Integration Example
+
+[1] Verifying OpenViking through Argus Guard...
+    TCB Status: UpToDate
+    Service Name: openviking-cmem
+    Workload ID: openviking-cmem
+    Launch ID: launch-...
+    Image Digest: sha256:...
+    Rekor UUID: ...
+    Transparency Log ID: ...
+    RTMR0: ...
+
+[2] Creating attestation context...
+[3] Retrieving attestation-gated secret...
+[4] Storing context with attestation binding...
+[5] Retrieving context with binding verification...
+```
+
+当前仓库里的 live TSM 路径在 quote 结构校验和请求绑定校验通过后会返回
+`TCB Status: UpToDate`，便于上层默认策略继续执行。但这还不代表已经完成
+基于 collateral 的 TCB 新鲜度判定。
+
+上面这些额外元数据行只有在 OpenViking 一侧通过 tc-api 管理的 Docker / launch
+路径启动时才会出现。单独执行 `python3 openviking_service.py --serve` 仍然可以
+返回证明结果，但如果 tc-api 没有跟踪这个 workload，就不会带出 `image_digest`、
+`launch_id`、`Rekor UUID` 这类 tc-api 相关字段。
+
+## 基于 tc-api 的 OpenViking 部署
+
+如果希望在 Argus claims 中带出 `image_digest`、`launch_id` 和 Rekor 标识，
+OpenViking 一侧需要通过 tc-api 或其他 Docktap 管理的 Docker 路径启动，而不是
+只运行 Python demo。
+
+1. 在 OpenViking 一侧启动 tc-api。
+2. 通过 `POST /api/deploy-launch` 启动 OpenViking workload，并把 `metadata.workload_id` 设为 `openviking-cmem`。
+3. 为 sidecar/provider 进程设置 `ARGUS_SERVICE_ID=openviking-cmem` 和 `TC_API_WORKLOAD_ID=openviking-cmem`，让 Argus 按 workload ID 查询 tc-api，而不是按 provider 自己的 container ID 查询。
+4. 在 OpenClaw 一侧把 Guard 的 `EVIDENCE_ENDPOINT` 指向这个 provider：`http://<openviking-provider-host>:8008`。
+
+Provider 一侧示例环境变量：
+
+```bash
+export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
+export ARGUS_SERVICE_ID=openviking-cmem
+export TC_API_WORKLOAD_ID=openviking-cmem
+export TC_API_URL=http://127.0.0.1:8000
+./start_argus.sh start-provider
+```
+
+## 实现文件
+
+| 文件 | 描述 |
+|------|-------------|
+| [openclaw_agent.py](openclaw_agent.py) | 工作 Python 实现 |
+| [README.md](README.md) | 英文文档 |
+| [README_CN.md](README_CN.md) | 中文文档 |
