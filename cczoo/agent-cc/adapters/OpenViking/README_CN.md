@@ -48,9 +48,110 @@ OpenViking 暴露的上下文操作均基于证明：
 |------|-------------|
 | [scripts/openviking_service.py](scripts/openviking_service.py) | 工作 Python 实现 |
 | [scripts/launch_openviking_via_tc_api.sh](scripts/launch_openviking_via_tc_api.sh) | 构建、推送并通过 tc-api 启动 OpenViking workload |
-| [configs/docker-compose.tc-api.yml](configs/docker-compose.tc-api.yml) | 真实 Docker 启动流程所需的 tc-api + registry + Argus Provider 编排 |
-| [configs/Dockerfile.tc-api-workload](configs/Dockerfile.tc-api-workload) | 用于 tc-api 管理启动路径的 OpenViking workload 镜像 |
+| [configs/docker-compose.tc-api.yml](configs/docker-compose.tc-api.yml) | tc-api + registry + Argus Provider 栈，用于真实 Docker 启动流程 |
+| [configs/Dockerfile.tc-api-workload](configs/Dockerfile.tc-api-workload) | 用于 tc-api 管理的 OpenViking workload 容器镜像 |
 | [configs/openviking-launch-payload.json](configs/openviking-launch-payload.json) | tc-api 部署的启动 payload |
+
+## 集成点
+
+### 1. Trust Gate 验证
+
+OpenViking 实现了 verify-skill trust gate，OpenClaw 在上下文传输前调用：
+
+```rust
+// 示例：OpenViking trust gate 实现
+use argus::{TdxQuoteVerifier, AttestationContext};
+
+pub struct OpenVikingTrustGate {
+    verifier: TdxQuoteVerifier,
+    policy: TrustPolicy,
+}
+
+impl OpenVikingTrustGate {
+    /// 在允许上下文访问前验证 OpenClaw
+    pub async fn verify_caller(&self, caller_evidence: &AttestationEvidence) -> Result<bool> {
+        // 验证调用者的 TDX quote
+        self.verifier
+            .verify_quote(&caller_evidence.tdx_quote)
+            .await?;
+
+        // 检查 TCB 状态
+        if caller_evidence.tcb_status != TcbStatus::UpToDate {
+            tracing::warn!("Caller TCB is not up to date");
+            return Ok(false);
+        }
+
+        // 验证 nonce 绑定以确保新鲜度
+        if !self.verify_nonce_binding(&caller_evidence.binding_digest) {
+            tracing::warn!("Caller nonce binding verification failed");
+            return Ok(false);
+        }
+
+        // 根据信任策略评估
+        self.policy
+            .evaluate(&caller_evidence.claims)
+            .await
+    }
+
+    /// 根据验证结果允许或拒绝上下文传输
+    pub async fn evaluate_context_transfer(
+        &self,
+        caller: &AttestationEvidence,
+        context_id: &str,
+    ) -> Result<ContextTransferDecision> {
+        let is_trusted = self.verify_caller(caller).await?;
+
+        if is_trusted {
+            Ok(ContextTransferDecision::Allow {
+                context_id: context_id.to_string(),
+                verified_claims: caller.claims.clone(),
+            })
+        } else {
+            Ok(ContextTransferDecision::Deny {
+                reason: "Caller verification failed trust policy".to_string(),
+            })
+        }
+    }
+}
+```
+
+### 2. 上下文网关操作
+
+OpenViking 暴露的上下文操作均基于证明：
+
+| 操作 | 描述 | 需要证明 |
+|------|------|----------|
+| `observe` | 读取上下文元数据（不物化） | 是 |
+| `recall` | 物化上下文以供处理 | 是 |
+| `commit` | 存储带证明绑定的上下文 | 是 |
+| `privacy_restore` | 恢复加密上下文 | 是 |
+
+### 3. 隐私恢复操作
+
+OpenViking 支持隐私恢复操作：
+
+```rust
+// 示例：隐私恢复操作
+pub async fn privacy_restore(
+    &self,
+    caller: &AttestationEvidence,
+    context_id: &str,
+) -> Result<EncryptedContext> {
+    // 验证调用者
+    if !self.verify_caller(caller).await? {
+        return Err(GatewayError::AccessDenied {
+            reason: "Caller verification failed".to_string(),
+        });
+    }
+
+    // 执行隐私恢复
+    let encrypted_context = self.storage
+        .get_encrypted(context_id)
+        .await?;
+
+    Ok(encrypted_context)
+}
+```
 
 ## OpenClaw 集成
 
@@ -76,13 +177,30 @@ python3 openviking_service.py
 python3 openviking_service.py --serve
 ```
 
+> **注意**：Demo 模式（`openviking_service.py`）在内存中运行，无真实 TDX quote。
+> 要进行生产或完整证明验证，请使用 `run_openclaw_openviking_e2e.sh`。
+
 ### 2. tc-api 管理模式
 
 通过 tc-api 管理的 Docker 启动路径运行时，Argus claims 才能带出 tc-api 元数据：
 
-1. `docker-compose.tc-api.yml`：启动本地 registry、tc-api，以及 Argus Evidence Provider
-2. `Dockerfile.tc-api-workload`：打包 `openviking_service.py --serve` 成真正的 service workload 镜像
-3. `launch_openviking_via_tc_api.sh`：构建镜像、推送到本地 registry，并提交 deploy-launch 请求
+1. `configs/docker-compose.tc-api.yml`：启动本地 registry、tc-api，以及 Argus Evidence Provider
+2. `configs/Dockerfile.tc-api-workload`：打包 `openviking_service.py --serve` 成真正的 service workload 镜像
+3. `scripts/launch_openviking_via_tc_api.sh`：构建镜像、推送到本地 registry，并提交 deploy-launch 请求
+
+OpenViking 本身不启动 Argus Evidence Provider。预期流程是只在
+OpenViking 一侧使用 `ARGUS_WORKLOAD_IDENTITY=openviking-cmem` 启动 provider，
+而 OpenClaw 一侧运行自己的本地 Guard，并通过 `EVIDENCE_ENDPOINT` 指向
+这个远端 provider。
+
+如果希望在 Argus claims 中带出 `image_digest`、`launch_id` 和 Rekor 标识符，
+provider 还需要设置 `ARGUS_SERVICE_ID` 和 `TC_API_WORKLOAD_ID`，并且
+这两个值必须与 tc-api 为 OpenViking Docker workload 分配或接收的 workload ID 一致。
+
+可运行示例默认采用 `STRICT_MODE=false`。在当前 live TSM 路径下，只要
+quote 结构校验和请求绑定校验通过，Argus 就会返回 `TCB Status: UpToDate`。
+这个状态可以满足示例里的默认策略流转，但它仍然不代表已经完成
+collateral-backed 的 TCB 新鲜度判定。
 
 ## 运行步骤
 
@@ -94,10 +212,10 @@ python3 openviking_service.py --serve
 - 构建说明
 - 完整 e2e 测试运行命令
 
-Provider 一侧环境变量示例：
+## Provider 一侧环境变量示例
 
 ```bash
-cd ../../../core/argus
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
 export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
 export ARGUS_SERVICE_ID=openviking-cmem
 export TC_API_WORKLOAD_ID=openviking-cmem
@@ -105,103 +223,8 @@ export TC_API_URL=http://127.0.0.1:8000
 ./start_argus.sh start-provider
 ```
 
-关键点在于：`ARGUS_SERVICE_ID` 和 `TC_API_WORKLOAD_ID` 必须与 tc-api 在
-`POST /api/deploy-launch` 时接收的 workload ID 保持一致。这样 provider 才能按
-workload ID 查询 tc-api，拿到目标服务的 image digest、launch ID，以及可用的
-Rekor 标识。
+## 另请参阅
 
-### 端到端步骤
-
-1. 在 OpenViking 一侧启动控制面和 provider：
-
-```bash
-cd ../../../adapters/OpenViking/examples
-docker-compose -f docker-compose.tc-api.yml up -d registry tc-api argus-provider
-```
-
-2. 导出一个 tc-api 写接口凭证。可以使用 `TC_API_IDENTITY_TOKEN` 放到请求体，
-也可以使用 `TC_API_BEARER_TOKEN` 走 Authorization 头：
-
-```bash
-export TC_API_IDENTITY_TOKEN='<sigstore token>'
-```
-
-如果你不是预先导出 token，而是走交互式 Sigstore 登录，也要保持 payload 中
-使用 `docker://registry:5000/openviking-cmem:latest`。`docker://localhost:5000/...`
-虽然能通过格式校验，但镜像拉取发生在 tc-api 容器内部，会连不到 registry。
-
-3. 通过 tc-api 构建并启动 OpenViking workload：
-
-```bash
-./launch_openviking_via_tc_api.sh
-```
-
-4. 在 OpenClaw 一侧，把 Guard 指向 OpenViking provider，并把目标 URI 设为
-刚刚启动的 workload 监听地址：
-
-```bash
-cd ../../../core/argus
-export EVIDENCE_ENDPOINT=http://<openviking-host>:8008
-export ARGUS_ALLOW_MOCK_VERIFIER=1
-./start_argus.sh start-guard
-
-cd ../../../adapters/OpenClaw/examples
-export TARGET_SERVICE_NAME=openviking-cmem
-export TARGET_URI=http://<openviking-host>:8010
-python3 openclaw_agent.py
-```
-
-如果 launch 成功，`openclaw_agent.py` 现在就应该能看到稳定的服务名，以及
-来自 tc-api 的 `launch_id`、`image_digest`、透明日志相关标识等字段。
-
-### 验证状态
-
-截至 2026-06-29，已经真实验证：
-
-- 交互式 tc-api `deploy-launch` 已成功完成。
-- 被拉起的 OpenViking workload 已在 `8010` 端口对 `GET /health` 返回成功。
-- Argus provider 返回的 evidence 已包含来自 tc-api 的 `launch_id`、
-    `image_digest` 和 `transparency_log_id`。
-- OpenClaw 已真实完成针对该 workload 的端到端 HTTP 调用：调用方验证、
-    上下文写入、元数据观察、上下文回读。
-
-当前边界：
-
-- provider 侧示例仍可能回退到 mock quote。因此本次端到端验证在 OpenClaw
-    一侧的 Guard 上使用了 `ARGUS_ALLOW_MOCK_VERIFIER=1`。在这条路径上，
-    “只接受完整真实 quote 的 Guard 校验” 还没有完成实测验证。
-
-## 架构
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    OpenClaw Agent Runtime                        │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  OpenClaw Agent (TDVM)                                      │ │
-│  │  - LLM Client                                               │ │
-│  │  - Context Manager                                          │ │
-│  │  - Tool Executor                                            │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │ Attestation-gated context transfer
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   OpenViking Service (TDVM)                      │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  OpenViking Confidential Memory Control Plane              │ │
-│  │  - Context Gateway                                          │ │
-│  │  - Encrypted Storage                                        │ │
-│  │  - Trust Policy Engine                                      │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     Agent-CC Core Services                      │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Argus     │  │   TC-API    │  │  Trust      │              │
-│  │  Verifier   │  │  Service    │  │  Service    │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-└─────────────────────────────────────────────────────────────────┘
-```
+- [OpenViking Trusted Context Gate 规范](../../openspec/specs/openviking-trusted-context-gate/spec.md)
+- [Argus Verifier](../../core/argus/README.md) - TDX quote 验证
+- [TC-API Service](../../core/tc-api/README.md) - 构建到运行时的信任
