@@ -41,25 +41,70 @@ OpenClaw Agent 是一个在 Intel TDX 虚拟机中运行的 AI agent 运行时�
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## 实现文件
+
+| 文件 | 描述 |
+|------|-------------|
+| [openclaw_agent.py](openclaw_agent.py) | 工作 Python 实现 |
+| [run_openclaw_openviking_e2e.sh](run_openclaw_openviking_e2e.sh) | 一键真实 quote e2e 运行脚本 |
+| [README.md](README.md) | 英文文档 |
+| [README_CN.md](README_CN.md) | 中文文档 |
+
 ## 快速开始
+
+### 前置条件
+
+运行完整 e2e 测试前，确保：
+- Intel TDX 启用平台（`/dev/tdx_guest`）
+- TSM configfs 位于 `/sys/kernel/config/tsm/report/`
+- 已安装 Docker & docker-compose
+- 已构建 Argus 二进制（见 [core/argus README](../../core/argus/README.md)）
+- 设置 TC-API identity token（`TC_API_IDENTITY_TOKEN` 或 `TC_API_BEARER_TOKEN`）
+
+### 步骤 1: 验证环境
+
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+./start_argus.sh validate
+```
+
+预期输出：
+```
+[INFO] Validating environment...
+[INFO] TDX device found at /dev/tdx_guest
+[INFO] TSM configfs found
+```
+
+### 步骤 2: 构建 Argus（如未构建）
+
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+cargo build --release
+```
+
+### 步骤 3: 运行完整端到端测试
 
 ```bash
 # 一键真实 quote 路径：compose 栈 + tc-api launch + real Guard + OpenClaw。
-cd ../../OpenViking/examples
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/examples
 export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
 ./run_openclaw_openviking_e2e.sh
 ```
 
-如果 OpenViking workload 已经在 `:8010` 健康运行，可以追加
-`SKIP_LAUNCH=1` 复用现有 workload，跳过 tc-api launch。
+该脚本：
+1. 启动 Docker Compose 栈（registry + tc-api + argus-provider）
+2. 通过 tc-api 启动 OpenViking workload
+3. 以 real-verifier 模式启动 argus-guard
+4. 运行带完整 TDX 证明的 OpenClaw 验证
 
-对于真实的 tc-api + Docker 路径，现在可以直接使用 OpenViking 示例目录下的
-`docker-compose.tc-api.yml` 和 `launch_openviking_via_tc_api.sh`。新的
-`run_openclaw_openviking_e2e.sh` 已经把这条路径与 real-verifier Guard
-启动和 OpenClaw 最终验证串成一个脚本。
+### 跳过 workload 启动（如已运行）
 
-该示例会调用本地 Argus Guard 的 `POST /ra/v1/verify` 接口，验证目标服务，
-并把 Guard 返回的 `report_data` 当作本地 secret release 和上下文存储的绑定值。
+如果 OpenViking workload 已在 `:8010` 健康运行，可以追加
+`SKIP_LAUNCH=1` 复用现有 workload，跳过 tc-api launch：
+
+```bash
+SKIP_LAUNCH=1 ./run_openclaw_openviking_e2e.sh
+```
 
 ## 验证状态
 
@@ -76,8 +121,6 @@ export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
 - `openclaw_agent.py` 已真实完成以下端到端链路：
     OpenClaw -> Guard -> Provider -> OpenViking `POST /verify/caller` ->
     `POST /context` -> `GET /context/{id}/metadata` -> `GET /context/{id}`。
-
-## 运行前提
 
 - OpenClaw 一侧可访问本地 Argus Guard：`http://localhost:8007`
 - OpenViking 一侧单独运行 Argus Evidence Provider，并且 Guard 能访问到它
