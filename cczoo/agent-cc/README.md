@@ -92,12 +92,12 @@ The identity verification system supports Non-SPIFFE and SPIFFE strategies. In t
 
 ## Quick Start
 
-For a complete OpenClaw + OpenViking attestation flow, follow the [OpenViking example guide](./adapters/OpenViking/examples/README.md). It covers the TDX and Docker prerequisites, TC-API credentials, and the end-to-end startup steps.
+For a complete OpenClaw + OpenViking attestation flow, follow the [OpenClaw adapter guide](./adapters/OpenClaw/README.md). It covers the TDX and Docker prerequisites, TC-API credentials, and the end-to-end startup steps.
 
 From the repository root, after meeting those prerequisites:
 
 ```bash
-cd cczoo/agent-cc/adapters/OpenViking/examples
+cd cczoo/agent-cc/adapters/OpenClaw/scripts
 read -rsp 'TC-API identity token: ' TC_API_IDENTITY_TOKEN
 printf '\n'
 export TC_API_IDENTITY_TOKEN
