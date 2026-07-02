@@ -71,8 +71,8 @@ SKIP_LAUNCH=1 ./run_openclaw_openviking_e2e.sh
 ```
 
 For the real tc-api-backed Docker flow, the OpenViking side can now use
-`docker-compose.tc-api.yml` plus `launch_openviking_via_tc_api.sh` from the
-OpenViking example directory. The new `run_openclaw_openviking_e2e.sh` wrapper
+`configs/docker-compose.tc-api.yml` plus `scripts/launch_openviking_via_tc_api.sh` from the
+OpenViking directory. The new `run_openclaw_openviking_e2e.sh` wrapper
 now stitches that path together with a real-verifier Guard run and the final
 OpenClaw verification.
 
@@ -95,6 +95,46 @@ Verified on 2026-06-29:
 - `openclaw_agent.py` completed a real end-to-end flow:
     OpenClaw -> Guard -> Provider -> OpenViking `POST /verify/caller` ->
     `POST /context` -> `GET /context/{id}/metadata` -> `GET /context/{id}`.
+
+## Real Dual-Side Deployment Steps
+
+```bash
+# One-shot deployment: compose stack + launch workload + start real Guard + run OpenClaw
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/scripts
+export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
+./run_openclaw_openviking_e2e.sh
+```
+
+## Expected Output
+
+```text
+OpenClaw Agent - Agent-CC Integration Example
+
+[1] Verifying OpenViking through Argus Guard...
+    TCB Status: UpToDate
+    Service Name: openviking-cmem
+    Workload ID: openviking-cmem
+    Launch ID: launch-...
+    Image Digest: sha256:...
+    Rekor UUID: ...
+    Transparency Log ID: ...
+    RTMR0: ...
+
+[2] Creating attestation context...
+[3] Retrieving attestation-gated secret...
+[4] Storing context with attestation binding...
+[5] Retrieving context with binding verification...
+```
+
+The current live TSM path returns `TCB Status: UpToDate` after quote structure
+and request binding verification pass, which is sufficient for the default
+policy flow. However, this does not mean collateral-backed TCB freshness has
+been evaluated.
+
+These additional metadata fields only appear when OpenViking is launched via
+tc-api managed Docker/launch path. Running `python3 openviking_service.py --serve`
+alone can still return attestation results, but without tc-api tracking the
+workload, it won't include `image_digest`, `launch_id`, `Rekor UUID` fields.
 
 ## Architecture
 
