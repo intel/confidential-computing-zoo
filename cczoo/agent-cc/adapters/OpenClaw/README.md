@@ -4,15 +4,14 @@ This directory contains an example adapter demonstrating how OpenClaw integrates
 
 ## Overview
 
-OpenClaw is an agent runtime that runs inside a TDVM (Trust Domain Virtual Machine) for confidential AI agent execution. This example shows how OpenClaw uses Agent-CC's core services for attestation-gated operations.
+OpenClaw is an agent runtime that uses Agent-CC's core services for attestation-gated operations. OpenClaw runs as a standard process and delegates confidential computing concerns to Argus services:
 
-## Implementation Files
+- **OpenClaw** (caller side): Standard process that makes trust decisions based on Argus verification results
+- **OpenViking** (service side): Runs inside a TDVM as the confidential workload being verified
+- **Argus Guard**: Verifies OpenViking's TDX attestation evidence on behalf of OpenClaw
+- **Argus Provider** (service side): Generates TDX quotes for OpenViking inside the TDVM
 
-| File | Description |
-|------|-------------|
-| [scripts/openclaw_agent.py](scripts/openclaw_agent.py) | Working Python implementation |
-| [scripts/run_openclaw_openviking_e2e.sh](scripts/run_openclaw_openviking_e2e.sh) | One-shot real quote e2e runner for tc-api + Provider + Guard + OpenClaw |
-| [README.md](README.md) | This documentation |
+This example shows how OpenClaw uses Argus to verify remote service identity and runtime state before exchanging sensitive data.
 
 ## Quick Start
 
