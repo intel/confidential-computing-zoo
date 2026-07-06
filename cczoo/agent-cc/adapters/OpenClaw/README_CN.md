@@ -4,7 +4,14 @@
 
 ## 概述
 
-OpenClaw Agent 是一个在 Intel TDX 虚拟机中运行的 AI agent 运行时，它利用 Agent-CC 的核心服务进行可信的 agent-to-service 通信。
+OpenClaw 是一个标准进程中的 AI agent 运行时，它利用 Agent-CC 的核心服务进行可信的 agent-to-service 通信：
+
+- **OpenClaw**（调用方）：运行在标准环境中的 agent 运行时，通过 Argus 验证结果做信任决策
+- **OpenViking**（服务方）：运行在 TDVM 内部的可信工作负载
+- **Argus Guard**：代表 OpenClaw 验证 OpenViking 的 TDX 证 attestation 证据
+- **Argus Provider**（服务方）：为 TDVM 内部的 OpenViking 生成 TDX quotes
+
+本示例展示 OpenClaw 如何使用 Argus 在交换敏感数据之前验证远程服务的身份和运行时状态。
 
 ## 架构
 
@@ -12,7 +19,7 @@ OpenClaw Agent 是一个在 Intel TDX 虚拟机中运行的 AI agent 运行时�
 ┌─────────────────────────────────────────────────────────────────┐
 │                    OpenClaw Agent Runtime                        │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  OpenClaw Agent (TDVM)                                      │ │
+│  │  OpenClaw Agent (标准进程)                                    │ │
 │  │  - LLM Client                                               │ │
 │  │  - Context Manager                                          │ │
 │  │  - Tool Executor                                            │ │
