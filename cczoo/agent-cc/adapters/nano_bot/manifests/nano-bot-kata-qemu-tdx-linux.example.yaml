@@ -1,0 +1,57 @@
+# Illustrative example only - this is NOT applied directly by the tooling in
+# this repo. scripts/repro_linux_coco_tdx.sh generates the real Pod manifest
+# at deploy time (see render_nano_bot_manifest() in that script) from the
+# environment variables documented in README.md, so no endpoint, proxy, or
+# credential ever needs to be committed to this file.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nano-bot-kata-qemu-tdx-linux
+spec:
+  runtimeClassName: kata-qemu-tdx-linux
+  # Only needed if your cluster has no working in-cluster DNS for the
+  # container's /etc/resolv.conf (rendered automatically when possible).
+  hostAliases:
+    - ip: "203.0.113.10"
+      hostnames:
+        - "api.example.com"
+    - ip: "203.0.113.20"
+      hostnames:
+        - "proxy.example.com"
+  containers:
+    - name: nano-bot
+      image: "docker.io/library/nano_bot:1.0"
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "infinity"]
+      env:
+        - name: GEM_HOME
+          value: "/usr/local/bundle"
+        - name: BUNDLE_APP_CONFIG
+          value: "/usr/local/bundle"
+        - name: PATH
+          value: "/usr/local/bundle/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: nano-bot-api-key
+              key: OPENAI_API_KEY
+        - name: OPENAI_API_ADDRESS
+          value: "https://api.example.com/v1"
+        - name: NANO_BOT_MODEL
+          value: "model-from-your-endpoint-models-api"
+        - name: NANO_BOTS_END_USER
+          value: "default"
+        - name: FARADAY_SSL_VERIFY
+          value: ""
+        - name: HTTPS_PROXY
+          value: "http://proxy.example.com:3128"
+        - name: HTTP_PROXY
+          value: "http://proxy.example.com:3128"
+        - name: https_proxy
+          value: "http://proxy.example.com:3128"
+        - name: http_proxy
+          value: "http://proxy.example.com:3128"
+        - name: NO_PROXY
+          value: "localhost,127.0.0.1,::1,10.96.0.0/12,10.244.0.0/16,10.88.0.0/16"
+        - name: no_proxy
+          value: "localhost,127.0.0.1,::1,10.96.0.0/12,10.244.0.0/16,10.88.0.0/16"
