@@ -26,6 +26,7 @@ class ServiceMetadataResponse(BaseModel):
     container_id: Optional[str] = None
     launch_id: Optional[str] = None
     image_digest: Optional[str] = None
+    trusted_log_id: Optional[str] = None
     service_name: Optional[str] = None
     created_at: Optional[str] = None
     last_seen_at: Optional[str] = None

@@ -171,6 +171,8 @@ impl EvidenceFetcherHttp {
             service_identity: BindingIdentityClaims {
                 service_name: "peer-service".to_string(),
                 service_id: Some("peer-id-001".to_string()),
+                launch_id: None,
+                transparency_log_id: None,
                 instance_id: "peer-instance-001".to_string(),
                 instance_scope: "pod".to_string(),
                 image_digest: Some("sha256:peerimage123".to_string()),

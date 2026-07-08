@@ -193,6 +193,8 @@ pub struct BindingIdentityClaims {
     #[serde(default)]
     pub service_name: String,
     pub service_id: Option<String>,
+    pub launch_id: Option<String>,
+    pub transparency_log_id: Option<String>,
     #[serde(default)]
     pub instance_id: String,
     #[serde(default = "default_instance_scope")]
