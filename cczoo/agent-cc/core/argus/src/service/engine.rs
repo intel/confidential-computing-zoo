@@ -58,8 +58,7 @@ impl EvidenceEngine {
         request: &EvidenceRequest,
     ) -> Result<Evidence> {
         // Try to fetch metadata from TC-API if available
-        let (service_name, service_id, launch_id, transparency_log_id, image_dige
-st, executable_digest) =
+        let (service_name, service_id, launch_id, transparency_log_id, image_digest, executable_digest) =
             if let Some(ref tc_api) = self.tc_api_client {
                 match self.fetch_metadata_from_tc_api(tc_api).await {
                     Ok(metadata) => (
@@ -158,14 +157,14 @@ st, executable_digest) =
     ) -> Result<crate::tc_api_client::ServiceMetadataResponse> {
         if let Ok(workload_id) = std::env::var("TC_API_WORKLOAD_ID") {
             if !workload_id.trim().is_empty() {
-                return tc_api_client.query_by_workload_id(workload_id.trim()).awa
-it;
+                return tc_api_client.query_by_workload_id(workload_id.trim()).await;
             }
         }
 
         if let Ok(service_id) = std::env::var("ARGUS_SERVICE_ID") {
             if !service_id.trim().is_empty() {
-                return tc_api_client.query_by_service_id(service_id.trim()).await;
+                // TC-API exposes workload/container keyed queries; treat service_id as workload_id fallback.
+                return tc_api_client.query_by_workload_id(service_id.trim()).await;
             }
         }
         let container_id = std::env::var("CONTAINER_ID")

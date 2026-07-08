@@ -32,6 +32,8 @@ import json
 import asyncio
 import logging
 import http.client
+import base64
+import uuid
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -65,8 +67,14 @@ class TcbStatus(Enum):
 
 
 def parse_tcb_status(value: str) -> TcbStatus:
+    normalized = (value or "").strip()
+    if normalized in ("OK", "MOCK_OK"):
+        return TcbStatus.UNKNOWN
+    if normalized == "ConfigurationNeeded":
+        return TcbStatus.CONFIGURATION_REQUIRED
+
     try:
-        return TcbStatus(value)
+        return TcbStatus(normalized)
     except ValueError:
         logger.warning("Unknown TCB status from verifier: %s; treating as Unknown", value)
         return TcbStatus.UNKNOWN
@@ -77,7 +85,9 @@ class AttestationEvidence:
     """Attestation evidence returned by Argus Guard"""
     quote_hex: str
     quote_size: int
+    quote_valid: bool
     tcb_status: TcbStatus
+    mrtd: str
     rtmr0: str
     rtmr1: str
     rtmr2: str
@@ -110,8 +120,75 @@ class ArgusGuardClient:
     claims that OpenClaw can safely consume.
     """
 
-    def __init__(self, guard_endpoint: str = "http://localhost:8007"):
+    def __init__(self, guard_endpoint: str = "http://localhost:8007", provider_endpoint: Optional[str] = None):
         self.guard_endpoint = guard_endpoint
+        self.provider_endpoint = provider_endpoint or os.getenv("PROVIDER_URL", "http://127.0.0.1:8008")
+
+    @staticmethod
+    def _extract_measurements_from_quote_b64(quote_b64: str) -> Dict[str, str]:
+        # Keep offsets aligned with argus core tdx_verifier.rs extract_rtmr_values().
+        # MRTD offset is derived from TDINFO layout in TDREPORT within the quote.
+        offsets = {
+            "mrtd": 640,
+            "rtmr0": 832,
+            "rtmr1": 880,
+            "rtmr2": 928,
+            "rtmr3": 976,
+        }
+        rtmr_size = 48
+        raw = base64.b64decode(quote_b64)
+        values: Dict[str, str] = {}
+        for key, offset in offsets.items():
+            if len(raw) >= offset + rtmr_size:
+                values[key] = raw[offset:offset + rtmr_size].hex()
+            else:
+                values[key] = ""
+        return values
+
+    def _fetch_measurements_from_provider(
+        self,
+        service_name: str,
+        target_uri: str,
+        caller_id: str,
+    ) -> Dict[str, str]:
+        parsed_url = urlparse(self.provider_endpoint)
+        conn = http.client.HTTPConnection(parsed_url.netloc)
+        try:
+            payload = json.dumps({
+                "version": "v1",
+                "nonce": uuid.uuid4().hex,
+                "caller_id": caller_id,
+                "target": {
+                    "service_name": service_name,
+                    "target_uri": target_uri,
+                },
+                "requested_claims": [],
+                "profile_digest": None,
+            })
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            path = parsed_url.path.rstrip("/")
+            if not path.endswith("/ra/v1/evidence"):
+                path = f"{path}/ra/v1/evidence" if path else "/ra/v1/evidence"
+
+            conn.request("POST", path, body=payload, headers=headers)
+            response = conn.getresponse()
+            if response.status != 200:
+                logger.warning("Provider evidence request failed: HTTP %s", response.status)
+                return {"mrtd": "", "rtmr0": "", "rtmr1": "", "rtmr2": "", "rtmr3": ""}
+
+            body = json.loads(response.read().decode())
+            quote_b64 = body.get("quote") or ""
+            if not quote_b64:
+                return {"mrtd": "", "rtmr0": "", "rtmr1": "", "rtmr2": "", "rtmr3": ""}
+            return self._extract_measurements_from_quote_b64(quote_b64)
+        except Exception as exc:
+            logger.warning("Failed to fetch RTMR values from provider: %s", exc)
+            return {"mrtd": "", "rtmr0": "", "rtmr1": "", "rtmr2": "", "rtmr3": ""}
+        finally:
+            conn.close()
 
     async def verify_target(
         self,
@@ -168,15 +245,34 @@ class ArgusGuardClient:
             binding_claims = claims.get("binding_claims") or {}
             service_identity = binding_claims.get("service_identity") or {}
             tcb_status = claims.get("tcb_status") or "Unknown"
+            quote_valid = bool(claims.get("quote_valid"))
+
+            mrtd = measurements.get("mrtd") or ""
+            rtmr0 = measurements.get("rtmr0") or ""
+            rtmr1 = measurements.get("rtmr1") or ""
+            rtmr2 = measurements.get("rtmr2") or ""
+            rtmr3 = measurements.get("rtmr3") or ""
+
+            # Current guard path may omit RTMRs in normalized claims. Fallback to
+            # provider evidence quote so callers can still inspect measurements.
+            if not mrtd or not rtmr0 or not rtmr1 or not rtmr2 or not rtmr3:
+                fallback = self._fetch_measurements_from_provider(service_name, target_uri, caller_id)
+                mrtd = fallback.get("mrtd") or mrtd
+                rtmr0 = fallback.get("rtmr0") or rtmr0
+                rtmr1 = fallback.get("rtmr1") or rtmr1
+                rtmr2 = fallback.get("rtmr2") or rtmr2
+                rtmr3 = fallback.get("rtmr3") or rtmr3
 
             return AttestationEvidence(
                 quote_hex="",
                 quote_size=0,
+                quote_valid=quote_valid,
                 tcb_status=parse_tcb_status(tcb_status),
-                rtmr0=measurements.get("rtmr0") or "",
-                rtmr1=measurements.get("rtmr1") or "",
-                rtmr2=measurements.get("rtmr2") or "",
-                rtmr3=measurements.get("rtmr3") or "",
+                mrtd=mrtd,
+                rtmr0=rtmr0,
+                rtmr1=rtmr1,
+                rtmr2=rtmr2,
+                rtmr3=rtmr3,
                 report_data=claims.get("report_data", ""),
                 service_name=service_identity.get("service_name", ""),
                 service_id=service_identity.get("service_id", "") or "",
@@ -217,7 +313,6 @@ class OpenClawEvidenceProvider:
 
         logger.info("Verifying target service %s (%s)", service_name, target_uri)
         evidence = await self.guard.verify_target(service_name, target_uri, caller_id)
-        logger.info("Target verified: TCB status=%s", evidence.tcb_status.value)
 
         return evidence
 
@@ -440,7 +535,7 @@ async def main():
         # Step 1: Fetch and verify attestation
         print("\n[1] Verifying OpenViking through Argus Guard...")
         evidence = await evidence_provider.fetch_runtime_attestation()
-        print(f"    TCB Status: {evidence.tcb_status.value}")
+        print(f"    TDX Quote verification result: {evidence.quote_valid}")
         if evidence.service_name:
             print(f"    Service Name: {evidence.service_name}")
         if evidence.service_id:
@@ -448,29 +543,31 @@ async def main():
         if evidence.launch_id:
             print(f"    Launch ID: {evidence.launch_id}")
         if evidence.image_digest:
-            print(f"    Image Digest: {evidence.image_digest[:40]}...")
+            print(f"    Image Digest: {evidence.image_digest}")
         if evidence.rekor_uuid:
             print(f"    Rekor UUID: {evidence.rekor_uuid}")
         if evidence.transparency_log_id:
             print(f"    Transparency Log ID: {evidence.transparency_log_id}")
-        print(f"    RTMR0: {evidence.rtmr0[:32]}...")
-        print(f"    RTMR1: {evidence.rtmr1[:32]}...")
+        print(f"    MRTD: {evidence.mrtd or '[unavailable]'}")
+        print(f"    RTMR0: {evidence.rtmr0 or '[unavailable]'}")
+        print(f"    RTMR1: {evidence.rtmr1 or '[unavailable]'}")
+        print(f"    RTMR2: {evidence.rtmr2 or '[unavailable]'}")
+        print(f"    RTMR3: {evidence.rtmr3 or '[unavailable]'}")
         
         # Step 2: Create attestation context
         print("\n[2] Creating attestation context...")
         attestation = AttestationContext(
-            is_trusted=True,
+            is_trusted=evidence.quote_valid,
             evidence=evidence,
             binding_digest=evidence.report_data,
             verified_at=datetime.utcnow()
         )
         print(f"    Trusted: {attestation.is_trusted}")
-        print(f"    Binding: {attestation.binding_digest[:32]}...")
+        print(f"    Binding: {attestation.binding_digest}")
         
         # Step 3: Retrieve attestation-gated secret
         print("\n[3] Retrieving attestation-gated secret...")
-        api_key = await secret_manager.get_api_key("openai_api_key", attestation)
-        print(f"    API Key: {api_key[:20]}...")
+        _ = await secret_manager.get_api_key("openai_api_key", attestation)
         
         # Step 4: Store context with attestation binding
         print("\n[4] Storing context with attestation binding...")
@@ -501,7 +598,7 @@ async def main():
             "OpenClaw to OpenViking end-to-end context payload",
             evidence,
         )
-        print(f"    Remote binding: {commit_result.get('binding', '')[:32]}...")
+        print(f"    Remote binding: {commit_result.get('binding', '')}")
 
         print("\n[8] Observing OpenViking context metadata...")
         metadata_result = await openviking_client.observe_context(remote_context_id, evidence)

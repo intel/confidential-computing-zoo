@@ -143,7 +143,9 @@ impl crate::engine::RaVerifier for RaAdapter {
             report_data: evidence.report_data.clone(),
             binding_assurance_level: binding_level,
             verified_claim_assurance: None,
-            tcb_status: Some("OK".to_string()),
+            // Argus does not perform collateral-backed freshness evaluation yet.
+            // Keep the exported status aligned with the documented semantics.
+            tcb_status: Some("Unknown".to_string()),
             measurements,
             binding_claims: evidence.binding_claims.clone(),
             attested_issuance: None,
@@ -196,7 +198,7 @@ impl crate::engine::RaVerifier for MockRaAdapter {
             report_data: evidence.report_data.clone(),
             binding_assurance_level: self.binding_level,
             verified_claim_assurance: None,
-            tcb_status: Some("MOCK_OK".to_string()),
+            tcb_status: Some("Unknown".to_string()),
             measurements: ExportMeasurementClaims {
                 image_digest: Some("sha256:mock123".to_string()),
                 executable_digest: Some("sha256:mock456".to_string()),

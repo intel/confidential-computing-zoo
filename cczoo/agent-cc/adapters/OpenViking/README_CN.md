@@ -1,35 +1,10 @@
 # OpenViking Service 示例
 
-本目录包含一个示例适配器，演示 OpenViking 如何与 Agent-CC 集成作为机密内存服务。
+本目录包含一个示例适配器，演示 OpenViking 如何与 Agent-CC 集成作为机密 Agent memory 服务。
 
 ## 概述
 
-OpenViking 是一个机密内存控制平面服务，提供基于证明的上下文存储和检索。本示例展示 OpenViking 如何使用 Agent-CC 的核心服务进行可信上下文传输。
-
-## 架构
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   OpenViking Service (TDVM)                      │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  OpenViking Confidential Memory Control Plane               │ │
-│  │  - Context Gateway                                          │ │
-│  │  - Encrypted Storage                                        │ │
-│  │  - Trust Policy Engine                                      │ │
-│  │  - Attestation Verifier                                     │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼ 基于证明的上下文传输
-┌─────────────────────────────────────────────────────────────────┐
-│                     Agent-CC Core Services                      │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Argus     │  │   TC-API    │  │  Trust      │              │
-│  │  Verifier   │  │  Service    │  │  Service    │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-└─────────────────────────────────────────────────────────────────┘
-```
+OpenViking 是专为 AI 智能体设计的开源上下文数据库，提供基于证明的上下文存储和检索。本示例展示 OpenViking 如何使用 Agent-CC 的核心服务进行可信上下文传输。
 
 ## 上下文网关操作
 
@@ -41,16 +16,6 @@ OpenViking 暴露的上下文操作均基于证明：
 | `recall` | 物化上下文以供处理 | 是 |
 | `commit` | 存储带证明绑定的上下文 | 是 |
 | `privacy_restore` | 恢复加密上下文 | 是 |
-
-## 实现文件
-
-| 文件 | 描述 |
-|------|-------------|
-| [scripts/openviking_service.py](scripts/openviking_service.py) | 工作 Python 实现 |
-| [scripts/launch_openviking_via_tc_api.sh](scripts/launch_openviking_via_tc_api.sh) | 构建、推送并通过 tc-api 启动 OpenViking workload |
-| [configs/docker-compose.tc-api.yml](configs/docker-compose.tc-api.yml) | tc-api + registry + Argus Provider 栈，用于真实 Docker 启动流程 |
-| [configs/Dockerfile.tc-api-workload](configs/Dockerfile.tc-api-workload) | 用于 tc-api 管理的 OpenViking workload 容器镜像 |
-| [configs/openviking-launch-payload.json](configs/openviking-launch-payload.json) | tc-api 部署的启动 payload |
 
 ## OpenClaw 集成
 
@@ -70,14 +35,14 @@ OpenViking 通过 verify-skill trust gate 与 OpenClaw 配合工作：
 
 ```bash
 # 内存态演示（自动退出）
-python3 openviking_service.py
+python3 scripts/openviking_service.py
 
 # HTTP 服务模式
-python3 openviking_service.py --serve
+python3 scripts/openviking_service.py --serve
 ```
 
 > **注意**：Demo 模式（`openviking_service.py`）在内存中运行，无真实 TDX quote。
-> 要进行生产或完整证明验证，请使用 `run_openclaw_openviking_e2e.sh`。
+> 要进行端到端测试，请参考 [OpenClaw 到服务保护指南](../OpenClaw/openclaw_to_service_protection_CN.md)。
 
 ### 2. tc-api 管理模式
 
@@ -85,7 +50,23 @@ python3 openviking_service.py --serve
 
 1. `configs/docker-compose.tc-api.yml`：启动本地 registry、tc-api，以及 Argus Evidence Provider
 2. `configs/Dockerfile.tc-api-workload`：打包 `openviking_service.py --serve` 成真正的 service workload 镜像
-3. `scripts/launch_openviking_via_tc_api.sh`：构建镜像、推送到本地 registry，并提交 deploy-launch 请求
+3. `scripts/launch_openviking.sh`：构建镜像、推送到本地 registry，并提交 deploy-launch 请求
+
+### 2.1 LUKS 落盘保护（暂缓支持）
+
+`openviking_service.py` 可以将 context 持久化到 `OPENVIKING_DATA_DIR`，但
+tc-api 有意拒绝任意 Docker 命令覆盖。目前尚未实现结构化且经过路径校验的
+LUKS 数据卷挂载 API，因此 `launch_openviking.sh` 在默认
+`OPENVIKING_USE_LUKS=1` 时会安全地拒绝启动。仅可在非生产测试中设置
+`OPENVIKING_USE_LUKS=0`；此模式使用容器自身存储，不提供静态数据加密。
+在受限挂载 API 实现前，不要传入 `dockercmd` 或声称数据已加密落盘。
+
+仅非生产测试时，可从仓库根目录运行：
+
+```bash
+cd cczoo/agent-cc/adapters/OpenViking/scripts
+OPENVIKING_USE_LUKS=0 ./launch_openviking.sh
+```
 
 OpenViking 本身不启动 Argus Evidence Provider。预期流程是只在
 OpenViking 一侧使用 `ARGUS_WORKLOAD_IDENTITY=openviking-cmem` 启动 provider，
@@ -103,7 +84,7 @@ collateral-backed 的 TCB 新鲜度判定。
 
 ## 运行步骤
 
-**完整端到端测试请参考 [OpenClaw Scripts README](../../OpenClaw/scripts/README.md)**
+**完整端到端测试请参考 [OpenClaw 到服务保护指南](../OpenClaw/openclaw_to_service_protection_CN.md)**
 
 该文档包含：
 - 前置条件检查
@@ -114,7 +95,7 @@ collateral-backed 的 TCB 新鲜度判定。
 ## Provider 一侧环境变量示例
 
 ```bash
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/core/argus
 export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
 export ARGUS_SERVICE_ID=openviking-cmem
 export TC_API_WORKLOAD_ID=openviking-cmem

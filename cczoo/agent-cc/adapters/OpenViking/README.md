@@ -4,60 +4,24 @@ This directory contains an example adapter demonstrating how OpenViking integrat
 
 ## Overview
 
-OpenViking is a confidential memory control plane service that provides attestation-gated context storage and retrieval. This example shows how OpenViking uses Agent-CC's core services for trusted context transfer.
+OpenViking is an open-source Context Database designed specifically for AI Agents. It provides attestation-gated context storage and retrieval. This example shows how OpenViking uses Agent-CC's core services for trusted context transfer.
 
 ## Running Examples
 
-For complete end-to-end testing, see [OpenClaw to service protection](../../OpenClaw/openclaw_to_service_protection.md)
+For complete end-to-end testing, see [OpenClaw to service protection](../OpenClaw/openclaw_to_service_protection.md).
 
 ## Run OpenViking Service Only
 
 For a quick in-memory demo without full attestation:
 
 ```bash
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
-python3 openviking_service.py
+python3 cczoo/agent-cc/adapters/OpenViking/scripts/openviking_service.py
 ```
 
 Or start the HTTP gateway for manual testing:
 
 ```bash
 python3 openviking_service.py --serve
-```
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    OpenClaw Agent Runtime                        │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  OpenClaw Agent (TDVM)                                      │ │
-│  │  - LLM Client                                               │ │
-│  │  - Context Manager                                          │ │
-│  │  - Tool Executor                                            │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │ Attestation-gated context transfer
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   OpenViking Service (TDVM)                      │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  OpenViking Confidential Memory Control Plane              │ │
-│  │  - Context Gateway                                          │ │
-│  │  - Encrypted Storage                                        │ │
-│  │  - Trust Policy Engine                                      │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     Agent-CC Core Services                      │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Argus     │  │   TC-API    │  │  Trust      │              │
-│  │  Verifier   │  │  Service    │  │  Service    │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Configuration
@@ -138,14 +102,14 @@ path.
 
 ### Real tc-api + Docker Flow Assets
 
-This directory now includes a concrete deployment path for that flow:
+The adapter provides these deployment assets:
 
-1. `docker-compose.tc-api.yml` starts the local registry, tc-api, and an Argus
+1. `configs/docker-compose.tc-api.yml` starts the local registry, tc-api, and an Argus
     Evidence Provider configured to query tc-api by workload ID. The tc-api
     container starts TruCon and Docktap internally via `start.sh`.
-2. `Dockerfile.tc-api-workload` packages `openviking_service.py --serve` as the
+2. `configs/Dockerfile.tc-api-workload` packages `openviking_service.py --serve` as the
     actual service workload.
-3. `launch_openviking_via_tc_api.sh` builds that image, pushes it to the host
+3. `scripts/launch_openviking.sh` builds that image, pushes it to the local
     local registry at `localhost:5000`, and submits `POST /api/deploy-launch`
     with `metadata.workload_id=openviking-cmem` using the in-network pull
     reference `docker://registry:5000/openviking-cmem:latest`.
@@ -168,30 +132,25 @@ digest, launch ID, and any available Rekor identifiers.
 
 ### End-to-End Steps
 
-1. Start the OpenViking-side control plane and provider:
-
 ```bash
-cd ../../../adapters/OpenViking/examples
-docker-compose -f docker-compose.tc-api.yml up -d registry tc-api argus-provider
+cd cczoo/agent-cc/adapters/OpenViking/scripts
+OPENVIKING_USE_LUKS=0 ./launch_openviking.sh
 ```
 
-2. Export one tc-api write credential. Use `TC_API_IDENTITY_TOKEN` for request-body auth or `TC_API_BEARER_TOKEN` for Authorization-header auth:
+This local-test mode stores data in the container layer and does not provide
+encryption at rest. The launcher obtains a TC-API identity interactively when
+no token is exported. Do not use this mode for sensitive data.
 
-```bash
-export TC_API_IDENTITY_TOKEN='<sigstore token>'
-```
+### Encrypted-at-Rest Storage (Deferred)
 
-If you are using interactive Sigstore login instead of a pre-exported token,
-keep the payload on the tc-api CLI path pointed at
-`docker://registry:5000/openviking-cmem:latest`. `docker://localhost:5000/...`
-passes request validation but fails at pull time because the registry fetch runs
-inside the tc-api container.
-
-3. Build and launch the OpenViking workload through tc-api:
-
-```bash
-./launch_openviking_via_tc_api.sh
-```
+`openviking_service.py` can persist contexts under `OPENVIKING_DATA_DIR`, but
+TC-API intentionally rejects arbitrary Docker command overrides. A structured,
+path-validated LUKS bind-mount API has not been implemented yet. The launcher
+therefore fails closed when `OPENVIKING_USE_LUKS=1` (the default). For
+non-production testing only, set `OPENVIKING_USE_LUKS=0`; this uses
+container-local storage and does not provide encryption at rest. Do not pass
+`dockercmd` or claim encrypted persistence until the structured mount support
+is available.
 
 4. On the OpenClaw side, point Guard at the OpenViking provider and set the target URI to the launched workload endpoint:
 

@@ -202,7 +202,7 @@ venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore
 ```bash
 # Launch the attested OpenClaw workload.
 venv/bin/python -m tc_api.cli.client   --base-url http://localhost:8000   --sigstore-login oob \
-	deploy --payload-json -d '{"image_id":"tc-api-build-<build_id>","build_id":"<build_id>","user_id":"<sigstore account>","image_url":"docker.io/<repo>/tc-api-build-<build_id>:latest-encrypted","sbom_url":"<sbom path>","attestation_required":true,"luks_path":"<mounted luks path>","dockercmd":"<optional openclaw docker run command>"}'
+	deploy --payload-json -d '{"image_id":"tc-api-build-<build_id>","build_id":"<build_id>","user_id":"<sigstore account>","image_url":"docker.io/<repo>/tc-api-build-<build_id>:latest-encrypted","sbom_url":"<sbom path>","attestation_required":true,"luks_path":"<mounted luks path>"}'
 ```
 ### TC API server show deploy logs
 
