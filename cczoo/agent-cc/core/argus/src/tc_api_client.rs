@@ -47,6 +47,7 @@ pub struct ServiceMetadataResponse {
     pub launch_id: Option<String>,
     pub image_digest: Option<String>,
     pub service_name: Option<String>,
+    pub trusted_log_id: Option<String>,
     pub created_at: Option<String>,
     pub last_seen_at: Option<String>,
 }

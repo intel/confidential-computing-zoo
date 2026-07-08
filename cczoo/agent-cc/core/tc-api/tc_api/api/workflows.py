@@ -13,6 +13,7 @@ from fastapi import BackgroundTasks, HTTPException, Request
 from tlog.types import Entry
 
 from ..identity.sigstore_identity import resolve_sigstore_identity_token
+from ..docktap.workload_store import WorkloadStore
 from ..models import (
     BuildPackageRequest,
     BuildPackageResponse,
@@ -732,6 +733,21 @@ async def launch_container_async(
             record_id,
             request.identity_token,
         )
+        workload_store = WorkloadStore()
+        workload_store.init_db()
+        for instance in instance_ids:
+            container_id = instance.get("container_ID") if isinstance(instance, dict) else None
+            if not container_id:
+                continue
+            workload_store.put(
+                container_id,
+                workload_id,
+                launch_id=launch_id,
+                operation="create",
+                image_digest=image_digest,
+                service_name=(request.metadata or {}).get("service_name") if isinstance(request.metadata, dict) else None,
+                trusted_log_id=str(log_id) if log_id else None,
+            )
         docker_service.update_transparencylog_status(request.user_id, str(log_id), "added", launch_id)
         verify_tlog_status = docker_service.verify_chain_state("launch", tlog, chain_id=transparency_chain_id)
 

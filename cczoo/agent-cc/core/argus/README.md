@@ -138,11 +138,3 @@ On the validated path, Argus currently provides:
 - Separation of caller-side trust enforcement from service-side evidence generation, so application code never directly controls the attestation flow.
 
 Current boundaries to keep in mind: the default request path performs structural validation and request-binding validation of a live TSM quote, but does not yet perform full Intel collateral/certificate-chain verification in the Guard's main path. The current implementation is more accurately described as "request-bound TDX evidence verification" rather than "full PKI-based remote attestation verification". See [Design Decisions](./docs/design-decisions.md) for the full rationale and roadmap.
-
-## Next Steps
-
-The most natural follow-on work is:
-
-1. Wire collateral-aware TCB verification (PCCS/QVL) into the Guard's main verification path, per the roadmap in [Design Decisions](./docs/design-decisions.md).
-2. Create machine-readable schema artifacts for `ProfileBody`, `ProfileEnvelope`, and related contracts.
-3. Add conformance vectors for canonicalization, builtin predicates, and deny-reason taxonomy per [Testing And Validation](./docs/tests.md).

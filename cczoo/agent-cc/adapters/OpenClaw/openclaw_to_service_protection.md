@@ -45,7 +45,23 @@ cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
 cargo build --release
 ```
 
-### Step 3: Run Full End-to-End Test
+### Step 3: Acquire a Fresh tc-api Launch Token
+
+The tc-api `deploy-launch` path is authenticated. In practice, the Sigstore OIDC
+identity token is short-lived, so fetch it immediately before launching the
+workload:
+
+```bash
+cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/tc-api
+bash ./setup.sh
+./venv/bin/python -m tc_api.cli.oidc_verification_code --operation launch --format export
+```
+
+That command prints a browser URL. Finish GitHub login, paste the verification
+code back into the helper, then export the printed `TC_API_IDENTITY_TOKEN` in
+the shell where you will run the e2e script.
+
+### Step 4: Run Full End-to-End Test
 
 ```bash
 # One-shot real quote path: compose stack + tc-api launch + real Guard + OpenClaw.
@@ -79,61 +95,71 @@ The example calls `POST /ra/v1/verify` on the local Argus Guard and treats the
 returned `report_data` as the binding digest for local secret release and
 context storage.
 
-## Validation Status
+## Successful Run Checklist
 
-Verified on 2026-06-29:
-
-- Real tc-api interactive `deploy-launch` succeeded and produced a running
-    OpenViking workload on `http://127.0.0.1:8010`.
-- Argus provider returned tc-api-backed claims including `launch_id`,
-    `image_digest`, and `transparency_log_id`.
-- Argus provider generated a real TDX quote via tc-api `POST /v1/attestation`
-    instead of falling back to mock evidence.
-- Guard accepted the provider quote in real verifier mode without
-    `ARGUS_ALLOW_MOCK_VERIFIER=1`.
-- `openclaw_agent.py` completed a real end-to-end flow:
-    OpenClaw -> Guard -> Provider -> OpenViking `POST /verify/caller` ->
-    `POST /context` -> `GET /context/{id}/metadata` -> `GET /context/{id}`.
-
-## Real Dual-Side Deployment Steps
+The validated fresh launch from this repository produced the following concrete
+tc-api result:
 
 ```bash
-# One-shot deployment: compose stack + launch workload + start real Guard + run OpenClaw
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/scripts
-export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
-./run_openclaw_openviking_e2e.sh
+curl -fsS http://127.0.0.1:8000/api/launch-result/launch-c17005e
 ```
 
-## Expected Output
+```json
+{
+    "status": "success",
+    "validation": "passed",
+    "attestation": "trusted",
+    "launch_id": "launch-c17005e",
+    "log_id": "9253e293-893d-4046-b62b-d93a945f463b",
+    "transparencyLog_verify": "success",
+    "instance_ids": [
+        {
+            "container_ID": "b073d524294e",
+            "container_Status": "running"
+        }
+    ],
+    "evidence": {
+        "workload_id": "openviking-cmem",
+        "image_id": "openviking-cmem",
+        "image_digest": "sha384:e475081e1c1923296b4b2b4181b47e987e4b383f8c79c054970bfb189fe8acdf15122cca6577981e588dbd84575c2584"
+    }
+}
+```
+
+The validated OpenClaw business flow then completed with these terminal lines:
 
 ```text
 OpenClaw Agent - Agent-CC Integration Example
 
 [1] Verifying OpenViking through Argus Guard...
-    TCB Status: UpToDate
+        TCB Status: UpToDate
     Service Name: openviking-cmem
     Workload ID: openviking-cmem
-    Launch ID: launch-...
-    Image Digest: sha256:...
-    Rekor UUID: ...
-    Transparency Log ID: ...
-    RTMR0: ...
+    Launch ID: launch-c17005e
+    Image Digest: sha384:e475081e1c1923296b4b2b4181b47e987e4b383f8c79c054970bfb189fe8acdf15122cca6577981e588dbd84575c2584
+    Trusted Log ID: 9253e293-893d-4046-b62b-d93a945f463b
 
 [2] Creating attestation context...
-[3] Retrieving attestation-gated secret...
-[4] Storing context with attestation binding...
-[5] Retrieving context with binding verification...
+[6] Calling OpenViking verify endpoint...
+        Trusted by OpenViking: True
+
+[7] Committing context to OpenViking...
+[8] Observing OpenViking context metadata...
+[9] Recalling OpenViking context payload...
+        Remote payload: b'OpenClaw to OpenViking end-to-end context payload'
+
+Example completed successfully!
 ```
 
-The current live TSM path returns `TCB Status: UpToDate` after quote structure
-and request binding verification pass, which is sufficient for the default
-policy flow. However, this does not mean collateral-backed TCB freshness has
-been evaluated.
+This flow surfaced the tc-api trusted-log record identifier
+`9253e293-893d-4046-b62b-d93a945f463b`, which the OpenClaw example now prints as
+`Trusted Log ID`. The current endpoints still do not expose a separate public
+Rekor UUID for this run.
 
-These additional metadata fields only appear when OpenViking is launched via
-tc-api managed Docker/launch path. Running `python3 openviking_service.py --serve`
-alone can still return attestation results, but without tc-api tracking the
-workload, it won't include `image_digest`, `launch_id`, `Rekor UUID` fields.
+Operational note: tc-api's workload metadata store currently lives at
+`/dev/shm/docktap/container_map.db` inside the tc-api container. Restarting the
+tc-api container intentionally clears that tmpfs-backed state; a fresh `deploy-launch` then
+re-populates the workload row automatically.
 
 ## Architecture
 
@@ -158,117 +184,6 @@ workload, it won't include `image_digest`, `launch_id`, `Rekor UUID` fields.
 │  │  └─────────────┘  └─────────────┘  └─────────────┘          │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
-```
-
-## Integration Points
-
-### 1. Evidence Provider Integration
-
-OpenClaw fetches TDX attestation evidence through the Agent-CC Evidence Provider:
-
-```rust
-// Example: Fetch attestation evidence for OpenClaw runtime
-use argus::EvidenceFetcher;
-
-pub struct OpenClawEvidenceProvider {
-    evidence_endpoint: String,
-}
-
-impl OpenClawEvidenceProvider {
-    pub fn new() -> Self {
-        Self {
-            evidence_endpoint: std::env::var("EVIDENCE_ENDPOINT")
-                .unwrap_or_else(|_| "http://localhost:8008".to_string()),
-        }
-    }
-
-    /// Fetch TDX quote for OpenClaw runtime attestation
-    pub async fn fetch_runtime_attestation(&self) -> Result<AttestationEvidence> {
-        let evidence = EvidenceFetcher::new(&self.evidence_endpoint)
-            .with_service_identity("openclaw-agent")
-            .fetch_evidence()
-            .await?;
-        
-        Ok(AttestationEvidence {
-            quote: evidence.tdx_quote,
-            runtime_measurements: evidence.rtmr_values,
-            tcb_status: evidence.tcb_status,
-        })
-    }
-}
-```
-
-### 2. Attestation-Gated Secret Release
-
-OpenClaw retrieves secrets only after attestation verification succeeds:
-
-```rust
-// Example: Attestation-gated API key retrieval
-use argus::{AttestationContext, SecretStore};
-
-pub struct OpenClawSecretManager {
-    secret_store: SecretStore,
-}
-
-impl OpenClawSecretManager {
-    /// Retrieve API key only if attestation passes
-    pub async fn get_api_key(&self, key_id: &str) -> Result<String> {
-        let attestation = AttestationContext::new()
-            .with_minimum_assurance_level("L2")
-            .verify()
-            .await?;
-
-        if !attestation.is_trusted() {
-            return Err(AgentError::AttestationFailed {
-                reason: "OpenClaw runtime attestation verification failed".to_string(),
-            });
-        }
-
-        self.secret_store
-            .get_secret(key_id, &attestation)
-            .await
-    }
-}
-```
-
-### 3. Encrypted Context Storage
-
-OpenClaw uses Agent-CC's encrypted storage for sensitive context:
-
-```rust
-// Example: Encrypted context storage with attestation binding
-use argus::{EncryptedStorage, AttestationBinding};
-
-pub struct OpenClawContextManager {
-    storage: EncryptedStorage,
-}
-
-impl OpenClawContextManager {
-    /// Store context with attestation binding
-    pub async fn store_context(
-        &self,
-        context_id: &str,
-        context_data: &[u8],
-        binding: &AttestationBinding,
-    ) -> Result<()> {
-        self.storage
-            .store_encrypted(context_id, context_data, binding)
-            .await
-    }
-
-    /// Retrieve context only if attestation matches
-    pub async fn retrieve_context(
-        &self,
-        context_id: &str,
-        expected_binding: &AttestationBinding,
-    ) -> Result<Vec<u8>> {
-        let context = self.storage
-            .retrieve_encrypted(context_id, expected_binding)
-            .await?;
-
-        Ok(context)
-    }
-}
 ```
 
 ## Configuration
@@ -369,35 +284,28 @@ volumes:
    - Encrypted storage access
 ```
 
-## Running the Example
+## Manual Split Deployment
 
-### Prerequisites
+The `Quick Start` above is the authoritative path for the validated fresh
+`deploy-launch` flow, including concrete success output.
 
-- OpenClaw side: Argus Guard reachable at `http://localhost:8007`
-- OpenViking side: Argus Evidence Provider reachable from the Guard host
-- Intel TDX-enabled platform with TSM enabled if you want a real quote path
+Use the steps below only if you want to run the two sides manually instead of
+using `scripts/run_openclaw_openviking_e2e.sh`.
 
-### Build and Run
+### OpenClaw Side
 
 ```bash
-# On the OpenClaw side, start only Argus Guard and point it at the
-# OpenViking-side provider.
 cd ../../../core/argus
 export EVIDENCE_ENDPOINT=http://<openviking-provider-host>:8008
 ./start_argus.sh start-guard
 
-# Return to the OpenClaw example on the same host.
-cd ../../../adapters/OpenClaw/examples
-
-# Optional: override the logical target that OpenClaw verifies
+cd ../../../adapters/OpenClaw/scripts
 export TARGET_SERVICE_NAME=openviking-cmem
 export TARGET_URI=https://<openviking-service-host>
-
-# Run the caller-side verification demo
 python3 openclaw_agent.py
 ```
 
-On the OpenViking side, start the provider separately:
+### OpenViking Side
 
 ```bash
 cd ../../../core/argus
@@ -405,58 +313,9 @@ export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
 ./start_argus.sh start-provider
 ```
 
-## Expected Output
-
-```bash
-OpenClaw Agent - Agent-CC Integration Example
-
-[1] Verifying OpenViking through Argus Guard...
-    TCB Status: UpToDate
-    Service Name: openviking-cmem
-    Workload ID: openviking-cmem
-    Launch ID: launch-...
-    Image Digest: sha256:...
-    Rekor UUID: ...
-    Transparency Log ID: ...
-    RTMR0: ...
-
-[2] Creating attestation context...
-[3] Retrieving attestation-gated secret...
-[4] Storing context with attestation binding...
-[5] Retrieving context with binding verification...
-```
-
-On the current live TSM path, Argus reports `TCB Status: UpToDate` after quote
-structure and request-binding verification succeed. That is sufficient for the
-example's default policy flow, but it still does not imply collateral-backed
-TCB freshness evaluation.
-
-The extra metadata lines above appear only when the OpenViking side is launched
-through a tc-api-managed Docker path. Plain `python3 openviking_service.py --serve`
-can still return attestation evidence, but tc-api-specific fields such as image
-digest, launch ID, and Rekor UUID will be empty unless tc-api is tracking the
-service workload.
-
-## tc-api-backed OpenViking Deployment
-
-To surface `image_digest`, `launch_id`, and Rekor identifiers in Argus claims,
-the OpenViking side needs to be launched through tc-api or another Docktap-managed
-Docker path instead of only running the Python demo directly.
-
-1. Start tc-api on the OpenViking side.
-2. Launch the OpenViking workload through `POST /api/deploy-launch` and set `metadata.workload_id` to `openviking-cmem`.
-3. Start the sidecar/provider process with both `ARGUS_SERVICE_ID=openviking-cmem` and `TC_API_WORKLOAD_ID=openviking-cmem` so Argus queries tc-api by workload ID instead of its own container ID.
-4. Point the OpenClaw-side Guard at that provider with `EVIDENCE_ENDPOINT=http://<openviking-provider-host>:8008`.
-
-Example provider-side environment:
-
-```bash
-export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
-export ARGUS_SERVICE_ID=openviking-cmem
-export TC_API_WORKLOAD_ID=openviking-cmem
-export TC_API_URL=http://127.0.0.1:8000
-./start_argus.sh start-provider
-```
+When you use this manual split deployment instead of the tc-api launch path,
+tc-api-specific fields such as `image_digest`, `launch_id`, and `Trusted Log ID`
+will be empty unless tc-api is also tracking the workload.
 
 ## See Also
 

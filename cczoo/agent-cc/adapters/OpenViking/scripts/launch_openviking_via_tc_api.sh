@@ -26,7 +26,8 @@ IMAGE_ID="${IMAGE_ID:-openviking-cmem}"
 ATTESTATION_REQUIRED="${ATTESTATION_REQUIRED:-false}"
 POLL_INTERVAL="${POLL_INTERVAL:-3}"
 POLL_ATTEMPTS="${POLL_ATTEMPTS:-40}"
-DOCKERFILE_PATH="${DOCKERFILE_PATH:-$SCRIPT_DIR/Dockerfile.tc-api-workload}"
+DOCKERFILE_PATH="${DOCKERFILE_PATH:-$REPO_ROOT/adapters/OpenViking/configs/Docker
+file.tc-api-workload}"
 
 if [[ -z "${TC_API_IDENTITY_TOKEN:-}" && -z "${TC_API_BEARER_TOKEN:-}" ]]; then
     echo "Set TC_API_IDENTITY_TOKEN or TC_API_BEARER_TOKEN before submitting deploy-launch." >&2
