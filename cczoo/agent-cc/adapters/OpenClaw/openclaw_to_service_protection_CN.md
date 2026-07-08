@@ -373,10 +373,15 @@ export TC_API_URL=http://127.0.0.1:8000
 - 已构建 Argus 二进制（见 [core/argus README](../../core/argus/README.md)）
 - 设置 TC-API identity token（`TC_API_IDENTITY_TOKEN` 或 `TC_API_BEARER_TOKEN`）
 
+`TC_API_IDENTITY_TOKEN` 不是仓库自动生成的固定值，而是一个短时有效的
+Sigstore OIDC identity token。这个 e2e 路径里，最直接的获取方式是复用仓库内
+置的 tc-api CLI 完成交互式 Sigstore 登录，然后把返回值导出为
+`TC_API_IDENTITY_TOKEN`。
+
 ### 步骤 1: 验证环境
 
 ```bash
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/core/argus
 ./start_argus.sh validate
 ```
 
@@ -390,32 +395,108 @@ cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
 ### 步骤 2: 构建 Argus（如未构建）
 
 ```bash
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/core/argus
 cargo build --release
 ```
 
-### 步骤 3: 运行完整端到端测试
+### 步骤 3: 获取 `TC_API_IDENTITY_TOKEN`
+
+推荐使用 tc-api 自带 CLI 进行 OOB（out-of-band）Sigstore 登录，并直接输出
+可 `eval` 的 shell 变量：
 
 ```bash
-# 一键真实 quote 路径：compose 栈 + tc-api launch + real Guard + OpenClaw。
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/scripts
-export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
-./run_openclaw_openviking_e2e.sh
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/core/tc_api
+bash setup.sh
+eval "$(./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format export --env-var TC_API_IDENTITY_TOKEN)"
 ```
 
-该脚本：
-1. 启动 Docker Compose 栈（registry + tc-api + argus-provider）
-2. 通过 tc-api 启动 OpenViking workload
-3. 以 real-verifier 模式启动 argus-guard
-4. 运行带完整 TDX 证明的 OpenClaw 验证
-
-### 跳过 workload 启动（如已运行）
-
-如果 OpenViking workload 已在 `:8010` 健康运行，可以追加
-`SKIP_LAUNCH=1` 复用现有 workload，跳过 tc-api launch：
+执行后会弹出或提示一条 Sigstore 登录流程；完成登录后，命令会在当前 shell 中
+导出 `TC_API_IDENTITY_TOKEN`。可用下面命令确认变量已存在：
 
 ```bash
-SKIP_LAUNCH=1 ./run_openclaw_openviking_e2e.sh
+env | grep '^TC_API_IDENTITY_TOKEN='
+```
+
+说明：
+- 这是短生命周期 token，过期后需要重新执行上面的登录命令。
+- 如果本机已将 `tc-client` 安装到 `PATH`，也可以直接运行：
+
+```bash
+eval "$(tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format export --env-var TC_API_IDENTITY_TOKEN)"
+```
+
+- 如果你的 tc-api 部署使用的是 HTTP Authorization 头鉴权，也可以改为提前导出
+    `TC_API_BEARER_TOKEN`；但当前仓库示例中更直接的是使用
+    `TC_API_IDENTITY_TOKEN`。
+
+### 步骤 4: 按三步执行端到端流程（推荐）
+
+```bash
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/scripts
+```
+
+#### 4.1 服务侧：使用 tc-api 启动 OpenViking
+
+```bash
+# 需要 TC_API_IDENTITY_TOKEN 或 TC_API_BEARER_TOKEN
+./step1_launch_openviking_via_tc_api.sh
+```
+
+这一阶段会：
+1. 启动 compose 栈（registry + tc-api + argus-provider）
+2. 通过 `POST /api/deploy-launch` 启动 OpenViking workload
+
+常用环境变量：
+- `TC_API_IDENTITY_TOKEN` / `TC_API_BEARER_TOKEN`（必需，除非已运行且跳过 launch）
+- `TC_API_URL`（默认 `http://127.0.0.1:8000`）
+- `TARGET_URI`（默认 `http://127.0.0.1:8010`）
+- `TARGET_SERVICE_NAME`（默认 `openviking-cmem`）
+- `FORCE_LAUNCH=1`（强制重新 launch）
+- `SKIP_OPENVIKING_LAUNCH=1`（仅拉起控制面，不发起 launch）
+
+#### 4.2 代理侧：使用 tc-api 启动 OpenClaw（参考 `openclaw_container_protection.md`）
+
+```bash
+# 可选步骤，默认不执行；用于把 OpenClaw 也纳入 tc-api launch 管理
+RUN_STEP2_OPENCLAW=1 ./step2_launch_openclaw_via_tc_api.sh
+```
+
+这一阶段会：
+1. （默认）构建并推送 OpenClaw 镜像
+2. 通过 tc-api `deploy-launch` 启动 OpenClaw workload
+
+常用环境变量：
+- `TC_API_IDENTITY_TOKEN` / `TC_API_BEARER_TOKEN`（必需）
+- `OPENCLAW_IMAGE_NAME`、`OPENCLAW_IMAGE_URL`、`OPENCLAW_IMAGE_ID`
+- `OPENCLAW_DOCKERFILE`、`OPENCLAW_BUILD_CONTEXT`
+- `OPENCLAW_BUILD_IMAGE=0|1`、`OPENCLAW_PUSH_IMAGE=0|1`
+- `OPENCLAW_WORKLOAD_ID`、`OPENCLAW_USER_ID`
+- `OPENCLAW_DOCKERCMD`（可选，传给 tc-api deploy-launch）
+
+#### 4.3 通信侧：使用 Argus 建立 OpenClaw 与 OpenViking 通信
+
+```bash
+./step3_connect_openclaw_openviking_via_argus.sh
+```
+
+这一阶段会：
+1. 启动 real-verifier 模式的 `argus-guard`
+2. 运行 `openclaw_agent.py`，完成 OpenClaw -> Guard -> Provider -> OpenViking 通信链路
+
+常用环境变量：
+- `PROVIDER_URL`（默认 `http://127.0.0.1:8008`）
+- `GUARD_URL`（默认 `http://127.0.0.1:8007`）
+- `TARGET_URI`、`TARGET_SERVICE_NAME`
+- `OPENCLAW_PYTHON`、`RUST_LOG`
+
+#### 4.4 保留一键编排入口
+
+```bash
+# 默认执行 step1 + step3
+./run_openclaw_openviking_e2e.sh
+
+# 执行 step1 + step2 + step3
+RUN_STEP2_OPENCLAW=1 ./run_openclaw_openviking_e2e.sh
 ```
 
 ## 验证状态
@@ -443,7 +524,6 @@ SKIP_LAUNCH=1 ./run_openclaw_openviking_e2e.sh
 ```bash
 # 在 OpenViking 示例目录一键拉起 compose、launch workload、启动 real Guard，并执行 OpenClaw。
 cd ../../OpenViking/examples
-export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
 ./run_openclaw_openviking_e2e.sh
 ```
 
@@ -453,7 +533,7 @@ export TC_API_IDENTITY_TOKEN=<sigstore-identity-token>
 OpenClaw Agent - Agent-CC Integration Example
 
 [1] Verifying OpenViking through Argus Guard...
-    TCB Status: UpToDate
+    TCB Status: Unknown
     Service Name: openviking-cmem
     Workload ID: openviking-cmem
     Launch ID: launch-...
@@ -468,9 +548,9 @@ OpenClaw Agent - Agent-CC Integration Example
 [5] Retrieving context with binding verification...
 ```
 
-当前仓库里的 live TSM 路径在 quote 结构校验和请求绑定校验通过后会返回
-`TCB Status: UpToDate`，便于上层默认策略继续执行。但这还不代表已经完成
-基于 collateral 的 TCB 新鲜度判定。
+当前仓库里的 live TSM 路径在 quote 结构校验和请求绑定校验通过后，
+`TCB Status` 会显示为 `Unknown`。这是当前实现的显式语义：
+Argus 尚未接入 collateral 驱动的 TCB 新鲜度评估，因此不会伪造 `UpToDate`。
 
 上面这些额外元数据行只有在 OpenViking 一侧通过 tc-api 管理的 Docker / launch
 路径启动时才会出现。单独执行 `python3 openviking_service.py --serve` 仍然可以

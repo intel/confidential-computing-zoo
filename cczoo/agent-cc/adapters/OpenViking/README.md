@@ -4,7 +4,7 @@ This directory contains an example adapter demonstrating how OpenViking integrat
 
 ## Overview
 
-OpenViking is a confidential memory control plane service that provides attestation-gated context storage and retrieval. This example shows how OpenViking uses Agent-CC's core services for trusted context transfer.
+OpenViking is an open-source Context Database designed specifically for AI Agents. It provides attestation-gated context storage and retrieval. This example shows how OpenViking uses Agent-CC's core services for trusted context transfer.
 
 ## Running Examples
 
@@ -15,7 +15,7 @@ For complete end-to-end testing, see [OpenClaw to service protection](../../Open
 For a quick in-memory demo without full attestation:
 
 ```bash
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
 python3 openviking_service.py
 ```
 
@@ -23,41 +23,6 @@ Or start the HTTP gateway for manual testing:
 
 ```bash
 python3 openviking_service.py --serve
-```
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    OpenClaw Agent Runtime                        │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  OpenClaw Agent (TDVM)                                      │ │
-│  │  - LLM Client                                               │ │
-│  │  - Context Manager                                          │ │
-│  │  - Tool Executor                                            │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │ Attestation-gated context transfer
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   OpenViking Service (TDVM)                      │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  OpenViking Confidential Memory Control Plane              │ │
-│  │  - Context Gateway                                          │ │
-│  │  - Encrypted Storage                                        │ │
-│  │  - Trust Policy Engine                                      │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     Agent-CC Core Services                      │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Argus     │  │   TC-API    │  │  Trust      │              │
-│  │  Verifier   │  │  Service    │  │  Service    │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Configuration
@@ -191,6 +156,84 @@ inside the tc-api container.
 
 ```bash
 ./launch_openviking_via_tc_api.sh
+```
+
+### LUKS-Backed Persistent Storage (Recommended)
+
+By default, `openviking_service.py` now persists committed contexts to
+`OPENVIKING_DATA_DIR` (default `/mnt/encrypted/openviking`).
+For TDX disk-at-rest protection, mount a LUKS filesystem on the host and let
+`launch_openviking_via_tc_api.sh` bind-mount it into the workload container.
+
+1. Create and mount encrypted storage on the OpenViking host:
+
+```bash
+cd ../../../../openclaw-cc/luks_tools
+./create_encrypted_vfs.sh 10G /root/vfs-openviking.img
+# Record the printed LOOP_DEVICE, then mount it.
+./mount_encrypted_vfs.sh <LOOP_DEVICE> format openviking_luks /home/encrypted_storage
+```
+
+2. Launch OpenViking with LUKS enabled (default is enabled):
+
+```bash
+cd ../agent-cc/adapters/OpenViking/scripts
+export OPENVIKING_USE_LUKS=1
+export OPENVIKING_LUKS_MOUNT_ROOT=/home/encrypted_storage
+export OPENVIKING_LUKS_SUBDIR=openviking
+export OPENVIKING_CONTAINER_DATA_DIR=/mnt/encrypted/openviking
+./launch_openviking_via_tc_api.sh
+```
+
+If `OPENVIKING_USE_LUKS=1`, the launcher requires
+`OPENVIKING_LUKS_MOUNT_ROOT` to be an active mountpoint; otherwise it fails
+fast to avoid writing plaintext data to an unprotected path.
+
+3. Optional: disable LUKS enforcement for quick local testing:
+
+```bash
+export OPENVIKING_USE_LUKS=0
+./launch_openviking_via_tc_api.sh
+```
+
+### Real Persistence: Env Vars and Configuration Mechanism
+
+OpenViking disk persistence is enabled by an end-to-end launch path, not by
+in-memory demo settings alone:
+
+1. Host launcher `launch_openviking_via_tc_api.sh` reads LUKS/storage env vars.
+2. The launcher builds `dockercmd` and sends it in tc-api `POST /api/deploy-launch`.
+3. At container start, `dockercmd` injects both:
+    - `-e OPENVIKING_DATA_DIR=<container path>`
+    - `-v <host path>:<container path>`
+4. `openviking_service.py` reads `OPENVIKING_DATA_DIR` and persists contexts to
+    `<OPENVIKING_DATA_DIR>/contexts/`.
+
+Variable reference by scope:
+
+| Variable | Scope | Default | Purpose |
+|---|---|---|---|
+| `OPENVIKING_USE_LUKS` | host launcher | `1` | Enforce LUKS mountpoint checks. If `1`, launch fails when mount is missing. |
+| `OPENVIKING_LUKS_MOUNT_ROOT` | host launcher | `/home/encrypted_storage` | Host LUKS mount root (must be an active mountpoint). |
+| `OPENVIKING_LUKS_SUBDIR` | host launcher | `openviking` | Subdirectory under mount root for OpenViking data. |
+| `OPENVIKING_CONTAINER_DATA_DIR` | host launcher | `/mnt/encrypted/openviking` | Container data directory used for both env injection and bind-mount target. |
+| `OPENVIKING_DATA_DIR` | in-container service | `/mnt/encrypted/openviking` | Runtime data directory read by `openviking_service.py`. |
+
+Mental model:
+`OPENVIKING_* (host)` -> `dockercmd` -> `OPENVIKING_DATA_DIR (container)` ->
+service writes `${OPENVIKING_DATA_DIR}/contexts/*.json`.
+
+Quick verification:
+
+```bash
+# 1) Check in-container env var
+docker exec <openviking_container> printenv OPENVIKING_DATA_DIR
+
+# 2) Check persisted files in container
+docker exec <openviking_container> ls -l ${OPENVIKING_CONTAINER_DATA_DIR}/contexts
+
+# 3) Check matching host path
+ls -l ${OPENVIKING_LUKS_MOUNT_ROOT}/${OPENVIKING_LUKS_SUBDIR}/contexts
 ```
 
 4. On the OpenClaw side, point Guard at the OpenViking provider and set the target URI to the launched workload endpoint:

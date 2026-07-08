@@ -122,7 +122,7 @@ class WorkloadStore:
         service_name: Optional[str] = None,
         trusted_log_id: Optional[str] = None,
     ) -> None:
-    """Persist a container → workload mapping (upsert)."""
+        """Persist a container → workload mapping (upsert)."""
         now = datetime.now(timezone.utc).isoformat()
         removed_at = now if operation == "rm" else None
         with self._lock:

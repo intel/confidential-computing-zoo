@@ -26,7 +26,7 @@ services:
   tc-api:
     build:
       context: ../../../core
-      dockerfile: tc-api/Dockerfile
+      dockerfile: tc_api/Dockerfile
       args:
         - http_proxy=${http_proxy:-}
         - https_proxy=${https_proxy:-}
@@ -41,7 +41,6 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8000
-      - PYTHON_BIN=/app/venv/bin/python
       - TRUCON_PORT=8001
       - DOCKER_REGISTRY=registry:5000
       - DOCKER_REPOSITORY=registry:5000/openviking
@@ -56,9 +55,9 @@ services:
       - HTTPS_PROXY=${HTTPS_PROXY:-}
       - NO_PROXY=${NO_PROXY:-}
     volumes:
-      - ../../../core/tc-api/uploads:/app/tc-api/uploads
-      - ../../../core/tc-api/builds:/app/tc-api/builds
-      - ../../../core/tc-api/logs:/app/tc-api/logs
+      - ../../../core/tc_api/uploads:/app/tc_api/uploads
+      - ../../../core/tc_api/builds:/app/tc_api/builds
+      - ../../../core/tc_api/logs:/app/tc_api/logs
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/run/trucon:/var/run/trucon
       - /dev/tdx_guest:/dev/tdx_guest

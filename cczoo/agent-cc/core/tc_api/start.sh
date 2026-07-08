@@ -23,7 +23,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/common.sh"
 tc_api_cd_repo_root
 SCRIPT_DIR="$TC_API_REPO_ROOT"
 
-DOCKERHUB_ACCOUNT="<your dockerhub account>"
+DOCKERHUB_ACCOUNT="${DOCKERHUB_ACCOUNT:-}"
 PID_DIR="$SCRIPT_DIR/logs/pids"
 TC_API_PID_FILE="$PID_DIR/tc_api.pid"
 TRUCON_PID_FILE="$PID_DIR/trucon.pid"
@@ -41,11 +41,14 @@ TRUCON_LEGACY_DB_PATH="/dev/shm/commit_queue.db"
 TRUCON_LOCK_PATH="${TRUCON_LOCK_PATH:-$TRUCON_QUEUE_DIR/trucon.lock}"
 DOCKTAP_WORKLOAD_DB_PATH="${DOCKTAP_WORKLOAD_DB:-/dev/shm/docktap/container_map.db}"
 
-echo "Login in Dokcerhub"
+echo "Checking Docker Hub login state"
 if docker info 2>/dev/null | grep -q "Username:"; then
-	echo "Docker logined"
+    echo "Docker already logged in"
+elif [[ -n "$DOCKERHUB_ACCOUNT" && "$DOCKERHUB_ACCOUNT" != "<your dockerhub account>" ]]; then
+    echo "Docker not logged in, trying username login for: $DOCKERHUB_ACCOUNT"
+    docker login -u "$DOCKERHUB_ACCOUNT"
 else
-	docker login -u $DOCKERHUB_ACCOUNT
+    echo "Skipping Docker Hub login (DOCKERHUB_ACCOUNT is not set)."
 fi
 
 echo "Starting TC API Service..."

@@ -441,6 +441,7 @@ async def test_launch_containers_normalizes_local_oci_image_id(docker_service, t
             launch_pth=str(tmp_path),
             workload_id="svc-a",
             launch_id="launch-123",
+            dockercmd=None,
         )
 
     assert launched == [{"container_ID": "container-1", "container_Status": "running"}]

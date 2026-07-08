@@ -13,7 +13,7 @@ This guide provides a quick introduction to running Argus Evidence Provider and 
 ## Step 1: Build Argus
 
 ```bash
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/core/argus
 cargo build --release
 ```
 

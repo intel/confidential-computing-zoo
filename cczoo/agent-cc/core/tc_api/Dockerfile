@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:3.11-slim-bookworm
+FROM python:3.11-slim-trixie
 
 # Optional build-time proxy arguments.
 ARG http_proxy
@@ -41,7 +41,8 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.l
 
 # Install Docker CLI
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian bookworm stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
+    && . /etc/os-release \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian ${VERSION_CODENAME} stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update \
     && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
@@ -73,9 +74,9 @@ RUN wget -q https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/distro/Debian1
     && rm -rf /var/lib/apt/lists/* sgx_debian_local_repo sgx_debian_local_repo.tgz
 
 # Copy packages into the image (targeted, not the entire workspace).
-COPY ../tlog /app/tlog
-COPY ../config /app/config
-COPY ./* /app/tc_api/
+COPY tlog /app/tlog
+COPY config /app/config
+COPY tc_api /app/tc_api
 
 WORKDIR /app/tlog
 RUN python -m pip install -e .
