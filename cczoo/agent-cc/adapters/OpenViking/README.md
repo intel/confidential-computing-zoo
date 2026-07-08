@@ -84,47 +84,6 @@ STRICT_MODE=false
 PCCS_URL=https://localhost:8081/sgx/certification/v4/
 ```
 
-### Docker Compose Example
-
-```yaml
-# filepath: docker-compose.yml
-services:
-  openviking-cmem:
-    image: openviking:latest-tdx
-    environment:
-      HOST: 0.0.0.0
-      PORT: 8010
-      SERVICE_NAME: openviking-cmem
-      TRUST_SERVICE_URL: http://argus-trust-service:8080
-      ENCRYPTED_VFS_PATH: /mnt/encrypted
-      MINIMUM_ASSURANCE_LEVEL: L2
-      STRICT_MODE: false
-      PCCS_URL: https://pccs.example.com/sgx/certification/v4/
-    volumes:
-      - encrypted_vfs:/mnt/encrypted
-      - tsm_socket:/var/run/tsm
-    depends_on:
-      - argus-trust-service
-    devices:
-      - /dev/tdx_guest:/dev/tdx_guest
-    cap_add:
-      - SYS_ADMIN
-    security_opt:
-      - seccomp:unconfined
-
-  argus-trust-service:
-    image: argus-trust-service:latest
-    environment:
-      HOST: 0.0.0.0
-      PORT: 8080
-      SGX_QCNL_CONFIG: /etc/sgx_default_qcnl.conf
-    volumes:
-      - sgx_config:/etc/sgx_default.qcnl.conf
-
-volumes:
-  encrypted_vfs:
-```
-
 ## API Reference
 
 ### Context Operations
