@@ -32,6 +32,19 @@ from tlog.types import Entry
 
 logger = logging.getLogger(__name__)
 
+def _is_insecure_local_registry_ref(image_ref: str) -> bool:
+    if not image_ref.startswith("docker://"):
+        return False
+
+    registry = image_ref[len("docker://"):].split("/", 1)[0]
+    if registry.startswith(("localhost:", "127.0.0.1:")):
+        return True
+
+    configured_registry = os.getenv("DOCKER_REGISTRY", "").strip()
+    if configured_registry and registry == configured_registry:
+        return True
+
+    return registry == "registry:5000"
 
 class PublishServiceMixin:
     def sign_image(self, image_name: str, private_key_path: str, tlog: TrustedLogAPI, record_id: str) -> Tuple[bool, Optional[str]]:
@@ -363,7 +376,7 @@ class PublishServiceMixin:
             else:
                 dest_ref = f"docker://{registry}/{image_name}"
 
-        insecure_local_registry = dest_ref.startswith("docker://localhost:") or dest_ref.startswith("docker://127.0.0.1:")
+        insecure_local_registry = _is_insecure_local_registry_ref(dest_ref)
         attempt = 0
         while attempt < max_retries:
             try:
