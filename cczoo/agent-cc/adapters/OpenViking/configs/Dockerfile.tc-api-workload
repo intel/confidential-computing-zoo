@@ -19,7 +19,7 @@ ENV STRICT_MODE=false
 
 WORKDIR /app
 
-COPY adapters/OpenViking/examples/openviking_service.py /app/openviking_service.py
+COPY adapters/OpenViking/scripts/openviking_service.py /app/openviking_service.py
 
 EXPOSE 8010
 

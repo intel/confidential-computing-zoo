@@ -85,7 +85,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    token = acquire_sigstore_token_via_oob(operation=args.operation)
+    try:
+        token = acquire_sigstore_token_via_oob(operation=args.operation)
+    except Exception as exc:
+        print(f"Sigstore OIDC token exchange failed: {exc}", file=sys.stderr)
+        print(
+            "Hint: the verification code is short-lived. Restart login and paste the exact code immediately.",
+            file=sys.stderr,
+        )
+        return 1
+
     if args.format == "none":
         print("Sigstore identity token acquired and cached.", file=sys.stderr)
         return 0

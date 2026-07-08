@@ -202,7 +202,7 @@ venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore
 ```bash
 # 启动已证明的 OpenClaw 工作负载
 venv/bin/python -m tc_api.cli.client   --base-url http://localhost:8000   --sigstore-login oob \
-	deploy --payload-json -d '{"image_id":"tc-api-build-<build_id>","build_id":"<build_id>","user_id":"<sigstore 账户>","image_url":"docker.io/<repo>/tc-api-build-<build_id>:latest-encrypted","sbom_url":"<sbom 路径>","attestation_required":true,"luks_path":"<挂载的 luks 路径>","dockercmd":"<可选的 openclaw docker run 命令>"}'
+	deploy --payload-json -d '{"image_id":"tc-api-build-<build_id>","build_id":"<build_id>","user_id":"<sigstore 账户>","image_url":"docker.io/<repo>/tc-api-build-<build_id>:latest-encrypted","sbom_url":"<sbom 路径>","attestation_required":true,"luks_path":"<挂载的 luks 路径>"}'
 ```
 ### TC API 服务器显示部署日志
 

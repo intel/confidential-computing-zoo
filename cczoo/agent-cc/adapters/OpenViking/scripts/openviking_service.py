@@ -34,6 +34,7 @@ import asyncio
 import logging
 import hmac
 import hashlib
+import base64
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -220,7 +221,62 @@ class OpenVikingContextGateway:
     ):
         self.trust_gate = trust_gate
         self.encrypted_vfs_path = encrypted_vfs_path
+        self._context_dir = os.path.join(self.encrypted_vfs_path, "contexts")
         self._context_store: Dict[str, Dict[str, Any]] = {}
+        self._init_persistent_store()
+
+    def _init_persistent_store(self) -> None:
+        os.makedirs(self._context_dir, exist_ok=True)
+        self._load_context_store()
+
+    def _context_file_path(self, context_id: str) -> str:
+        context_key = hashlib.sha256(context_id.encode("utf-8")).hexdigest()
+        return os.path.join(self._context_dir, f"{context_key}.json")
+
+    def _load_context_store(self) -> None:
+        loaded = 0
+        for name in os.listdir(self._context_dir):
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(self._context_dir, name)
+            if not os.path.isfile(path):
+                continue
+
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    record = json.load(handle)
+                context_id = record.get("context_id")
+                if not context_id:
+                    continue
+                self._context_store[context_id] = {
+                    "data": base64.b64decode(record.get("data_b64", "")),
+                    "binding": record.get("binding", ""),
+                    "size": int(record.get("size", 0)),
+                    "stored_at": record.get("stored_at", ""),
+                    "created_at": record.get("created_at", ""),
+                    "privacy_level": record.get("privacy_level", "standard"),
+                }
+                loaded += 1
+            except Exception as exc:
+                logger.warning("Skipping invalid context file %s: %s", path, exc)
+
+        logger.info("Loaded %d persisted contexts from %s", loaded, self._context_dir)
+
+    def _persist_context(self, context_id: str, record: Dict[str, Any]) -> None:
+        file_path = self._context_file_path(context_id)
+        tmp_path = f"{file_path}.tmp"
+        payload = {
+            "context_id": context_id,
+            "binding": record["binding"],
+            "size": record["size"],
+            "stored_at": record["stored_at"],
+            "created_at": record["created_at"],
+            "privacy_level": record.get("privacy_level", "standard"),
+            "data_b64": base64.b64encode(record["data"]).decode("ascii"),
+        }
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+        os.replace(tmp_path, file_path)
     
     async def observe_context(
         self,
@@ -324,13 +380,15 @@ class OpenVikingContextGateway:
         
         # Store context
         now = datetime.utcnow().isoformat()
-        self._context_store[context_id] = {
+        record = {
             "data": content,
             "binding": binding,
             "size": len(content),
             "stored_at": now,
             "created_at": now
         }
+        self._context_store[context_id] = record
+        self._persist_context(context_id, record)
         
         logger.info(f"Committed context {context_id} with binding {binding[:16]}...")
         
@@ -692,12 +750,14 @@ def main():
 
     # Initialize components
     trust_gate = OpenVikingTrustGate()
-    gateway = OpenVikingContextGateway(trust_gate)
+    data_dir = os.getenv("OPENVIKING_DATA_DIR", "/mnt/encrypted/openviking")
+    gateway = OpenVikingContextGateway(trust_gate, encrypted_vfs_path=data_dir)
 
     if "--serve" in sys.argv:
         server = create_server(gateway, "0.0.0.0", 8010)
 
         print(f"\nOpenViking Context Gateway starting on port 8010")
+        print(f"OpenViking data directory: {data_dir}")
         print("Endpoints:")
         print("  GET  /health                - Health check")
         print("  GET  /context/{id}/metadata - Observe context")
