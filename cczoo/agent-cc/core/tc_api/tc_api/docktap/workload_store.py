@@ -103,13 +103,26 @@ class WorkloadStore:
             self._conn.execute(
                 "ALTER TABLE container_workload ADD COLUMN service_name TEXT"
             )
+        if "trusted_log_id" not in existing_columns:
+            self._conn.execute(
+                "ALTER TABLE container_workload ADD COLUMN trusted_log_id TEXT"
+            )
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def put(self, container_id: str, workload_id: str, launch_id: Optional[str] = None, operation: str = "create") -> None:
-        """Persist a container → workload mapping (upsert)."""
+    def put(
+        self,
+        container_id: str,
+        workload_id: str,
+        launch_id: Optional[str] = None,
+        operation: str = "create",
+        image_digest: Optional[str] = None,
+        service_name: Optional[str] = None,
+        trusted_log_id: Optional[str] = None,
+    ) -> None:
+    """Persist a container → workload mapping (upsert)."""
         now = datetime.now(timezone.utc).isoformat()
         removed_at = now if operation == "rm" else None
         with self._lock:
@@ -123,9 +136,12 @@ class WorkloadStore:
                     last_seen_at,
                     removed_at,
                     last_operation,
-                    launch_id
+                    launch_id,
+                    image_digest,
+                    service_name,
+                    trusted_log_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(container_id) DO UPDATE SET workload_id = excluded.workload_id,
                                                         last_seen_at = excluded.last_seen_at,
                                                         removed_at = CASE
@@ -133,9 +149,12 @@ class WorkloadStore:
                                                             ELSE NULL
                                                         END,
                                                         last_operation = excluded.last_operation,
-                                                        launch_id = COALESCE(excluded.launch_id, container_workload.launch_id)
+                                                        launch_id = COALESCE(excluded.launch_id, container_workload.launch_id),
+                                                        image_digest = COALESCE(excluded.image_digest, container_workload.image_digest),
+                                                        service_name = COALESCE(excluded.service_name, container_workload.service_name),
+                                                        trusted_log_id = COALESCE(excluded.trusted_log_id, container_workload.trusted_log_id)
                 """,
-                (container_id, workload_id, now, now, removed_at, operation, launch_id),
+                (container_id, workload_id, now, now, removed_at, operation, launch_id, image_digest, service_name, trusted_log_id),
             )
             self._conn.commit()
 
@@ -173,7 +192,7 @@ class WorkloadStore:
             assert self._conn is not None, "call init_db() before get_metadata()"
             row = self._conn.execute(
                 """
-                SELECT workload_id, created_at, last_seen_at, removed_at, last_operation, launch_id
+                SELECT container_id, workload_id, created_at, last_seen_at, removed_at, last_operation, launch_id, image_digest, service_name, trusted_log_id
                 FROM container_workload WHERE container_id = ?
                 """,
                 (container_id,),
@@ -181,12 +200,16 @@ class WorkloadStore:
             if not row:
                 return None
             return {
-                "workload_id": row[0],
-                "created_at": row[1],
-                "last_seen_at": row[2],
-                "removed_at": row[3],
-                "last_operation": row[4],
-                "launch_id": row[5],
+                "container_id": row[0],
+                "workload_id": row[1],
+                "created_at": row[2],
+                "last_seen_at": row[3],
+                "removed_at": row[4],
+                "last_operation": row[5],
+                "launch_id": row[6],
+                "image_digest": row[7],
+                "service_name": row[8],
+                "trusted_log_id": row[9],
             }
 
     def get_workload_by_container(self, container_id: str) -> Optional[Dict[str, Any]]:
@@ -194,25 +217,32 @@ class WorkloadStore:
         return self.get_metadata(container_id)
 
     def get_workload_by_id(self, workload_id: str) -> Optional[Dict[str, Any]]:
-        """Return full metadata for a workload ID."""
+        """Return the newest active metadata row for a workload ID."""
         with self._lock:
             assert self._conn is not None, "call init_db() before get_workload_by_id"
             row = self._conn.execute(
                 """
-                SELECT workload_id, created_at, last_seen_at, removed_at, last_operation, launch_id
-                FROM container_workload WHERE workload_id = ?
+                SELECT container_id, workload_id, created_at, last_seen_at, removed_at, last_operation, launch_id, image_digest, service_name, trusted_log_id
+                FROM container_workload
+                WHERE workload_id = ? AND removed_at IS NULL
+                ORDER BY COALESCE(last_seen_at, created_at) DESC, created_at DESC
+                LIMIT 1
                 """,
                 (workload_id,),
             ).fetchone()
             if not row:
                 return None
             return {
-                "workload_id": row[0],
-                "created_at": row[1],
-                "last_seen_at": row[2],
-                "removed_at": row[3],
-                "last_operation": row[4],
-                "launch_id": row[5],
+                "container_id": row[0],
+                "workload_id": row[1],
+                "created_at": row[2],
+                "last_seen_at": row[3],
+                "removed_at": row[4],
+                "last_operation": row[5],
+                "launch_id": row[6],
+                "image_digest": row[7],
+                "service_name": row[8],
+                "trusted_log_id": row[9],
             }
 
     def cleanup_removed(self, max_age_hours: float = 24) -> int:

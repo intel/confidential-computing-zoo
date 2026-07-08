@@ -6,92 +6,11 @@ This directory contains an example adapter demonstrating how OpenViking integrat
 
 OpenViking is a confidential memory control plane service that provides attestation-gated context storage and retrieval. This example shows how OpenViking uses Agent-CC's core services for trusted context transfer.
 
-## Implementation Files
+## Running Examples
 
-| File | Description |
-|------|-------------|
-| [scripts/openviking_service.py](scripts/openviking_service.py) | Working Python implementation |
-| [scripts/launch_openviking_via_tc_api.sh](scripts/launch_openviking_via_tc_api.sh) | Builds, pushes, and launches the OpenViking workload through tc-api |
-| [configs/docker-compose.tc-api.yml](configs/docker-compose.tc-api.yml) | tc-api + registry + Argus Provider stack for the real Docker launch flow |
-| [configs/Dockerfile.tc-api-workload](configs/Dockerfile.tc-api-workload) | Container image for tc-api-managed OpenViking workload |
-| [configs/openviking-launch-payload.json](configs/openviking-launch-payload.json) | Launch payload for tc-api deployment |
+For complete end-to-end testing, see [OpenClaw to service protection](../../OpenClaw/openclaw_to_service_protection.md)
 
-## Running Steps
-
-**For complete end-to-end testing, see [OpenClaw Scripts README](../../OpenClaw/scripts/README.md)**
-
-That document includes:
-- Prerequisites checklist
-- Environment validation steps
-- Build instructions
-- Full e2e test run commands
-
-## Quick Start
-
-### Prerequisites
-
-Before running, ensure you have:
-- Intel TDX-enabled platform with `/dev/tdx_guest`
-- Linux kernel 5.15+ with TSM configfs at `/sys/kernel/config/tsm/report/`
-- Rust 1.75+
-- Docker & docker-compose
-- TC-API identity token (set `TC_API_IDENTITY_TOKEN` or `TC_API_BEARER_TOKEN`)
-
-### Step 1: Validate TDX Environment
-
-```bash
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/core/argus
-./start_argus.sh validate
-```
-
-Expected output:
-```
-[INFO] Validating environment...
-[INFO] Rust version: 1.96.0
-[INFO] TDX device found at /dev/tdx_guest
-[INFO] TSM configfs found
-[INFO] TSM report interface available
-```
-
-### Step 2: Build Argus Binaries
-
-```bash
-cargo build --release
-```
-
-### Step 3: Start Docker Compose Stack
-
-```bash
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
-docker-compose -f docker-compose.tc-api.yml up -d
-```
-
-Wait for services to be healthy:
-```bash
-curl http://127.0.0.1:8000/      # tc-api
-curl http://127.0.0.1:8008/health  # argus-provider
-```
-
-### Step 4: Run Full End-to-End Test
-
-For the complete real TDX quote attestation flow:
-
-```bash
-# Set your TC-API token
-export TC_API_IDENTITY_TOKEN="your-token-here"
-
-# Run the e2e test
-cd /home/siyuan/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenViking/examples
-./run_openclaw_openviking_e2e.sh
-```
-
-This script:
-1. Starts the compose stack (registry + tc-api + argus-provider)
-2. Launches the OpenViking workload via tc-api
-3. Starts argus-guard in real-verifier mode
-4. Runs the OpenClaw example with full TDX attestation
-
-### Alternative: Run OpenViking Service Only (Demo Mode)
+## Run OpenViking Service Only
 
 For a quick in-memory demo without full attestation:
 
@@ -105,23 +24,6 @@ Or start the HTTP gateway for manual testing:
 ```bash
 python3 openviking_service.py --serve
 ```
-
-> **Note**: The demo mode (`openviking_service.py`) runs in-memory without real TDX quotes. For production or full attestation validation, use `run_openclaw_openviking_e2e.sh`.
-
-OpenViking itself does not start the Argus Evidence Provider. The intended flow
-is to start only the provider on the OpenViking side with
-`ARGUS_WORKLOAD_IDENTITY=openviking-cmem`, while the OpenClaw side runs its own
-local Guard with `EVIDENCE_ENDPOINT` pointed at this remote provider.
-
-If you want tc-api-backed metadata such as `image_digest`, `launch_id`, and
-Rekor identifiers to show up in Argus claims, the provider should also be given
-`ARGUS_SERVICE_ID` and `TC_API_WORKLOAD_ID` matching the workload ID that tc-api
-assigned to the OpenViking Docker workload.
-
-The runnable example defaults to `STRICT_MODE=false`. On the current live TSM
-path, Argus returns `TCB Status: UpToDate` after quote structure and request
-binding verification succeed. That is enough for the example's default policy
-flow, but it still does not mean collateral-backed TCB freshness was evaluated.
 
 ## Architecture
 
@@ -156,206 +58,6 @@ flow, but it still does not mean collateral-backed TCB freshness was evaluated.
 │  │  Verifier   │  │  Service    │  │  Service    │              │
 │  └─────────────┘  └─────────────┘  └─────────────┘              │
 └─────────────────────────────────────────────────────────────────┘
-```
-
-## Integration Points
-
-### 1. Trust Gate Verification
-
-OpenViking implements a verify-skill trust gate that OpenClaw calls before context transfer:
-
-```rust
-// Example: OpenViking trust gate implementation
-use argus::{TdxQuoteVerifier, AttestationContext};
-
-pub struct OpenVikingTrustGate {
-    verifier: TdxQuoteVerifier,
-    policy: TrustPolicy,
-}
-
-impl OpenVikingTrustGate {
-    /// Verify OpenClaw before allowing context access
-    pub async fn verify_caller(&self, caller_evidence: &AttestationEvidence) -> Result<bool> {
-        // Verify the caller's TDX quote
-        self.verifier
-            .verify_quote(&caller_evidence.tdx_quote)
-            .await?;
-
-        // Check TCB status
-        if caller_evidence.tcb_status != TcbStatus::UpToDate {
-            tracing::warn!("Caller TCB is not up to date");
-            return Ok(false);
-        }
-
-        // Verify nonce binding for freshness
-        if !self.verify_nonce_binding(&caller_evidence.binding_digest) {
-            tracing::warn!("Caller nonce binding verification failed");
-            return Ok(false);
-        }
-
-        // Check against trust policy
-        self.policy
-            .evaluate(&caller_evidence.claims)
-            .await
-    }
-
-    /// Allow or deny context transfer based on verification
-    pub async fn evaluate_context_transfer(
-        &self,
-        caller: &AttestationEvidence,
-        context_id: &str,
-    ) -> Result<ContextTransferDecision> {
-        let is_trusted = self.verify_caller(caller).await?;
-
-        if is_trusted {
-            Ok(ContextTransferDecision::Allow {
-                context_id: context_id.to_string(),
-                verified_claims: caller.claims.clone(),
-            })
-        } else {
-            Ok(ContextTransferDecision::Deny {
-                reason: "Caller verification failed trust policy".to_string(),
-            })
-        }
-    }
-}
-```
-
-### 2. Context Gateway Operations
-
-OpenViking exposes context operations that are gated by attestation:
-
-```rust
-// Example: Context gateway with attestation gating
-use argus::{EncryptedStorage, AttestationBinding};
-
-pub struct OpenVikingContextGateway {
-    storage: EncryptedStorage,
-    policy: TrustPolicy,
-}
-
-impl OpenVikingContextGateway {
-    /// Observe context (read-only, no materialization)
-    pub async fn observe_context(
-        &self,
-        caller: &AttestationEvidence,
-        context_id: &str,
-    ) -> Result<ContextMetadata> {
-        // Verify caller first
-        if !self.verify_caller(caller).await? {
-            return Err(GatewayError::AccessDenied {
-                reason: "Caller verification failed".to_string(),
-            });
-        }
-
-        // Return metadata only (not actual content)
-        let metadata = self.storage
-            .get_metadata(context_id)
-            .await?;
-
-        Ok(metadata)
-    }
-
-    /// Recall context (materialize for processing)
-    pub async fn recall_context(
-        &self,
-        caller: &AttestationEvidence,
-        context_id: &str,
-    ) -> Result<EncryptedContext> {
-        // Full verification for materialization
-        if !self.verify_caller(caller).await? {
-            return Err(GatewayError::AccessDenied {
-                reason: "Caller verification failed".to_string(),
-            });
-        }
-
-        // Check if context requires elevated privileges
-        if self.policy.requires_elevation(context_id) {
-            let elevation_verified = self.verify_elevation_claims(caller).await?;
-            if !elevation_verified {
-                return Err(GatewayError::InsufficientPrivileges {
-                    context_id: context_id.to_string(),
-                });
-            }
-        }
-
-        // Return encrypted context
-        let context = self.storage
-            .retrieve_encrypted(context_id, &caller.binding)
-            .await?;
-
-        Ok(context)
-    }
-
-    /// Commit new context (archive with encryption)
-    pub async fn commit_context(
-        &self,
-        caller: &AttestationEvidence,
-        context_id: &str,
-        content: &[u8],
-    ) -> Result<CommitReceipt> {
-        // Verify caller can write
-        if !self.verify_caller(caller).await? {
-            return Err(GatewayError::AccessDenied {
-                reason: "Caller verification failed".to_string(),
-            });
-        }
-
-        // Encrypt and store with caller's binding
-        let binding = self.compute_binding(caller);
-        self.storage
-            .store_encrypted(context_id, content, &binding)
-            .await?;
-
-        Ok(CommitReceipt {
-            context_id: context_id.to_string(),
-            committed_at: chrono::Utc::now(),
-            binding: binding.digest,
-        })
-    }
-}
-```
-
-### 3. Privacy Restore
-
-OpenViking supports privacy restore operations:
-
-```rust
-// Example: Privacy restore with attestation verification
-pub struct OpenVikingPrivacyRestore {
-    gateway: OpenVikingContextGateway,
-}
-
-impl OpenVikingPrivacyRestore {
-    /// Restore context with privacy preservation
-    pub async fn privacy_restore(
-        &self,
-        caller: &AttestationEvidence,
-        context_id: &str,
-        privacy_level: PrivacyLevel,
-    ) -> Result<PrivacyRestoredContext> {
-        // Verify caller and privacy claims
-        if !self.verify_caller(caller).await? {
-            return Err(GatewayError::AccessDenied {
-                reason: "Caller verification failed".to_string(),
-            });
-        }
-
-        // Check privacy level requirements
-        if caller.privacy_posture < privacy_level.required_posture {
-            return Err(GatewayError::InsufficientPrivacyPosture {
-                required: privacy_level.required_posture,
-                actual: caller.privacy_posture,
-            });
-        }
-
-        // Retrieve and apply privacy transformations
-        let context = self.gateway.recall_context(caller, context_id).await?;
-        let restored = self.apply_privacy_transforms(context, privacy_level).await?;
-
-        Ok(restored)
-    }
-}
 ```
 
 ## Configuration
@@ -421,34 +123,6 @@ services:
 
 volumes:
   encrypted_vfs:
-```
-
-## Verification Flow
-
-```
-1. OpenClaw prepares context transfer to OpenViking
-         │
-         ▼
-2. OpenClaw calls local Argus Guard
-         │
-         ▼
-3. Argus Guard fetches service evidence from the provider
-         │
-         ▼
-4. Guard validates quote structure and request binding
-         │
-         ▼
-5. Guard returns normalized claims to the caller
-         │
-         ▼
-6. OpenClaw forwards the verified binding context to OpenViking
-         │
-         ▼
-7. OpenViking trust gate checks binding + TCB policy
-         │
-         ▼
-8. If allow: OpenViking accepts context
-   If deny: OpenViking rejects context transfer
 ```
 
 ## API Reference
@@ -568,7 +242,7 @@ export EVIDENCE_ENDPOINT=http://<openviking-host>:8008
 export ARGUS_ALLOW_MOCK_VERIFIER=1
 ./start_argus.sh start-guard
 
-cd ../../../adapters/OpenClaw/examples
+cd ../../../adapters/OpenClaw/scripts
 export TARGET_SERVICE_NAME=openviking-cmem
 export TARGET_URI=http://<openviking-host>:8010
 python3 openclaw_agent.py
@@ -578,28 +252,8 @@ If the launch succeeds, `openclaw_agent.py` should now see the same service name
 plus tc-api-backed metadata such as `launch_id`, `image_digest`, and any
 available transparency identifiers.
 
-### Validation Status
-
-Verified on 2026-06-29:
-
-- Real interactive tc-api `deploy-launch` completed successfully.
-- The launched OpenViking workload answered on `GET /health` at port `8010`.
-- Argus provider evidence included tc-api-backed `launch_id`, `image_digest`,
-    and `transparency_log_id`.
-- OpenClaw completed a real end-to-end HTTP flow against the launched
-    OpenViking workload: caller verification, context commit, metadata observe,
-    and context recall.
-
-Current boundary:
-
-- The provider-side example can still fall back to a mock quote. Because of
-    that, the caller-side Guard used `ARGUS_ALLOW_MOCK_VERIFIER=1` for this
-    end-to-end validation. A full real-quote-only Guard validation on this path
-    is not yet verified.
-
 ## See Also
 
 - [OpenViking Adapter](../README.md) - Main adapter documentation
 - [OpenViking CMEM Adapter Docs](../../openspec/specs/openviking-cmem-adapter-docs/spec.md) - Specification
-- [OpenClaw Adapter](../OpenClaw/README.md) - Agent integration
-- [Trust Gate Specification](../../openspec/specs/openviking-trusted-context-gate/spec.md) - Trust verification
+- [OpenClaw Adapter](../OpenClaw/openclaw_to_service_protection.md) - Agent integration

@@ -27,6 +27,7 @@ from fastapi import BackgroundTasks, HTTPException, Request
 from tlog.types import Entry
 
 from ..identity.sigstore_identity import resolve_sigstore_identity_token
+from ..docktap.workload_store import WorkloadStore
 from ..models import (
     BuildCommitRequest,
     BuildPackageRequest,
@@ -1063,36 +1064,23 @@ async def launch_container_async(
             tlog,
             record_id,
             request.identity_token,
-            "",
-            expected_identity=request.user_id
         )
-        if log_id is not None:
-            docker_service.update_transparencylog_status(request.user_id, str(log_id), "added", launch_id)
-
-        if not tlog_status:
-            commit_error = docker_service.get_commit_error("launch", launch_id, record_id)
-            if commit_error and ("Sigstore identity token is required" in commit_error or "force_oob=true" in commit_error):
-                docker_service.register_pending_launch_commit(
-                    launch_id,
-                    record_id,
-                    request.user_id,
-                    transparency_chain_id,
-                )
-                docker_service.update_launch_status(
-                    request.user_id,
-                    launch_id=launch_id,
-                    status="signing",
-                    validation="passed",
-                    attestation=attestation_result,
-                    evidence=evidences,
-                    transparencyLog_verify="pending",
-                    error_message=commit_error,
-                    instance_ids=instance_ids,
-                )
-                return
-
-            raise RuntimeError(f"Launch transparency log commit failed: {commit_error or 'unknown error'}")
-
+        workload_store = WorkloadStore()
+        workload_store.init_db()
+        for instance in instance_ids:
+            container_id = instance.get("container_ID") if isinstance(instance, dict) else None
+            if not container_id:
+                continue
+            workload_store.put(
+                container_id,
+                workload_id,
+                launch_id=launch_id,
+                operation="create",
+                image_digest=image_digest,
+                service_name=(request.metadata or {}).get("service_name") if isinstance(request.metadata, dict) else None,
+                trusted_log_id=str(log_id) if log_id else None,
+            )
+        docker_service.update_transparencylog_status(request.user_id, str(log_id), "added", launch_id)
         verify_tlog_status = docker_service.verify_chain_state("launch", tlog, chain_id=transparency_chain_id)
 
         docker_service.update_launch_status(

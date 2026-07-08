@@ -17,7 +17,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-OPENCLAW_DIR="$REPO_ROOT/adapters/OpenClaw/examples"
+OPENCLAW_DIR="$REPO_ROOT/adapters/OpenClaw/scripts"
 ARGUS_DIR="$REPO_ROOT/core/argus"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.tc-api.yml"
 LAUNCH_SCRIPT="$SCRIPT_DIR/launch_openviking_via_tc_api.sh"
