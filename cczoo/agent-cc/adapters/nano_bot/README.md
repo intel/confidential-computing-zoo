@@ -508,6 +508,55 @@ Set `KEEP_KBS=0` to remove it when the script exits. Override
 `NANO_BOT_MODEL`, `IMAGE_TAG`, `KBS_PORT`, or `KBS_GUEST_HOST` when the local
 environment requires different values.
 
+### Image Metadata Validation
+
+Set `IMAGE_METADATA_VALIDATION=1` to validate the selected image after the Pod
+starts. The validation reads the OCI manifest, config digest, and layer
+digests with `skopeo`; verifies the cosign signature when signed-image mode is
+enabled; compares the manifest digest with the Kubernetes-reported Pod
+`imageID`; and checks the signed-image Kata annotation. A JSON report is written
+to `IMAGE_METADATA_REPORT` (default:
+`/tmp/<pod-name>.image-metadata.json`).
+
+The Trustee helper enables this automatically. For a standalone check against
+an already-running Pod:
+
+```bash
+CONTAINER_NAME=asterinas-coco-official \
+POD_NAME=nano-bot-kata-qemu-tdx-linux \
+IMAGE_REFERENCE=docker.io/library/nano_bot:2.0 \
+IMAGE_INSPECT_REFERENCE=127.0.0.1:5000/library/nano_bot:2.0 \
+EXPECTED_MANIFEST_DIGEST=sha256:<expected-digest> \
+./scripts/validate_image_metadata.sh
+```
+
+For signed images, additionally set `SIGNED_IMAGES_ENABLED=1`,
+`IMAGE_METADATA_COSIGN_KEY`, `SIGNED_IMAGES_KBS_URL`, and
+`SIGNED_IMAGES_POLICY`. The script fails on any digest, image reference,
+signature, or annotation mismatch; it does not claim dm-verity or measured
+rootfs support.
+
+### Staged Integrity Without Remote Attestation
+
+Remote Attestation is not required for the local guest-pull/Nydus path or for
+the image metadata and signature checks above. Run the capability check against
+the active CoCo container and Pod:
+
+```bash
+CONTAINER_NAME=asterinas-coco-official \
+POD_NAME=nano-bot-kata-qemu-tdx-linux \
+./scripts/check_non_ra_integrity.sh
+```
+
+The report records whether the Nydus proxy, Linux runtime configuration,
+guest-pull path, and workload are active. It also reports whether the guest
+kernel and guest tools are ready for dm-verity. The current Linux guest kernel
+must be rebuilt with `CONFIG_DM_VERITY=y` or `m`, and the guest must include
+`dmsetup` and `veritysetup`, before dm-verity can be enabled. This check does
+not enable dm-verity and does not claim Measured RootFS; those require a later
+rootfs/measurement integration and, for remote trust decisions, Remote
+Attestation.
+
 ### Container / Pod / Feature Flags
 
 | Variable | Default |
