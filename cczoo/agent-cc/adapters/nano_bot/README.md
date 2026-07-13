@@ -26,26 +26,21 @@ guest kernel setup.
 
 ### Getting `asterinas-coco-tdx`
 
-This repository does not build the CoCo dev container for you. It assumes you
-already have a working Asterinas CoCo development container and, by default,
-expects it to be named `asterinas-coco-tdx`.
-
-The recommended source is the official Asterinas confidential-containers
+The recommended source is the official [Asterinas confidential-containers](https://github.com/asterinas/confidential-containers/tree/main/tools/docker)
 `tools/docker` workflow:
 
-- upstream path: `https://github.com/asterinas/confidential-containers/tree/main/tools/docker`
-- image family: `asterinas/coco:<version>`
-- bootstrap entrypoint inside the container: `/opt/coco/setup-coco-k8s.sh`
-
-You have two practical ways to obtain it.
-
-#### Option 1: Start from an existing `asterinas/coco:<version>` image
-
 If you already have access to a published `asterinas/coco:<version>` image,
-start it with the same runtime requirements documented by upstream and name it
-`asterinas-coco-tdx` so this repo works without extra overrides:
+use a release whose Asterinas base image, Kata shim, guest kernel, and CoCo
+initrd are a tested set. The current upstream tools default to
+`0.18.0-20260702`; older `0.18.0-20260603` images can leave both the regular
+CoCo and TDX guest stuck after `Exiting EFI boot services`.
+
+Start the container with the same runtime requirements documented by upstream
+and name it `asterinas-coco-tdx` so this repo works without extra overrides:
 
 ```bash
+export DOCKER_IMAGE_VERSION=0.18.0-20260702
+
 docker run -it --rm \
   --name asterinas-coco-tdx \
   --privileged \
@@ -56,6 +51,24 @@ docker run -it --rm \
   asterinas/coco:<DOCKER_IMAGE_VERSION> \
   bash
 ```
+
+For a network that requires an outbound proxy, pass the proxy at runtime with
+your local value and make sure cluster-internal addresses bypass it. Do not
+replace the placeholder below with a real site-specific value in documentation:
+
+```bash
+-e HTTP_PROXY=http://<proxy-host>:<proxy-port> \
+-e HTTPS_PROXY=http://<proxy-host>:<proxy-port> \
+-e http_proxy=http://<proxy-host>:<proxy-port> \
+-e https_proxy=http://<proxy-host>:<proxy-port> \
+-e NO_PROXY=localhost,127.0.0.1,::1,10.96.0.0/12,10.244.0.0/16,172.16.0.0/12,10.0.0.0/8,kubernetes,kubernetes.default.svc,kubernetes.default.svc.cluster.local \
+-e no_proxy=localhost,127.0.0.1,::1,10.96.0.0/12,10.244.0.0/16,172.16.0.0/12,10.0.0.0/8,kubernetes,kubernetes.default.svc,kubernetes.default.svc.cluster.local
+```
+
+The `NO_PROXY` entries for the Docker/container network and Kubernetes service
+CIDRs are important. Without them, kubelet and kubectl can send requests to
+the in-container API server through the outbound proxy, producing
+`unexpected EOF` or `Proxy CONNECT aborted` errors.
 
 Then bootstrap CoCo inside the container:
 
@@ -335,7 +348,7 @@ version/config-specific quirks of this stack.
 | TDX module | initialized at boot (`virt/tdx: module initialized`, private KeyID range `[64, 128)`) |
 | Docker (host) | 29.3.0 |
 | skopeo (host) | 1.22.0 |
-| CoCo dev container base image | `asterinas/coco:0.18.0-20260603` |
+| CoCo dev container image | `asterinas/coco:0.18.0-20260702` |
 | CoCo dev container OS | Ubuntu 24.04.4 LTS |
 | containerd (in dev container) | v2.2.1 (`containerd/v2`) |
 | Kubernetes (kubeadm/kubelet/kubectl) | v1.30.14 |
@@ -443,6 +456,58 @@ itself except `OPENAI_API_KEY`, which is never written to disk in this repo
 | `FLATTEN_IMAGE` | `1` | Flatten to a single layer before pushing (works around a docker-in-docker `CAP_MKNOD` limitation - see [Troubleshooting](#troubleshooting)). |
 | `TC_API_BASE_URL` | `http://localhost:8000` | URL of the tc-api service used for building images. |
 
+### Signed Images
+
+Signed-image verification is opt-in and uses the CoCo guest-pull agent's KBS
+integration. Before enabling it, register the signing public key and an image
+pull policy in KBS as described in the official [CoCo signed images
+guide](https://confidentialcontainers.org/docs/features/signed-images/). The
+policy must allow the exact image reference used by `NANO_BOT_IMAGE` and point
+to the registered public key.
+
+The script does not create signing keys, upload KBS resources, or sign images.
+Set these variables only after that trust setup is complete:
+
+| Variable | Default | Description |
+|---|---|---|
+| `SIGNED_IMAGES_ENABLED` | `0` | Set to `1` to require signature verification for the main workload and chat probe. |
+| `SIGNED_IMAGES_KBS_URL` | *(empty)* | KBS endpoint used by the guest agent, including scheme and port, for example `http://kbs.example:8080`. It is inserted into `agent.aa_kbc_params=cc_kbc::<URL>`. |
+| `SIGNED_IMAGES_POLICY` | *(empty)* | Full KBS resource path for the image policy, for example `kbs:///default/security-policy/test`. |
+
+When enabled, the generated Pod annotation is equivalent to:
+
+```text
+agent.aa_kbc_params=cc_kbc::<KBS_URL> agent.image_policy_file=<POLICY> agent.enable_signature_verification=true
+```
+
+Use a digest-pinned, signed image where possible. If verification fails, the
+guest agent rejects the image pull and the Pod remains in `ImagePullBackOff` or
+`ContainerCreating`; inspect the Pod events and the Kata guest-pull logs.
+
+For a local Trustee KBS and the local nano_bot registry, the repository also
+provides an end-to-end helper. It generates a local cosign key pair, signs the
+existing `library/nano_bot` registry image by digest, starts the Trustee KBS
+LocalFs resource plugin, creates the public-key and security-policy resources,
+and invokes the normal CoCo + TDX flow with verification enabled:
+
+```bash
+SOURCE_RUNTIME_CFG=/opt/coco/config/configuration-qemu-tdx-asterinas.toml \
+HOST_LINUX_KERNEL=/opt/coco/prebuilt/linux-coco-tdx/vmlinuz-6.16.0-vsock-net-tdxguest-builtin \
+LINUX_INITRD=/opt/coco/prebuilt/asterinas-coco/kata-containers-initrd.img \
+OPENAI_API_ADDRESS=https://<openai-compatible-endpoint>/v1 \
+OPENAI_API_KEY=<your-key> \
+./scripts/run_signed_images_trustee.sh
+```
+
+If the `nano-bot-api-key` Kubernetes Secret already exists, omit
+`OPENAI_API_KEY`. The helper stores signing state and the local KBS repository
+under `SIGNED_IMAGES_STATE_DIR` (default:
+`~/.config/nano-bot-signed-images`); keep that directory private. The KBS
+container is retained by default so repeated runs reuse the same resources.
+Set `KEEP_KBS=0` to remove it when the script exits. Override
+`NANO_BOT_MODEL`, `IMAGE_TAG`, `KBS_PORT`, or `KBS_GUEST_HOST` when the local
+environment requires different values.
+
 ### Container / Pod / Feature Flags
 
 | Variable | Default |
@@ -510,6 +575,61 @@ docker exec $CN bash -lc '
   rm -f /dev/log
   nohup socat -u UNIX-RECVFROM:/dev/log,fork OPEN:/tmp/kata-syslog-linux.log,creat,append >/tmp/socat-devlog.out 2>&1 &
 '
+```
+
+**Both bundled CoCo workloads stay in `ContainerCreating` after `Created container`**
+
+If both `kata-qemu-coco-dev-asterinas` and `kata-qemu-tdx-asterinas` create a
+QEMU process but never receive a Pod IP, inspect the guest serial log:
+
+```bash
+docker exec "$CN" bash -lc 'tail -100 /tmp/qemu-serial.log; tail -100 /tmp/console.log'
+```
+
+If the serial output stops at `Exiting EFI boot services` and the console only
+repeats `unsupported flags: MSG_NOSIGNAL`, the shared prebuilt guest artifacts
+are not completing boot. Recreate the disposable CoCo container with the
+current upstream image instead of waiting indefinitely or changing the Pod
+manifest:
+
+```bash
+docker rm -f "$CN"
+# Re-run the documented docker run command with a current image, then:
+/opt/coco/setup-coco-k8s.sh
+```
+
+After the baseline guest boots, verify the regular runtime before deploying the
+custom Linux runtime used by this project:
+
+```bash
+kubectl apply -f /opt/coco/manifests/alpine-kata-qemu-coco-dev.yaml
+kubectl wait --for=condition=Ready pod/alpine-kata-qemu-coco-dev --timeout=5m
+kubectl exec alpine-kata-qemu-coco-dev -- cat /proc/cmdline
+```
+
+**`ImagePullBackOff`, Docker Hub `429`, or local mirror `no route to host`**
+
+These errors occur after the guest VM has booted and are separate from Kata or
+TDX startup. Check the Pod events first:
+
+```bash
+kubectl describe pod <pod-name>
+kubectl get events --sort-by=.lastTimestamp
+```
+
+The development image may try its baked-in guest mirror at
+`172.17.0.1:5000`. That address is only valid when a registry is actually
+running on that Docker bridge and reachable from the CoCo container. If it
+reports `no route to host`, the guest falls back to Docker Hub; repeated pulls
+may then receive `429 Too Many Requests`. Wait for the registry rate limit to
+clear, use an authenticated/private mirror, or configure a reachable local
+registry. Do not treat a transient `429` as a guest-kernel failure.
+
+When replacing a failed baseline Pod, force-remove a stuck sandbox before
+retrying so its QEMU process does not keep consuming memory:
+
+```bash
+kubectl delete pod <pod-name> --grace-period=0 --force
 ```
 
 **Guest reboots ~1.5s after boot (`reboot: Power down` in the console log)**

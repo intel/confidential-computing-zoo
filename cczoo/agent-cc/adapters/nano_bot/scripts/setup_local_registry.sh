@@ -59,6 +59,7 @@ ensure_registry_running() {
   mkdir -p /tmp/nano-bot-local-registry-data
   "$CONTAINER_ENGINE" run -d --name "$LOCAL_REGISTRY_NAME" --restart unless-stopped \
     -p "${LOCAL_REGISTRY_PORT}:5000" \
+    -e REGISTRY_COMPATIBILITY_SCHEMA1_ENABLED=false \
     -v /tmp/nano-bot-local-registry-data:/var/lib/registry \
     registry:2 >/dev/null
 }
