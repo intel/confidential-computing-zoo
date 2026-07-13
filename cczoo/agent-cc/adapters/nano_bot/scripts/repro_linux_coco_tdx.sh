@@ -108,6 +108,12 @@ LOCAL_REGISTRY_NAME="${LOCAL_REGISTRY_NAME:-nano-bot-local-registry}"
 LOCAL_REGISTRY_PORT="${LOCAL_REGISTRY_PORT:-5000}"
 WORKLOAD_NODE_NAME="${WORKLOAD_NODE_NAME:-}"
 
+# Signed-image verification is opt-in. When enabled, the KBS must already
+# contain the public key and image policy referenced by these paths.
+SIGNED_IMAGES_ENABLED="${SIGNED_IMAGES_ENABLED:-0}"
+SIGNED_IMAGES_KBS_URL="${SIGNED_IMAGES_KBS_URL:-}"
+SIGNED_IMAGES_POLICY="${SIGNED_IMAGES_POLICY:-}"
+
 # ---------------------------------------------------------------------------
 # Feature flags
 # ---------------------------------------------------------------------------
@@ -306,6 +312,17 @@ render_proxy_env_block() {
 EOF
 }
 
+render_signed_images_annotations() {
+  if [[ "$SIGNED_IMAGES_ENABLED" != "1" ]]; then
+    return 0
+  fi
+
+  cat <<EOF
+  annotations:
+    io.katacontainers.config.hypervisor.kernel_params: "agent.aa_kbc_params=cc_kbc::${SIGNED_IMAGES_KBS_URL} agent.image_policy_file=${SIGNED_IMAGES_POLICY} agent.enable_signature_verification=true"
+EOF
+}
+
 chat_probe_ruby() {
   cat <<'RUBY'
 require "net/http"
@@ -388,6 +405,14 @@ preflight() {
     exit 1
   fi
 
+  if [[ "$SIGNED_IMAGES_ENABLED" == "1" ]]; then
+    if [[ -z "$SIGNED_IMAGES_KBS_URL" || -z "$SIGNED_IMAGES_POLICY" ]]; then
+      err "SIGNED_IMAGES_ENABLED=1 requires SIGNED_IMAGES_KBS_URL and SIGNED_IMAGES_POLICY."
+      err "The KBS must already contain the public key and policy before deployment."
+      exit 1
+    fi
+  fi
+
   log "Preflight checks passed."
 }
 
@@ -448,6 +473,16 @@ ensure_devlog_socket() {
   "
 }
 
+ensure_containerd_tmpmounts() {
+  docker_exec "
+    mkdir -p /var/lib/containerd/tmpmounts
+    if ! mountpoint -q /var/lib/containerd/tmpmounts; then
+      mount -t tmpfs -o size=512m tmpfs /var/lib/containerd/tmpmounts
+    fi
+    findmnt /var/lib/containerd/tmpmounts
+  "
+}
+
 restart_nydus_snapshotter() {
   docker_exec "
     nydus_cmd='/opt/coco/nydus-snapshotter/containerd-nydus-grpc'
@@ -499,6 +534,7 @@ restart_containerd_if_requested() {
   fi
 
   ensure_devlog_socket
+  ensure_containerd_tmpmounts
 
   log "Restarting containerd with updated proxy bypasses."
   docker_exec "
@@ -530,6 +566,7 @@ restart_containerd_if_requested() {
   "
   log "Restarting containerd-nydus-grpc with updated proxy bypasses."
   restart_nydus_snapshotter
+  ensure_containerd_tmpmounts
   docker_exec "ps aux | grep containerd"
 }
 
@@ -633,7 +670,7 @@ resolve_probe_image() {
 render_nano_bot_manifest() {
   local rendered="/tmp/${POD_NAME}.rendered.yaml"
   local workload_node_name node_name_block=""
-  local host_aliases_block proxy_env_block
+  local host_aliases_block proxy_env_block signed_images_annotations
 
   workload_node_name="$(detect_workload_node)"
   if [[ -n "$workload_node_name" ]]; then
@@ -643,12 +680,14 @@ render_nano_bot_manifest() {
 
   host_aliases_block="$(render_host_aliases_block)"
   proxy_env_block="$(render_proxy_env_block)"
+  signed_images_annotations="$(render_signed_images_annotations)"
 
   cat > "$rendered" << YAMLEOF
 apiVersion: v1
 kind: Pod
 metadata:
   name: ${POD_NAME}
+${signed_images_annotations}
 spec:
   runtimeClassName: kata-qemu-tdx-linux
 ${node_name_block}${host_aliases_block}
@@ -688,7 +727,7 @@ render_nano_bot_probe_manifest() {
   local probe_pod="$PROBE_POD_NAME"
   local rendered="/tmp/${probe_pod}.rendered.yaml"
   local workload_node_name node_name_block=""
-  local host_aliases_block proxy_env_block
+  local host_aliases_block proxy_env_block signed_images_annotations
 
   workload_node_name="$(detect_workload_node)"
   if [[ -n "$workload_node_name" ]]; then
@@ -698,12 +737,14 @@ render_nano_bot_probe_manifest() {
 
   host_aliases_block="$(render_host_aliases_block)"
   proxy_env_block="$(render_proxy_env_block)"
+  signed_images_annotations="$(render_signed_images_annotations)"
 
   cat > "$rendered" <<YAMLEOF
 apiVersion: v1
 kind: Pod
 metadata:
   name: ${probe_pod}
+${signed_images_annotations}
 spec:
   restartPolicy: Never
   runtimeClassName: kata-qemu-tdx-linux
@@ -718,9 +759,9 @@ ${node_name_block}${host_aliases_block}
         - |
           echo "nano-bot chat probe starting"
           echo "model=${NANO_BOT_MODEL}"
-          ruby <<'RUBY'
-$(chat_probe_ruby)
-RUBY
+          ruby -e '
+        $(chat_probe_ruby | sed 's/^/          /')
+          '
       env:
         - name: OPENAI_API_KEY
           valueFrom:
@@ -792,6 +833,10 @@ run_nano_bot_probe() {
 
   if grep -q 'Error:' <<<"$probe_log"; then
     err "Probe pod completed but the guest-side chat request still returned an application error."
+    return 1
+  fi
+  if ! grep -q 'http=200' <<<"$probe_log"; then
+    err "Probe pod completed, but the guest-side chat request did not return HTTP 200."
     return 1
   fi
 }

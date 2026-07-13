@@ -37,8 +37,7 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name 'sources.list' \) \
     libffi-dev \
     libsodium-dev \
     lua5.4-dev \
-    curl && \
-    rm -rf /var/lib/apt/lists/*
+    curl
 
 # babashka (used by some nano-bots cartridges/tools).
 RUN curl -s https://raw.githubusercontent.com/babashka/babashka/master/install | bash
@@ -71,8 +70,7 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name 'sources.list' \) \
     curl \
     libffi8 \
     liblua5.4-0 \
-    libsodium23 && \
-    rm -rf /var/lib/apt/lists/*
+    libsodium23
 
 COPY --from=builder /usr/local/bundle /usr/local/bundle
 COPY --from=builder /usr/local/bin/bb /usr/local/bin/bb
