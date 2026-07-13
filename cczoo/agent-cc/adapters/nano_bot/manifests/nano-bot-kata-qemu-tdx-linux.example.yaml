@@ -22,7 +22,12 @@ spec:
     - name: nano-bot
       image: "docker.io/library/nano_bot:1.0"
       imagePullPolicy: IfNotPresent
-      command: ["sleep", "infinity"]
+      command:
+        - /bin/bash
+        - -lc
+        - |
+          mkdir -p /root/.config/nano-bots /root/.local/share/nano-bots/cartridges /root/.local/state/nano-bots
+          exec sleep infinity
       env:
         - name: GEM_HOME
           value: "/usr/local/bundle"
@@ -30,6 +35,12 @@ spec:
           value: "/usr/local/bundle"
         - name: PATH
           value: "/usr/local/bundle/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        - name: TMPDIR
+          value: "/tmp"
+        - name: TMP
+          value: "/tmp"
+        - name: TEMP
+          value: "/tmp"
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -55,3 +66,16 @@ spec:
           value: "localhost,127.0.0.1,::1,10.96.0.0/12,10.244.0.0/16,10.88.0.0/16"
         - name: no_proxy
           value: "localhost,127.0.0.1,::1,10.96.0.0/12,10.244.0.0/16,10.88.0.0/16"
+      volumeMounts:
+        - name: confidential-workdir
+          mountPath: /tmp
+        - name: confidential-workdir
+          mountPath: /var/tmp
+        - name: confidential-workdir
+          mountPath: /root/.config
+        - name: confidential-workdir
+          mountPath: /root/.local
+  volumes:
+    - name: confidential-workdir
+      emptyDir:
+        sizeLimit: 1Gi

@@ -557,6 +557,63 @@ not enable dm-verity and does not claim Measured RootFS; those require a later
 rootfs/measurement integration and, for remote trust decisions, Remote
 Attestation.
 
+### Confidential EmptyDir
+
+The generated nano bot Pod mounts a `1Gi` ordinary Kubernetes `emptyDir` as
+`confidential-workdir` at `/tmp`, `/var/tmp`, `/root/.config`, and
+`/root/.local`. With `kata-qemu-tdx-linux`, an ordinary block-backed
+`emptyDir` is presented to the guest as a LUKS2-protected device. The Pod
+startup command recreates the nano-bots configuration, cartridge, and state
+directories after the mount hides the corresponding image-layer directories.
+`TMPDIR`, `TMP`, and `TEMP` point at the encrypted `/tmp` mount.
+
+The following workload-side data is covered by this mount:
+
+| Path in the nano bot container | Component/data | Protection status |
+|---|---|---|
+| `/root/.config/nano-bots` | nano-bots agent configuration and per-user agent settings, if the agent writes them | Encrypted by `confidential-workdir` |
+| `/root/.local/share/nano-bots/cartridges` | nano-bots cartridge files and downloaded/generated cartridge data | Encrypted by `confidential-workdir` |
+| `/root/.local/state/nano-bots` | nano-bots agent state, checkpoints, queues, or history, if the installed agent uses these files | Encrypted by `confidential-workdir` |
+| `/tmp` | Ruby, OpenSSL, HTTP client, shell, and other workload temporary files | Encrypted by `confidential-workdir`; `TMPDIR`, `TMP`, and `TEMP` direct compatible libraries and tools here |
+| `/var/tmp` | Longer-lived temporary files created by the workload or its libraries | Encrypted by `confidential-workdir` |
+
+The current `tdx-chat-bot.rb` is intentionally stateless: it reads
+`OPENAI_API_KEY` and the endpoint/model from environment variables and writes
+chat responses to stdout. Therefore it does not currently create a chat
+history or checkpoint file, but any such files created by nano-bots under the
+paths above are covered automatically. The startup command recreates the
+three nano-bots directories because mounting over `/root/.config` and
+`/root/.local` hides the corresponding empty directories that were created in
+the image layer.
+
+This volume does **not** cover the following CoCo or deployment data:
+
+| Data/component | Where it lives | Why it is not covered by this volume |
+|---|---|---|
+| `kata-agent`, CDH, guest certificates, and registry configuration | Kata guest initrd and guest runtime | They belong to the VM boot/pull path, not the nano bot container filesystem |
+| Nydus snapshotter data and bootstrap/blob cache | CoCo dev container paths such as `/var/lib/containerd-nydus` | Host-side/container-runtime storage; separate from the Pod's `emptyDir` |
+| Signed-image agent parameters (`agent.aa_kbc_params`, `agent.image_policy_file`, `agent.enable_signature_verification`) | Pod annotation translated into the Kata guest kernel/agent launch configuration | Runtime configuration, not workload files under the mounted directories |
+| Trustee/KBS keys, policy, and repository | `SIGNED_IMAGES_STATE_DIR` and the KBS container on the host | Host-side development trust material; keep it private and manage it separately |
+| Kubernetes Secret `OPENAI_API_KEY` | Secret-backed environment variable | Injected into the process environment; this implementation does not copy it to disk |
+| Pod/container logs and metadata reports | Kubernetes/node-local log paths and host `/tmp` reports | Written outside the workload container's `confidential-workdir` |
+| Image layers and `/usr/local/bin/tdx-chat-bot.rb` | Read-only image rootfs | Static image content, not runtime writable data |
+
+`TMPDIR` is the conventional Unix/Linux temporary-directory variable. `TMP`
+and `TEMP` are also recognized by some cross-platform libraries and tools. They
+are set together so the common temporary-file paths converge on the encrypted
+`/tmp` mount. These variables are routing hints, not a mandatory filesystem
+policy: a program that explicitly writes to another path can still bypass
+them, which is why `/var/tmp` and the nano-bots state directories are mounted
+as well.
+
+The mount protects workload data from host access while the Pod is running; it
+does not encrypt the image itself, the guest initrd, the host-side KBS
+repository, or external API traffic. The volume is ephemeral and is deleted
+with the Pod, so it is not a persistent secret store. Do not set `medium:
+Memory` for this volume, because that selects a guest-memory emptyDir instead
+of the host-backed encrypted device. Confidential EmptyDir provides LUKS2
+integrity but does not provide replay protection.
+
 ### Container / Pod / Feature Flags
 
 | Variable | Default |

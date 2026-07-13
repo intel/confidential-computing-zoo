@@ -700,7 +700,12 @@ ${node_name_block}${host_aliases_block}
     - name: nano-bot
       image: "${NANO_BOT_IMAGE}"
       imagePullPolicy: ${IMAGE_PULL_POLICY}
-      command: ["sleep", "infinity"]
+      command:
+        - /bin/bash
+        - -lc
+        - |
+          mkdir -p /root/.config/nano-bots /root/.local/share/nano-bots/cartridges /root/.local/state/nano-bots
+          exec sleep infinity
       env:
         - name: GEM_HOME
           value: "/usr/local/bundle"
@@ -708,6 +713,12 @@ ${node_name_block}${host_aliases_block}
           value: "/usr/local/bundle"
         - name: PATH
           value: "/usr/local/bundle/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        - name: TMPDIR
+          value: "/tmp"
+        - name: TMP
+          value: "/tmp"
+        - name: TEMP
+          value: "/tmp"
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -722,6 +733,19 @@ ${node_name_block}${host_aliases_block}
         - name: FARADAY_SSL_VERIFY
           value: "${FARADAY_SSL_VERIFY}"
 ${proxy_env_block}
+      volumeMounts:
+        - name: confidential-workdir
+          mountPath: /tmp
+        - name: confidential-workdir
+          mountPath: /var/tmp
+        - name: confidential-workdir
+          mountPath: /root/.config
+        - name: confidential-workdir
+          mountPath: /root/.local
+  volumes:
+    - name: confidential-workdir
+      emptyDir:
+        sizeLimit: 1Gi
 YAMLEOF
 
   echo "$rendered"
@@ -762,6 +786,7 @@ ${node_name_block}${host_aliases_block}
         - /bin/bash
         - -lc
         - |
+          mkdir -p /root/.config/nano-bots /root/.local/share/nano-bots/cartridges /root/.local/state/nano-bots
           echo "nano-bot chat probe starting"
           echo "model=${NANO_BOT_MODEL}"
           ruby -e '
@@ -779,9 +804,28 @@ ${node_name_block}${host_aliases_block}
           value: "${NANO_BOT_MODEL}"
         - name: NANO_BOT_TEST_PROMPT
           value: "${NANO_BOT_TEST_PROMPT}"
+        - name: TMPDIR
+          value: "/tmp"
+        - name: TMP
+          value: "/tmp"
+        - name: TEMP
+          value: "/tmp"
         - name: FARADAY_SSL_VERIFY
           value: "${FARADAY_SSL_VERIFY}"
 ${proxy_env_block}
+      volumeMounts:
+        - name: confidential-workdir
+          mountPath: /tmp
+        - name: confidential-workdir
+          mountPath: /var/tmp
+        - name: confidential-workdir
+          mountPath: /root/.config
+        - name: confidential-workdir
+          mountPath: /root/.local
+  volumes:
+    - name: confidential-workdir
+      emptyDir:
+        sizeLimit: 1Gi
 YAMLEOF
 
   echo "$rendered"
