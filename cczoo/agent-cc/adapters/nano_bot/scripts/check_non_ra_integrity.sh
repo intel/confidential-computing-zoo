@@ -61,6 +61,19 @@ if container_exec "kubectl get pod '$POD_NAME' -o jsonpath='{.status.phase}' 2>/
   pod_running=true
 fi
 
+confidential_emptydir=false
+pod_json="$(container_exec "kubectl get pod '$POD_NAME' -o json 2>/dev/null" || true)"
+if [[ -n "$pod_json" ]] && jq -e '
+  any(.spec.volumes[]?; .name == "confidential-workdir" and
+    (.emptyDir? != null) and ((.emptyDir.medium // "") == "")) and
+  all(.spec.containers[]?.volumeMounts[]?;
+    (.name != "confidential-workdir") or
+    (.mountPath == "/tmp" or .mountPath == "/var/tmp" or
+     .mountPath == "/root/.config" or .mountPath == "/root/.local"))
+' >/dev/null 2>&1 <<<"$pod_json"; then
+  confidential_emptydir=true
+fi
+
 kernel_config=""
 if container_exec "zcat /proc/config.gz 2>/dev/null | grep -E 'CONFIG_DM_VERITY|CONFIG_BLK_DEV_DM'" >/tmp/non-ra-kernel-config.$$ 2>/dev/null; then
   kernel_config="$(tr '\n' ';' < /tmp/non-ra-kernel-config.$$)"
@@ -97,6 +110,7 @@ jq -n \
   --arg kernel_config "$kernel_config" \
   --arg nydus_status "$nydus_status" \
   --arg dm_verity_status "$dm_verity_status" \
+  --argjson confidential_emptydir "$confidential_emptydir" \
   --argjson nydus_running "$nydus_running" \
   --argjson nydus_config "$nydus_config" \
   --argjson guest_pull "$guest_pull" \
@@ -106,6 +120,11 @@ jq -n \
   '{container: $container,
     pod: $pod,
     remote_attestation_required: false,
+    confidential_emptydir: {
+      configured: $confidential_emptydir,
+      volume: "confidential-workdir",
+      medium: "block-backed emptyDir (LUKS2 under confidential runtime)"
+    },
     nydus_guest_pull: {
       status: $nydus_status,
       snapshotter_running: $nydus_running,
