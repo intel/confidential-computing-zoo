@@ -7,6 +7,8 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: nano-bot-kata-qemu-tdx-linux
+  # Add io.katacontainers.config.hypervisor.cc_init_data here only after
+  # generating gzip+base64 init-data from a reviewed, non-secret TOML file.
 spec:
   runtimeClassName: kata-qemu-tdx-linux
   # Only needed if your cluster has no working in-cluster DNS for the
@@ -41,6 +43,10 @@ spec:
           value: "/tmp"
         - name: TEMP
           value: "/tmp"
+        - name: NANO_BOTS_STATE_PATH
+          value: "/root/.local/state/nano-bots"
+        - name: NANO_BOTS_CARTRIDGES_PATH
+          value: "/root/.local/share/nano-bots/cartridges"
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -75,6 +81,7 @@ spec:
           mountPath: /root/.config
         - name: confidential-workdir
           mountPath: /root/.local
+  # Whether it is a Confidential EmptyDir depends on the runtimeClassName used by the Pod.
   volumes:
     - name: confidential-workdir
       emptyDir:
