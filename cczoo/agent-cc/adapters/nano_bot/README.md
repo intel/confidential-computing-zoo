@@ -508,6 +508,98 @@ Set `KEEP_KBS=0` to remove it when the script exits. Override
 `NANO_BOT_MODEL`, `IMAGE_TAG`, `KBS_PORT`, or `KBS_GUEST_HOST` when the local
 environment requires different values.
 
+### Init-Data
+
+CoCo init-data is useful in an AI-agent workload when a setting must take
+effect before the guest starts the workload and its integrity must be bound to
+the TEE evidence. The official format is TOML `version = "0.1.0"` with a
+`[data]` map. CoCo hashes the init-data and exposes the hash through TDX/SNP
+launch measurement; an attestation service or KBS policy can then require the
+expected configuration before releasing resources.
+
+Not every AI-agent setting belongs in init-data. In this project,
+`NANO_BOT_MODEL` is a valid non-secret workload configuration and can select a
+different model while reusing the same image, but the current chat client reads
+it from the Pod environment. Putting a `NANO_BOT_MODEL` key into init-data
+would not change the container environment because CoCo does not define a
+generic rule that projects arbitrary init-data entries into application
+processes. Select it in the Pod configuration instead:
+
+```yaml
+- name: NANO_BOT_MODEL
+  value: "your-model"
+```
+
+This does not mean init-data is limited to only three fixed files. The
+init-data specification is a key-value structure, and CoCo defines consumers
+for several kinds of guest-side configuration. For example, the CoCo image
+pull proxy use case consumes `[image.image_pull_proxy]` in `cdh.toml`, and the
+local-registry use case consumes `[image]` registry certificate configuration.
+Other entries can be consumed by Kata Agent, Attestation Agent, CDH, or an
+additional guest-side component when that component defines the key and its
+semantics. The important distinction is between a defined consumer and an
+arbitrary application environment-variable mapping.
+
+If the selected model must be part of an attested deployment decision, keep the
+value in the Pod configuration and make the reviewed `policy.rego` bind the
+allowed container configuration to the expected model. The exact Rego input
+shape is runtime/version-specific, so generate a baseline with `genpolicy`,
+inspect the container environment fields in its `CreateContainerRequest`, and
+then add the model allowlist. Do not assume that merely measuring an
+init-data file makes an application setting effective.
+
+For this AI agent, use the following boundary:
+
+| Configuration | Recommended channel | Reason |
+|---|---|---|
+| Model name, API base URL, proxy, feature flags | Pod env or a workload config file | Non-secret application configuration; the current client reads env values |
+| Allowed image digest, exec/copy/pull restrictions | `policy.rego` in init-data | TEE-side enforcement before and during agent operations |
+| KBS, Attestation Agent, and CDH settings | `aa.toml`/`cdh.toml` in init-data | Guest security and resource-pull configuration that should be measured |
+| API keys, encryption passwords, OAuth tokens | Kubernetes Secret or KBS resource | Secret material must not be placed in Pod annotations or init-data |
+| Conversation history, cartridge state, prompts, model output | Confidential EmptyDir or KBS-backed application storage | Runtime data, not boot configuration |
+
+Good init-data candidates for this project are:
+
+- `policy.rego`: a reviewed Kata Agent policy that allowlists the exact image
+  digest and restricts `exec`, container creation, copy, and pull operations.
+- `aa.toml`: Attestation Agent configuration, including the KBS endpoint and
+  attestation settings needed by the deployment.
+- `cdh.toml`: Confidential Data Hub configuration, including the KBC name and
+  KBS endpoint used for guest-pull or protected resources.
+
+Do **not** put `OPENAI_API_KEY`, `NANO_BOTS_ENCRYPTION_PASSWORD`, conversation
+history, cartridge content, user prompts, model output, or other bearer
+secrets in init-data. Init-data is integrity-protected and measured, not a
+general-purpose secret store; its content is part of the Pod configuration and
+may be visible to the control-plane objects that carry the annotation. Use
+Kubernetes Secrets or KBS resources for secret values.
+
+The workload script supports reviewed init-data through `INITDATA_FILE`:
+
+```bash
+INITDATA_FILE=/path/to/reviewed-initdata.toml \
+SOURCE_RUNTIME_CFG=/opt/coco/config/configuration-qemu-tdx-asterinas.toml \
+HOST_LINUX_KERNEL=/opt/coco/prebuilt/linux-coco-tdx/vmlinuz-6.16.0-vsock-net-tdxguest-builtin \
+LINUX_INITRD=/opt/coco/prebuilt/asterinas-coco/kata-containers-initrd.img \
+OPENAI_API_ADDRESS=https://<openai-compatible-endpoint>/v1 \
+OPENAI_API_KEY=<your-key> \
+./scripts/repro_linux_coco_tdx.sh
+```
+
+The script validates the required init-data header, gzip-compresses and
+base64-encodes the file, then adds
+`io.katacontainers.config.hypervisor.cc_init_data` to both the workload and
+probe Pods. It also rejects a payload over 200000 encoded bytes to leave room
+under Kubernetes annotation limits. Init-data is disabled when `INITDATA_FILE`
+is unset, so existing no-RA runs keep their current behavior.
+
+The repository does not generate a default policy automatically: a policy
+must match the final image digest and the intended operational workflow. Start
+from `config/initdata/nano-bot-initdata.toml.example`, replace its placeholders,
+review the policy, and only then pass it as `INITDATA_FILE`. Enabling init-data
+does not by itself provide Remote Attestation; the runtime, Attestation Agent,
+attestation service, and KBS must be configured to verify the measured claim.
+
 ### Image Metadata Validation
 
 Set `IMAGE_METADATA_VALIDATION=1` to validate the selected image after the Pod
@@ -567,24 +659,49 @@ startup command recreates the nano-bots configuration, cartridge, and state
 directories after the mount hides the corresponding image-layer directories.
 `TMPDIR`, `TMP`, and `TEMP` point at the encrypted `/tmp` mount.
 
+The upstream `nano-bots` source confirms that a stateful session writes one
+encrypted `state.json` below its selected state directory. The generated Pod
+explicitly sets `NANO_BOTS_STATE_PATH` and `NANO_BOTS_CARTRIDGES_PATH` to the
+mounted directories below, preventing the normal defaults or deployment
+configuration from drifting to another location:
+
+```text
+NANO_BOTS_STATE_PATH=/root/.local/state/nano-bots
+NANO_BOTS_CARTRIDGES_PATH=/root/.local/share/nano-bots/cartridges
+```
+
 The following workload-side data is covered by this mount:
 
 | Path in the nano bot container | Component/data | Protection status |
 |---|---|---|
-| `/root/.config/nano-bots` | nano-bots agent configuration and per-user agent settings, if the agent writes them | Encrypted by `confidential-workdir` |
+| `/root/.config/nano-bots` | nano-bots configuration or credential files placed under this directory | Encrypted by `confidential-workdir` |
 | `/root/.local/share/nano-bots/cartridges` | nano-bots cartridge files and downloaded/generated cartridge data | Encrypted by `confidential-workdir` |
-| `/root/.local/state/nano-bots` | nano-bots agent state, checkpoints, queues, or history, if the installed agent uses these files | Encrypted by `confidential-workdir` |
+| `/root/.local/state/nano-bots` | nano-bots encrypted session state and interaction history when a state key is used | Encrypted by `confidential-workdir` |
 | `/tmp` | Ruby, OpenSSL, HTTP client, shell, and other workload temporary files | Encrypted by `confidential-workdir`; `TMPDIR`, `TMP`, and `TEMP` direct compatible libraries and tools here |
 | `/var/tmp` | Longer-lived temporary files created by the workload or its libraries | Encrypted by `confidential-workdir` |
 
 The current `tdx-chat-bot.rb` is intentionally stateless: it reads
 `OPENAI_API_KEY` and the endpoint/model from environment variables and writes
 chat responses to stdout. Therefore it does not currently create a chat
-history or checkpoint file, but any such files created by nano-bots under the
-paths above are covered automatically. The startup command recreates the
+history or checkpoint file. The installed upstream `nano-bots` CLI/library is
+different: when given a non-empty state key it stores encrypted conversation
+history under the explicit state path above. The startup command recreates the
 three nano-bots directories because mounting over `/root/.config` and
 `/root/.local` hides the corresponding empty directories that were created in
 the image layer.
+
+This is not a blanket guarantee for every file that nano-bots or a cartridge
+may touch. Upstream loads `.env` from the current working directory, which is
+`/root` in this image; `/root/.env` is therefore outside the volume. Do not
+place secrets in `.env` for this workload. Provider credential files are only
+covered when their configured path is under `/root/.config`, `/root/.local`,
+`/tmp`, or `/var/tmp`; an arbitrary path elsewhere is outside the encrypted
+volume. Cartridge-specific state paths can also bypass the mount, so use the
+generated fixed environment paths and do not override them in a cartridge.
+For the encryption password, set `NANO_BOTS_ENCRYPTION_PASSWORD` through a
+Secret-backed environment variable when using stateful nano-bots. The
+upstream default password is `UNSAFE`, which encrypts the file format but does
+not provide a confidential password boundary.
 
 This volume does **not** cover the following CoCo or deployment data:
 

@@ -1,0 +1,37 @@
+version = "0.1.0"
+algorithm = "sha384"
+
+[data]
+"policy.rego" = '''
+package agent_policy
+
+# Replace the image reference with the exact digest used by this Pod.
+default CreateSandboxRequest := true
+default DestroySandboxRequest := true
+default GuestDetailsRequest := true
+default StartContainerRequest := true
+default StatsContainerRequest := true
+default ExecProcessRequest := false
+default CreateContainerRequest := false
+default CopyFileRequest := false
+default PullImageRequest := false
+
+CreateContainerRequest if {
+  some storage in input.storages
+  storage.source == "REPLACE_WITH_EXACT_IMAGE@sha256:REPLACE_WITH_DIGEST"
+}
+'''
+
+# Supply deployment-specific, non-secret configuration in a reviewed file.
+# Do not put API keys, encryption passwords, prompts, or conversation state here.
+"aa.toml" = '''
+[token_configs]
+[token_configs.kbs]
+url = "https://REPLACE_WITH_KBS_HOST:8080"
+'''
+
+"cdh.toml" = '''
+[kbc]
+name = "cc_kbc"
+url = "https://REPLACE_WITH_KBS_HOST:8080"
+'''

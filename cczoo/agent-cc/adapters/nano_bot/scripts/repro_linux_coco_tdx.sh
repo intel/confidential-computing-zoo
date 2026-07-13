@@ -119,6 +119,10 @@ IMAGE_METADATA_EXPECTED_DIGEST="${IMAGE_METADATA_EXPECTED_DIGEST:-}"
 IMAGE_METADATA_COSIGN_KEY="${IMAGE_METADATA_COSIGN_KEY:-}"
 IMAGE_METADATA_REPORT="${IMAGE_METADATA_REPORT:-/tmp/${POD_NAME}.image-metadata.json}"
 
+# Init-data is optional and must contain only non-secret, attestation-bound
+# CoCo configuration such as policy.rego, aa.toml, or cdh.toml.
+INITDATA_FILE="${INITDATA_FILE:-}"
+
 # ---------------------------------------------------------------------------
 # Feature flags
 # ---------------------------------------------------------------------------
@@ -317,15 +321,22 @@ render_proxy_env_block() {
 EOF
 }
 
-render_signed_images_annotations() {
-  if [[ "$SIGNED_IMAGES_ENABLED" != "1" ]]; then
+render_confidential_annotations() {
+  local initdata
+
+  if [[ "$SIGNED_IMAGES_ENABLED" != "1" && -z "$INITDATA_FILE" ]]; then
     return 0
   fi
 
-  cat <<EOF
-  annotations:
-    io.katacontainers.config.hypervisor.kernel_params: "agent.aa_kbc_params=cc_kbc::${SIGNED_IMAGES_KBS_URL} agent.image_policy_file=${SIGNED_IMAGES_POLICY} agent.enable_signature_verification=true"
-EOF
+  printf '  annotations:\n'
+  if [[ "$SIGNED_IMAGES_ENABLED" == "1" ]]; then
+    printf '    io.katacontainers.config.hypervisor.kernel_params: "agent.aa_kbc_params=cc_kbc::%s agent.image_policy_file=%s agent.enable_signature_verification=true"\n' \
+      "$SIGNED_IMAGES_KBS_URL" "$SIGNED_IMAGES_POLICY"
+  fi
+  if [[ -n "$INITDATA_FILE" ]]; then
+    initdata="$(gzip -c "$INITDATA_FILE" | base64 -w0)"
+    printf '    io.katacontainers.config.hypervisor.cc_init_data: %s\n' "$initdata"
+  fi
 }
 
 chat_probe_ruby() {
@@ -414,6 +425,31 @@ preflight() {
     if [[ -z "$SIGNED_IMAGES_KBS_URL" || -z "$SIGNED_IMAGES_POLICY" ]]; then
       err "SIGNED_IMAGES_ENABLED=1 requires SIGNED_IMAGES_KBS_URL and SIGNED_IMAGES_POLICY."
       err "The KBS must already contain the public key and policy before deployment."
+      exit 1
+    fi
+  fi
+
+  if [[ -n "$INITDATA_FILE" ]]; then
+    need_cmd gzip
+    need_cmd base64
+    if [[ ! -f "$INITDATA_FILE" ]]; then
+      err "Init-data file not found: $INITDATA_FILE"
+      exit 1
+    fi
+    if [[ ! -s "$INITDATA_FILE" ]]; then
+      err "Init-data file is empty: $INITDATA_FILE"
+      exit 1
+    fi
+    if ! grep -q '^version[[:space:]]*=[[:space:]]*"0\.1\.0"' "$INITDATA_FILE"; then
+      err "Init-data must declare version = \"0.1.0\": $INITDATA_FILE"
+      exit 1
+    fi
+    if ! grep -q '^algorithm[[:space:]]*=' "$INITDATA_FILE" || ! grep -q '^\[data\]' "$INITDATA_FILE"; then
+      err "Init-data must contain top-level algorithm and [data] sections: $INITDATA_FILE"
+      exit 1
+    fi
+    if [[ "$(gzip -c "$INITDATA_FILE" | base64 -w0 | wc -c)" -gt 200000 ]]; then
+      err "Compressed init-data exceeds the 200000-byte annotation budget: $INITDATA_FILE"
       exit 1
     fi
   fi
@@ -685,7 +721,7 @@ render_nano_bot_manifest() {
 
   host_aliases_block="$(render_host_aliases_block)"
   proxy_env_block="$(render_proxy_env_block)"
-  signed_images_annotations="$(render_signed_images_annotations)"
+  signed_images_annotations="$(render_confidential_annotations)"
 
   cat > "$rendered" << YAMLEOF
 apiVersion: v1
@@ -719,6 +755,10 @@ ${node_name_block}${host_aliases_block}
           value: "/tmp"
         - name: TEMP
           value: "/tmp"
+        - name: NANO_BOTS_STATE_PATH
+          value: "/root/.local/state/nano-bots"
+        - name: NANO_BOTS_CARTRIDGES_PATH
+          value: "/root/.local/share/nano-bots/cartridges"
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -766,7 +806,7 @@ render_nano_bot_probe_manifest() {
 
   host_aliases_block="$(render_host_aliases_block)"
   proxy_env_block="$(render_proxy_env_block)"
-  signed_images_annotations="$(render_signed_images_annotations)"
+  signed_images_annotations="$(render_confidential_annotations)"
 
   cat > "$rendered" <<YAMLEOF
 apiVersion: v1
@@ -810,6 +850,10 @@ ${node_name_block}${host_aliases_block}
           value: "/tmp"
         - name: TEMP
           value: "/tmp"
+        - name: NANO_BOTS_STATE_PATH
+          value: "/root/.local/state/nano-bots"
+        - name: NANO_BOTS_CARTRIDGES_PATH
+          value: "/root/.local/share/nano-bots/cartridges"
         - name: FARADAY_SSL_VERIFY
           value: "${FARADAY_SSL_VERIFY}"
 ${proxy_env_block}
