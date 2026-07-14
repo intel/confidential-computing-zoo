@@ -91,7 +91,9 @@ class benchmark_engine(object):
                         tps = self.batch_size / latency
                         print(format_string.format('insecure', task_idx, self.batch_size, 1000*latency, tps))
         else:
-            creds = grpc.ssl_channel_credentials(root_certificates=open(self.certificate, 'rb').read())
+            with open(self.certificate, 'rb') as f:
+                cert_data = f.read()
+            creds = grpc.ssl_channel_credentials(root_certificates=cert_data)
             async with grpc.aio.secure_channel(self.url, creds) as channel:
                 stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
                 if loop_num != 0:

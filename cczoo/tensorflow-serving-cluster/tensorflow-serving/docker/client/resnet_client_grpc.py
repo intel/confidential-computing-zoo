@@ -41,9 +41,21 @@ class benchmark_engine(object):
         self.batch_size = batch_size
         self.response_time = response_time
         self.concurrent_num = concurrent_num
-        self.root_cert = None if not root_cert else open(root_cert, 'rb').read()
-        self.private_key = None if not private_key else open(private_key, 'rb').read()
-        self.certificate_chain = None if not certificate_chain else open(certificate_chain, 'rb').read()
+        if root_cert:
+            with open(root_cert, 'rb') as f:
+                self.root_cert = f.read()
+        else:
+            self.root_cert = None
+        if private_key:
+            with open(private_key, 'rb') as f:
+                self.private_key = f.read()
+        else:
+            self.private_key = None
+        if certificate_chain:
+            with open(certificate_chain, 'rb') as f:
+                self.certificate_chain = f.read()
+        else:
+            self.certificate_chain = None
         self.request_signatures = []
         self.request_stubs = []
         self.__prepare__()

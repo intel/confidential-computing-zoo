@@ -471,6 +471,7 @@ def check_initrd():
 
     td_event_log_actor.process()
 
-    initrd_digest = sha384(open('/boot/initrd.img','rb').read()).hexdigest()
+    with open('/boot/initrd.img', 'rb') as f:
+        initrd_digest = sha384(f.read()).hexdigest()
     events = td_event_log_actor.find_hash(initrd_digest)
     assert len(events) == 1
