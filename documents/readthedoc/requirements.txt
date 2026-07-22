@@ -7,7 +7,7 @@ sphinx-version-warning
 sphinx-click
 sphinx-jsonschema
 sphinxemoji
-setuptools==78.1.1
+setuptools==83.0.0
 docutils==0.14
 mock==1.0.1
 pillow==12.2.0
