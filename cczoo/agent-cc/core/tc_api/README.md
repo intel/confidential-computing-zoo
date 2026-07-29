@@ -1,176 +1,194 @@
-# TC API - Trusted Container Build and Publish Service
+# TC API
 
-A RESTful API service framework built with Python and FastAPI for handling Docker image building, packing, launching, deploying of applications runtime in a secure and auditable manner.
+TC API is the Trusted Container runtime, composed of three cooperating service processes:
 
-## Features
+- **tc-api** is the user-facing control plane. Its FastAPI service provides interfaces for building, publishing, launching, and auditing container workloads in a confidential-computing environment.
+- **Docktap** is the Docker runtime interception service. It provides a Docker-compatible proxy interface, forwards Docker operations to the Docker daemon, and sends signed runtime events to TruCon.
+- **TruCon** is the trusted-event core. Its internal service interface accepts events from tc-api and Docktap, sequences them, binds them to the guest measurement register, persists the queue, and submits records to immutable backends.
 
-- **Container Image Building**: Build and package container images with Dockerfile and application components
-- **SBOM Generation**: Generate and sign SPDX format Software Bill of Materials (SBOM) using Syft
-- **Image Security**: Support image encryption using Skopeo and digital signing using Cosign
-- **Image Publishing**: Publish signed images and SBOMs to container registries with policy management
-- **Key Management**: Integrate with KBS for key management and RVPS for verification policies
-- **Secure Deployment**: Support secure container launch with remote attestation in CVM
-- **Audit Logging**: Record build and deploy evidence in Transparent Log System
-- **Runtime Security**: Enable secure container upgrades during runtime
+The reusable trusted-log types and backend interfaces live in the sibling [`tlog`](../tlog/) package. TC API depends on `tlog`; TruCon is implemented inside TC API rather than being a separate package.
 
-## Architecture Overview
+## Capabilities
+
+- Build container images and generate signed SPDX SBOMs with Syft.
+- Encrypt and sign images with Skopeo and Cosign, then publish them to a registry.
+- Launch workloads with KBS-backed key retrieval and remote-attestation checks.
+- Record build, publish, launch, and Docker runtime evidence in a measured chain.
+- Export and verify attested chain-head evidence with `tc-verify`.
+
+## Architecture At A Glance
 
 ```mermaid
 flowchart LR
-	clients[API Clients] --> rest[tc_api REST API]
-	dockercli[Docker CLI or API Clients] --> docktap[Docktap Proxy]
-	rest --> workflows[Build Publish Launch Workflows]
-	workflows --> trucon[TruCon Trust Core]
-	docktap --> trucon
-	trucon --> backends[Immutable Trust Backends]
-	trucon --> mirror[OCI Bundle Mirror]
-	backends --> verify[tc-verify]
-	mirror --> verify
+    clients[API clients] --> api[tc-api REST API]
+    docker[Docker clients] --> docktap[Docktap proxy]
+    api --> workflows[Build / publish / launch workflows]
+    workflows --> trucon[TruCon]
+    docktap --> trucon
+    trucon --> tlog[tlog types and adapters]
+    tlog --> backends[Rekor / OCI / other immutable backends]
+    backends --> verify[tc-verify]
 ```
 
-For the full runtime boundary and sequencing design, see [docs/architecture.md](docs/architecture.md).
-
-## Project Structure
+The important dependency direction is:
 
 ```text
-tc_api/
-├── tc_api/              # tc_api, TruCon, Docktap, CLI, and shared models
-├── tests/               # focused pytest modules and manual checks
-├── scripts/             # operator helpers such as tdvm_smoke_test.py
-├── docs/                # architecture and testing docs
-├── pyproject.toml       # packaging and entrypoints
-├── setup.sh             # local environment setup
-├── start.sh             # local service orchestration
-└── run_tests.sh         # backward-compatible test wrapper
+tc-api business workflows and Docktap
+                  -> TruCon service
+                  -> tlog library
+                  -> immutable trust backends
 ```
 
-Documentation entrypoints:
+For the runtime boundaries, trust contracts, and sequencing flow, see [docs/architecture.md](docs/architecture.md).
 
-- [docs/architecture.md](docs/architecture.md) for the end-to-end service architecture and trust boundaries
-- [docs/TESTING.md](docs/TESTING.md) for the test matrix and validation workflows
+## Requirements
 
+The complete runtime requires a TDX guest with `/dev/tdx_guest`, RTMR extend support, and quote generation. Development of pure Python components can run without a TDX device by using the focused unit tests.
 
-## Configuration
+Install or make available:
 
-Primary runtime configuration comes from environment variables:
-
-- `HOST`: service listen address, default `0.0.0.0`
-- `PORT`: service port, default `8000`
-- `DOCKER_REGISTRY`: image registry address
-- `UPLOAD_DIR`: upload directory
-- `BUILD_DIR`: build working directory
-- `TRUCON_UDS_PATH`: preferred same-machine Unix socket path for internal TruCon traffic
-- `TRUCON_SERVICE_TOKEN`: shared Bearer token for tc_api and Docktap
-- `TRUCON_BUNDLE_MIRROR_DIR`: optional local OCI-layout bundle mirror
-
-Docktap-specific variables are listed later in this README.
+- Python 3.11 or newer
+- Docker
+- Cosign, Syft, and Skopeo
+- A reachable KBS/trust-service stack for encrypted launch flows
 
 ## Quick Start
 
-### Prerequisites
+Run these commands from this directory (`cczoo/agent-cc/core/tc_api`).
 
-- TDX guest support is mandatory. The runtime expects `/dev/tdx_guest`, RTMR extend support, and quote generation to be available.
-- Docker, Cosign, Syft, and Skopeo must be installed.
-- KBS / trust-service dependencies must be reachable for full build and launch flows.
-- Tcapi dependencies script [`setup.sh`](./setup.sh) should be operated.
+### 1. Create the environment
 
-### Local Startup
+```bash
+bash setup.sh
+```
 
-The supported local lifecycle entrypoint is:
+The setup script creates `venv` and installs TC API together with the local `tlog` package and its Rekor extras.
+
+### 2. Configure local services
+
+Copy the example configuration and adjust registry, KBS, and proxy settings as needed:
+
+```bash
+cp .env.example .env
+```
+
+The most important settings are:
+
+- `HOST` and `PORT` control the REST listener; defaults are `0.0.0.0` and `8000`.
+- `UPLOAD_DIR`, `BUILD_DIR`, and `LOGS_DIR` control local artifact storage.
+- `DOCKER_REGISTRY` and `DOCKER_REPOSITORY` select the image destination.
+- `KBS_URL` and `KBS_ENDPOINT` configure key retrieval.
+- `TRUCON_SERVICE_TOKEN` authenticates internal tc_api, TruCon, and Docktap calls. If omitted, local startup generates one; use the same value for all processes in a deployment.
+- `TRUCON_UDS_PATH` and `TRUCON_BUNDLE_MIRROR_DIR` configure the preferred local transport and bundle mirror.
+
+See [.env.example](.env.example) for the full list.
+
+### 3. Start the local stack
 
 ```bash
 ./start.sh restart
 ```
 
-To stop services without starting them again:
+This starts the REST API, TruCon, and Docktap using the local lifecycle configuration. Check the API at `http://127.0.0.1:8000/docs`.
+
+Stop the stack with:
 
 ```bash
 ./start.sh stop
 ```
 
-To restart and clear local TruCon / Docktap runtime state first:
+To remove local TruCon/Docktap state before starting again:
 
 ```bash
 ./start.sh restart --reset-state
 ```
 
-To clear local state without starting services:
+`--reset-state` and `reset-state` remove the TruCon queue database, derived chain state, SQLite WAL/SHM files, the TruCon lock file, and the Docktap workload database. They do not remove `builds/` artifacts, published mirror material, or the cached Sigstore identity token.
+
+To start the optional local AA/CDH/ASR trust-service container as well:
 
 ```bash
-./start.sh reset-state
+bash ../config/dev-up.sh
 ```
 
-`--reset-state` and `reset-state` remove the local TruCon queue database, derived chain state stored in that database, SQLite WAL/SHM files, the TruCon lock file, and the Docktap workload database. They are the supported way to recover from stale local chain or queue state during development.
+For API-only development, run `python -m tc_api.api.app`; this does not replace the full TruCon/Docktap stack.
 
-They do not remove build artifacts under `builds/`, published mirror material, or the cached Sigstore identity token file.
+### 4. Log in and run a build
 
-Local development now uses the consolidated `tlog` project. Rekor-specific code lives under `tlog.backends.rekor`, and the Rekor dependency set is enabled through the `rekor` extra on `tlog`.
+The shortest useful Quick Start builds a minimal image based on the Docker Hub official `busybox` image (the default `busybox:latest` tag) and lets you inspect the asynchronous result. The example container runs `sh -c "echo hello from tc-client"`; it contains no application-specific files. The flow requires Docker, Syft, a Sigstore identity, and a working TruCon stack. Publishing and launching are separate flows because they require a configured image registry, KBS, and (for the default path) TDX.
 
-If you want a wrapper that also manages the local AA / CDH / ASR trust-service container, use:
+First acquire and cache a Sigstore identity token with the interactive script included in this package:
 
 ```bash
-bash scripts/dev-up.sh
+./venv/bin/tc-oidc-verification-code --operation quick-start --format none
 ```
 
-For direct API-only development you can still run:
+The command prints a public Sigstore login URL. Open it in a browser, complete the OIDC login, and paste the short-lived verification code back into the terminal. The token is cached for the TC API workflow, so you do not need to paste it into the build JSON or repeat `--sigstore-login oob` on every command. Run the command again when the cached token expires.
+
+The repository example already contains a complete request, so no JSON editing is required:
 
 ```bash
-python -m tc_api.api.app
-```
-When first start the tcapi service,should to create a safe operating environment. 
-LUKS write endpoints follow the same explicit caller-token contract as the build, publish, launch, and Docktap write paths.
-
-```shell
-venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore-login oob \
-	create_luks --payload-json '{"user_id":"<sigstore account>","vfs_path":"<luks file>","vfs_size":"<size>","passwd":"<luks key file>"}'
+cp examples/tc-client/build.json /tmp/tc-api-build.json
+BUILD_RESPONSE=$(./venv/bin/tc-client \
+    --base-url http://127.0.0.1:8000 \
+    build --payload-file /tmp/tc-api-build.json)
+printf '%s\n' "$BUILD_RESPONSE"
 ```
 
-## Chain Verification CLI
+The response contains a generated `build_id`. Save it and query the asynchronous result until `status` becomes `success`:
 
-Operators can verify a trust chain with the package CLI:
-
-```shell
-tc-verify default
+```bash
+BUILD_ID="<build_id from the response>"
+./venv/bin/tc-client \
+        --base-url http://127.0.0.1:8000 \
+        build-result "$BUILD_ID"
 ```
 
-The preferred operator path is to verify from exported attested-head evidence:
+The successful build result provides the `image_id`, `sbom_url`, and local artifact paths. The build also records a build event in the configured transparency chain. For a shorter API-only check, open `http://127.0.0.1:8000/docs` and exercise the read-only result endpoints without running a build.
 
-```shell
-tc-verify --evidence evidence.json
-```
+Publishing is intentionally outside this Quick Start. It requires `DOCKER_REGISTRY` and `DOCKER_REPOSITORY` in `.env`, a registry login, and a publish payload containing the generated local `oci:` artifact and destination image URL. Launching additionally requires KBS/attestation services and (for the default TDX path) a TDX guest. Use the focused tests in [docs/TESTING.md](docs/TESTING.md) to validate those contracts when the external services are unavailable.
 
-Machine-readable output is available with:
+## API Surface
 
-```shell
-tc-verify default --json
-tc-verify --evidence evidence.json --json
-```
+The FastAPI documentation at `/docs` is the authoritative request/response reference for the running version. The main resource groups are:
 
-A verification evidence method is provided here: the attested chain head begins replaying the immutable backend history, reporting both the verification results for the attested chain head and diagnostic information regarding any rollbacks.
-While the real-time TruCon verification feature remains available for troubleshooting, production-grade verification on TDX-based chains is expected to be performed against the exported (attested-head) evidence.
-
-
-## API Summary
-
-Common API surfaces:
-
-| Area | Endpoint |
+| Area | Endpoints |
 |---|---|
 | Build | `POST /api/build-package`, `GET /api/build-result/{build_id}` |
 | Publish | `POST /api/publish-package`, `GET /api/publish-result/{build_id}` |
 | Launch | `POST /api/deploy-launch`, `GET /api/launch-result/{launch_id}` |
-| LUKS | `POST /api/create_luks`, `POST /api/mount_luks`, `POST /api/unmount_luks`, `GET /api/luks-result/{user_id}` |
+| Encrypted VFS | `POST /api/create_luks`, `POST /api/mount_luks`, `POST /api/unmount_luks`, `GET /api/luks-result/{user_id}` |
 | Transparency | `GET /api/transparency-log/{log_id}`, `POST /api/get-summaryTransparencylog` |
+| Docktap | `POST /api/docktap/authorize` and related runtime-management endpoints |
 
-Result-query endpoints can be queried without Sigstore authentication.
+Read/result endpoints can be queried without Sigstore authentication. Write endpoints derive the owner identity from the caller's Sigstore token; `user_id` in the request does not need to match the token exactly.
 
-Write endpoints derive the stored owner identity from the caller's Sigstore token. The request `user_id` is normalized server-side and no longer needs to pre-match the token identity.
+Example LUKS request:
 
-For local manual checks, run the service and use the built-in FastAPI docs or the manual tests in `tests/test_api.py`.
+```bash
+venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 \
+    create_luks --payload-json '{"user_id":"<sigstore account>","vfs_path":"<luks file>","vfs_size":"<size>","passwd":"<luks key file>"}'
+```
 
+## Verification
+
+The recommended production path is to export attested-head evidence and verify that package:
+
+```bash
+tc-verify --evidence evidence.json
+tc-verify --evidence evidence.json --json
+```
+
+Live-chain verification remains available for troubleshooting:
+
+```bash
+tc-verify default --json
+```
+
+For test commands and environment-specific smoke flows, see [docs/TESTING.md](docs/TESTING.md).
 
 ## Further Reading
 
-- [architecture.md](docs/architecture.md) for deployment and control-plane architecture
-- [trusted-log/README.md](../tlog/docs/architecture.md) for TruCon and chain semantics
-- [docktap/architecture.md](docs/docktap/architecture.md) for Docktap-specific design details
+- [docs/architecture.md](docs/architecture.md) for deployment, trust boundaries, and commit sequencing
+- [docs/docktap/architecture.md](docs/docktap/architecture.md) for Docktap behavior and runtime interception
+- [../tlog/README.md](../tlog/README.md) for the reusable trusted-log package

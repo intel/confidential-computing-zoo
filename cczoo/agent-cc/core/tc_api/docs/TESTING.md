@@ -2,6 +2,17 @@
 
 This document explains how to run the test suite for the TC API service.
 
+## Before You Start
+
+Run these commands from `cczoo/agent-cc/core/tc_api`.
+
+```bash
+bash setup.sh
+source venv/bin/activate
+```
+
+The setup installs TC API and the sibling `tlog` package in editable mode. Docker and the external tools used by the selected test flow must also be available.
+
 ## Test Files
 
 - `tests/test_api.py` - Manual integration tests with detailed output
@@ -9,19 +20,15 @@ This document explains how to run the test suite for the TC API service.
 - `tests/test_tdx_mr_adapter.py` - Focused TDX RTMR adapter unit coverage
 - `tests/test_runner.py` - Single test entrypoint for all test types
 
-## Prerequisites
+## Start A Test Service
 
-1. Install dependencies:
+For manual and service-backed integration tests, start the complete local stack:
+
 ```bash
-pip install -e .
+./start.sh restart
 ```
 
-2. Start the TC API service (required for manual/integration tests):
-```bash
-python -m tc_api.api.app
-```
-
-The service should be running on `http://localhost:8000`
+The REST API is available at `http://127.0.0.1:8000`. Use `python -m tc_api.api.app` only when testing the REST API without the TruCon and Docktap processes.
 
 ## Result Queries
 
@@ -47,7 +54,7 @@ Equivalent CLI checks:
 
 ## Running Tests
 
-Use a single entrypoint for all test flows:
+Use the test runner for the supported test flows:
 
 ```bash
 python -m tests.test_runner --type all
@@ -60,7 +67,7 @@ python -m tests.test_runner --type manual
 python -m tests.test_runner --type unit
 ```
 
-`--type unit` runs deterministic subprocess-focused coverage in `tests/test_subprocess_unit.py` and RTMR adapter coverage in `tests/test_tdx_mr_adapter.py`.
+`--type unit` runs deterministic subprocess-focused coverage in `tests/test_subprocess_unit.py` and RTMR adapter coverage in `tests/test_tdx_mr_adapter.py`. Most pytest modules can also be run directly when you need a narrower check.
 
 Useful variants:
 
@@ -70,6 +77,12 @@ python -m tests.test_runner --type unit --no-service-management
 python -m tests.test_runner --type all --verbose
 TC_API_BASE_URL=http://localhost:18000 python -m tests.test_runner --type manual --name health
 ./run_tests.sh --type all --verbose
+```
+
+Focused pytest example:
+
+```bash
+python -m pytest tests/test_trucon_internal_transport.py -q
 ```
 
 ## TD VM Acceptance
