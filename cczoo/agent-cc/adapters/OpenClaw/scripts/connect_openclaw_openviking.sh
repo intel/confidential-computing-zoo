@@ -15,22 +15,16 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-ARGUS_DIR="$REPO_ROOT/core/argus"
-
-PROVIDER_URL="${PROVIDER_URL:-http://127.0.0.1:8008}"
-GUARD_URL="${GUARD_URL:-http://127.0.0.1:8007}"
-TARGET_URI="${TARGET_URI:-http://127.0.0.1:8010}"
-TARGET_SERVICE_NAME="${TARGET_SERVICE_NAME:-openviking-cmem}"
-OPENCLAW_PYTHON="${OPENCLAW_PYTHON:-python3}"
-RUST_LOG="${RUST_LOG:-info}"
-GUARD_LOG_FILE="${GUARD_LOG_FILE:-$ARGUS_DIR/guard-real.log}"
+TARGET_URI="${TARGET_URI:-http://127.0.0.1:1933}"
+OPENCLAW_CONTAINER="${OPENCLAW_CONTAINER:-agentcc-openclaw-sbx-gateway}"
+OPENCLAW_PLUGIN_SPEC="${OPENCLAW_PLUGIN_SPEC:-clawhub:@openviking/openclaw-plugin}"
+OPENCLAW_INSTALL_PLUGIN="${OPENCLAW_INSTALL_PLUGIN:-1}"
+OPENVIKING_API_KEY="${OPENVIKING_API_KEY:-}"
 WAIT_ATTEMPTS="${WAIT_ATTEMPTS:-60}"
 WAIT_INTERVAL="${WAIT_INTERVAL:-2}"
 
 log() {
-    printf '[step3] %s\n' "$*"
+    printf '[openviking-plugin] %s\n' "$*"
 }
 
 require_command() {
@@ -57,47 +51,34 @@ wait_http() {
     exit 1
 }
 
-ensure_guard_binary() {
-    if [[ -x "$ARGUS_DIR/target/release/argus-guard" ]]; then
-        return 0
-    fi
-    log "Building argus-guard release binary"
-    (cd "$ARGUS_DIR" && cargo build --release --bin argus-guard)
-}
-
 main() {
     require_command curl
-    require_command cargo
-    require_command "$OPENCLAW_PYTHON"
+    require_command docker
 
-    wait_http "$PROVIDER_URL/health" "argus-provider"
-    wait_http "$TARGET_URI/health" "openviking-workload"
+    if [[ -z "$OPENVIKING_API_KEY" ]]; then
+        echo "OPENVIKING_API_KEY must contain a non-root OpenViking user key." >&2
+        exit 1
+    fi
 
-    ensure_guard_binary
+    wait_http "$TARGET_URI/health" "openviking health"
+    wait_http "$TARGET_URI/ready" "openviking readiness"
 
-    log "Restarting argus-guard in real verifier mode"
-    pkill -f '/argus-guard' 2>/dev/null || true
-    (
-        cd "$ARGUS_DIR"
-        nohup env -u ARGUS_ALLOW_MOCK_VERIFIER \
-            EVIDENCE_ENDPOINT="$PROVIDER_URL" \
-            RUST_LOG="$RUST_LOG" \
-            ./target/release/argus-guard >"$GUARD_LOG_FILE" 2>&1 &
-        echo $! > .argus-guard.pid
-    )
+    if [[ "$OPENCLAW_INSTALL_PLUGIN" == "1" ]]; then
+        log "Installing the OpenViking OpenClaw plugin"
+        docker exec "$OPENCLAW_CONTAINER" openclaw plugins install "$OPENCLAW_PLUGIN_SPEC"
+    fi
 
-    wait_http "$GUARD_URL/health" "argus-guard"
+    log "Configuring the OpenViking context engine"
+    docker exec "$OPENCLAW_CONTAINER" openclaw openviking setup \
+        --base-url "$TARGET_URI" \
+        --api-key "$OPENVIKING_API_KEY" \
+        --json
 
-    log "Running OpenClaw caller flow through Argus"
-    (
-        cd "$SCRIPT_DIR"
-        TARGET_URI="$TARGET_URI" \
-        TARGET_SERVICE_NAME="$TARGET_SERVICE_NAME" \
-        "$OPENCLAW_PYTHON" openclaw_agent.py
-    )
+    log "Restarting the OpenClaw gateway"
+    docker restart "$OPENCLAW_CONTAINER" >/dev/null
 
-    log "Step 3 complete"
-    log "Guard log: $GUARD_LOG_FILE"
+    log "Verifying the OpenViking plugin status"
+    docker exec "$OPENCLAW_CONTAINER" openclaw openviking status --json
 }
 
 main "$@"

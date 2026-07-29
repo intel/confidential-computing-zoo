@@ -21,18 +21,21 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 TC_API_URL="${TC_API_URL:-http://127.0.0.1:8000}"
 PROVIDER_URL="${PROVIDER_URL:-http://127.0.0.1:8008}"
 WORKLOAD_ID="${WORKLOAD_ID:-openviking-cmem}"
-IMAGE_NAME="${IMAGE_NAME:-localhost:5000/openviking-cmem:latest}"
-IMAGE_URL="${IMAGE_URL:-docker://registry:5000/openviking-cmem:latest}"
+OPENVIKING_VERSION="${OPENVIKING_VERSION:-v0.4.8}"
+OPENVIKING_BASE="${OPENVIKING_BASE:-ghcr.io/volcengine/openviking@sha256:27d3c97bddbe81f31d2c5af1f31e9d504b5928506c88f559a23faf86358169b7}"
+IMAGE_NAME="${IMAGE_NAME:-localhost:5000/openviking:${OPENVIKING_VERSION}}"
+IMAGE_URL="${IMAGE_URL:-docker://registry:5000/openviking:${OPENVIKING_VERSION}}"
 IMAGE_ID="${IMAGE_ID:-openviking-cmem}"
-OPENVIKING_USE_LUKS="${OPENVIKING_USE_LUKS:-1}"
 ATTESTATION_REQUIRED="${ATTESTATION_REQUIRED:-false}"
 POLL_INTERVAL="${POLL_INTERVAL:-3}"
 POLL_ATTEMPTS="${POLL_ATTEMPTS:-40}"
 WAIT_ATTEMPTS="${WAIT_ATTEMPTS:-60}"
 WAIT_INTERVAL="${WAIT_INTERVAL:-2}"
 AUTO_START_INFRA="${AUTO_START_INFRA:-1}"
-DOCKERFILE_PATH="${DOCKERFILE_PATH:-$REPO_ROOT/adapters/OpenViking/configs/Dockerfile.tc-api-workload}"
+DOCKERFILE_PATH="${DOCKERFILE_PATH:-$REPO_ROOT/adapters/OpenViking/configs/Dockerfile.openviking}"
 COMPOSE_FILE_PATH="${COMPOSE_FILE_PATH:-$REPO_ROOT/adapters/OpenViking/configs/docker-compose.tc-api.yml}"
+
+export IMAGE_URL IMAGE_ID WORKLOAD_ID ATTESTATION_REQUIRED
 
 wait_http() {
     local url="$1"
@@ -89,15 +92,10 @@ ensure_infra_stack() {
     wait_http "$PROVIDER_URL/health" "argus-provider"
 }
 
-prepare_openviking_storage() {
-    if [[ "$OPENVIKING_USE_LUKS" == "1" ]]; then
-        echo "Refusing to launch with LUKS enabled: tc-api does not yet support a validated data-mount request." >&2
-        echo "Do not use arbitrary Docker command overrides; structured LUKS mount support is required." >&2
-        echo "Set OPENVIKING_USE_LUKS=0 only for non-production testing without encrypted-at-rest storage." >&2
-        exit 1
-    fi
-
-    echo "Warning: OPENVIKING_USE_LUKS=0 uses container-local storage without encrypted-at-rest protection." >&2
+check_safe_openviking_launch() {
+    echo "Refusing to launch OpenViking: the current TC-API launch path uses host networking and has no structured loopback-port or validated config/data-mount options." >&2
+    echo "Do not bypass this check with arbitrary Docker command overrides. Add an allowlisted TC-API launch API before enabling this deployment." >&2
+    exit 1
 }
 
 resolve_tc_client_cmd() {
@@ -194,12 +192,27 @@ PY
     exit 1
 }
 
+if [[ -z "$OPENVIKING_VERSION" ]]; then
+    echo "OPENVIKING_VERSION is required and must identify a tested OpenViking release." >&2
+    exit 1
+fi
+
+if [[ -z "$OPENVIKING_BASE" ]]; then
+    echo "OPENVIKING_BASE is required and must be a pinned official OpenViking image digest." >&2
+    exit 1
+fi
+
+if [[ "$OPENVIKING_BASE" != *@sha256:* ]]; then
+    echo "OPENVIKING_BASE must use a pinned image digest (@sha256:<digest>)." >&2
+    exit 1
+fi
+
 if [[ ! -f "$DOCKERFILE_PATH" ]]; then
     echo "Missing Dockerfile: $DOCKERFILE_PATH" >&2
     exit 1
 fi
 
-prepare_openviking_storage
+check_safe_openviking_launch
 ensure_infra_stack
 
 auth_args=()
@@ -208,7 +221,7 @@ if [[ -n "${TC_API_BEARER_TOKEN:-}" ]]; then
 fi
 
 echo "[1/5] Building OpenViking workload image: ${IMAGE_NAME}"
-docker build -t "$IMAGE_NAME" -f "$DOCKERFILE_PATH" "$REPO_ROOT"
+docker build --build-arg "OPENVIKING_BASE=${OPENVIKING_BASE}" -t "${IMAGE_NAME}" -f "${DOCKERFILE_PATH}" "${REPO_ROOT}"
 
 echo "[2/5] Pushing image to local registry"
 docker push "$IMAGE_NAME"
@@ -226,7 +239,7 @@ identity_token = os.environ.get("TC_API_IDENTITY_TOKEN")
 
 payload = {
     "image_id": os.environ.get("IMAGE_ID", "openviking-cmem"),
-    "image_url": os.environ.get("IMAGE_URL", "docker://registry:5000/openviking-cmem:latest"),
+    "image_url": os.environ.get("IMAGE_URL", "docker://registry:5000/openviking:v0.4.8"),
     "user_id": os.environ.get("TC_API_USER_ID", "openviking-demo"),
     "attestation_required": attestation_required,
     "metadata": {
@@ -260,7 +273,7 @@ identity_token = os.environ.get("TC_API_IDENTITY_TOKEN")
 
 payload = {
     "image_id": os.environ.get("IMAGE_ID", "openviking-cmem"),
-    "image_url": os.environ.get("IMAGE_URL", "docker://registry:5000/openviking-cmem:latest"),
+    "image_url": os.environ.get("IMAGE_URL", "docker://registry:5000/openviking:v0.4.8"),
     "user_id": os.environ.get("TC_API_USER_ID", "openviking-demo"),
     "attestation_required": attestation_required,
     "metadata": {

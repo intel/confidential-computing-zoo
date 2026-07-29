@@ -18,7 +18,7 @@ services:
   registry:
     image: registry:2
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     restart: unless-stopped
     volumes:
       - openviking-registry-data:/var/lib/registry
@@ -35,8 +35,8 @@ services:
         - HTTPS_PROXY=${HTTPS_PROXY:-}
         - NO_PROXY=${NO_PROXY:-}
     ports:
-      - "8000:8000"
-      - "8002:8002"
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8002:8002"
     privileged: true
     environment:
       - HOST=0.0.0.0
@@ -89,7 +89,7 @@ services:
         - HTTPS_PROXY=${HTTPS_PROXY:-}
         - NO_PROXY=${NO_PROXY:-}
     ports:
-      - "8008:8008"
+      - "127.0.0.1:8008:8008"
     privileged: true
     environment:
       - HOST=0.0.0.0
