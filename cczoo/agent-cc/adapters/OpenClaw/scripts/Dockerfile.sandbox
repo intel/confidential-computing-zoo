@@ -1,0 +1,47 @@
+# Copyright (c) 2026 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Dockerfile.sandbox — OpenClaw sandbox execution container
+#
+# This is the container that the OpenClaw gateway spawns as a sibling for
+# each sandboxed tool/skill execution.  It is based on the upstream
+# openclaw/openclaw scripts/docker/sandbox/Dockerfile.
+#
+# The default image includes python3 for sandbox write/edit helpers.
+# OpenClaw will not substitute plain debian:bookworm-slim.
+#
+# Build:
+#   docker build -f Dockerfile.sandbox -t openclaw-sandbox:bookworm-slim .
+#
+# Or run setup-sbx.sh which builds this automatically.
+
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    python3 \
+    ripgrep
+
+RUN useradd --create-home --shell /bin/bash sandbox
+USER sandbox
+WORKDIR /home/sandbox
+
+CMD ["sleep", "infinity"]
