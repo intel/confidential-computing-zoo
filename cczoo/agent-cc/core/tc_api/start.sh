@@ -24,7 +24,11 @@ tc_api_cd_repo_root
 SCRIPT_DIR="$TC_API_REPO_ROOT"
 
 DOCKERHUB_ACCOUNT="<your dockerhub account>"
-PID_DIR="$SCRIPT_DIR/logs/pids"
+LOG_MOUNT_PATH="${LOG_MOUNT_PATH:-/dev/shm/tc_api_logs}"
+UPLOAD_DIR="${UPLOAD_DIR:-/dev/shm/tc_api_uploads}"
+BUILD_DIR="${BUILD_DIR:-/dev/shm/tc_api_builds}"
+LOGS_DIR="${LOGS_DIR:-$LOG_MOUNT_PATH}"
+PID_DIR="$LOG_MOUNT_PATH/pids"
 TC_API_PID_FILE="$PID_DIR/tc_api.pid"
 TRUCON_PID_FILE="$PID_DIR/trucon.pid"
 DOCKTAP_PID_FILE="$PID_DIR/docktap.pid"
@@ -376,7 +380,11 @@ if swapon --show | grep -q "/"; then
 fi
 
 # Create necessary directories
-mkdir -p uploads builds logs /dev/shm
+mkdir -p "$UPLOAD_DIR" "$BUILD_DIR" "$LOG_MOUNT_PATH" /dev/shm
+PID_DIR="$LOG_MOUNT_PATH/pids"
+TC_API_PID_FILE="$PID_DIR/tc_api.pid"
+TRUCON_PID_FILE="$PID_DIR/trucon.pid"
+DOCKTAP_PID_FILE="$PID_DIR/docktap.pid"
 mkdir -p "$PID_DIR"
 
 remove_pid_file_if_stale "$TC_API_PID_FILE"
@@ -395,8 +403,10 @@ export TRUCON_PORT=${TRUCON_PORT:-8001}
 export TRUCON_RTMR_INDEX=${TRUCON_RTMR_INDEX:-2}
 export TC_API_WORKERS=${TC_API_WORKERS:-1}
 export DOCKTAP_SOCKET=${DOCKTAP_SOCKET:-/var/run/docktap/docker.sock}
-export DOCKTAP_LOG_FILE=${DOCKTAP_LOG_FILE:-$PWD/logs/docktap-latest.log}
-export TRUCON_LOG_FILE=${TRUCON_LOG_FILE:-$PWD/logs/trucon-latest.log}
+export DOCKTAP_LOG_FILE=${DOCKTAP_LOG_FILE:-$LOG_MOUNT_PATH/docktap-latest.log}
+export TRUCON_LOG_FILE=${TRUCON_LOG_FILE:-$LOG_MOUNT_PATH/trucon-latest.log}
+export LOGS_DIR
+export UPLOAD_DIR BUILD_DIR
 export DOCKTAP_REQUIRE_ATTESTATION=${DOCKTAP_REQUIRE_ATTESTATION:-1}
 export TRUCON_UDS_PATH=${TRUCON_UDS_PATH:-/var/run/trucon/trucon.sock}
 export DEBUG=${DEBUG:-false}

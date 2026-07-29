@@ -75,13 +75,17 @@ cp .env.example .env
 The most important settings are:
 
 - `HOST` and `PORT` control the REST listener; defaults are `0.0.0.0` and `8000`.
-- `UPLOAD_DIR`, `BUILD_DIR`, and `LOGS_DIR` control local artifact storage.
+- `UPLOAD_DIR` and `BUILD_DIR` default to `/dev/shm/tc_api_uploads` and `/dev/shm/tc_api_builds`; uploaded inputs and build artifacts are intentionally volatile. Runtime logs default to `/dev/shm/tc_api_logs`.
 - `DOCKER_REGISTRY` and `DOCKER_REPOSITORY` select the image destination.
 - `KBS_URL` and `KBS_ENDPOINT` configure key retrieval.
 - `TRUCON_SERVICE_TOKEN` authenticates internal tc_api, TruCon, and Docktap calls. If omitted, local startup generates one; use the same value for all processes in a deployment.
 - `TRUCON_UDS_PATH` and `TRUCON_BUNDLE_MIRROR_DIR` configure the preferred local transport and bundle mirror.
 
 See [.env.example](.env.example) for the full list.
+
+Runtime logs are kept in `/dev/shm/tc_api_logs` to avoid ordinary filesystem persistence. This is not encrypted storage: the logs are plaintext while the services are running, and they are lost when the CVM or container memory is reset. The Compose deployment does not bind this directory to the host.
+
+The tc-api Compose deployment uses the host Docker daemon through `/var/run/docker.sock`. Docker image layers, build cache, and container writable layers therefore remain under the Docker daemon's own data root, outside these container paths. To keep those artifacts in memory as well, configure the host/CVM daemon itself with a temporary data root such as `/dev/shm/docker` before starting the stack, for example with `dockerd --data-root=/dev/shm/docker`. This is a host-level setting and cannot be changed by tc-api through the Docker socket.
 
 ### 3. Start the local stack
 

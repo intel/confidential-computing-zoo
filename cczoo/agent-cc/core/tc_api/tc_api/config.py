@@ -25,9 +25,9 @@ DOCKER_REGISTRY = config("DOCKER_REGISTRY", default="docker.io")
 DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="<<your docker hub account>>")
 
 # File Storage Configuration
-UPLOAD_DIR = config("UPLOAD_DIR", default="./uploads")
-BUILD_DIR = config("BUILD_DIR", default="./builds")
-LOGS_DIR = config("LOGS_DIR", default="./logs")
+UPLOAD_DIR = config("UPLOAD_DIR", default="/dev/shm/tc_api_uploads")
+BUILD_DIR = config("BUILD_DIR", default="/dev/shm/tc_api_builds")
+LOGS_DIR = config("LOGS_DIR", default="/dev/shm/tc_api_logs")
 LUKS_VFS_BASE_DIR = config("LUKS_VFS_BASE_DIR", default="./luks/vfs")
 LUKS_MOUNT_BASE_DIR = config("LUKS_MOUNT_BASE_DIR", default="./builds/luks")
 BUILD_PACKAGE_MAX_REQUEST_BYTES = config("BUILD_PACKAGE_MAX_REQUEST_BYTES", default=33554432, cast=int)
@@ -36,7 +36,7 @@ ALLOWED_EXTERNAL_IMAGE_REGISTRIES = config(
 	default="docker.io,localhost,127.0.0.1",
 )
 COMMIT_QUEUE_DB = config("COMMIT_QUEUE_DB", default="/dev/shm/commit_queue.db")
-OWNER_KEY_DIR = config("OWNER_KEY_DIR", default="./logs/owner_keys")
+OWNER_KEY_DIR = config("OWNER_KEY_DIR", default="/dev/shm/tc_api_logs/owner_keys")
 
 # External Tools
 DOCKER_CMD = config("DOCKER_CMD", default="docker")

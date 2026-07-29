@@ -18,6 +18,9 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - DEBUG=false
+      - UPLOAD_DIR=/dev/shm/tc_api_uploads
+      - BUILD_DIR=/dev/shm/tc_api_builds
+      - LOGS_DIR=/dev/shm/tc_api_logs
       - DOCKER_REGISTRY=docker.io
       - DOCKER_REPOSITORY=myrepo
       - TRUCON_URL=http://trucon:8001
@@ -30,9 +33,6 @@ services:
       - HTTPS_PROXY=${HTTPS_PROXY:-}
       - NO_PROXY=${NO_PROXY:-}
     volumes:
-      - ./uploads:/app/tc_api/uploads
-      - ./builds:/app/tc_api/builds
-      - ./logs:/app/tc_api/logs
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/run/trucon:/var/run/trucon
     tmpfs:
@@ -62,11 +62,11 @@ services:
     environment:
       - TRUCON_UDS_PATH=/var/run/trucon/trucon.sock
       - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
+      - LOGS_DIR=/dev/shm/tc_api_logs
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-}
     volumes:
-      - ./logs:/app/tc_api/logs
       - /var/run/trucon:/var/run/trucon
     tmpfs:
       - /dev/shm
@@ -94,6 +94,7 @@ services:
       - TRUCON_URL=http://trucon:8001
       - TRUCON_UDS_PATH=/var/run/trucon/trucon.sock
       - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
+      - LOGS_DIR=/dev/shm/tc_api_logs
       - DOCKER_SOCKET=/var/run/docker-daemon.sock
       - SOCK_BRIDGE_SOCKET=/var/run/docktap/docker.sock
       - DOCKTAP_AUTH_MODE=${DOCKTAP_AUTH_MODE:-explicit_delegation}
@@ -104,7 +105,6 @@ services:
       - /var/run/docker.sock:/var/run/docker-daemon.sock
       - /var/run/docktap:/var/run/docktap
       - /var/run/trucon:/var/run/trucon
-      - ./logs:/app/tc_api/logs
     tmpfs:
       - /dev/shm
     mem_swappiness: 0

@@ -316,9 +316,9 @@ The CVM communicates with external clients, the immutable backend, and, when con
 
 ### Data at Rest
 
-The current deployment has both persistent and volatile storage. tc-api may write uploads, build outputs, logs, and key material to configured filesystem directories; TDX does not by itself protect such data after it is written to disk, so filesystem permissions and the deployment's key-provisioning mechanism remain important.
+tc-api's uploads, build outputs, runtime logs, owner-key working files, and startup state default to memory-backed directories under `/dev/shm`, as do TruCon and Docktap's SQLite databases. This avoids ordinary disk persistence without requiring a user-managed encryption key, but the data is plaintext while in use and is volatile: it can be lost after a container or CVM reset. These files are not authoritative integrity records; trusted history remains in the transparency log.
 
-TruCon and Docktap's SQLite databases are normally placed under `/dev/shm`. This is a memory-backed filesystem inside the CVM rather than ordinary disk storage, so the data benefits from the CVM's memory protection but is volatile: it can survive a process restart, but is normally lost after a host or CVM reboot.
+Docker image layers, build cache, and container writable layers are managed by the Docker daemon through the host-mounted Docker socket and are outside tc-api's storage-protection scope. Their confidentiality, integrity, persistence, and cleanup are deployment responsibilities; tc-api cannot relocate the daemon's host-side `data-root` through the socket.
 
 ### Data in Use
 
@@ -326,10 +326,10 @@ This deployment uses a single CVM, and all components, including tc-api, Docktap
 
 ### Other restrictions
 
-- There is no guarantee that the original chain can be restored after a CVM restart.
+- There is no guarantee that the original chain can be restored after the CVM restart.
 - Since evidence must be retrieved from the CVM, `tc-verify` cannot perform chain backtracking if the remote CVM is inaccessible; in other words, offline chain backtracking is not supported.
 
-## 5. Concurrency and Ordering Strategy
+## 5. Other features and mechanisms
 
 - REST and Docktap can emit events concurrently.
 - TruCon serializes chain-relevant ordering within the defined measured-chain scope.
