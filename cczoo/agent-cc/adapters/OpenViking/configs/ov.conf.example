@@ -1,0 +1,33 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 1933,
+    "auth_mode": "api_key",
+    "root_api_key": "REPLACE_WITH_A_RANDOM_ROOT_KEY"
+  },
+  "storage": {
+    "workspace": "/app/.openviking/data",
+    "agfs": {
+      "backend": "local"
+    },
+    "vectordb": {
+      "backend": "local"
+    }
+  },
+  "embedding": {
+    "dense": {
+      "provider": "openai",
+      "api_base": "https://REPLACE_WITH_YOUR_OPENAI_COMPATIBLE_ENDPOINT/v1",
+      "api_key": "REPLACE_WITH_YOUR_EMBEDDING_API_KEY",
+      "model": "REPLACE_WITH_YOUR_EMBEDDING_MODEL",
+      "dimension": 1024
+    }
+  },
+  "vlm": {
+    "provider": "openai",
+    "api_base": "https://REPLACE_WITH_YOUR_OPENAI_COMPATIBLE_ENDPOINT/v1",
+    "api_key": "REPLACE_WITH_YOUR_VLM_API_KEY",
+    "model": "REPLACE_WITH_YOUR_VISION_MODEL",
+    "max_retries": 2
+  }
+}
