@@ -21,21 +21,25 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 TC_API_URL="${TC_API_URL:-http://127.0.0.1:8000}"
 PROVIDER_URL="${PROVIDER_URL:-http://127.0.0.1:8008}"
 WORKLOAD_ID="${WORKLOAD_ID:-openviking-cmem}"
-IMAGE_NAME="${IMAGE_NAME:-localhost:5000/openviking-cmem:latest}"
-IMAGE_URL="${IMAGE_URL:-docker://registry:5000/openviking-cmem:latest}"
+OPENVIKING_VERSION="${OPENVIKING_VERSION:-v0.4.8}"
+OPENVIKING_BASE="${OPENVIKING_BASE:-ghcr.io/volcengine/openviking@sha256:27d3c97bddbe81f31d2c5af1f31e9d504b5928506c88f559a23faf86358169b7}"
+IMAGE_NAME="${IMAGE_NAME:-localhost:5000/openviking:${OPENVIKING_VERSION}}"
+IMAGE_URL="${IMAGE_URL:-docker://registry:5000/openviking:${OPENVIKING_VERSION}}"
 IMAGE_ID="${IMAGE_ID:-openviking-cmem}"
 OPENVIKING_USE_LUKS="${OPENVIKING_USE_LUKS:-1}"
 OPENVIKING_LUKS_MOUNT_ROOT="${OPENVIKING_LUKS_MOUNT_ROOT:-/home/encrypted_storage}"
 OPENVIKING_LUKS_SUBDIR="${OPENVIKING_LUKS_SUBDIR:-openviking}"
-OPENVIKING_CONTAINER_DATA_DIR="${OPENVIKING_CONTAINER_DATA_DIR:-/mnt/encrypted/openviking}"
+OPENVIKING_CONTAINER_STATE_DIR="${OPENVIKING_CONTAINER_STATE_DIR:-/app/.openviking}"
 ATTESTATION_REQUIRED="${ATTESTATION_REQUIRED:-false}"
 POLL_INTERVAL="${POLL_INTERVAL:-3}"
 POLL_ATTEMPTS="${POLL_ATTEMPTS:-40}"
 WAIT_ATTEMPTS="${WAIT_ATTEMPTS:-60}"
 WAIT_INTERVAL="${WAIT_INTERVAL:-2}"
 AUTO_START_INFRA="${AUTO_START_INFRA:-1}"
-DOCKERFILE_PATH="${DOCKERFILE_PATH:-$REPO_ROOT/adapters/OpenViking/configs/Dockerfile.tc-api-workload}"
+DOCKERFILE_PATH="${DOCKERFILE_PATH:-$REPO_ROOT/adapters/OpenViking/configs/Dockerfile.openviking}"
 COMPOSE_FILE_PATH="${COMPOSE_FILE_PATH:-$REPO_ROOT/adapters/OpenViking/configs/docker-compose.tc-api.yml}"
+
+export IMAGE_URL IMAGE_ID WORKLOAD_ID ATTESTATION_REQUIRED
 
 wait_http() {
     local url="$1"
@@ -94,29 +98,34 @@ ensure_infra_stack() {
 
 prepare_openviking_storage() {
     export OPENVIKING_HOST_DATA_DIR=""
-    export OPENVIKING_DOCKER_CMD=""
+
+
+    export OPENVIKING_DOCKER_CMD="docker run -d --name=agentcc-openviking-service --label=argus.workload=${WORKLOAD_ID} --publish=127.0.0.1:1933:1933 --env=OPENVIKING_CONFIG_FILE=${OPENVIKING_CONTAINER_STATE_DIR}/ov.conf --env=OPENVIKING_WITH_BOT=0"
 
     if [[ "$OPENVIKING_USE_LUKS" != "1" ]]; then
         echo "OPENVIKING_USE_LUKS=0, using container-local storage only." >&2
-        return 0
+    else
+        if ! command -v mountpoint >/dev/null 2>&1; then
+            echo "mountpoint command is required when OPENVIKING_USE_LUKS=1." >&2
+            exit 1
+        fi
+
+        if ! mountpoint -q "$OPENVIKING_LUKS_MOUNT_ROOT"; then
+            echo "LUKS mount root is not mounted: $OPENVIKING_LUKS_MOUNT_ROOT" >&2
+            echo "Use cczoo/openclaw-cc/luks_tools/mount_encrypted_vfs.sh first, or set OPENVIKING_USE_LUKS=0." >&2
+            exit 1
+        fi
+
+        export OPENVIKING_HOST_DATA_DIR="$OPENVIKING_LUKS_MOUNT_ROOT/$OPENVIKING_LUKS_SUBDIR"
+        mkdir -p "$OPENVIKING_HOST_DATA_DIR"
+        if [[ ! -f "$OPENVIKING_HOST_DATA_DIR/ov.conf" ]]; then
+            echo "Missing OpenViking configuration: $OPENVIKING_HOST_DATA_DIR/ov.conf" >&2
+            echo "Create it with the required model and API-key configuration before launching." >&2
+            exit 1
+        fi
+        export OPENVIKING_DOCKER_CMD="$OPENVIKING_DOCKER_CMD --volume=${OPENVIKING_HOST_DATA_DIR}:${OPENVIKING_CONTAINER_STATE_DIR}"
+        echo "OpenViking encrypted storage: host=${OPENVIKING_HOST_DATA_DIR} -> container=${OPENVIKING_CONTAINER_STATE_DIR}" >&2
     fi
-
-    if ! command -v mountpoint >/dev/null 2>&1; then
-        echo "mountpoint command is required when OPENVIKING_USE_LUKS=1." >&2
-        exit 1
-    fi
-
-    if ! mountpoint -q "$OPENVIKING_LUKS_MOUNT_ROOT"; then
-        echo "LUKS mount root is not mounted: $OPENVIKING_LUKS_MOUNT_ROOT" >&2
-        echo "Use cczoo/openclaw-cc/luks_tools/mount_encrypted_vfs.sh first, or set OPENVIKING_USE_LUKS=0." >&2
-        exit 1
-    fi
-
-    export OPENVIKING_HOST_DATA_DIR="$OPENVIKING_LUKS_MOUNT_ROOT/$OPENVIKING_LUKS_SUBDIR"
-    mkdir -p "$OPENVIKING_HOST_DATA_DIR"
-
-    export OPENVIKING_DOCKER_CMD="docker run -d -it --privileged -e HF_HUB_OFFLINE=1 -e OPENVIKING_DATA_DIR=${OPENVIKING_CONTAINER_DATA_DIR} -v /etc/hosts:/etc/hosts -v ${OPENVIKING_HOST_DATA_DIR}:${OPENVIKING_CONTAINER_DATA_DIR} --network=host"
-    echo "OpenViking encrypted storage: host=${OPENVIKING_HOST_DATA_DIR} -> container=${OPENVIKING_CONTAINER_DATA_DIR}" >&2
 }
 
 resolve_tc_client_cmd() {
@@ -213,6 +222,21 @@ PY
     exit 1
 }
 
+if [[ -z "$OPENVIKING_VERSION" ]]; then
+    echo "OPENVIKING_VERSION is required and must identify a tested OpenViking release." >&2
+    exit 1
+fi
+
+if [[ -z "$OPENVIKING_BASE" ]]; then
+    echo "OPENVIKING_BASE is required and must be a pinned official OpenViking image digest." >&2
+    exit 1
+fi
+
+if [[ "$OPENVIKING_BASE" != *@sha256:* ]]; then
+    echo "OPENVIKING_BASE must use a pinned image digest (@sha256:<digest>)." >&2
+    exit 1
+fi
+
 if [[ ! -f "$DOCKERFILE_PATH" ]]; then
     echo "Missing Dockerfile: $DOCKERFILE_PATH" >&2
     exit 1
@@ -227,7 +251,7 @@ if [[ -n "${TC_API_BEARER_TOKEN:-}" ]]; then
 fi
 
 echo "[1/5] Building OpenViking workload image: ${IMAGE_NAME}"
-docker build -t "$IMAGE_NAME" -f "$DOCKERFILE_PATH" "$REPO_ROOT"
+docker build --build-arg "OPENVIKING_BASE=${OPENVIKING_BASE}" -t "${IMAGE_NAME}" -f "${DOCKERFILE_PATH}" "${REPO_ROOT}"
 
 echo "[2/5] Pushing image to local registry"
 docker push "$IMAGE_NAME"
@@ -245,7 +269,7 @@ identity_token = os.environ.get("TC_API_IDENTITY_TOKEN")
 
 payload = {
     "image_id": os.environ.get("IMAGE_ID", "openviking-cmem"),
-    "image_url": os.environ.get("IMAGE_URL", "docker://registry:5000/openviking-cmem:latest"),
+    "image_url": os.environ.get("IMAGE_URL", "docker://registry:5000/openviking:v0.4.8"),
     "user_id": os.environ.get("TC_API_USER_ID", "openviking-demo"),
     "attestation_required": attestation_required,
     "metadata": {
@@ -282,7 +306,7 @@ identity_token = os.environ.get("TC_API_IDENTITY_TOKEN")
 
 payload = {
     "image_id": os.environ.get("IMAGE_ID", "openviking-cmem"),
-    "image_url": os.environ.get("IMAGE_URL", "docker://registry:5000/openviking-cmem:latest"),
+    "image_url": os.environ.get("IMAGE_URL", "docker://registry:5000/openviking:v0.4.8"),
     "user_id": os.environ.get("TC_API_USER_ID", "openviking-demo"),
     "attestation_required": attestation_required,
     "metadata": {
