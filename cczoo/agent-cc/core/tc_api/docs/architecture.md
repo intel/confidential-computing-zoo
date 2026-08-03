@@ -28,18 +28,23 @@ The project contains four primary runtime components:
 
 ![tc-api architecture](../../../images/tc-api-architecture.png)
 
-The workflow supports the following end-to-end flow for a trusted event:
+The diagram presents this flow in two connected halves:
 
-1. **Client request** — `tc_api` or Docktap receives a build, publish, launch, or Docker-runtime operation that must be recorded as a trusted event.
-2. **Establish event authorization** — The client obtains or reuses the credential or signing authority required by the selected trust-log backend. In the current Sigstore implementation, this is a Sigstore OIDC identity token used to obtain a Fulcio signing certificate.
-3. **Reserve intent** — The client asks TruCon to reserve the next commit position. TruCon returns a single-use `intent_token`, `sequence_num`, and the signed predecessor contract (`prev_event_digest` and `prev_lookup_hash`). This prevents concurrent writers from signing conflicting positions in the measured chain.
-4. **Create a signed reserved event** — The client builds the event payload with the reserved sequence and predecessor fields, then signs or authorizes the resulting event package. In the current implementation, this package is a DSSE bundle; another backend may use a different signed representation. The reservation is therefore part of the signed contract rather than an after-the-fact ordering hint.
-5. **Validate at the commit sequencer** — The client submits the signed event package and `intent_token` to TruCon. Under its single-process sequencer lock, TruCon validates the reservation, idempotency key, chain state, signed predecessor fields, event digest, and owner authorization when required.
-6. **Extend TDX RTMR** — For event types that extend the measured chain, TruCon extends TDX RTMR[2] with the event digest. Baseline initialization reads the starting RTMR value instead of extending it.
-7. **Update accepted chain state** — TruCon inserts the record into the durable SQLite queue as `PENDING`, updates the local chain state, and returns the record and sequence metadata. This is admission into the measured chain, not yet confirmation that the configured immutable backend has accepted the event.
-8. **Submit to the immutable trust backend** — A daemon submission thread inside the single TruCon process asynchronously submits the queued event package to the configured `ImmutableLogAdapter` backend. In the current implementation, that backend is Rekor; a future deployment may use an on-chain adapter or another append-only backend. After successful confirmation, TruCon marks the record `CONFIRMED` and persists the backend's `log_id`; the confirmed head is then suitable for attested-head evidence export.
-9. **Fetch and replay immutable evidence** — `tc-verify` obtains attested-head evidence from TruCon and retrieves the corresponding history through the configured immutable-log backend. It replays the signed event chain and checks sequence numbers, predecessor continuity, event authorization, and backend inclusion. The current implementation may use Rekor attestation storage and the OCI mirror as fallback materialization sources; these are backend-specific details rather than requirements of the workflow.
-10. **Check attested head binding** — The verifier checks that the evidence's `head_log_id` and measured state are bound by the TDX quote through REPORTDATA and the current RTMR value. Only after this check and the replay checks pass is the audited event chain considered verified.
+**Event log construction and TDX state binding**
+
+1. **Initialize the chain** — TruCon reads the CVM startup baseline, including the initial RTMR[2] value and CCEL evidence, and records them in Event Log 0 together with the chain owner public key and owner attestation. Event Log 0 has `sequence_num=1` and no predecessor.
+2. **Receive a container event** — tc-api or Docktap submits a signed event for a build, publish, launch, or Docker-runtime operation. The event carries its digest, sequence and predecessor contract, and owner authorization when that authorization mode applies.
+3. **Sequence and admit the event** — TruCon's commit sequencer validates the event contract and chain state under its serialized commit path. The local SQLite state tracks the accepted head, queue record, and submission status; it is coordination state, not the public immutable log.
+4. **Update the measured state** — For event types covered by the measurement policy, TruCon extends TDX RTMR[2] with the event digest and records the resulting `mr_value`. Events that do not extend RTMR remain in the logical event chain and carry the previous measured state forward.
+5. **Append and submit** — TruCon appends the event as the next Event Log record and asynchronously submits its signed bundle to the trusted log. The current backend is Rekor, while the `ImmutableLogAdapter` interface also permits another append-only backend. After confirmation, TruCon stores the backend `log_id`, which can identify the confirmed chain head.
+
+**Replay and verification**
+
+6. **Fetch attested-head evidence** — `tc-verify` obtains the confirmed `head_log_id`, the measured `mr_value`, and the TDX quote. The evidence identifies the head to be verified rather than merely trusting the newest record returned by a query.
+7. **Fetch immutable history** — Using `head_log_id`, the verifier retrieves the corresponding immutable history. Backend traversal may discover records from the head toward Event Log 0; the verifier normalizes the recovered records and replays them in ascending sequence order, from Event Log 0 to the head.
+8. **Verify the event chain** — The verifier checks immutable-log inclusion, event signatures, sequence continuity, predecessor fields, and owner authorization for subsequent events when applicable. It obtains the owner public key from Event Log 0 and uses the signed predecessor contract to validate each link.
+9. **Replay TDX RTMR[2]** — Starting with the baseline RTMR in Event Log 0, the verifier recomputes the RTMR[2] state for each event according to the event policy and compares the resulting state with the recorded `mr_value`.
+10. **Check the attested head** — The verifier checks the TDX quote's REPORTDATA binding for the confirmed `head_log_id` and independently compares the quote's RTMR[2] with the replayed measured state. The chain is verified only when chain continuity, authorization, immutable-log integrity, and attested-head checks all agree.
 
 ### 2.2 Runtime Components and Interactions
 

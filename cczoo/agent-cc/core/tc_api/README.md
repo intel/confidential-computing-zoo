@@ -1,10 +1,11 @@
 # TC API
 
-TC API is the Trusted Container runtime, composed of three cooperating service processes:
+TC API is the Trusted Container runtime, composed of three service processes and a verification CLI:
 
-- **tc-api** is the user-facing control plane. Its FastAPI service provides interfaces for building, publishing, launching, and auditing container workloads in a confidential-computing environment.
-- **Docktap** is the Docker runtime interception service. It provides a Docker-compatible proxy interface, forwards Docker operations to the Docker daemon, and sends signed runtime events to TruCon.
-- **TruCon** is the trusted-event core. Its internal service interface accepts events from tc-api and Docktap, sequences them, binds them to the guest measurement register, persists the queue, and submits records to immutable backends.
+- **tc-api** is the FastAPI service that provides interfaces for building, publishing, launching, and auditing container workloads in a TDX guest environment.
+- **Docktap** is the Docker runtime proxy service. It forwards Docker operations, such as pull, push, start, and run, to the Docker daemon and submits the resulting runtime events to TruCon.
+- **TruCon** is the trusted-event core. Its internal service interface accepts events from tc-api and Docktap, sequences them, records queue state, binds event digests to the guest measurement register, and submits records to immutable backends.
+- **tc-verify** is the verification CLI. It fetches or consumes attested chain-head evidence, replays the immutable event history, and verifies chain continuity, event authorization, signatures, and the attested measurement state.
 
 The reusable trusted-log types and backend interfaces live in the sibling [`tlog`](../tlog/) package. TC API depends on `tlog`; TruCon is implemented inside TC API rather than being a separate package.
 
