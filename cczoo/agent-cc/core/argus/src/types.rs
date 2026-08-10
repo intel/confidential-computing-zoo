@@ -369,6 +369,25 @@ pub struct ExpectedBinding {
     pub canonical_request_digest: String,
 }
 
+impl ExpectedBinding {
+    pub fn from_request_and_claims(
+        request: &EvidenceRequest,
+        binding_claims: &BindingClaims,
+    ) -> Self {
+        let digest = compute_binding_digest(
+            &request.to_canonical_bytes(),
+            &binding_claims.to_canonical_bytes(),
+        );
+        let report_data = encode_report_data(&digest);
+
+        Self {
+            algorithm: BINDING_ALGORITHM.to_string(),
+            canonical_request_digest: report_data.clone(),
+            report_data,
+        }
+    }
+}
+
 /// Verifier-normalized output consumed by caller-side policy.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifiedClaims {
@@ -524,6 +543,25 @@ mod tests {
         let digest1 = compute_binding_digest(b"request", b"claims");
         let digest2 = compute_binding_digest(b"request", b"claims");
         assert_eq!(digest1, digest2);
+    }
+
+    #[test]
+    fn expected_binding_changes_when_nonce_changes() {
+        let mut request = EvidenceRequest {
+            version: "v1".to_string(),
+            nonce: "nonce-a".to_string(),
+            caller_id: "caller".to_string(),
+            target: Some(TargetService::new("service", "https://service.local")),
+            requested_claims: Vec::new(),
+            profile_digest: None,
+        };
+        let claims = BindingClaims::default();
+        let first = ExpectedBinding::from_request_and_claims(&request, &claims);
+
+        request.nonce = "nonce-b".to_string();
+        let second = ExpectedBinding::from_request_and_claims(&request, &claims);
+
+        assert_ne!(first.report_data, second.report_data);
     }
 
     #[test]
