@@ -16,20 +16,26 @@
 //!
 //! Encapsulates TDX verifier-specific protocols and normalization.
 
-use crate::errors::{ArgusError, Result};
+use crate::errors::Result;
 use crate::types::*;
-use anyhow::anyhow;
 use async_trait::async_trait;
+use crate::tdx_verifier::TdxQuoteVerifier;
 
 /// RA Adapter for TDX quote verification.
 pub struct RaAdapter {
-    verifier_kind: VerifierKind,
+    verifier: TdxQuoteVerifier,
 }
 
 impl RaAdapter {
     pub fn new() -> Self {
         Self {
-            verifier_kind: VerifierKind::Trustee,
+            verifier: TdxQuoteVerifier::new(),
+        }
+    }
+
+    pub fn with_intel_ca_cert(cert_pem: &[u8]) -> Self {
+        Self {
+            verifier: TdxQuoteVerifier::new().with_intel_ca_cert(cert_pem),
         }
     }
 }
@@ -46,115 +52,11 @@ impl crate::engine::RaVerifier for RaAdapter {
         &self,
         evidence: &Evidence,
         expected_binding: &ExpectedBinding,
-        _options: &VerificationOptions,
+        options: &VerificationOptions,
     ) -> Result<VerifiedClaims> {
-        tracing::debug!(
-            target: "argus::verifier",
-            "Starting evidence verification"
-        );
-
-        // Step 1: Validate quote encoding
-        if evidence.quote.is_empty() {
-            tracing::error!(
-                target: "argus::verifier",
-                "Quote validation failed: empty quote"
-            );
-            return Err(ArgusError::QuoteInvalidEncoding {
-                reason: "empty quote".to_string(),
-            });
-        }
-
-        // Step 2: Verify binding
-        // In production, we would recompute the binding digest and compare
-        let actual_report = match decode_report_data(&evidence.report_data) {
-            Ok(report) => report,
-            Err(e) => {
-                tracing::error!(
-                    target: "argus::verifier",
-                    "Failed to decode report_data: {}",
-                    e
-                );
-                return Err(ArgusError::QuoteInvalidEncoding {
-                    reason: format!("failed to decode: {}", e),
-                });
-            }
-        };
-
-        let quote_valid = actual_report.len() == 48; // SHA-384 produces 48 bytes
-
-        if !quote_valid {
-            tracing::error!(
-                target: "argus::verifier",
-                "Quote validation failed: invalid length"
-            );
-            return Err(ArgusError::quote_validation_failed("invalid report data length"));
-        }
-
-        tracing::debug!(
-            target: "argus::verifier",
-            "Quote validation passed"
-        );
-
-        // Step 3: Extract and validate measurements
-        let measurements = ExportMeasurementClaims {
-            image_digest: evidence
-                .binding_claims
-                .as_ref()
-                .and_then(|bc| bc.service_identity.image_digest.clone()),
-            executable_digest: evidence
-                .binding_claims
-                .as_ref()
-                .and_then(|bc| bc.service_identity.executable_digest.clone()),
-            rtmr0: None,
-            rtmr1: None,
-            rtmr2: None,
-            rtmr3: None,
-        };
-
-        // Step 4: Build identity claims
-        let identity_claims = evidence
-            .binding_claims
-            .as_ref()
-            .and_then(|bc| bc.service_identity.spiffe_id.clone())
-            .map(|spiffe_id| ExportIdentityClaims {
-                spiffe_id: Some(spiffe_id),
-                trust_domain: Some("test.trust.domain".to_string()),
-                issuer: Some("test-issuer".to_string()),
-            });
-
-        // Step 5: Determine binding assurance level
-        let binding_level = evidence
-            .binding_claims
-            .as_ref()
-            .map(|bc| bc.assurance_level)
-            .unwrap_or(BindingAssuranceLevel::L2);
-
-        tracing::debug!(
-            target: "argus::verifier",
-            "Binding assurance level determined"
-        );
-
-        // Step 6: Build verified claims
-        let verified = VerifiedClaims {
-            verifier_kind: self.verifier_kind,
-            verifier_id: "default-verifier".to_string(),
-            tee_type: "tdx".to_string(),
-            quote_valid,
-            report_data: evidence.report_data.clone(),
-            binding_assurance_level: binding_level,
-            verified_claim_assurance: None,
-            // Argus does not perform collateral-backed freshness evaluation yet.
-            // Keep the exported status aligned with the documented semantics.
-            tcb_status: Some("Unknown".to_string()),
-            measurements,
-            binding_claims: evidence.binding_claims.clone(),
-            attested_issuance: None,
-            identity_claims,
-            verified_at: current_timestamp(),
-            expires_at: None,
-        };
-
-        Ok(verified)
+        self.verifier
+            .verify_evidence(evidence, expected_binding, options)
+            .await
     }
 }
 
@@ -217,5 +119,36 @@ impl crate::engine::RaVerifier for MockRaAdapter {
             verified_at: current_timestamp(),
             expires_at: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::RaVerifier;
+
+    #[tokio::test]
+    async fn production_adapter_rejects_short_forged_quote() {
+        let evidence = Evidence {
+            version: "v1".to_string(),
+            evidence_type: "tee_quote".to_string(),
+            tee_type: "tdx".to_string(),
+            quote: encode_quote(&[0u8; 100]),
+            binding_claims: None,
+            quote_format: "tdx".to_string(),
+            report_data: hex::encode([0u8; 48]),
+            nonce_binding: NonceBinding::default(),
+            generated_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        let result = RaAdapter::new()
+            .verify_evidence(
+                &evidence,
+                &ExpectedBinding::default(),
+                &VerificationOptions::default(),
+            )
+            .await;
+
+        assert!(result.is_err());
     }
 }

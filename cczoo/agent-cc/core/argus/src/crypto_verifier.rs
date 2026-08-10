@@ -250,10 +250,13 @@ impl SignatureVerifier {
         // Step 2: Validate certificate structure
         self.validate_certificate(&pem_cert)?;
 
-        // Step 3: Verify certificate chain if Intel CA is configured
-        if let Some(ca_cert_pem) = &self.intel_ca_cert {
-            self.verify_certificate_chain(&pem_cert, ca_cert_pem)?;
-        }
+        // Step 3: Verify certificate chain against the configured trust anchor.
+        let ca_cert_pem = self.intel_ca_cert.as_ref().ok_or_else(|| {
+            ArgusError::QuoteValidationFailed {
+                reason: "No trusted Intel CA certificate configured".to_string(),
+            }
+        })?;
+        self.verify_certificate_chain(&pem_cert, ca_cert_pem)?;
 
         tracing::debug!(
             target: "argus::crypto_verifier",
@@ -328,15 +331,14 @@ impl SignatureVerifier {
         })?;
 
         // Parse the CA certificate
-        let (_, ca_cert) = X509Certificate::from_der(ca_cert_pem).map_err(|e| {
+        let ca_pem = pem_parse(ca_cert_pem).map_err(|e| ArgusError::QuoteValidationFailed {
+            reason: format!("Failed to parse CA PEM: {}", e),
+        })?;
+        let (_, ca_cert) = X509Certificate::from_der(ca_pem.contents()).map_err(|e| {
             ArgusError::QuoteValidationFailed {
                 reason: format!("Failed to parse CA certificate: {}", e),
             }
         })?;
-
-        // Get the public key from CA certificate for verification
-        let ca_spki = ca_cert.public_key();
-        let ca_public_key_bytes = ca_spki.raw.to_vec();
 
         // Extract the signature algorithm and verify the leaf cert is signed by CA
         // In TDX attestation, the quote identity cert is signed by Intel's provisioning key
@@ -374,42 +376,16 @@ impl SignatureVerifier {
         // Verify certificate chain using public key crypto
         // The leaf cert's signature should be verifiable using CA's public key
         // For TDX quotes, we verify the identity certificate chain to Intel root CA
-        self.verify_cert_signature_against_ca(&leaf_cert, &ca_public_key_bytes)?;
+        leaf_cert
+            .verify_signature(Some(ca_cert.public_key()))
+            .map_err(|e| ArgusError::QuoteValidationFailed {
+                reason: format!("Leaf certificate signature verification failed: {}", e),
+            })?;
 
         tracing::info!(
             target: "argus::crypto_verifier",
             "Certificate chain verification successful: leaf -> {} -> root",
             ca_subject
-        );
-
-        Ok(())
-    }
-
-    /// Verify a certificate's signature using CA public key
-    ///
-    /// Note: Full cryptographic verification of certificate signatures requires
-    /// access to the CA's public key and proper ASN.1 parsing. This implementation
-    /// provides structural validation and issuer/subject checking as a foundation.
-    fn verify_cert_signature_against_ca(
-        &self,
-        _cert: &x509_parser::certificate::X509Certificate,
-        _ca_public_key: &[u8],
-    ) -> Result<()> {
-        // For full verification, we would need to:
-        // 1. Extract the TBSCertificate bytes for verification
-        // 2. Parse the signature from the certificate
-        // 3. Use the CA public key to verify the signature
-        //
-        // The x509-parser crate provides the raw signature bytes through
-        // cert.signature().as_bytes(), but the signature is in DER-encoded format
-        // that requires proper ASN.1 parsing for ECDSA P-384 verification.
-        //
-        // For production use, consider integrating with a full PKI validation
-        // library like ring or webpki for complete certificate chain verification.
-
-        tracing::debug!(
-            target: "argus::crypto_verifier",
-            "Certificate signature verification completed (structural check)"
         );
 
         Ok(())
@@ -563,7 +539,7 @@ mod tests {
 
     #[test]
     fn test_signature_verifier_with_intel_ca() {
-        let intel_ca_pem = include_bytes!("../test-fixtures/intel_ca.pem");
+        let intel_ca_pem = b"-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----\n";
         let verifier = SignatureVerifier::new()
             .with_intel_ca_cert(intel_ca_pem);
         

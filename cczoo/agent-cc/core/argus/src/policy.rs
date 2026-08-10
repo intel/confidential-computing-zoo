@@ -365,6 +365,56 @@ impl crate::engine::PolicyEvaluatorTrait for ConfigurablePolicyEvaluator {
 mod tests {
     use super::*;
 
+    fn verified_claims(service_name: &str, level: BindingAssuranceLevel) -> VerifiedClaims {
+        VerifiedClaims {
+            binding_assurance_level: level,
+            binding_claims: Some(BindingClaims {
+                service_identity: BindingIdentityClaims {
+                    service_name: service_name.to_string(),
+                    instance_id: "instance-1".to_string(),
+                    ..BindingIdentityClaims::default()
+                },
+                ..BindingClaims::default()
+            }),
+            quote_valid: true,
+            verifier_kind: VerifierKind::Trustee,
+            verifier_id: "test-verifier".to_string(),
+            tee_type: "tdx".to_string(),
+            report_data: "test-report-data".to_string(),
+            verified_claim_assurance: None,
+            tcb_status: None,
+            measurements: ExportMeasurementClaims::default(),
+            attested_issuance: None,
+            identity_claims: None,
+            verified_at: "2024-01-01T00:00:00Z".to_string(),
+            expires_at: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn strict_policy_denies_identity_mismatch() {
+        let evaluator = PolicyEvaluator::new();
+        let claims = verified_claims("other-service", BindingAssuranceLevel::L2);
+        let target = TargetService::new("expected-service", "https://test.local");
+        let context = GuardContext::new("test", vec![]);
+
+        let decision = evaluator.evaluate_policy(&target, &claims, &context).await;
+
+        assert!(matches!(decision, GuardDecision::Deny { reason: DenyReason::IdentityConflict, .. }));
+    }
+
+    #[tokio::test]
+    async fn strict_policy_denies_insufficient_assurance() {
+        let evaluator = PolicyEvaluator::new();
+        let claims = verified_claims("expected-service", BindingAssuranceLevel::L1);
+        let target = TargetService::new("expected-service", "https://test.local");
+        let context = GuardContext::new("test", vec![]);
+
+        let decision = evaluator.evaluate_policy(&target, &claims, &context).await;
+
+        assert!(matches!(decision, GuardDecision::Deny { reason: DenyReason::PolicyRejected, .. }));
+    }
+
     #[tokio::test]
     async fn test_allow_all_policy_evaluator() {
         let evaluator = AllowAllPolicyEvaluator::new();

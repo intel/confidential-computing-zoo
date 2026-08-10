@@ -348,6 +348,26 @@ impl RaVerifier for TdxQuoteVerifier {
         expected_binding: &ExpectedBinding,
         options: &VerificationOptions,
     ) -> Result<VerifiedClaims> {
+        if options.require_quote
+            && (evidence.evidence_type != "tee_quote" || evidence.tee_type != "tdx")
+        {
+            return Err(ArgusError::Unsupported {
+                feature: "TDX quote evidence is required".to_string(),
+            });
+        }
+        if options.require_attested_identity {
+            return Err(ArgusError::MissingRequiredClaim {
+                claim_path: "attested_issuance".to_string(),
+            });
+        }
+        if let Some(expected_verifier) = options.expected_verifier.as_deref() {
+            if expected_verifier != self.expected_verifier_id {
+                return Err(ArgusError::Unsupported {
+                    feature: format!("verifier {expected_verifier}"),
+                });
+            }
+        }
+
         tracing::debug!(
             target: "argus::verifier",
             "Starting TDX quote verification"

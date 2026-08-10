@@ -19,34 +19,46 @@
 
 use argus::{
     types::*,
-    engine::{ArgusEngine, EvidenceFetcher, EvidenceFetcherHttp, RaVerifier, PolicyEvaluatorTrait},
+    engine::{EvidenceFetcher, EvidenceFetcherHttp, RaVerifier, PolicyEvaluatorTrait},
     verifier::RaAdapter,
-    policy::AllowAllPolicyEvaluator,
-    binding::ServiceRuntimeBinding,
-    tc_api_client::TcApiClient,
+    policy::PolicyEvaluator,
 };
-use anyhow::Result;
+use anyhow::{bail, Result};
 use axum::{
-    body::Body,
-    extract::State,
-    http::{HeaderValue, Method, StatusCode},
-    response::Response,
+    extract::{DefaultBodyLimit, State},
+    http::{header::AUTHORIZATION, HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
 
 /// Application state for the Guard HTTP server
 #[derive(Clone)]
 struct GuardAppState {
-    engine: Arc<ArgusEngine>,
     evidence_fetcher: Arc<EvidenceFetcherHttp>,
     ra_adapter: Arc<RaAdapter>,
     policy_evaluator: Arc<dyn PolicyEvaluatorTrait>,
-    /// Optional TC-API client for Agent-side metadata (when Agent is also a TDX workload)
-    tc_api_client: Option<Arc<TcApiClient>>,
+    api_token: Option<Arc<str>>,
+}
+
+const MAX_BATCH_SIZE: usize = 32;
+const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
+
+fn authorize(headers: &HeaderMap, expected_token: Option<&str>) -> Result<(), StatusCode> {
+    let Some(expected_token) = expected_token else {
+        return Ok(());
+    };
+    let supplied_token = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+
+    if supplied_token == Some(expected_token) {
+        Ok(())
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
 }
 
 /// Health check response
@@ -96,8 +108,11 @@ async fn health_handler() -> Json<HealthResponse> {
 /// Verification handler - POST /ra/v1/verify
 async fn verify_handler(
     State(state): State<GuardAppState>,
+    headers: HeaderMap,
     Json(request): Json<VerifyRequest>,
 ) -> Result<Json<VerifyResponse>, StatusCode> {
+    authorize(&headers, state.api_token.as_deref())?;
+
     // Build guard context from request
     let context = GuardContext::from(&request);
 
@@ -122,11 +137,12 @@ async fn verify_handler(
         })?;
 
     // Build expected binding for verification
-    let expected_binding = ExpectedBinding {
-        algorithm: BINDING_ALGORITHM.to_string(),
-        report_data: evidence.report_data.clone(),
-        canonical_request_digest: evidence.nonce_binding.canonical_request_digest.clone(),
-    };
+    let binding_claims = evidence
+        .binding_claims
+        .as_ref()
+        .ok_or(StatusCode::UNPROCESSABLE_ENTITY)?;
+    let expected_binding =
+        ExpectedBinding::from_request_and_claims(&evidence_request, binding_claims);
 
     // Verify evidence
     let verified_claims = state
@@ -176,8 +192,14 @@ pub struct BatchVerifyResponse {
 /// Batch verification handler - POST /ra/v1/verify/batch
 async fn batch_verify_handler(
     State(state): State<GuardAppState>,
+    headers: HeaderMap,
     Json(request): Json<BatchVerifyRequest>,
 ) -> Result<Json<BatchVerifyResponse>, StatusCode> {
+    authorize(&headers, state.api_token.as_deref())?;
+    if request.requests.is_empty() || request.requests.len() > MAX_BATCH_SIZE {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
     let mut results = Vec::with_capacity(request.requests.len());
 
     for req in request.requests {
@@ -209,11 +231,16 @@ async fn batch_verify_handler(
         };
 
         // Build expected binding
-        let expected_binding = ExpectedBinding {
-            algorithm: BINDING_ALGORITHM.to_string(),
-            report_data: evidence.report_data.clone(),
-            canonical_request_digest: evidence.nonce_binding.canonical_request_digest.clone(),
+        let Some(binding_claims) = evidence.binding_claims.as_ref() else {
+            results.push(VerifyResponse {
+                decision: "ERROR".to_string(),
+                reason: Some("Evidence did not contain binding claims".to_string()),
+                claims: None,
+            });
+            continue;
         };
+        let expected_binding =
+            ExpectedBinding::from_request_and_claims(&evidence_request, binding_claims);
 
         // Verify evidence
         let verified_claims = match state
@@ -282,60 +309,41 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Get configuration from environment
-    let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8007".to_string())
         .parse()
         .unwrap_or(8007);
     let evidence_endpoint = std::env::var("EVIDENCE_ENDPOINT")
         .unwrap_or_else(|_| "http://localhost:8006".to_string());
+    let intel_ca_cert_path = std::env::var("INTEL_CA_CERT_PATH")
+        .map_err(|_| anyhow::anyhow!("INTEL_CA_CERT_PATH is required"))?;
+    let intel_ca_cert = std::fs::read(&intel_ca_cert_path)?;
     
-    // TC-API configuration for Agent-side metadata (optional)
-    // When AGENT_TC_API_URL is set, Guard will use local TC-API for its own identity
-    // This is needed when the Agent itself is also a TDX workload requiring remote attestation
-    let agent_tc_api_url = std::env::var("AGENT_TC_API_URL").ok();
-    let agent_tc_api_token = std::env::var("TRUCON_SERVICE_TOKEN").ok();
-
-    // Create TC-API client for Agent-side if configured
-    let tc_api_client = if let Some(ref url) = agent_tc_api_url {
-        tracing::info!("Agent TC-API configured: {}", url);
-        let mut client = TcApiClient::new(url);
-        if let Some(ref token) = agent_tc_api_token {
-            tracing::info!("Agent TC-API auth token configured");
-            client = client.with_auth_token(token);
-        }
-        Some(Arc::new(client))
-    } else {
-        tracing::info!("Agent TC-API not configured (Agent is not a TDX workload)");
-        None
-    };
-
-    // Create Argus Engine
-    let engine = Arc::new(ArgusEngine::new());
+    let api_token = std::env::var("ARGUS_API_TOKEN")
+        .ok()
+        .filter(|token| !token.is_empty())
+        .map(Arc::<str>::from);
+    if host != "127.0.0.1" && host != "::1" && host != "localhost" && api_token.is_none() {
+        bail!("ARGUS_API_TOKEN is required when Guard listens on a non-loopback address");
+    }
 
     // Create evidence fetcher with peer endpoint
     let evidence_fetcher = Arc::new(EvidenceFetcherHttp::new(&evidence_endpoint));
 
     // Create RA adapter
-    let ra_adapter = Arc::new(RaAdapter::new());
+    let ra_adapter = Arc::new(RaAdapter::with_intel_ca_cert(&intel_ca_cert));
 
-    // Create policy evaluator (AllowAll for now)
-    let policy_evaluator: Arc<dyn PolicyEvaluatorTrait> = Arc::new(AllowAllPolicyEvaluator::new());
+    // Production policy fails closed on insufficient assurance, invalid quotes, and identity mismatch.
+    let policy_evaluator: Arc<dyn PolicyEvaluatorTrait> = Arc::new(PolicyEvaluator::new());
 
     // Create app state
     let state = GuardAppState {
-        engine,
         evidence_fetcher,
         ra_adapter,
         policy_evaluator,
-        tc_api_client,
+        api_token,
     };
-
-    // Configure CORS
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(vec![Method::GET, Method::POST, Method::OPTIONS])
-        .allow_headers(Any);
 
     // Build router
     let app = Router::new()
@@ -343,7 +351,7 @@ async fn main() -> Result<()> {
         .route("/ra/v1/verify", post(verify_handler))
         .route("/ra/v1/verify/batch", post(batch_verify_handler))
         .with_state(state)
-        .layer(cors);
+        .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES));
 
     // Parse address
     let addr: SocketAddr = format!("{}:{}", host, port)
@@ -356,12 +364,6 @@ async fn main() -> Result<()> {
     tracing::info!("Health endpoint: GET /health");
     tracing::info!("Evidence endpoint: {}", evidence_endpoint);
     
-    if agent_tc_api_url.is_some() {
-        tracing::info!("Agent-side TC-API: enabled (Agent is a TDX workload)");
-    } else {
-        tracing::info!("Agent-side TC-API: disabled (Agent is not a TDX workload)");
-    }
-
     // Start server
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

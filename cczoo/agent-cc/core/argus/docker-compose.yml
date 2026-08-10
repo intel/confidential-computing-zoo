@@ -32,7 +32,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8008:8008"
+      - "127.0.0.1:8008:8008"
     environment:
       - RUST_LOG=${RUST_LOG:-info}
       - HOST=0.0.0.0
@@ -54,10 +54,6 @@ services:
     restart: unless-stopped
     networks:
       - argus-net
-    security_opt:
-      - seccomp:unconfined
-    cap_add:
-      - SYS_ADMIN
 
   # Argus Guard Service - verifies evidence and enforces policy
   argus-guard:
@@ -67,14 +63,18 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8007:8007"
+      - "127.0.0.1:8007:8007"
     environment:
       - RUST_LOG=${RUST_LOG:-info}
       - HOST=0.0.0.0
       - PORT=8007
       - EVIDENCE_ENDPOINT=http://argus-provider:8008
+      - ARGUS_API_TOKEN=${ARGUS_API_TOKEN:?ARGUS_API_TOKEN must be set}
+      - INTEL_CA_CERT_PATH=/etc/argus/intel-ca.pem
       - AGENT_TC_API_URL=${AGENT_TC_API_URL:-}
       - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN:-}
+    volumes:
+      - ${INTEL_CA_CERT_PATH:?INTEL_CA_CERT_PATH must be set}:/etc/argus/intel-ca.pem:ro
     depends_on:
       argus-provider:
         condition: service_healthy

@@ -57,6 +57,8 @@ pub mod policy;
 pub mod binding;
 pub mod service;
 pub mod tc_api_client;
+mod crypto_verifier;
+pub mod tdx_verifier;
 
 pub use errors::{ArgusError, EvidenceError, Result};
 pub use types::*;

@@ -122,8 +122,10 @@ curl -X POST http://localhost:8008/ra/v1/evidence \
 Ask the Guard to verify a target:
 
 ```bash
+export ARGUS_API_TOKEN="$(openssl rand -hex 32)" # Required for non-loopback Guard listeners
 curl -X POST http://localhost:8007/ra/v1/verify \
 	-H "Content-Type: application/json" \
+	-H "Authorization: Bearer ${ARGUS_API_TOKEN}" \
 	-d '{
 		"target": {
 			"service_name": "my-service",
@@ -143,14 +145,12 @@ for example `tee_type: "tdx"` and `quote_valid: true`.
 |----------|---------|-------------|
 | `ARGUS_WORKLOAD_IDENTITY` | _(required for stable identity)_ | Preferred identity bound into service evidence |
 | `ARGUS_SERVICE_NAME` | _(optional alias)_ | Compatibility alias for the workload identity |
-| `HOST` | `0.0.0.0` | HTTP bind address |
+| `HOST` | Provider: `0.0.0.0`; Guard: `127.0.0.1` | HTTP bind address |
 | `PORT` | `8008` / `8007` | Evidence Provider / Guard port |
 | `RUST_LOG` | `info` | Logging level |
 | `EVIDENCE_ENDPOINT` | `http://localhost:8008` | Guard's Evidence Provider endpoint |
-| `VERIFIER_KIND` | `trustee` | Verifier backend (`trustee` or `mock`) |
-| `BINDING_ASSURANCE_LEVEL` | `L2` | Minimum binding assurance level |
-| `POLICY_STRICT_MODE` | `false` | Enable strict policy evaluation |
-| `EVIDENCE_CACHE_TTL` | `300` | Evidence cache lifetime in seconds; `0` disables caching |
+| `INTEL_CA_CERT_PATH` | _(required by Guard)_ | Trusted Intel CA certificate used to authenticate quote certificates |
+| `ARGUS_API_TOKEN` | _(required for non-loopback Guard)_ | Bearer token protecting verification endpoints |
 
 See [Configuration](./docs/configuration.md) for the complete reference.
 
@@ -160,6 +160,8 @@ Build and start the services with Docker Compose:
 
 ```bash
 docker build -t argus:latest .
+export INTEL_CA_CERT_PATH=/path/to/trusted-intel-ca.pem
+export ARGUS_API_TOKEN="$(openssl rand -hex 32)"
 docker-compose up -d
 docker-compose ps
 docker-compose logs -f argus-provider argus-guard
