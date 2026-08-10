@@ -1,131 +1,190 @@
 # Argus
 
-Argus is an application-non-invasive runtime trust verification framework for agent-to-service (A2S) communication in confidential computing environments.
+Argus is a runtime trust verification framework for agent-to-service (A2S) communication in confidential computing environments.
 
-Its job is narrow: before a caller sends sensitive data to a peer service, Argus fetches evidence for that peer, verifies the evidence through an external attestation or identity system, and evaluates caller-local policy to decide whether the call should proceed.
+Before a caller sends sensitive data to a peer service, Argus fetches evidence for that peer, verifies the evidence through an external attestation or identity system, and evaluates caller-local policy to decide whether the call should proceed.
 
-Current document scope: Argus v1 is specified only for A2S. Service-to-service triggering, caching, and rollout semantics are intentionally left out of the current draft.
+## Architecture At A Glance
 
-## Status
+```mermaid
+flowchart LR
+	subgraph Caller[Caller / Agent]
+		App[Sensitive service call] --> Guard[Argus Guard]
+	end
 
-Argus v1 is implemented in Rust and validated end-to-end on real Intel TDX hardware:
+	subgraph Target[Target TDX workload]
+		Provider[Evidence Provider]
+		Platform[TDX platform]
+		Service[Peer service]
+	end
 
-- `argus-evidence-provider` (service side): generates real TDX quotes through the Linux TSM/configfs interface (`/sys/kernel/config/tsm/report/`), optionally enriched with TC-API service metadata.
-- `argus-guard` (caller side): fetches evidence, verifies quote structure, signature, and nonce binding, and evaluates policy to produce an ALLOW/DENY decision.
-- Both binaries build from this crate with `cargo build --release` and also ship as a single Docker image (see `Dockerfile`) for containerized deployment.
-- Validated end-to-end together with the [OpenClaw](../../adapters/OpenClaw) and [OpenViking](../../adapters/OpenViking) adapters and `core/tc-api`, via `adapters/OpenViking/examples/run_openclaw_openviking_e2e.sh`.
-- TCB/collateral (PCCS-based freshness) verification is intentionally out of scope for v1 — see [Design Decisions](./docs/design-decisions.md) for the rationale.
+	Verifier[Trustee / Attestation Service]
+	Blocked[Call blocked]
 
-## Documentation
-
-- [Quick Start](./docs/quickstart.md): build, run, and smoke-test Argus locally or via Docker.
-- [Architecture](./docs/architecture.md): system model, trust boundaries, deployment modes, governance boundary, and v1 MVP.
-- [API Contract](./docs/api.md): evidence request and response, verifier contract, profile model, policy model, and diagnostics surface.
-- [Configuration](./docs/configuration.md): environment variables and runtime configuration reference.
-- [Deployment](./docs/deployment.md): Docker and systemd deployment options.
-- [Design Decisions](./docs/design-decisions.md): scope decisions, including why TCB/collateral verification is out of scope for v1.
-- [Testing And Validation](./docs/tests.md): conformance vectors, predicate validation, governance regression tests, rollout strategy, and MVP validation.
-- [Troubleshooting](./docs/troubleshooting.md): common issues and fixes.
-
-## What Argus Covers
-
-Argus standardizes:
-
-- caller-side trust enforcement
-- service-side evidence production
-- verifier-normalized claims
-- profile-driven authorization decisions
-- governance-aware fail-closed behavior for profiles, collectors, and reference values
-
-Argus does not require the repository itself to own every governance system. Profile publication, collector PKI, and reference-value bundle distribution may be provided by external systems as long as they satisfy the contract described in the documentation.
-
-## Recommended V1 Path
-
-The recommended baseline path for v1 is:
-
-1. SDK mode on the caller side.
-2. Direct `/ra/v1/evidence` endpoint on the service side.
-3. Trustee or equivalent verifier for quote and report-data validation.
-4. Static signed profile loaded locally or from a simple governed bundle.
-5. No service-mesh-authoritative joins or policy-authoritative runtime collector requirement in the base path.
-
-This path is intended to close the protocol loop first, then expand into mesh, collector-heavy, and more automated governance integrations as profile extensions.
-
-## How To Use This Repository Today
-
-If you are integrating Argus into a caller or service:
-
-1. Start with [Quick Start](./docs/quickstart.md) to build and smoke-test the binaries.
-2. Read [Architecture](./docs/architecture.md) to understand scope and deployment assumptions.
-3. Read [API Contract](./docs/api.md) before implementing any endpoint, verifier adapter, profile loader, or policy engine.
-4. Use [Testing And Validation](./docs/tests.md) as the acceptance bar for conformance vectors, deny reasons, and rollout behavior.
-5. Check [Troubleshooting](./docs/troubleshooting.md) if a service fails to start or attestation fails unexpectedly.
-
-The Rust implementation under `src/` is the shipping stack: `argus-evidence-provider` and `argus-guard` binaries, built with `cargo build --release` or the provided `Dockerfile`. There is no separate Python prototype — this crate is the reference implementation.
-
-## Repository Layout
-
-```text
-argus/
-├── README.md
-├── README_CN.md
-├── Cargo.toml / Cargo.lock
-├── Dockerfile
-├── docker-compose.yml
-├── start_argus.sh          # build/validate/start/stop/status/test helper script
-├── src/
-│   ├── lib.rs
-│   ├── binding.rs          # runtime binding context (endpoint, pid, container id, ...)
-│   ├── crypto_verifier.rs  # signature/cert verification helpers used by tdx_verifier.rs
-│   ├── engine.rs           # caller-side ArgusEngine (fetch -> verify -> policy -> decision)
-│   ├── errors.rs
-│   ├── policy.rs           # policy evaluator
-│   ├── tc_api_client.rs    # optional TC-API metadata/quote client
-│   ├── tdx_verifier.rs     # TDX quote structure/signature/nonce-binding verification
-│   ├── types.rs
-│   ├── verifier.rs         # RaAdapter (RaVerifier trait implementation)
-│   ├── bin/
-│   │   ├── evidence_provider.rs   # argus-evidence-provider HTTP server
-│   │   └── guard.rs               # argus-guard HTTP server
-│   └── service/
-│       └── engine.rs      # service-side EvidenceEngine (quote generation, TC-API metadata)
-├── tests/                  # integration and unit test suites
-├── test-fixtures/
-└── docs/
-    ├── quickstart.md
-    ├── architecture.md
-    ├── api.md
-    ├── configuration.md
-    ├── deployment.md
-    ├── design-decisions.md
-    ├── tests.md
-    └── troubleshooting.md
+	Guard -- "1. Request nonce-bound evidence" --> Provider
+	Provider -- "2. Generate quote" --> Platform
+	Platform -- "3. Quote and runtime claims" --> Provider
+	Provider -- "4. Return evidence" --> Guard
+	Guard -- "5. Verify evidence" --> Verifier
+	Verifier -- "6. Normalized claims" --> Guard
+	Guard -- "ALLOW: send request" --> Service
+	Guard -. "DENY" .-> Blocked
 ```
+
+The Guard remains the caller-side decision point: it fetches fresh evidence
+from the target, obtains verifier-normalized claims, evaluates local policy,
+and only then allows the sensitive service call. See
+[Architecture](./docs/architecture.md) for trust boundaries, evidence binding,
+and deployment details.
+
+## Prerequisites
+
+- Intel TDX-enabled platform
+- Linux kernel 5.15+ with TDX support
+- Rust 1.75+
+- `/dev/tdx_guest` device
+- TSM configfs interface at `/sys/kernel/config/tsm/report/`
 
 ## Quick Start
 
-Requires Intel TDX hardware with `/dev/tdx_guest` and TSM configfs mounted at `/sys/kernel/config/tsm/report/`. See [Quick Start](./docs/quickstart.md) for full prerequisites, manual `curl` testing, Docker, and systemd deployment options.
+The following steps run both the Evidence Provider and Guard Service on a
+TDX-enabled Linux host.
+
+### 1. Build
 
 ```bash
-cd core/argus
-
-# Build both binaries (argus-evidence-provider, argus-guard)
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/core/argus
 cargo build --release
-
-# Inject a stable workload identity for the Evidence Provider
-export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
-
-# Validate the environment, then start and smoke-test both services
-./start_argus.sh validate
-./start_argus.sh start
-./start_argus.sh test
-./start_argus.sh status
-./start_argus.sh stop
 ```
 
-`ARGUS_WORKLOAD_IDENTITY` is now the recommended way to inject a real, stable workload identity for the Evidence Provider. `ARGUS_SERVICE_NAME`, `SERVICE_NAME`, and `K_SERVICE` remain accepted as compatibility inputs, but `HOSTNAME` is no longer accepted as a service-identity source.
+### 2. Configure and validate the host
 
-To exercise the full multi-service flow (Argus + TC-API + OpenViking + OpenClaw) with real TDX quotes over Docker Compose, see [adapters/OpenViking/examples/README.md](../../adapters/OpenViking/examples/README.md) and run `run_openclaw_openviking_e2e.sh`.
+The Evidence Provider needs a stable workload identity. Set the preferred
+variable before starting the services:
+
+```bash
+export ARGUS_WORKLOAD_IDENTITY=my-service
+./start_argus.sh validate
+```
+
+Validation checks the Rust toolchain, `/dev/tdx_guest`, and the TSM configfs
+report interface. Missing TDX or TSM support is reported as a warning during
+validation, but quote generation will not work until the host provides them.
+
+### 3. Start and test the services
+
+```bash
+./start_argus.sh start
+./start_argus.sh status
+./start_argus.sh test
+```
+
+The Evidence Provider listens on port `8008` and the Guard listens on port
+`8007`. The test sends a request through the Guard and reports the decision,
+TEE type, and quote validity.
+
+The startup script also supports running the services independently or
+stopping them:
+
+```bash
+./start_argus.sh start-provider
+./start_argus.sh start-guard
+./start_argus.sh stop
+./start_argus.sh restart
+```
+
+### Manual checks
+
+Check service health:
+
+```bash
+curl http://localhost:8008/health
+curl http://localhost:8007/health
+```
+
+Request evidence from the provider:
+
+```bash
+curl -X POST http://localhost:8008/ra/v1/evidence \
+	-H "Content-Type: application/json" \
+	-d '{
+		"version": "v1",
+		"nonce": "test-nonce-12345",
+		"caller_id": "test-caller",
+		"target": {
+			"service_name": "my-service",
+			"target_uri": "https://test.local"
+		},
+		"requested_claims": []
+	}'
+```
+
+Ask the Guard to verify a target:
+
+```bash
+curl -X POST http://localhost:8007/ra/v1/verify \
+	-H "Content-Type: application/json" \
+	-d '{
+		"target": {
+			"service_name": "my-service",
+			"target_uri": "https://test.local"
+		},
+		"caller_id": "test-caller",
+		"requested_claims": []
+	}'
+```
+
+A successful response contains an `ALLOW` decision and normalized claims,
+for example `tee_type: "tdx"` and `quote_valid: true`.
+
+### Common configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ARGUS_WORKLOAD_IDENTITY` | _(required for stable identity)_ | Preferred identity bound into service evidence |
+| `ARGUS_SERVICE_NAME` | _(optional alias)_ | Compatibility alias for the workload identity |
+| `HOST` | `0.0.0.0` | HTTP bind address |
+| `PORT` | `8008` / `8007` | Evidence Provider / Guard port |
+| `RUST_LOG` | `info` | Logging level |
+| `EVIDENCE_ENDPOINT` | `http://localhost:8008` | Guard's Evidence Provider endpoint |
+| `VERIFIER_KIND` | `trustee` | Verifier backend (`trustee` or `mock`) |
+| `BINDING_ASSURANCE_LEVEL` | `L2` | Minimum binding assurance level |
+| `POLICY_STRICT_MODE` | `false` | Enable strict policy evaluation |
+| `EVIDENCE_CACHE_TTL` | `300` | Evidence cache lifetime in seconds; `0` disables caching |
+
+See [Configuration](./docs/configuration.md) for the complete reference.
+
+### Docker deployment
+
+Build and start the services with Docker Compose:
+
+```bash
+docker build -t argus:latest .
+docker-compose up -d
+docker-compose ps
+docker-compose logs -f argus-provider argus-guard
+```
+
+Pass a stable workload identity into the Evidence Provider container when
+using Compose or another container runtime.
+
+### Systemd deployment
+
+For host-level deployment, install the release binaries and run them as two
+systemd services. The Guard should use
+`EVIDENCE_ENDPOINT=http://localhost:8008` and start after the Evidence
+Provider. Enable and start them with:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable argus-evidence-provider argus-guard
+sudo systemctl start argus-evidence-provider argus-guard
+sudo systemctl status argus-evidence-provider
+sudo systemctl status argus-guard
+```
+
+See [Architecture](./docs/architecture.md) for deployment shapes, trust
+boundaries, and production considerations.
 
 ## Security Guarantees
 
@@ -138,3 +197,11 @@ On the validated path, Argus currently provides:
 - Separation of caller-side trust enforcement from service-side evidence generation, so application code never directly controls the attestation flow.
 
 Current boundaries to keep in mind: the default request path performs structural validation and request-binding validation of a live TSM quote, but does not yet perform full Intel collateral/certificate-chain verification in the Guard's main path. The current implementation is more accurately described as "request-bound TDX evidence verification" rather than "full PKI-based remote attestation verification". See [Design Decisions](./docs/design-decisions.md) for the full rationale and roadmap.
+
+## Documentation
+
+- [Architecture](./docs/architecture.md): system model, trust boundaries, deployment modes, governance boundary, and v1 MVP.
+- [OpenClaw deployment example](../../adapters/OpenClaw/openclaw_to_service_protection.md). An example of communication between OpenClaw and OpenViking based on Argus.
+- [API Contract](./docs/api.md): evidence request and response, verifier contract, profile model, policy model, and diagnostics surface.
+- [Configuration](./docs/configuration.md): environment variables and runtime configuration reference.
+- [Troubleshooting](./docs/troubleshooting.md): common issues and fixes.
