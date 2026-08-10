@@ -307,11 +307,13 @@ impl ArgusEngine {
         let evidence = self.fetcher.request_evidence(&request).await?;
 
         // Step 3: Verify evidence
-        let expected_binding = ExpectedBinding {
-            algorithm: BINDING_ALGORITHM.to_string(),
-            report_data: evidence.report_data.clone(),
-            canonical_request_digest: String::new(),
-        };
+        let binding_claims = evidence.binding_claims.as_ref().ok_or_else(|| {
+            ArgusError::QuoteValidationFailed {
+                reason: "Evidence did not contain binding claims".to_string(),
+            }
+        })?;
+        let expected_binding =
+            ExpectedBinding::from_request_and_claims(&request, binding_claims);
 
         let verified_claims = self
             .ra_adapter
@@ -341,7 +343,7 @@ mod tests {
         let fetcher = MockEvidenceFetcher::new();
         let engine = ArgusEngine::with_components(
             Arc::new(fetcher),
-            Arc::new(crate::verifier::RaAdapter::new()),
+            Arc::new(crate::verifier::MockRaAdapter::default()),
             Arc::new(crate::policy::AllowAllPolicyEvaluator::new()),
         );
         let target = TargetService::new("test", "https://test.local");

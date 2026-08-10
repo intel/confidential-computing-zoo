@@ -154,10 +154,15 @@ start_evidence_provider() {
 # Start Guard Service
 start_guard_service() {
     log_info "Starting Argus Guard on port 8007..."
+
+    if [[ -z "${INTEL_CA_CERT_PATH:-}" || ! -f "$INTEL_CA_CERT_PATH" ]]; then
+        log_error "INTEL_CA_CERT_PATH must point to a readable trusted Intel CA certificate"
+        exit 1
+    fi
     
     # Set environment
     export RUST_LOG=${RUST_LOG:-info}
-    export HOST=${HOST:-0.0.0.0}
+    export HOST=${GUARD_HOST:-127.0.0.1}
     export PORT=8007
     export EVIDENCE_ENDPOINT=${EVIDENCE_ENDPOINT:-http://localhost:8008}
     
@@ -243,7 +248,13 @@ test_attestation() {
         exit 1
     fi
     
+    local auth_header=()
+    if [[ -n "${ARGUS_API_TOKEN:-}" ]]; then
+        auth_header=(-H "Authorization: Bearer $ARGUS_API_TOKEN")
+    fi
+
     local response=$(curl -s -X POST http://localhost:8007/ra/v1/verify \
+        "${auth_header[@]}" \
         -H "Content-Type: application/json" \
         -d '{
             "target": {

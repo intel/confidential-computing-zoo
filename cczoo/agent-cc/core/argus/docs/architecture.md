@@ -1,721 +1,393 @@
 # Argus Architecture
 
-## Overview
+## Purpose And Scope
 
-Argus is an application-non-invasive runtime trust verification framework for agent-to-service (A2S) communication in Intel TDX environments.
+Argus is a runtime trust-verification framework for agent-to-service (A2S)
+communication in Intel TDX environments. Before an agent sends sensitive data
+to a peer service, Argus verifies evidence for that peer and applies
+caller-local policy.
 
-Before an agent sends sensitive data, credentials, prompts, memory records, or intermediate results to a peer service, Argus lets the caller verify that the peer is running in an expected Intel TDX trusted execution environment and satisfies caller-side policy.
+Argus v1 focuses on one decision:
 
-Argus is application-non-invasive by default:
+> Is this the expected peer workload, in an acceptable TDX state, for this
+> specific request?
 
-- Evidence generation is provided through a sidecar or infrastructure integration.
-- Existing communication paths can be protected through direct evidence endpoints or Envoy/Nginx evidence routing for Intel TDX quote verification.
-- The caller keeps control of the final allow or deny decision.
+The v1 scope covers:
 
-Current scope note:
+- caller-side allow or deny enforcement,
+- service-side generation of nonce-bound TDX evidence,
+- verifier-normalized claims, and
+- direct, Envoy-routed, or Nginx-routed evidence endpoints.
 
-- This document specifies the A2S path only.
-- Service-to-service triggering and cache semantics are intentionally excluded from the v1 baseline.
+Service-to-service triggering, cache semantics, and governance-plane
+distribution are outside the v1 baseline.
 
-Argus is not automatically platform-non-invasive. Profiles that require cgroup, namespace, socket inode, process start-time, container runtime, or node-level observations may need elevated sidecar permissions, shared namespaces, or a node-scoped runtime collector.
+Argus is application-non-invasive because the business API does not need to
+produce or verify evidence. It is not necessarily platform-non-invasive:
+collecting process, namespace, cgroup, container, or socket information may
+require shared namespaces or elevated local visibility.
 
-## Problem And Goals
+## Design Goals
 
-In an Intel TDX deployment, a single trusted component is not enough to guarantee an end-to-end trusted data path. An agent may run inside a TDX guest while the peer service it calls remains unverified.
-
-Without Argus, prompts, credentials, memory records, tokens, and intermediate results may be sent to peer services whose runtime state, TCB level, workload identity, or measurements are unverified.
-
-Design goals:
-
-| Goal | Description |
-|------|-------------|
-| Application-non-invasive deployment | Add trust verification without modifying business logic while making platform privilege requirements explicit in the deployment profile |
-| Pluggable infrastructure | Support direct evidence endpoints and Envoy/Nginx routing for Intel TDX quote verification |
-| Verifier independence | Work with Trustee or another Intel TDX quote verifier through adapters |
-| A2S-first verification | Optimize the first protocol and implementation draft for agent-to-service checks before expanding to other caller shapes |
-
-## Trust And Threat Model
-
-Argus exists to stop a caller from sending sensitive data to a peer whose runtime identity, Intel TDX state, or local operating posture cannot be validated at call time.
-
-Argus assumes that the caller does not trust service self-description by
-default. The remote service boundary, its public metadata, its deployment
-wiring, and the surrounding network path may be malicious, stale, replayed, or
-misbound. The expected protected case is that the target service runs inside an
-Intel TDX Trust Domain, but TD residency alone is not sufficient for caller
-trust. Argus is designed to establish trust only when all of the following hold
-together: a valid TDX quote proves that a TD produced the evidence for this
-request, the returned claims are bound to that request, the endpoint the caller
-is about to use still joins back to the attested workload instance, and the
-verifier-normalized claims satisfy caller-side policy. In this model, the main
-attackers are a malicious or compromised service, a replay or relay attacker on
-the network path, and a confused or hostile deployment environment that feeds
-incorrect local metadata or routes traffic to the wrong workload. Argus does
-not by itself prove business-logic correctness, absence of post-launch runtime
-compromise, or integrity of configuration and external state that are outside
-the attested or locally bound evidence path.
-
-### Threat Model Matrix
-
-| Protected Asset | Threat | Trust Assumption | Argus Mitigation |
-|-----------------|--------|------------------|------------------|
-| Prompts, credentials, tokens, memory records, and intermediate results before they cross a service boundary | A remote service claims to be the expected target but runs with unexpected code, measurements, or identity | The verifier can validate quote material, TCB state, measurements, and bound report data | Require quote-backed peer evidence, verifier normalization, caller-local policy checks, and fail-closed allow or deny decisions |
-| Freshness of the caller's trust decision | A replay attacker returns stale evidence from a previous request | The caller controls nonce generation and enforces bounded evidence age | Bind request context into report data, verify nonce binding, and reject stale evidence |
-| Correct interpretation of service posture and identity metadata | A service exposes posture or identity metadata over a public API without binding that metadata to attested runtime state | The Evidence Provider is trusted only as a local evidence producer for the runtime instance it can observe and bind | Treat remote self-description as untrusted and elevate local posture only after evidence binding or verifier normalization |
-| Correct binding between the sidecar and the intended local service instance | A compromised pod, host, or sibling workload feeds fake metadata into the sidecar while still presenting valid TEE evidence | Local observation is not trusted by itself | Require multi-source corroboration, quote-bound binding claims, and fail-closed rejection on disagreement |
-| Correct target scoping in context, memory, and gateway deployments | A confused deployment treats an internal plugin or in-process extension as an independently attested peer | Same-process extensions remain part of the host runtime trust boundary | Scope Argus to remote or separable peer boundaries only |
-| Caller-side policy outcome | A malformed integration bypasses policy intent by trusting incomplete local metadata or ambiguous runtime bindings | The caller is responsible for fail-closed behavior | Evaluate explicit policy over normalized claims and reject incomplete or ambiguous inputs |
-
-### Protection Boundary Summary
-
-| Runtime Shape | In Argus authentication protection scope? | Reason |
-|---------------|-------------------------------------------|--------|
-| Remote peer service | Yes | Canonical A2S target with an independent peer boundary |
-| Same-host separate process | Yes | Separable local peer boundary when the process can be bound to its own runtime identity |
-| Same-pod / same-VM sidecar service | Yes | Preferred local deployment shape for peer evidence production |
-| In-process extension / plugin / skill | No | Internal implementation boundary of the host runtime |
-
-### Context / Memory Service Threat Posture
-
-For context, memory, retrieval, and similar stateful HTTP services, the preferred deployment is service plus Argus sidecar in the same pod or VM. This keeps the evidence path local, avoids changing the service's public API contract, and still lets Argus observe enough runtime facts to bind evidence to the intended service instance.
-
-| Deployment Shape | Compatible with Argus threat model? | Notes |
-|------------------|-------------------------------------|-------|
-| Service + Argus in same process | Partially | Acceptable only when this is still a separable service packaged into one runtime for implementation convenience |
-| Service + Argus sidecar in same pod / VM | Yes | Preferred deployment shape |
-| Argus calling a remote service HTTP API to ask who it is | No | Turns application JSON into an untrusted trust source |
-
-### Binding Closure And Assurance
-
-Argus must not treat local binding as a deployment convention outside the trust chain. Policy-relevant local claims become trustworthy only through:
-
-1. Quote-bound binding claims.
-2. Attested identity issuance.
-3. Verifier-normalized claims.
-
-Binding assurance levels:
-
-| Level | Meaning | Minimum Requirements | Policy Use |
-|-------|---------|----------------------|------------|
-| L0 | Local metadata collected but not corroborated or cryptographically bound | One local source may be present | Diagnostics only |
-| L1 | Corroborated local binding | At least two independent local observations agree | Audit and rollout only |
-| L2 | Quote-bound binding | L1 plus canonical binding claims included in quote report data | Minimum level for production authorization |
-| L3 | Attested identity binding | L2 or attested identity issuance tied to attestation | Strongest mode for identity-centric authorization |
-
-Field-level minimums:
-
-| Field Class | Minimum Level | Notes |
-|-------------|---------------|-------|
-| Stable service identity | L2 | Must be quote-bound or verifier-normalized |
-| Runtime instance identity | L2 | Must be anchored to the observed live instance |
-| Dynamic posture | L2 | Must satisfy freshness requirements for the same request |
-| Attested identity artifact | L3 when used as primary authorization identity | Artifact presence alone is insufficient |
-
-### Attested Claims And Independently Verified Facts
-
-Argus distinguishes between two different statements that are easy to confuse if they are both carried next to a valid quote.
-
-An attested self-assertion means the workload produced a value inside the attested flow and the caller can verify that this exact workload instance said it during this request. This is stronger than unauthenticated application JSON, but it still does not automatically mean the value is independently true in the deployment domain.
-
-An independently verified identity fact means the value is not only carried through attested evidence, but also anchored by an authority or verification path outside the workload's own self-description. Typical examples are:
-
-1. a workload identity accepted only after verifier-validated attested issuance,
-2. an image or executable identity accepted only after measurement-to-reference-value verification, or
-3. an endpoint or instance join accepted only after the profile's continuity and endpoint-binding predicates succeed.
-
-This distinction matters because quote binding proves integrity of the statement, not universal truth of the statement. A service can still attest to a wrong `service_name`, `service_id`, `image_digest`, `executable_digest`, or `spiffe_id` if those values come only from its own local view. Argus therefore treats such values as policy-authoritative only when they reach the minimum assurance required by the profile through quote binding, verifier normalization, attested issuance, reference-value matching, or another explicitly governed external authority.
-
-Operationally:
-
-1. quote-bound self-assertions may establish that a specific TEE instance made a claim for this caller request,
-2. verifier-normalized or externally anchored claims may establish that the claim is acceptable as an authorization identity, and
-3. any field that remains only local, unsupported, or diagnostic must not become the sole policy anchor.
-
-### Expected Service Verification Path
-
-Argus should treat proof of the expected remote service as a composed verification path, not as a single field match. In the common path, the caller checks that:
-
-1. the returned evidence is bound to this request and this target context,
-2. the quote and TCB are valid,
-3. measurements or attested identity material match governed expectations for the intended service, and
-4. the verified live instance still joins back to the endpoint the caller is about to use.
-
-This path is designed to detect tampering that changes measured code, executable identity, attested issuance, reference-value resolution, or endpoint-to-instance continuity. It is not designed to prove that every quote-bound self-description is independently true without an external anchor, and it cannot by itself detect compromises that preserve accepted measurements and identity anchors while changing higher-level runtime behavior.
-
-### Instance Continuity And Endpoint Binding
-
-Conceptually, each deployment profile needs:
-
-- A minimum anchor evidence set.
-- A continuity predicate.
-- An endpoint-binding predicate.
-- Accepted corroboration independence dimensions.
-
-Argus v1 does not yet standardize profile fields that carry continuity or
-endpoint-binding predicates. In v1 these remain deployment-local semantics that
-the local integration must enforce out of band.
-
-Minimum continuity expectations:
-
-| Deployment Profile | Continuity Predicate For L2 |
-|--------------------|-----------------------------|
-| Kubernetes sidecar | Process identity, process start time, pod UID, container identity, and cgroup or namespace membership refer to the same live workload instance at collection and re-check time |
-| VM service | VM instance identifier, process identity, process start time, image or executable digest, and bound local endpoint remain consistent across collection and re-check |
-| Bare process | Process identity, process start time, executable digest, and bound local endpoint remain consistent across collection and re-check |
-
-Minimum endpoint-binding rules:
-
-1. A listener must join back to the active continuity predicate.
-2. Proxy or service mesh interception must be documented in the profile.
-3. UDS path strings alone are insufficient without current ownership or peer identity.
-4. Endpoint observations outside the continuity predicate are diagnostic only.
+| Goal | Design Choice |
+|------|---------------|
+| Protect data before it crosses a peer boundary | Run verification before the business request |
+| Avoid changes to business logic | Place evidence generation in a sidecar or infrastructure component |
+| Keep authorization with the caller | Make Argus Guard the final policy decision point |
+| Support different TDX verifiers | Normalize verifier output through an RA adapter |
+| Fail safely | Deny when evidence, verification, or required policy input is unavailable |
 
 ## System Architecture
 
-Argus is organized around three responsibilities:
+```mermaid
+flowchart LR
+    subgraph Caller[Caller / Agent]
+        App[Business client] --> Guard[Argus Guard]
+    end
 
-| Role | Component | Responsibility |
-|------|-----------|----------------|
-| Caller-side trust gate | Argus Guard | Orchestrates evidence retrieval, TDX verifier calls, policy evaluation, and allow or deny decisions |
-| Service-side evidence producer | Argus Evidence Provider | Produces nonce-bound Intel TDX quote evidence and runtime claims for the local workload |
-| External trust service | Trustee / Attestation Service | Validates TDX quote validity, TCB, measurements, nonce binding, and identity claims |
+    subgraph Target[Target TDX workload]
+        Provider[Evidence Provider]
+        Runtime[Runtime Binding]
+        TDX[TDX quote source]
+        Service[Peer service]
+    end
 
-### End-To-End Verification Flow
+    Verifier[Trustee / Attestation Service]
 
-The baseline Argus decision path is:
+    Guard -- evidence request + nonce --> Provider
+    Provider --> Runtime
+    Provider --> TDX
+    Provider -- quote + binding claims --> Guard
+    Guard -- evidence --> Verifier
+    Verifier -- normalized claims --> Guard
+    Guard -- ALLOW --> Service
+```
 
-1. The caller-side Guard inside the agent runtime identifies a target service and the local policy that applies to that call.
-2. The Guard generates a fresh nonce and sends an evidence request to the peer's Evidence Provider.
-3. The Evidence Provider gathers local runtime facts through the Service Runtime Binding layer and asks the platform attestation stack to produce quote material.
-4. The Evidence Provider returns nonce-bound evidence plus selected binding claims.
-5. The Guard sends the returned evidence to the configured verifier adapter.
-6. The verifier validates quote material, report-data binding, TCB state, measurements, and any attested identity material, then normalizes the result into verifier claims.
-7. The Guard evaluates caller-local policy over verifier-normalized claims, profile constraints, and any allowed binding claims.
-8. The Guard returns `ALLOW` or `DENY` before the sensitive business call proceeds.
+### Components
 
-This split is deliberate: service-side components produce evidence, verifier-side components validate it, and the caller remains the final authorization point.
+| Component | Responsibility | Must Not Do |
+|-----------|----------------|-------------|
+| Argus Guard | Build evidence requests, invoke the verifier, evaluate local policy, and return `ALLOW` or `DENY` | Trust peer self-description without verification |
+| Evidence Provider | Collect local binding claims and generate nonce-bound evidence | Make the caller's authorization decision |
+| Service Runtime Binding | Observe deployment-owned identity and live runtime facts for the protected workload | Treat a public business API as a trusted identity source |
+| RA Adapter / Verifier | Validate TDX evidence and normalize results into `VerifiedClaims` | Override a failed quote or request-binding check |
+| ArgusProfile | Define required claims, assurance, verifier expectations, and policy inputs | Turn unsupported local metadata into an authorization anchor |
+
+### Verification Flow
+
+1. Guard identifies the intended target and generates a fresh nonce.
+2. Guard sends an `EvidenceRequest` to the target Evidence Provider.
+3. The provider observes the local workload and binds the request and selected
+   claims into TDX quote `report_data`.
+4. Guard sends the evidence to the configured verifier.
+5. The verifier validates and normalizes the evidence.
+6. Guard compares the normalized claims with the target and local profile.
+7. Guard allows the business request only when every required check succeeds.
+
+This separation is intentional: the target produces evidence, the verifier
+validates it, and the caller authorizes the data transfer.
+
+## Trust And Threat Model
+
+| Threat | Argus Response |
+|--------|----------------|
+| A peer runs unexpected code, has an unacceptable TCB, or presents the wrong identity | Require quote-backed evidence and verifier policy before the business call |
+| Evidence from an earlier request is replayed | Bind a fresh nonce and target context into quote `report_data` |
+| A sidecar or workload supplies false or mismatched metadata | Accept policy-relevant claims only when quote-bound, verifier-normalized, or externally anchored |
+| Verification is incomplete or unavailable | Fail closed |
+
+Argus trusts the caller-side Guard and its local policy, the configured
+verifier and trust roots, and the TDX attestation boundary. It does not trust
+peer self-description or local metadata by default.
+
+A valid quote proves attested state and request binding. It does not prove that
+all application behavior is benign, that every self-declared identity is true,
+or that external state excluded from the evidence is trustworthy.
+
+### Protection Boundary
+
+| Runtime Shape | Covered? | Reason |
+|---------------|----------|--------|
+| Remote peer service | Yes | Independent A2S trust boundary |
+| Same-host separate process | Yes | Separable peer when tied to a live runtime identity |
+| Same-pod or same-VM service with an Argus sidecar | Yes | Preferred service-side deployment |
+| In-process extension, plugin, or skill | No | Part of the host process trust boundary |
 
 ## Evidence Binding Model
 
-### Evidence Binding Terms
-
-| Term | Meaning |
-|------|---------|
-| Nonce binding | Proof that returned evidence was generated for the caller's fresh challenge and target context |
-| Canonical encoding | Deterministic byte representation of fields bound into evidence |
-| Domain separation | Fixed prefix preventing Argus evidence hashes from being confused with another protocol |
-| Binding closure | Requirement that any policy-relevant binding claim must be verifier-normalized or quote-bound |
-
-### Canonicalization Rules
-
-This section exists only to guarantee that the caller, service, and verifier hash the same bytes. It is not a separate feature.
-
-Field-specific normalization constraints for `service_name`, `service_id`, `instance_id`, `image_digest`, `executable_digest`, `spiffe_id`, endpoint binding context fields, `policy_version`, and posture enums are documented on the corresponding Rust API fields in [API Contract](./api.md).
-
-Only these generic rules matter here:
-
-1. JSON objects use sorted keys, UTF-8, and no insignificant whitespace.
-2. Missing fields and explicit `null` are not equivalent.
-3. Field values must already be normalized before hashing.
-4. Cross-implementation tests must use shared golden vectors.
-
-### Binding Procedure
-
-The goal of binding is simple: the service must prove that the quote it returns was produced for this caller request, not for some earlier or different request.
-
-Define the three binding inputs as:
-
-1. `domain`: a fixed Argus protocol prefix, `"argus-evidence-v1" || 0x00`.
-2. `canonical_request`: the canonical byte encoding of the exact `EvidenceRequest` the service received.
-3. `canonical_binding_claims`: the canonical byte encoding of the exact `BindingClaims` the service will return next to the quote.
-
-More explicitly:
-
-$$
-canonical\_request = Canon(EvidenceRequest)
-$$
-
-$$
-canonical\_binding\_claims = Canon(BindingClaims)
-$$
-
-$$
-domain = "argus-evidence-v1" \parallel 0x00
-$$
-
-Where `Canon(...)` means canonical JSON with sorted keys, UTF-8 encoding, no insignificant whitespace, and field values already normalized according to the rules above.
-
-Operationally, the flow is:
-
-1. The caller builds `EvidenceRequest`, including a fresh `nonce`.
-2. The service computes `canonical_request = Canon(EvidenceRequest_received)`.
-3. The service computes `canonical_binding_claims = Canon(BindingClaims_to_be_returned)`.
-4. The service computes:
-
-$$
-report\_data = SHA384(domain \parallel canonical\_request \parallel canonical\_binding\_claims)
-$$
-
-5. That digest is placed into the TEE quote's `report_data` field.
-6. The service returns the quote, the emitted `binding_claims`, and `nonce_binding` metadata.
-7. The verifier recomputes the expected digest and checks that it matches the quote `report_data`.
-
-These three inputs are bound into `report_data` for different reasons:
-
-1. `domain` gives domain separation. Without it, the same byte concatenation might be misinterpreted as belonging to another protocol.
-2. `canonical_request` binds the quote to this caller challenge and target context, especially the `nonce`, `caller_id`, any supplied `profile_digest`, and target fields.
-3. `canonical_binding_claims` binds the quote to the exact local identity and posture claims returned in the response, so the service cannot return one quote and a different unbound claim set.
-
-`report_data` is the right place for this binding because it is the caller-chosen data field that becomes covered by the attestation quote. Once the verifier confirms that the quote is valid and that its `report_data` matches the recomputed digest, the caller gains one attested statement tying together:
-
-1. the fresh request it sent,
-2. the binding claims returned by the service, and
-3. the TEE instance that produced the quote.
-
-The v1 binding formula is:
+Argus binds the caller request and the provider's selected claims into the TDX
+quote:
 
 ```text
-binding_algorithm = "argus-evidence-v1-sha384"
+domain = "argus-evidence-v1" || 0x00
 canonical_request = Canon(EvidenceRequest)
 canonical_binding_claims = Canon(BindingClaims)
-domain = "argus-evidence-v1" || 0x00
 report_data = SHA384(domain || canonical_request || canonical_binding_claims)
 ```
 
-`report_data_ref` is only a display or logging form of the digest. The security-relevant value is the raw `report_data` placed into the quote and rechecked by the verifier.
+`Canon(...)` is canonical JSON with sorted keys, UTF-8 encoding, no
+insignificant whitespace, and normalized field values. Missing fields and
+explicit `null` are distinct. The API contract defines field-level
+normalization rules.
 
-### Service Binding Verification
+The verifier recomputes `report_data` and compares it with the value covered by
+the quote. This closes two substitution paths:
 
-The caller does not trust a quote merely because the quote is valid. The caller must establish that the quote is both:
+- evidence from a different nonce, caller, target, or profile cannot satisfy
+  the request; and
+- claims attached after quote generation cannot replace the claims covered by
+  the quote.
 
-1. bound to this request, and
-2. bound to the service identity it intended to reach.
+### Assurance Levels
 
-Argus closes that loop in three checks:
+| Level | Meaning | Policy Use |
+|-------|---------|------------|
+| L0 | Metadata from one unverified local source | Diagnostics only |
+| L1 | Independent local observations agree | Audit and rollout only |
+| L2 | Corroborated claims are quote-bound | Minimum for production authorization |
+| L3 | Identity is issued or verified through an attested identity path | Identity-centric authorization |
 
-1. Request binding check.
-The verifier recomputes the expected `report_data` from the caller's original `EvidenceRequest` and the returned `BindingClaims`. If the quote's `report_data` does not match, the evidence is not bound to this caller request.
+Quote binding proves that a TEE instance made a claim for this request; it does
+not make a self-declared value independently true. Claims such as
+`service_name`, `image_digest`, or `spiffe_id` become authoritative only through
+profile-approved verification, reference values, attested issuance, or another
+external authority.
 
-2. Service claim binding check.
-Because `BindingClaims` are part of the `report_data` hash input, the service cannot return a valid quote for one identity and then attach a different unbound `service_name`, `service_id`, `image_digest`, `executable_digest`, endpoint binding context, or `spiffe_id` alongside it.
+### Verification Gates
 
-3. Policy target match check.
-After verifier normalization, the caller compares `VerifiedClaims` against the intended target, such as `target.service_name`, required service identifiers, reference values, and minimum assurance levels.
+Guard permits a request only after all applicable gates pass:
 
-This means the caller's confidence does not come from the quote alone. It comes from one attested chain:
+1. The quote and TCB are acceptable to the verifier.
+2. The quote contains the expected request-and-claims digest.
+3. Required measurements or identity anchors match governed expectations.
+4. Normalized claims match the intended target and minimum assurance level.
+5. The observed live instance joins back to the endpoint the caller will use.
 
-1. the caller's original request,
-2. the exact binding claims returned in the response,
-3. the TEE quote that covers their digest in `report_data`, and
-4. the local policy that checks those verified claims against the requested service.
+Failure at any gate results in `DENY`.
 
-If any one of these links fails, Argus must deny rather than treating the quote as evidence for the intended target service.
+### Instance And Endpoint Continuity
+
+L2 claims must refer to the live workload behind the target endpoint, not only
+to metadata collected at an unrelated time. Typical continuity inputs are:
+
+| Deployment | Continuity Inputs |
+|------------|-------------------|
+| Kubernetes sidecar | Process start time, pod UID, container identity, and namespace or cgroup membership |
+| VM service | VM and process identity, start time, executable or image digest, and local endpoint |
+| Bare process | Process identity, start time, executable digest, and local endpoint |
+
+Proxy or service-mesh interception must be declared by the profile. A socket
+path or endpoint without current ownership or runtime identity is diagnostic
+only. Argus v1 leaves continuity predicates to the deployment integration.
 
 ## Verifier Contract
 
-The verifier layer is an architectural trust boundary, not just a parsing step. Its job is to validate Intel TDX quote artifacts, apply verifier-specific trust roots and policy, and normalize the result into one caller-consumable claim surface.
+The verifier is a trust boundary. The built-in verifier validates quote
+structure, signature, a configured certificate trust anchor, measurements,
+and request binding, then returns normalized `VerifiedClaims`. It reports TCB
+status as unknown because it does not validate Intel collateral or TCB
+freshness. A Trustee/DCAP integration is required when policy depends on those
+properties.
 
-The concrete verifier-facing interface and normalized output types live in [API Contract](./api.md#phase-4-verifier-normalization). This section defines the architectural semantics of that layer.
+The following rules apply regardless of verifier implementation:
 
-### Verifier Types
+1. Quote validity and `report_data` binding are mandatory gates.
+2. Attested identity may raise assurance to L3 but cannot override a failed
+   quote or conflicting quote-bound identity.
+3. Unbound identity artifacts cannot override bound claims.
+4. Missing or stale policy-required claims cause denial.
+5. Effective assurance is the minimum assurance of all required claim paths.
 
-| Verifier Type | What It Proves | Adapter Responsibility |
-|---------------|----------------|------------------------|
-| Trustee / KBS / Attestation Service | Intel TDX quote validity, TCB status, report data, and reference-value or measurement policy results | Normalize measurements, TCB, and report data into `VerifiedClaims` |
+A deployment must not describe structural quote parsing alone as full remote
+attestation. Production verification requires the configured verifier to
+validate the applicable collateral, trust chain, TCB, measurements, and
+reference values.
 
-### Verifier Result Rules
+Concrete adapter interfaces and claim types are defined in the
+[API Contract](./api.md#phase-4-verifier-normalization).
 
-1. Quote validity and report-data binding are mandatory gates.
-2. Attested identity issuance may raise assurance from L2 to L3, but cannot override failed quote-bound identity.
-3. Binding claims take precedence over unbound identity artifacts when they conflict.
-4. Freshness violations on policy-required posture claims cause deny.
-5. Effective assurance is the minimum of all policy-required verification paths.
+## Deployment Architecture
 
-Recommended deny-reason precedence:
+### V1 Default
 
-1. Quote invalid or binding mismatch.
-2. Measurement or TCB failure.
-3. Hard identity conflict.
-4. Attested issuance failure for L3 policy.
-5. Posture freshness failure.
-6. Optional claim omission.
+The minimum v1 deployment uses:
 
-### Caller Side: Argus Guard
+- Guard in or next to the caller,
+- an Evidence Provider beside the target service,
+- a direct `/ra/v1/evidence` endpoint,
+- a TDX-capable verifier, and
+- a local `ArgusProfile` or equivalent bundled configuration.
 
-Argus Guard is the caller-side enforcement point. In the current A2S scope, it runs in or next to the agent runtime. Before a sensitive call is made, it:
+The business service and Evidence Provider may start in parallel. The provider
+is evidence-ready only after its profile, identity source, runtime binding
+inputs, and quote path are available. Before that point, the evidence endpoint
+must return an error rather than partial authorization-grade evidence.
 
-1. Generates a fresh nonce and builds an evidence request.
-2. Fetches target evidence.
-3. Verifies the evidence through an external verifier by using the RA adapter.
-4. Evaluates local policy and returns `ALLOW` or `DENY`.
+### Integration Modes
 
-Primary modules:
+| Mode | Evidence Path | Use Case |
+|------|---------------|----------|
+| Direct | Guard calls the Evidence Provider directly | V1 default and easiest debugging |
+| Envoy | Envoy routes the evidence endpoint | Service mesh deployments |
+| Nginx | Nginx routes the evidence endpoint | Lightweight proxy deployments |
 
-- Guard Engine
-- Evidence Fetcher
-- RA Adapter
+The evidence protocol and binding rules do not change between modes. In proxy
+deployments, proxy identity, workload identity, and endpoint-to-workload
+continuity remain separate concepts. Mesh metadata is an authorization anchor
+only when the profile explicitly trusts the control plane as an authority;
+otherwise it is corroborating or diagnostic input.
 
-### Service Side: Argus Evidence Provider
+### Runtime Binding Sources
 
-Argus Evidence Provider exposes a common evidence API while supporting multiple integration modes. It does not verify caller evidence or make trust decisions.
+Preferred sources, from baseline to stronger live-instance evidence, are:
 
-Primary modules:
+1. deployment-owned mounted metadata for stable identity hints,
+2. runtime introspection for process, container, namespace, and endpoint joins,
+3. a local UDS for dynamic posture, and
+4. loopback HTTP only when UDS is impractical.
 
-- Endpoint Adapter
-- Evidence Engine
-- Service Runtime Binding
-
-### Service Startup And Readiness
-
-Argus does not require a hard process-start order between the business service
-and Argus Evidence Provider. What matters is readiness, not which process
-executes first.
-
-Recommended semantics:
-
-1. the business service and Evidence Provider may start in parallel inside the
-	same deployment unit,
-2. the Evidence Provider may initialize before the service is fully ready, but
-	it must not emit authorization-grade evidence until its local binding inputs
-	are available,
-3. collecting startup-related inputs such as rendered config, launch command,
-	selected environment, or other deployment-owned startup metadata does not
-	require the Evidence Provider or Evidence Engine to start before the business
-	service; if those inputs are needed for evidence, they should come from
-	deployment-owned sources or from service-exported effective state rather than
-	assuming a privileged pre-start observation point,
-4. Evidence Provider readiness should depend on all of the following:
-	- the local ArgusProfile or equivalent local deployment configuration is loaded,
-	- Service Runtime Binding can read the required deployment-owned identity source,
-	- the quote generation path is available, and
-	- any profile-required local posture channel is reachable,
-5. if those conditions are not yet met, the evidence endpoint should fail
-	closed, for example by returning a temporary service-unavailable error rather
-	than partial success.
-
-Operationally, this means the business service may accept ordinary startup and
-warm-up delays, while the Evidence Provider independently transitions from
-"process started" to "evidence ready" only after it can bind claims to the
-correct local workload state. Startup-input evidence is therefore a readiness
-and data-source problem, not a mandatory process-start ordering requirement.
+Remote self-description from the protected service's public API is not a
+trusted binding source unless independently verified.
 
 ## TC-API Integration
 
-Argus integrates with TC-API (Trusted Container API) to enrich evidence binding
-claims with service metadata collected during service deployment and launch.
+TC-API is an optional source of deployment and workload metadata. When enabled,
+the Evidence Provider queries TC-API through `TcApiClient`, merges permitted
+metadata with local runtime observations, and includes selected values in
+`BindingClaims` before quote generation.
 
-### Integration Architecture
+```mermaid
+sequenceDiagram
+    participant G as Guard
+    participant P as Evidence Provider
+    participant T as TC-API
+    participant Q as TDX Quote Source
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    tc-api-pod                               │
-│  ┌──────────────────────┐  ┌────────────────────────────┐   │
-│  │   tc-api             │  │   argus-sidecar           │   │
-│  │   (Python/FastAPI)   │  │   (Rust, Port 8006)       │   │
-│  │   :8000              │  │   • EvidenceEngine        │   │
-│  │                      │◄─┼─►│   • TcApiClient          │   │
-│  │                      │  │   • RaAdapter              │   │
-│  └──────────────────────┘  └────────────────────────────┘   │
-│           │                         │                        │
-│           │            ┌────────────┴────────────┐         │
-│           │            │   共享卷                │         │
-│           │            │   /dev/shm (tmpfs)      │         │
-│           │            │   /var/run/trucon      │         │
-│           │            └─────────────────────────┘         │
-└─────────────────────────────────────────────────────────────┘
+    G->>P: EvidenceRequest
+    P->>T: Query workload metadata
+    T-->>P: Workload identity and image metadata
+    P->>Q: Generate quote over request and claims digest
+    Q-->>P: TDX quote
+    P-->>G: Evidence and BindingClaims
 ```
 
-### Deployment Mode
+TC-API metadata is not trusted merely because it came from TC-API. Its policy
+authority depends on the profile, its binding into the quote, and any required
+reference-value or verifier checks. When TC-API is disabled, the provider uses
+the configured local runtime-binding path.
 
-Argus is deployed as a **sidecar container** alongside TC-API in the same pod.
-This design provides:
+Endpoint details and environment variables are documented in
+[Configuration](./configuration.md#evidence-provider-configuration) and the
+[API Contract](./api.md).
 
-- **独立部署**: argus can be upgraded independently from tc-api
-- **故障隔离**: argus crashes don't affect tc-api service
-- **共享存储**: Both containers share `/dev/shm` for SQLite workload store
-- **进程间通信**: HTTP/REST API between argus and tc-api
-- **独立扩展**: Can scale argus sidecar independently based on load
+## Security Analysis
 
-### Sidecar Communication
+Argus protects the decision to release data to a peer. It does not replace
+transport encryption, storage encryption, or workload hardening.
 
-The argus sidecar communicates with tc-api via:
+### Data in Transit
 
-1. **REST API** (`TcApiClient`): Queries service metadata from TC-API
-2. **共享 tmpfs 存储**: Access to SQLite workload database at `/dev/shm`
-3. **UDS Socket**: TruCon socket at `/var/run/trucon/trucon.sock`
+The relevant paths are caller-to-Guard, Guard-to-Evidence Provider,
+Evidence Provider-to-TC-API, Guard-to-verifier, and the subsequent business
+request to the peer service.
 
-### Service Metadata API
+- The evidence-binding protocol protects evidence integrity and freshness. A
+  modified request, substituted claim set, or replayed response fails the
+  `report_data` check.
+- Evidence binding does not encrypt traffic or authenticate the network
+  endpoint that carries it. The default local and Compose examples use plain
+  HTTP and are suitable only inside a trusted local or isolated network path.
+- Production deployments must use TLS, mutual TLS, or an authenticated service
+  mesh for every path that crosses a trust boundary. Bearer tokens, identity
+  material, evidence, and business data must not traverse an unprotected
+  network.
+- Transport identity and attested workload identity are complementary. The
+  deployment must join the authenticated endpoint to the workload identity
+  accepted by Guard; a valid quote alone does not prevent traffic redirection
+  after verification.
 
-TC-API exposes a REST endpoint for querying service metadata:
+### Data at Rest
 
-```
-POST /api/service-metadata/workload/query
-Authorization: Bearer <service_token>
-{
-    "container_id": "string",  // optional
-    "workload_id": "string"    // optional
-}
-```
+Argus does not maintain an authoritative evidence database or trusted history.
+Evidence and normalized claims are normally transient process data. Persistent
+inputs may include profiles, policy files, reference values, CA certificates,
+service tokens, identity material, and operational logs.
 
-Response:
-```json
-{
-    "workload_id": "string",
-    "container_id": "string | null",
-    "launch_id": "string | null",
-    "image_digest": "string | null",
-    "service_name": "string | null",
-    "created_at": "string | null",
-    "last_seen_at": "string | null"
-}
-```
+- File permissions, secret mounts, host or volume encryption, rotation, backup,
+  and deletion of those inputs are deployment responsibilities.
+- Tokens and private identity material should be provided through a secret
+  manager or access-controlled memory-backed mount rather than embedded in
+  images, Compose files, or source-controlled configuration.
+- Quotes and claims are not necessarily confidential, but they may reveal
+  workload identity, measurements, topology, and runtime metadata. Logs and
+  retained API responses should therefore follow the deployment's data
+  classification and retention policy.
+- Argus does not currently provide automatic at-rest encryption, secure
+  deletion, or persistence recovery guarantees. Using `tmpfs` can reduce disk
+  persistence but makes state volatile and does not encrypt data while the
+  guest is running.
 
-### Evidence Engine Integration
+### Data in Use
 
-The EvidenceEngine supports two metadata fetching modes:
+When Guard, the Evidence Provider, and the protected workload run inside a TDX
+guest, their process memory is protected from the host and hypervisor according
+to the TDX threat model. Requests, claims, policy inputs, tokens, and business
+data are still plaintext inside the guest while being processed.
 
-1. **TC-API Mode** (preferred): When `TC_API_URL` is configured, the engine
-   queries TC-API for service metadata during evidence generation.
+- TDX does not protect against a compromised guest kernel, guest root, or
+  another process admitted to the same trust boundary with sufficient access.
+- Sidecar permissions needed for runtime binding, such as shared namespaces,
+  device access, or elevated capabilities, enlarge the trusted computing base
+  and should be restricted to the minimum required by the profile.
+- Argus authorizes a call before data transfer; it does not continuously protect
+  the peer after the decision. Deployments must minimize the interval between
+  verification and use and enforce endpoint-to-instance continuity to reduce
+  time-of-check/time-of-use risk.
+- Sensitive values may remain in process memory until released by the runtime.
+  The current design does not guarantee memory locking or zeroization, so
+  callers should avoid placing unnecessary secrets in evidence or logs.
 
-2. **Local Fallback Mode**: If TC-API is unavailable, the engine falls back
-   to local runtime binding metadata (environment variables, local files).
+### Residual Risks
 
-```rust
-// Create EvidenceEngine with TC-API client
-let tc_api_client = Arc::new(TcApiClient::new("http://tc-api:8000"));
-let engine = EvidenceEngine::with_tc_api_client(runtime, tc_api_client);
-```
-
-### Metadata Flow
-
-1. Service starts → LaunchService records workload metadata in WorkloadStore
-2. Docktap creates container → WorkloadStore.put() records mapping
-3. Agent requests evidence → Argus queries TC-API for metadata
-4. EvidenceEngine includes metadata in BindingClaims
-5. TDX quote generated with binding digest
-6. Caller verifies evidence with bound metadata
-
-### Service Metadata API
-
-TC-API exposes a REST endpoint for querying service metadata:
-
-```
-POST /api/service-metadata/workload/query
-Authorization: Bearer <service_token>
-{
-    "container_id": "string",  // optional
-    "workload_id": "string"    // optional
-}
-```
-
-Response:
-```json
-{
-    "workload_id": "string",
-    "container_id": "string | null",
-    "launch_id": "string | null",
-    "image_digest": "string | null",
-    "service_name": "string | null",
-    "created_at": "string | null",
-    "last_seen_at": "string | null"
-}
-```
-
-### Evidence Engine Integration
-
-The EvidenceEngine supports two metadata fetching modes:
-
-1. **TC-API Mode** (preferred): When `TcApiClient` is configured, the engine
-   queries TC-API for service metadata during evidence generation.
-
-2. **Local Fallback Mode**: If TC-API is unavailable, the engine falls back
-   to local runtime binding metadata (environment variables, local files).
-
-```rust
-// Create EvidenceEngine with TC-API client
-let tc_api_client = Arc::new(TcApiClient::new("http://localhost:8000"));
-let engine = EvidenceEngine::with_tc_api_client(runtime, tc_api_client);
-```
-
-### Metadata Flow
-
-1. Service starts → LaunchService records workload metadata in WorkloadStore
-2. Agent requests evidence → Argus queries TC-API for metadata
-3. EvidenceEngine includes metadata in BindingClaims
-4. TDX quote generated with binding digest
-5. Caller verifies evidence with bound metadata
-
-### Service Runtime Binding
-
-Service Runtime Binding is the local integration layer between Argus Evidence Provider and the protected workload instance. Its job is narrow: expose local runtime metadata and optional identity material to the Evidence Engine without turning the business service into an attestation service.
-
-For Argus v1, the minimum viable collection set is intentionally small and grouped as follows:
-
-1. Required trust anchors:
-	- TDX quote,
-	- request binding (`report_data` recomputation), and
-	- verifier-normalized TCB and measurement result.
-2. Stable identity:
-	- required `service_name`,
-	- optional `service_id`, and
-	- optional SPIFFE trust identity (`spiffe_id`, `trust_domain`) when the deployment provides it.
-3. Local runtime binding:
-	- target endpoint,
-	- owning PID,
-	- process start time, and
-	- optional container, pod, VM, namespace, or cgroup context when available.
-4. Optional integrity anchors:
-	- image digest or executable digest, and
-	- reference-value match result.
-
-Startup-input digests and effective-config proofs are useful extensions but are
-not baseline v1 requirements.
-
-Recommended implementation order:
-
-1. Shared namespace plus mounted metadata for stable service identity.
-2. Runtime introspection to confirm the observed process or container instance.
-3. UDS only when dynamic posture is required.
-4. Loopback-only HTTP posture only when UDS is impractical.
-
-#### Binding Implementation Options
-
-| Integration Mechanism | Typical Claims | Strengths | Limits | Recommended Use |
-|-----------------------|----------------|-----------|--------|-----------------|
-| Mounted metadata or downward API | Stable service name, workload name, deployment identifiers | Simple, low overhead, no business API change | Not sufficient by itself for live-instance continuity | Baseline identity hints and profile-scoped metadata |
-| Runtime introspection | Process identity, container identity, image digest, start time, namespace or cgroup membership | Strong local continuity evidence | May require elevated local visibility | Primary local source for continuity predicates |
-| Local UDS posture endpoint | Dynamic posture, readiness mode, local feature flags | Keeps posture off the public network surface | Still needs binding to the observed workload instance | Preferred for dynamic posture when the service can expose local state |
-| Loopback-only HTTP posture endpoint | Dynamic posture when UDS is unavailable | Easier adoption for existing services | Larger attack surface than UDS and easier to misconfigure | Fallback only |
-| Attested identity material | TDX-governed workload identity material when a deployment provides it | Strong fit for L3 identity-centric policy | Not every deployment has issuer support | Mixed L2/L3 deployments |
-
-Argus should prefer sources that can participate in the continuity predicate and endpoint-binding predicate. Remote self-description over the service's public API is outside the trusted binding path and must stay diagnostic-only unless independently verified.
-
-### Existing Service Compatibility
-
-Argus is designed to fit existing context, memory, retrieval, and gateway-style services without forcing those services to become attestation-aware business applications.
-
-Recommended integration shape:
-
-1. Keep the business API unchanged.
-2. Deploy Argus as a same-pod, same-VM, or same-host evidence sidecar.
-3. Expose a separate evidence endpoint such as `/ra/v1/evidence`.
-4. Collect local runtime facts through shared namespaces, mounted metadata, local runtime inspection, or local-only posture channels.
-
-This model is compatible with OpenViking-style context gateways and memory services such as TencentDB-Agent-Memory in the specific sense that Argus can protect calls to them as peer services. It is not compatible with treating their ordinary application JSON responses as trust evidence. Argus authenticates the remote service boundary, not in-process plugins, extensions, or skill execution inside that service.
-
-## Deployment Modes
-
-| Mode | Service-Side Integration | Caller-Side Integration | Typical Use Case |
-|------|--------------------------|-------------------------|------------------|
-| SDK mode | Service exposes `/ra/v1/evidence` through Argus Evidence Provider | Application, agent runtime, or service client calls Argus Guard | First implementation and easiest debugging |
-| Envoy mode | Envoy routes `/ra/v1/evidence` to Argus Evidence Provider | Guard fetches evidence through gateway or mesh endpoint | Service mesh and gateway deployments |
-| Nginx mode | Nginx exposes evidence endpoint | Guard calls Nginx evidence endpoint | Lightweight reverse proxy deployments |
-
-### Mode Semantics
-
-`SDK mode` means the caller integrates Argus Guard as an in-process library or application-local component instead of reaching a separate caller-side proxy or daemon first.
-
-In practice, `SDK mode` on the caller side usually pairs with one of these service-side shapes:
-
-1. direct evidence mode: the service side exposes `/ra/v1/evidence` through Argus Evidence Provider without an additional proxy layer,
-2. Envoy-backed mode: the caller still uses the SDK locally, but reaches the service-side evidence endpoint through Envoy, or
-3. Nginx-backed mode: the caller still uses the SDK locally, but reaches the service-side evidence endpoint through Nginx.
-
-So `SDK mode` is primarily a caller-side integration choice, not a statement that the entire end-to-end deployment must be proxy-free. In Argus v1, the expected default pairing is:
-
-1. caller side in `SDK mode`, and
-2. service side in direct evidence mode with Argus Evidence Provider exposing `/ra/v1/evidence`.
-
-### V1 Integration Strategy
-
-Argus v1 should first support a no-proxy direct path as the minimum closed loop:
-
-1. the caller uses SDK mode,
-2. the service side exposes a direct `/ra/v1/evidence` endpoint through Argus Evidence Provider, and
-3. the protocol loop is validated without requiring Nginx, Envoy, or service-mesh control-plane dependencies.
-
-This keeps the first implementation focused on evidence generation, binding, verification, and caller-side authorization rather than on proxy integration complexity.
-
-At the same time, Argus should design Nginx and Envoy as standard integration targets rather than as one-off extensions. That means the evidence endpoint, binding semantics, verifier contract, and policy model should remain stable whether the endpoint is reached directly or through a proxy layer.
-
-In later versions, Nginx and Envoy modes can become first-class deployment options for environments that need a standardized ingress path across many heterogeneous services. V1 should preserve that evolution path without making proxy integration a prerequisite for the minimum working trust loop.
-
-### Proxy Identity Boundary
-
-In proxy or service-mesh deployments, Argus must distinguish between:
-
-1. Proxy identity.
-2. Workload identity.
-3. Composite path identity.
-
-Service mesh control-plane inputs such as xDS state, route config, workload metadata, and mTLS peer attributes are not automatically anchors. A profile must classify the mesh control plane as:
-
-- External trusted authority.
-- Corroborator.
-- Non-authoritative transport metadata.
-
-If mesh control plane data is required for endpoint-to-workload joining and is not classified as an external trusted authority, it may raise corroboration but must not serve as the sole anchor for workload identity.
+Argus does not prove business-logic correctness, prevent compromise that
+preserves accepted measurements, secure data after an authorized peer receives
+it, or protect external systems outside the attested and authenticated path.
+Those controls remain part of workload, platform, network, and data-governance
+security.
 
 ## Governance Boundary
 
-Argus v1 defines the verification contract across three governance-dependent inputs, but does not need to implement all three governance systems itself:
+Argus defines how three governed inputs affect verification:
 
-1. ArgusProfile semantics and any deployment-local governance around them.
-2. Collector governance.
-3. Reference-value governance.
+- `ArgusProfile` requirements,
+- collector identity and authority, and
+- reference-value provenance and freshness.
 
-Argus must surface signer identities, digests, freshness state, and rollback-relevant metadata in verifier results and policy inputs. The publication, PKI, or bundle distribution mechanisms may be provided by external systems.
+Argus v1 does not define a remote publisher, signing service, bundle API, or
+operator workflow for those inputs. Deployments may provide those systems, but
+Guard must receive enough signer, digest, freshness, and rollback information
+to enforce local policy.
 
-Extensions such as mesh-authoritative joins, verifier-trusted collectors, advanced ambiguity resolution, or governance-plane orchestration should be treated as profile extensions rather than baseline requirements.
+## V1 Baseline
 
-For clarity: Argus v1 standardizes a minimal local `ArgusProfile` artifact and
-its digest semantics, but does not standardize a remote publisher, signer,
-bundle API, or operator workflow around that artifact.
+The baseline is intentionally narrow:
 
-## Implementation Roadmap
+- A2S verification only.
+- Rust Guard and Evidence Provider implementations.
+- Direct evidence endpoint as the minimum closed loop.
+- Quote and request-binding validation through a TDX-capable verifier.
+- Local profile configuration.
+- No verifier-trusted collector or mesh-authoritative join required by the base
+  path.
 
-### Language Recommendation
-
-The normative interfaces and contracts are written in Rust, matching the implementation.
-
-Recommended path:
-
-1. Keep normative contracts language-neutral at the API level.
-2. Implement the v1 in Rust under `argus/src/` using standard Rust libraries.
-3. Keep evidence binding, canonicalization, and policy semantics consistent.
-4. Provide language bindings for other runtimes as needed after the core stabilizes.
-
-### Recommended V1 MVP
-
-Argus v1 defines one minimum closed loop that can be implemented and tested end to end before expanding into mesh, collector-heavy, or multi-governance deployments.
-
-Recommended MVP boundary:
-
-1. Rust implementation under `argus/src/`
-2. SDK mode on the caller side
-3. Direct `/ra/v1/evidence` endpoint exposed by the Evidence Provider
-4. Trustee or equivalent Intel TDX quote verifier for quote and report-data validation
-5. Local `ArgusProfile` artifacts or equivalent bundled configuration, without
-	a standardized remote publication or signing plane
-6. No service-mesh-authoritative joins in the base path
-7. No verifier-trusted runtime collector required for policy-authoritative claims in the base path
-8. Reference-value matching through one governed bundle source
-
-This MVP is primarily a protocol-closed and implementation-closed path. It is intended to reach production-suitable L2 only for deployment profiles whose continuity and endpoint-binding requirements can be satisfied by quote-bound claims, reference-value validation, and profile-approved local binding without a verifier-trusted collector.
-
-In v1, those profile requirements are expected to be realized through local
-`ArgusProfile` artifacts or semantically equivalent bundled configuration,
-rather than through a standardized remote profile distribution flow.
-
-Recommended deployment expectations by assurance level:
-
-| Goal | Minimum Operational Shape | Intended Use |
-|------|---------------------------|--------------|
-| L1 audit or rollout | Sidecar or local evidence collection without policy-authoritative authorization | Development, debugging, disagreement measurement |
-| L2 production authorization | Quote-bound identity, profile trust root, reference-value bundle, continuity predicate, and policy-authoritative claim binding | Default production target |
-| L3 identity authorization | L2 plus verified attested identity issuance for the policy-relevant identity path | Zero-trust identity-centric deployments |
+Production L2 is possible only when the deployment satisfies its continuity,
+endpoint-binding, reference-value, and policy-authority requirements. L3 also
+requires verified attested identity issuance for the policy-relevant identity.
 
 ## Related Documents
 
-- [API Contract](./api.md)
-- [Testing And Validation](./tests.md)
+- [API Contract](./api.md): protocol fields, normalized claims, profiles, and
+  policy types.
+- [Configuration](./configuration.md): runtime settings and verifier options.
+- [Quick Start](./quickstart.md): build and local deployment workflow.
+- [Troubleshooting](./troubleshooting.md): operational diagnosis.
