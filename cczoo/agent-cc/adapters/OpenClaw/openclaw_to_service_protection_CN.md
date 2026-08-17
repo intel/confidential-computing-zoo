@@ -188,6 +188,44 @@ BINDING_ASSURANCE_LEVEL=L2
 ENCRYPTED_VFS_PATH=/mnt/encrypted
 ```
 
+### 配置 OpenClaw 主模型为 Ollama
+
+将 Ollama 配置为 OpenClaw 的主模型，Ollama 必须提供 OpenAI-compatible API，并且目标模型需要提前下载：
+
+```bash
+cd cczoo/agent-cc/adapters/OpenClaw/scripts
+./run_ollama_luks.sh pull llama3.2
+OLLAMA_HOST=0.0.0.0:11434 ./run_ollama_luks.sh serve
+```
+
+`run_ollama_luks.sh` 要求 `OLLAMA_LUKS_MOUNT_ROOT` 已经是活动的 LUKS 挂载点，
+默认将模型写入 `${OLLAMA_LUKS_MOUNT_ROOT}/ollama`。不要直接运行普通的
+`ollama serve` 或 `ollama pull`，否则模型可能写入 `~/.ollama/models`，不在
+LUKS 保护范围内。执行后续步骤时，请在另一个终端中保持 `serve` 命令运行。
+
+在 OpenClaw Gateway 已启动且配置 volume 持久化后执行：
+
+```bash
+cd cczoo/agent-cc/adapters/OpenClaw/scripts
+export OPENCLAW_CONTAINER=agentcc-openclaw-sbx-gateway
+export OLLAMA_BASE_URL=http://127.0.0.1:11434
+export OLLAMA_CONTAINER_BASE_URL=http://host.docker.internal:11434
+export OLLAMA_MODEL=llama3.2
+./connect_openclaw_ollama.sh
+```
+
+`OLLAMA_BASE_URL` 供宿主机上的脚本探活；`OLLAMA_CONTAINER_BASE_URL` 会写入
+OpenClaw 配置，因此必须能从 Gateway 容器内访问。在 Linux 上，创建容器时需
+添加 `--add-host=host.docker.internal:host-gateway`，也可以将该变量改为共享
+Docker 网络中的 Ollama 地址。上面的服务启动命令通过 `OLLAMA_HOST` 让 Ollama
+监听容器可访问的地址；请使用宿主机防火墙将访问范围限制为可信客户端。
+
+脚本会检查 Ollama 就绪状态、模型是否安装以及容器内连通性，然后写入
+`models.providers.ollama`，并将 `agents.defaults.model.primary` 设置为
+`ollama/llama3.2`。本步骤不要求 Argus Guard、Evidence Provider 或 TC-API，
+仅用于验证模型调用链。正式接入证明时，应将 Ollama 注册为独立的
+`ollama-llm` workload，并在 Argus 验证通过后才允许 OpenClaw 访问。
+
 ### Docker Compose 示例
 
 ```yaml

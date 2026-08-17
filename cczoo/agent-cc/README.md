@@ -159,7 +159,9 @@ This forms an end-to-end protection flow across orchestration, model inference, 
   - [OpenClaw](./adapters/OpenClaw/) : povides a way to deploy OpenClaw workloads within TDX trusted execution environments, providing comprehensive protection through encrypted workspace isolation (LUKS), cryptographic image signing (Cosign/Sigstore), remote attestation via trust-service and KBS, SBOM generation with transparency logging, and end-to-end build-to-runtime trust chain control—all without requiring invasive framework changes.
   - [OpenViking](./adapters/OpenViking): Confidential memory control plane for attestation-gated context storage.
 - **LLM adapters**:
-  - Ollama: (Coming soon)
+  - Ollama: OpenClaw primary-model connector is available at
+    [scripts/connect_openclaw_ollama.sh](./adapters/OpenClaw/scripts/connect_openclaw_ollama.sh).
+    OpenViking's Embedding/VLM path is intentionally unchanged.
 
 ### 🛠️ Quick Start by Service
 

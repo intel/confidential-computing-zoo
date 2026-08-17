@@ -1,305 +1,384 @@
 # OpenClaw Agent Example
 
-This directory is the Agent-CC adapter entry point for OpenClaw.
+This directory contains an example adapter that demonstrates how OpenClaw integrates with Agent-CC as a runtime trust verification framework.
 
-OpenClaw Adapter is the Agent-CC integration path for deploying OpenClaw workloads within TDX trusted execution environments, providing comprehensive protection through:
+## Overview
 
-- **Trusted Build-to-Runtime Control:** Complete trust chain control via TC API, supporting Docker image encryption signing (Cosign/Sigstore) and remote attestation
+OpenClaw is an AI agent runtime in a standard process. It uses Agent-CC core services for trusted agent-to-service communication:
 
-- **LUKS Encrypted Workspace:** Isolating sensitive materials during build using create_luks / mount_luks API
+- **OpenClaw** (caller): the agent runtime running in a standard environment, which makes trust decisions based on Argus verification results
+- **OpenViking** (service side): a trusted workload running inside a TDVM
+- **Argus Guard**: verifies OpenViking's TDX attestation evidence on behalf of OpenClaw
+- **Argus Provider** (service side): generates TDX quotes for OpenViking inside the TDVM
 
-- **SBOM & Evidence Verification:** Generating SBOM and recording build evidence via transparency log during publish, supporting post-deployment verification
+This example shows how OpenClaw uses Argus to verify the identity and runtime state of a remote service before exchanging sensitive data.
 
-- **Dependency Services:** Requiring trust-service container and local KBS (Key Broker Service) for key management and remote attestation
-
-- **Non-Invasive Integration:** All without requiring invasive framework changes
-
-See Also: [`Agent-CC doc`](../../README.md) for the top-level architecture and [`tc_api doc`](../../core/tc_api/README.md) for the trusted build-to-runtime control path.
-
-## Prerequisites
-
-- A TDX-capable guest with `/dev/tdx_guest` and quote generation available
-- Docker, Skopeo, Syft, and Cosign installed on the deployment host
-- A Docker registry account for publishing encrypted images
-- A Sigstore-capable identity for OIDC login flows
-- Reachable trust-service and KBS dependencies for attested launch flows
-
-## Local Environment Setup
-
-```bash
-cd <workdir>
-git clone --branch dev/v1.5 https://github.com/intel/confidential-computing-zoo.git
-
-python3 -m venv tcapi_env
-source tcapi_env/bin/activate
-
-cd confidential-computing-zoo/cczoo/agent-cc/core/tc_api/
-pip install -r requirements.txt
-bash setup.sh
-
-# Set registry and Sigstore identity settings.
-vim .env
-# DOCKER_REGISTRY=docker.io
-# DOCKER_REPOSITORY=<your docker hub account>
-# GIT_EMAIL=<your sigstore email>
-
-vim tc_api/config.py
-# DOCKER_REPOSITORY = config("DOCKER_REPOSITORY", default="<your docker hub account>")
-# GIT_EMAIL = config("GIT_EMAIL", default="<your sigstore email>")
-
-docker login -u <DOCKER_REPOSITORY>
-export DOCKER_BUILDKIT=1
+## Architecture
 
 ```
-
-## Start Trust Services
-
-The OpenClaw example assumes the trust-service container and a local KBS are available before TC API starts.
-
-Start trust-service from [`trust-service`](../../core/trust-service/):
-
-```bash
-cd <workdir>
-mkdir -p certs
-
-openssl genrsa -out certs/cosign.pem
-openssl rsa -in certs/cosign.pem -pubout -out certs/cosign.pub
-openssl genrsa -out certs/openssl.pem
-openssl rsa -in certs/openssl.pem -pubout -out certs/openssl.pub
-openssl genrsa -out certs/luks-key
-
-cd confidential-computing-zoo/cczoo/agent-cc/core/trust-service/
-docker build -t <trust-service-image> .
-docker run -it --network host --privileged \
-	-v /var/run/docker.sock:/var/run/docker.sock \
-	-v /dev/tdx_guest:/dev/tdx_guest \
-	-v /etc/tdx-attest.conf:/etc/tdx-attest.conf \
-	-v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf \
-	-v /etc/hosts:/etc/hosts \
-	-v /sys/kernel/config:/sys/kernel/config \
-	-p 8006:8006 \
-	<trust-service-image>
+┌─────────────────────────────────────────────────────────────────┐
+│                    OpenClaw Agent Runtime                        │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  OpenClaw Agent (standard process)                          │ │
+│  │  - LLM Client                                               │ │
+│  │  - Context Manager                                          │ │
+│  │  - Tool Executor                                            │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                              │ Attestation-gated context transfer
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   OpenViking Service (TDVM)                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  OpenViking Confidential Memory Control Plane              │ │
+│  │  - Context Gateway                                          │ │
+│  │  - Encrypted Storage                                        │ │
+│  │  - Trust Policy Engine                                      │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     Agent-CC Core Services                      │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │   Argus     │  │   TC-API    │  │  Trust      │              │
+│  │  Verifier   │  │  Service    │  │  Service    │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-Start a local KBS:
+## Implementation Files
 
-```bash
-cd <workdir>
-mkdir -p kbs
-cd kbs
+| File | Description |
+|------|-------------|
+| [scripts/openclaw_agent.py](scripts/openclaw_agent.py) | Working Python implementation |
+| [scripts/run_openclaw_openviking_e2e.sh](scripts/run_openclaw_openviking_e2e.sh) | One-click real-quote end-to-end run script |
+| [README.md](README.md) | English documentation |
+| [README_CN.md](README_CN.md) | Chinese documentation |
 
-openssl genpkey -algorithm ed25519 -out kbs-auth-key.pem
-openssl pkey -in kbs-auth-key.pem -pubout -out kbs-auth-pub.pem
+## Integration Points
 
-cat > kbs-config.toml <<'EOF'
-[http_server]
-sockets = ["0.0.0.0:8080"]
-insecure_http = true
+### 1. Evidence Provider Integration
 
-[attestation_token]
-insecure_key = true
+OpenClaw obtains TDX attestation evidence through the Agent-CC Evidence Provider:
 
-[attestation_service]
-type = "coco_as_builtin"
-work_dir = "/opt/confidential-containers/attestation-service"
+```rust
+// Example: obtain attestation evidence for the OpenClaw runtime
+use argus::EvidenceFetcher;
 
-[attestation_service.attestation_token_broker]
-type = "Ear"
-duration_min = 5
+pub struct OpenClawEvidenceProvider {
+    evidence_endpoint: String,
+}
 
-[attestation_service.rvps_config]
-type = "BuiltIn"
+impl OpenClawEvidenceProvider {
+    pub fn new() -> Self {
+        Self {
+            evidence_endpoint: std::env::var("EVIDENCE_ENDPOINT")
+                .unwrap_or_else(|_| "http://localhost:8008".to_string()),
+        }
+    }
 
-[admin]
-auth_public_key = "/opt/confidential-containers/kbs/user-keys/kbs-auth-pub.pem"
+    /// Obtain the TDX quote attesting the OpenClaw runtime
+    pub async fn fetch_runtime_attestation(&self) -> Result<AttestationEvidence> {
+        let evidence = EvidenceFetcher::new(&self.evidence_endpoint)
+            .with_service_identity("openclaw-agent")
+            .fetch_evidence()
+            .await?;
 
-[[plugins]]
-name = "resource"
-type = "LocalFs"
-dir_path = "/opt/confidential-containers/kbs/repository"
-EOF
-
-cd ..
-docker run -d -p 8080:8080 --network host \
-	-v $(pwd)/kbs/kbs-config.toml:/etc/kbs/kbs-config.toml \
-	-v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf \
-	-v /etc/hosts:/etc/hosts \
-	-v $(pwd)/certs:/opt/confidential-containers/kbs/repository/default/image-decryption-keys \
-	-v $(pwd)/kbs/kbs-auth-pub.pem:/opt/confidential-containers/kbs/user-keys/kbs-auth-pub.pem \
-	ghcr.io/confidential-containers/staged-images/kbs:c96dbe6bcc3d7529fdb27afb19a54a6625b29634 \
-	/usr/local/bin/kbs --config-file /etc/kbs/kbs-config.toml
+        Ok(AttestationEvidence {
+            quote: evidence.tdx_quote,
+            runtime_measurements: evidence.rtmr_values,
+            tcb_status: evidence.tcb_status,
+        })
+    }
+}
 ```
 
-## Start TC API
+### 2. Attestation-Based Secret Release
 
-For the OpenClaw walkthrough, start the shared control plane from [`tc_api`](../../core/tc_api/):
+OpenClaw retrieves secrets only after attestation verification succeeds:
 
-```bash
-cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc_api/
-./start.sh restart --reset-state dev
+```rust
+// Example: retrieve API keys based on attestation
+use argus::{AttestationContext, SecretStore};
+
+pub struct OpenClawSecretManager {
+    secret_store: SecretStore,
+}
+
+impl OpenClawSecretManager {
+    /// Obtain the API key only if attestation succeeds
+    pub async fn get_api_key(&self, key_id: &str) -> Result<String> {
+        let attestation = AttestationContext::new()
+            .with_minimum_assurance_level("L2")
+            .verify()
+            .await?;
+
+        if !attestation.is_trusted() {
+            return Err(AgentError::AttestationFailed {
+                reason: "OpenClaw runtime attestation verification failed".to_string(),
+            });
+        }
+
+        self.secret_store
+            .get_secret(key_id, &attestation)
+            .await
+    }
+}
 ```
 
-If you prefer running the service in a container, build the [`Dockerfile`](../../core/tc_api/Dockerfile) and expose the same host sockets and attestation devices described above.
+### 3. Encrypted Context Storage
 
-```bash
-# build images
-cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc_api/
-docker build -f ./Dockerfile -t {image_name:image_tag} ../
+OpenClaw uses Agent-CC encrypted storage to persist sensitive context:
 
-# start tcapi
-docker run -it --network host --privileged \
-    -v /var/run/docker.sock:/var/run/docker.sock  \
-    -v /dev/tdx_guest:/dev/tdx_guest  \
-    -v /etc/tdx-attest.conf:/etc/tdx-attest.conf \
-    -v <path to dockerfile>:<path to dockerfile> \    # Optional
-    -v <luks mount path>:<luks mount path>  \   # Optional
-    -p 8001:8001 -p 8006:8006 -p 8000:8000 \    
-    {image_name:image_tag}
+```rust
+// Example: encrypted context storage with attestation binding
+use argus::{EncryptedStorage, AttestationBinding};
 
+pub struct OpenClawContextManager {
+    storage: EncryptedStorage,
+}
+
+impl OpenClawContextManager {
+    /// Store context with attestation binding
+    pub async fn store_context(
+        &self,
+        context_id: &str,
+        context_data: &[u8],
+        binding: &AttestationBinding,
+    ) -> Result<()> {
+        self.storage
+            .store_encrypted(context_id, context_data, binding)
+            .await
+    }
+
+    /// Retrieve context only when the attestation binding matches
+    pub async fn retrieve_context(
+        &self,
+        context_id: &str,
+        expected_binding: &AttestationBinding,
+    ) -> Result<Vec<u8>> {
+        let context = self.storage
+            .retrieve_encrypted(context_id, expected_binding)
+            .await?;
+
+        Ok(context)
+    }
+}
 ```
 
-## OpenClaw Build, Publish, and Launch Flow
+## Configuration
 
-The shared TC API flow below is the path OpenClaw is expected to use.
-
-1. Create an encrypted workspace with `POST /api/create_luks` if you want build material, generated artifacts, and deployment data isolated under LUKS.
-2. Mount the encrypted workspace with `POST /api/mount_luks` before uploading Dockerfiles, binaries, configs, or data for the OpenClaw image.
-3. Submit the OpenClaw image build through `POST /api/build-package`.
-4. Publish the encrypted image and SBOM through `POST /api/publish-package`.
-5. Launch the workload with attestation enabled through `POST /api/deploy-launch`.
-6. Verify evidence by querying the build, publish, launch, and transparency-log result endpoints.
-
-Example CLI calls:
+### Environment Variables
 
 ```bash
-# Create and mount an encrypted workspace.
-venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore-login oob \
-	create_luks --payload-json '{"user_id":"<sigstore account>","vfs_path":"<luks file>","vfs_size":"<size>","passwd":"<luks key file>"}'
+# OpenClaw Agent configuration
+AGENT_SERVICE_NAME=openclaw-agent
+AGENT_INSTANCE_ID=openclaw-instance-001
 
-venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore-login oob \
-	mount_luks --payload-json '{"user_id":"<sigstore account>","vfs_path":"<luks file>","vfs_size":"<size>","mapper_dir":"<mapper>","loop_device":"<loop>","mount_path":"<mount path>","passwd":"<luks key file>"}'
+# Evidence Provider
+EVIDENCE_ENDPOINT=http://localhost:8008
+
+# Guard Service (for service-to-service attestation)
+GUARD_ENDPOINT=http://localhost:8007
+BINDING_ASSURANCE_LEVEL=L2
+
+# Encrypted storage
+ENCRYPTED_VFS_PATH=/mnt/encrypted
 ```
+
+### Configure Ollama as the OpenClaw primary model
+
+Configures Ollama for OpenClaw's primary model. Ollama must expose the OpenAI-compatible API, and the target model must be downloaded in advance:
 
 ```bash
-# Build the OpenClaw image from artifacts staged in the mounted workspace.
-venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore-login oob \
-	build --payload-json '{"dockerfile":"<path or content>","app_binary":"<openclaw artifact>","configs":["<config file>"],"data":["<data file>"],"encrypt":true,"user_id":"<sigstore account>","luks_path":"<mounted luks path>"}'
+cd cczoo/agent-cc/adapters/OpenClaw/scripts
+./run_ollama_luks.sh pull llama3.2
+OLLAMA_HOST=0.0.0.0:11434 ./run_ollama_luks.sh serve
 ```
-### tc_api server show build logs
 
-**Notice: when log show as sigstore toekn is malformed or missing, need to refresh the token by interactivate mode.**
+`run_ollama_luks.sh` requires `OLLAMA_LUKS_MOUNT_ROOT` to be an active LUKS
+mount point and stores models under `${OLLAMA_LUKS_MOUNT_ROOT}/ollama` by
+default. Do not run plain `ollama serve` or `ollama pull`, because the default
+path `~/.ollama/models` is outside the LUKS-protected storage. Keep the `serve`
+command running in a separate terminal while completing the steps below.
 
-![Build logs](./images/build.png)
+Run the connector after the OpenClaw Gateway is running with a persistent config
+volume:
 
 ```bash
-# Publish the encrypted image.
-venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 --sigstore-login oob \
-	publish --payload-json '{"build_id":"<build_id>","image_id":"<image_id>","user_id":"<sigstore account>","sbom_url":"<sbom path>","log_evidence":true,"luks_path":"<mounted luks path>"}'
+cd cczoo/agent-cc/adapters/OpenClaw/scripts
+export OPENCLAW_CONTAINER=agentcc-openclaw-sbx-gateway
+export OLLAMA_BASE_URL=http://127.0.0.1:11434
+export OLLAMA_CONTAINER_BASE_URL=http://host.docker.internal:11434
+export OLLAMA_MODEL=llama3.2
+./connect_openclaw_ollama.sh
 ```
 
-### tc_api server show launch logs
+`OLLAMA_BASE_URL` is used by the script on the host. `OLLAMA_CONTAINER_BASE_URL`
+is written to the OpenClaw configuration and must be reachable from the Gateway
+container. On Linux, create the container with
+`--add-host=host.docker.internal:host-gateway`, or set this variable to an
+Ollama address on a shared Docker network. The `OLLAMA_HOST` setting in the
+server command above makes Ollama listen on an address accessible to the
+container; restrict host firewall access to trusted clients.
 
-![Build logs](./images/publish.png)
+The script verifies Ollama readiness, model availability, and container access;
+then it writes `models.providers.ollama` and sets
+`agents.defaults.model.primary` to `ollama/llama3.2`. This step does not require
+Argus Guard, the Evidence Provider, or TC-API; it validates only the model-call
+path. For an attested deployment, register Ollama as an independent `ollama-llm`
+workload and allow OpenClaw to access it only after Argus verification.
+
+### Docker Compose Example
+
+```yaml
+# filepath: docker-compose.yml
+services:
+  openclaw-agent:
+    image: openclaw:latest-tdx
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8009
+      EVIDENCE_ENDPOINT: http://argus-evidence-provider:8008
+      GUARD_ENDPOINT: http://argus-guard:8007
+      BINDING_ASSURANCE_LEVEL: L2
+      ENCRYPTED_VFS_PATH: /mnt/encrypted
+    volumes:
+      - encrypted_vfs:/mnt/encrypted
+    depends_on:
+      - argus-evidence-provider
+      - argus-guard
+    devices:
+      - /dev/tdx_guest:/dev/tdx_guest
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+
+  argus-evidence-provider:
+    image: argus-evidence-provider:latest
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8008
+      RUST_LOG: info
+    volumes:
+      - tsm_socket:/var/run/tsm
+
+  argus-guard:
+    image: argus-guard:latest
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8007
+      EVIDENCE_ENDPOINT: http://argus-evidence-provider:8008
+      BINDING_ASSURANCE_LEVEL: L2
+      RUST_LOG: info
+
+volumes:
+  encrypted_vfs:
+```
+
+## Verification Flow
+
+```
+1. OpenClaw starts inside the TDVM
+         │
+         ▼
+2. Obtain a TDX Quote from the TSM
+         │
+         ▼
+3. Send it to the Evidence Provider
+         │
+         ▼
+4. Argus verifies the quote structure
+         │
+         ▼
+5. Argus verifies nonce binding
+         │
+         ▼
+6. Argus checks TCB status
+         │
+         ▼
+7. Return attestation evidence
+         │
+         ▼
+8. OpenClaw uses the evidence for:
+   - Service attestation
+   - Secret retrieval
+   - Encrypted storage access
+```
+
+## Example Run
+
+### Prerequisites
+
+- On the OpenClaw side: Argus Guard is reachable at `http://localhost:8007`
+- On the OpenViking side: Argus Evidence Provider is reachable from the Guard host
+- If you need the real-quote path, an Intel TDX platform with TSM enabled is required
+
+### Build and Run
 
 ```bash
-# Launch the attested OpenClaw workload.
-venv/bin/python -m tc_api.cli.client   --base-url http://localhost:8000   --sigstore-login oob \
-	deploy --payload-json -d '{"image_id":"tc-api-build-<build_id>","build_id":"<build_id>","user_id":"<sigstore account>","image_url":"docker.io/<repo>/tc-api-build-<build_id>:latest-encrypted","sbom_url":"<sbom path>","attestation_required":true,"luks_path":"<mounted luks path>","dockercmd":"<optional openclaw docker run command>"}'
+# On the OpenClaw side, start only Argus Guard and point it to the provider on the OpenViking side.
+cd ../../../core/argus
+export EVIDENCE_ENDPOINT=http://<openviking-provider-host>:8008
+./start_argus.sh start-guard
+
+# Return to the OpenClaw example on the same host.
+cd ../../../adapters/OpenClaw/scripts
+
+# Optional: override the logical target that OpenClaw verifies
+export TARGET_SERVICE_NAME=openviking-cmem
+export TARGET_URI=https://<openviking-service-host>
+
+# Run the caller-side verification demo
+python3 openclaw_agent.py
 ```
-### TC API server show deploy logs
 
-![Build logs](./images/deploy.png)
-
-## Result Inspection
-
-After each phase, inspect the corresponding result object and trust evidence:
-
-- `GET /api/build-result/{build_id}` for image URLs, SBOM paths, and build trust status
-- `GET /api/publish-result/{build_id}` for registry publication details
-- `GET /api/launch-result/{launch_id}` for attestation result, workload instance IDs, and launch evidence
-- `GET /api/transparency-log/{log_id}` for the concrete immutable log entry
-- `POST /api/get-summaryTransparencylog` for a single summary over build, publish, and launch log records
-
-The full payload shapes and additional operator notes remain in [`README.md`](../../core/tc_api/README.md).
-
-## OpenClaw runtime measurements
-
-### Build and run gateway Docker container
-
-**Notice: If you do not use TC API service, please refer to `run-sbx.sh`.**
-
+On the OpenViking side, start the provider separately:
 
 ```bash
-cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/scripts
-
-# make slim image
-vim .env
-# OPENCLAW_GATEWAY_PORT=18789
-# OPENCLAW_BRIDGE_PORT=18790
-# OPENCLAW_GATEWAY_BIND=lan
-# OPENCLAW_GATEWAY_TOKEN=3eec2b1cdc012236e58e464f08b6092dc41f0cf6681670cf98bc2edf000e6182
-# OPENCLAW_IMAGE=openclaw:local
-# OPENCLAW_DOCKER_SOCKET=/var/run/docker.sock
-# DOCKER_GID=113
-# OPENCLAW_INSTALL_DOCKER_CLI=1
-# OPENCLAW_TZ=
-# OPENCLAW_CONFIG_VOLUME=openclaw-config
-# OPENCLAW_WORKSPACE_VOLUME=openclaw-workspace
-
-bahs setup.sh
-
-# make gateway image
-bash run-sbx.sh
+cd ../../../core/argus
+export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
+./start_argus.sh start-provider
 ```
 
-**Notice: You can set openclaw configurate(such as mode & the api key) by interactivate:**
+## Expected Output
 
 ```bash
-docker run --rm -i --tty --user node -v openclaw-config:{.openclaw path} -v openclaw-workspace:{workspace path} --entrypoint node {image:tag}t /app/dist/index.js onboard --mode local --no-install-daemon
+OpenClaw Agent - Agent-CC Integration Example
+
+[1] Verifying OpenViking through Argus Guard...
+    TCB Status: UpToDate
+    Service Name: openviking-cmem
+    Workload ID: openviking-cmem
+    Launch ID: launch-...
+    Image Digest: sha256:...
+    Rekor UUID: ...
+    Transparency Log ID: ...
+    RTMR0: ...
+
+[2] Creating attestation context...
+[3] Retrieving attestation-gated secret...
+[4] Storing context with attestation binding...
+[5] Retrieving context with binding verification...
 ```
 
-```bash
-vim xxx/.openclaw.json
-# "models": {
-#     "providers": {
-#       "qwen": {
-#         "baseUrl": "https://xxxxxxxxx",
-#		  "apiKey": "skxxxxxxx",
-#         "api": "openai-completions",
-```
+On the current live TSM path, after quote structure validation and request-binding validation succeed, Argus reports `TCB Status: UpToDate`. This is sufficient for the example's default policy flow, but it still does not indicate that collateral-based TCB freshness evaluation has been completed.
 
-### Run OpenClaw sandbox Docker container
+The additional metadata lines above appear only when the OpenViking side is started through the tc-api-managed Docker path. Running `python3 openviking_service.py --serve` directly can still return attestation evidence, but tc-api-specific fields such as image digest, launch ID, and Rekor UUID remain empty unless tc-api is tracking the service workload.
 
-After launching openclaw-gateway and completing the configuration, you can access the openclaw address `http://127.0.0.1:18789/token=xxxx` to perform operations; the system will then create an openclaw-slim Docker container to execute the operation, and all Docker-related actions will be recorded in transparency log.
+## tc-api-Based OpenViking Deployment
 
-![openclaw logs](./images/openclaw.png)
-
-All docker operation transparency log can be show in `https://rekor.sigstore.dev/api/v1/log/entries?logIndex={log_index}`. And the `log_index` can be checked in `<workdir>/confidential-computing-zoo/cczoo/agent-cc/core/tc_api/logs/trucon-latest.log`
-
-![openclaw logs](./images/openclawLog.png)
-
-## Related Core Services
-
-- [`core/tc-api/`](../../core/tc-api/) for trusted build, publish, launch, and verification orchestration
-- [`core/tlog/`](../../core/tlog/) for immutable signed runtime evidence and digest rules
-- [`core/trust-service/`](../../core/trust-service/) for attestation support services used by the deployment flow
-
-## Status
-
-This adapter currently serves as a documentation and integration entry point. Concrete OpenClaw-specific deployment assets will be added here as the adapter path is expanded.
-
-## tc-api-backed OpenViking Deployment
-
-To surface `image_digest`, `launch_id`, and Rekor identifiers in Argus claims,
-the OpenViking side needs to be launched through tc-api or another Docktap-managed
-Docker path instead of only running the Python demo directly.
+To display `image_digest`, `launch_id`, and Rekor identifiers in Argus claims, the OpenViking side must be started through tc-api or another Docktap-managed Docker path instead of running only the Python demo directly.
 
 1. Start tc-api on the OpenViking side.
-2. Launch the OpenViking workload through `POST /api/deploy-launch` and set `metadata.workload_id` to `openviking-cmem`.
-3. Start the sidecar/provider process with both `ARGUS_SERVICE_ID=openviking-cmem` and `TC_API_WORKLOAD_ID=openviking-cmem` so Argus queries tc-api by workload ID instead of its own container ID.
-4. Point the OpenClaw-side Guard at that provider with `EVIDENCE_ENDPOINT=http://<openviking-provider-host>:8008`.
+2. Start the OpenViking workload through `POST /api/deploy-launch` and set `metadata.workload_id` to `openviking-cmem`.
+3. Start the sidecar/provider process with `ARGUS_SERVICE_ID=openviking-cmem` and `TC_API_WORKLOAD_ID=openviking-cmem` so that Argus queries tc-api by workload ID rather than by its own container ID.
+4. Point the Guard on the OpenClaw side to that provider: `EVIDENCE_ENDPOINT=http://<openviking-provider-host>:8008`.
 
-Example provider-side environment:
+Example provider-side environment variables:
 
 ```bash
 export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
@@ -314,4 +393,207 @@ export TC_API_URL=http://127.0.0.1:8000
 - [OpenClaw Adapter](../README.md) - Main adapter documentation
 - [Argus Verifier](../../core/argus/README.md) - TDX quote verification
 - [TC-API Service](../../core/tc-api/README.md) - Build-to-runtime trust
-- [Trust Service](../../core/trust-service/README.md) - Attestation support
+
+## Quick Start
+
+### Prerequisites
+
+Before running the full end-to-end test, make sure you have:
+- an Intel TDX-enabled platform (`/dev/tdx_guest`)
+- TSM configfs at `/sys/kernel/config/tsm/report/`
+- Docker and docker-compose installed
+- Argus binaries built (see [core/argus README](../../core/argus/README.md))
+- a TC-API identity token set (`TC_API_IDENTITY_TOKEN` or `TC_API_BEARER_TOKEN`)
+
+`TC_API_IDENTITY_TOKEN` is not a fixed value auto-generated by the repository. It is a short-lived Sigstore OIDC identity token. In this end-to-end path, the most direct way to obtain it is to reuse the tc-api CLI included in the repository to complete an interactive Sigstore login, then export the returned value as `TC_API_IDENTITY_TOKEN`.
+
+### Step 1: Validate the Environment
+
+```bash
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/core/argus
+./start_argus.sh validate
+```
+
+Expected output:
+```
+[INFO] Validating environment...
+[INFO] TDX device found at /dev/tdx_guest
+[INFO] TSM configfs found
+```
+
+### Step 2: Build Argus (if not already built)
+
+```bash
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/core/argus
+cargo build --release
+```
+
+### Step 3: Obtain `TC_API_IDENTITY_TOKEN`
+
+It is recommended to use the CLI built into tc-api for OOB (out-of-band) Sigstore login and directly output shell variables that can be `eval`'d:
+
+```bash
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/core/tc_api
+bash setup.sh
+eval "$(./venv/bin/tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format export --env-var TC_API_IDENTITY_TOKEN)"
+```
+
+After execution, a Sigstore login flow will open or be prompted; once login is complete, the command will export `TC_API_IDENTITY_TOKEN` in the current shell. You can confirm that the variable exists with:
+
+```bash
+env | grep '^TC_API_IDENTITY_TOKEN='
+```
+
+Notes:
+- This is a short-lived token. After it expires, rerun the login command above.
+- If `tc-client` is already installed into your `PATH`, you can also run it directly:
+
+```bash
+eval "$(tc-client --base-url http://127.0.0.1:8000 --sigstore-login oob sigstore-token --format export --env-var TC_API_IDENTITY_TOKEN)"
+```
+
+- If your tc-api deployment uses HTTP Authorization header authentication, you can instead export `TC_API_BEARER_TOKEN` in advance; however, in the current repository examples, using `TC_API_IDENTITY_TOKEN` is more direct.
+
+### Step 4: Execute the End-to-End Flow in Three Steps (Recommended)
+
+```bash
+cd <work_dir>/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/scripts
+```
+
+#### 4.1 Service Side: Start OpenViking via tc-api
+
+```bash
+# Requires TC_API_IDENTITY_TOKEN or TC_API_BEARER_TOKEN
+./step1_launch_openviking_via_tc_api.sh
+```
+
+This phase will:
+1. start the compose stack (registry + tc-api + argus-provider)
+2. start the OpenViking workload through `POST /api/deploy-launch`
+
+Common environment variables:
+- `TC_API_IDENTITY_TOKEN` / `TC_API_BEARER_TOKEN` (required unless already running and launch is skipped)
+- `TC_API_URL` (default `http://127.0.0.1:8000`)
+- `TARGET_URI` (default `http://127.0.0.1:8010`)
+- `TARGET_SERVICE_NAME` (default `openviking-cmem`)
+- `FORCE_LAUNCH=1` (force relaunch)
+- `SKIP_OPENVIKING_LAUNCH=1` (start only the control plane without launching)
+
+#### 4.2 Agent Side: Start OpenClaw via tc-api (see `openclaw_container_protection.md`)
+
+```bash
+# Optional step; not run by default; used to bring OpenClaw itself under tc-api launch management
+RUN_STEP2_OPENCLAW=1 ./step2_launch_openclaw_via_tc_api.sh
+```
+
+This phase will:
+1. build and push the OpenClaw image by default
+2. start the OpenClaw workload through tc-api `deploy-launch`
+
+Common environment variables:
+- `TC_API_IDENTITY_TOKEN` / `TC_API_BEARER_TOKEN` (required)
+- `OPENCLAW_IMAGE_NAME`, `OPENCLAW_IMAGE_URL`, `OPENCLAW_IMAGE_ID`
+- `OPENCLAW_DOCKERFILE`, `OPENCLAW_BUILD_CONTEXT`
+- `OPENCLAW_BUILD_IMAGE=0|1`, `OPENCLAW_PUSH_IMAGE=0|1`
+- `OPENCLAW_WORKLOAD_ID`, `OPENCLAW_USER_ID`
+- `OPENCLAW_DOCKERCMD` (optional, passed to tc-api deploy-launch)
+
+#### 4.3 Communication Side: Use Argus to Establish Communication Between OpenClaw and OpenViking
+
+```bash
+./step3_connect_openclaw_openviking_via_argus.sh
+```
+
+This phase will:
+1. start `argus-guard` in real-verifier mode
+2. run `openclaw_agent.py` to complete the communication chain OpenClaw -> Guard -> Provider -> OpenViking
+
+Common environment variables:
+- `PROVIDER_URL` (default `http://127.0.0.1:8008`)
+- `GUARD_URL` (default `http://127.0.0.1:8007`)
+- `TARGET_URI`, `TARGET_SERVICE_NAME`
+- `OPENCLAW_PYTHON`, `RUST_LOG`
+
+#### 4.4 Keep the One-Click Orchestration Entry Point
+
+```bash
+# Runs step1 + step3 by default
+./run_openclaw_openviking_e2e.sh
+
+# Runs step1 + step2 + step3
+RUN_STEP2_OPENCLAW=1 ./run_openclaw_openviking_e2e.sh
+```
+
+## Verification Status
+
+As of 2026-06-29, the following has been verified with real runs:
+
+- tc-api `deploy-launch` succeeds under interactive Sigstore login and starts a running OpenViking workload listening on `http://127.0.0.1:8010`.
+- Argus provider can now return claims with tc-api metadata, including `launch_id`, `image_digest`, and `transparency_log_id`.
+- Argus provider can now generate a real TDX quote through tc-api `POST /v1/attestation`, no longer falling back to mock evidence.
+- Guard can now successfully accept the quote returned by the provider in real-verifier mode without setting `ARGUS_ALLOW_MOCK_VERIFIER=1`.
+- `openclaw_agent.py` has now completed the following real end-to-end chain: OpenClaw -> Guard -> Provider -> OpenViking `POST /verify/caller` -> `POST /context` -> `GET /context/{id}/metadata` -> `GET /context/{id}`.
+
+- The OpenClaw side can reach the local Argus Guard: `http://localhost:8007`
+- The OpenViking side runs Argus Evidence Provider separately, and Guard can reach it
+- If you want the real-quote path, the current machine must support Intel TDX and TSM
+
+## Real Dual-Side Deployment Steps
+
+```bash
+# In the OpenViking example directory, start compose, launch the workload, start real Guard, and execute OpenClaw in one step.
+cd ../../OpenViking/examples
+./run_openclaw_openviking_e2e.sh
+```
+
+## Expected Output
+
+```text
+OpenClaw Agent - Agent-CC Integration Example
+
+[1] Verifying OpenViking through Argus Guard...
+    TCB Status: Unknown
+    Service Name: openviking-cmem
+    Workload ID: openviking-cmem
+    Launch ID: launch-...
+    Image Digest: sha256:...
+    Rekor UUID: ...
+    Transparency Log ID: ...
+    RTMR0: ...
+
+[2] Creating attestation context...
+[3] Retrieving attestation-gated secret...
+[4] Storing context with attestation binding...
+[5] Retrieving context with binding verification...
+```
+
+In the live TSM path in the current repository, after quote structure validation and request-binding validation pass, `TCB Status` is shown as `Unknown`. This is the explicit semantic of the current implementation: Argus has not yet integrated collateral-driven TCB freshness evaluation, so it does not claim `UpToDate`.
+
+These extra metadata lines appear only when the OpenViking side is started through the tc-api-managed Docker / launch path. Running `python3 openviking_service.py --serve` on its own can still return attestation results, but if tc-api is not tracking that workload, tc-api-related fields such as `image_digest`, `launch_id`, and `Rekor UUID` will not be included.
+
+## tc-api-Based OpenViking Deployment
+
+If you want Argus claims to include `image_digest`, `launch_id`, and Rekor identifiers, the OpenViking side must be started through tc-api or another Docktap-managed Docker path rather than running only the Python demo.
+
+1. Start tc-api on the OpenViking side.
+2. Start the OpenViking workload through `POST /api/deploy-launch` and set `metadata.workload_id` to `openviking-cmem`.
+3. Set `ARGUS_SERVICE_ID=openviking-cmem` and `TC_API_WORKLOAD_ID=openviking-cmem` for the sidecar/provider process so Argus queries tc-api by workload ID rather than by the provider's own container ID.
+4. On the OpenClaw side, point the Guard `EVIDENCE_ENDPOINT` at that provider: `http://<openviking-provider-host>:8008`.
+
+Example provider-side environment variables:
+
+```bash
+export ARGUS_WORKLOAD_IDENTITY=openviking-cmem
+export ARGUS_SERVICE_ID=openviking-cmem
+export TC_API_WORKLOAD_ID=openviking-cmem
+export TC_API_URL=http://127.0.0.1:8000
+./start_argus.sh start-provider
+```
+
+## Implementation Files
+
+| File | Description |
+|------|-------------|
+| [openclaw_agent.py](openclaw_agent.py) | Working Python implementation |
+| [README.md](README.md) | English documentation |
+| [README_CN.md](README_CN.md) | Chinese documentation |
