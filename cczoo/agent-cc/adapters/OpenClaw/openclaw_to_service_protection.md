@@ -1,157 +1,129 @@
 # OpenClaw Adapter
 
-The OpenClaw Adapter provides container-based integration paths for deploying OpenClaw workloads within Intel TDX trusted execution environments, supporting tool sandboxing and supply-chain integrity verification.
+The OpenClaw adapter documents container-based deployment, tool sandboxing,
+and integration with trusted services on Intel TDX.
 
-> **Looking for the recommended baseline deployment?**
-> For native TDVM deployment with local Ollama and encrypted LUKS storage, see the [OpenClaw Confidential Computing Best Practices Guide](../../best-practices/README.md) ([中文](../../best-practices/README_CN.md)) and the [OpenClaw-CC Native Deployment Guide](../../../openclaw-cc/README.md).
+> **Recommended production baseline:** For native TDVM deployment with local
+> Ollama and encrypted LUKS storage, see the
+> [OpenClaw Confidential Computing Best Practices Guide](../../best-practices/README.md)
+> and the [OpenClaw-CC Native Deployment Guide](../../../openclaw-cc/README.md).
 
-This adapter documents two container-based deployment workflows:
-1. **Container Sandbox Mode**: Running OpenClaw Gateway with isolated tool containers from `openclaw-sandbox:bookworm-slim`.
-2. **TC-API Build-to-Runtime Lifecycle**: Building encrypted images with SBOM, signing with Sigstore/Cosign, and enforcing hardware attestation before container launch.
+## Deployment modes
 
----
-
-## Deployment Modes Overview
-
-| Mode | Trust Boundary | Key Capabilities | Best For |
+| Mode | Trust boundary | Capabilities | Intended use |
 | --- | --- | --- | --- |
-| **Native TDVM** | Whole TDVM | Direct execution, hardware memory encryption, native LUKS state volume. | Recommended production baseline. |
-| **Container Sandbox** | Single TDVM (Docker inside TD) | Gateway orchestrates tools inside isolated temporary containers. | Workloads executing untrusted third-party tools or arbitrary shell commands. |
-| **TC-API Lifecycle** | Single TDVM (Docker + TC-API) | Encrypted container image, SBOM generation, Sigstore signing, attestation-gated launch. | Enterprise CI/CD pipelines requiring verifiable build-to-runtime provenance. |
+| Native TDVM | Whole TDVM | TDX memory protection and native LUKS state storage | Recommended production baseline |
+| Container sandbox | Single TDVM; Docker isolates tool containers | Short-lived sandbox containers for tool execution | Untrusted tools or shell workloads |
+| TC-API lifecycle | Single TDVM; Docker plus TC-API | Build/publish evidence and attestation-gated launch | Verifiable build-to-runtime workflows |
 
-*Note: Running Docker containers inside a TDVM shares the single TD trust boundary. Containers inside a TD do not form separate hardware TEEs unless deployed with Confidential Containers (CoCo) / Kata TDX.*
+Containers inside one TDVM share its kernel and hardware trust boundary. They
+are not separate hardware TEEs unless deployed with Confidential Containers
+(CoCo) or Kata TDX.
 
----
+## Container sandbox
 
-## Workflow 1: Container Sandbox Mode (Gateway + Sandboxed Tools)
-
-In this mode, OpenClaw Gateway runs inside a Docker container within the TDVM. When the agent executes tools or shell scripts, it spawns short-lived `openclaw-sandbox:bookworm-slim` containers to isolate tool execution from the gateway.
-
-### 1. Build Gateway and Sandbox Images
-
-Navigate to the scripts directory and configure the environment:
+From the repository root, build and start the gateway with loopback-only host
+ports:
 
 ```bash
 cd cczoo/agent-cc/adapters/OpenClaw/scripts
-
-# Builds openclaw-sbx:latest and openclaw-sandbox:bookworm-slim.
-# Use loopback when the gateway should only be reachable inside the TD.
 bash run-sbx.sh --bind loopback
 ```
 
-Optional environment variables are `OPENCLAW_GATEWAY_PORT`, `OPENCLAW_GATEWAY_TOKEN`, `OPENCLAW_CONFIG_VOLUME`, and `OPENCLAW_WORKSPACE_VOLUME`. The gateway image is `openclaw-sbx:latest`. Configuration and workspace are stored in the Docker volumes `openclaw-config` and `openclaw-workspace`.
+The script uses persistent Docker volumes for gateway configuration and
+workspace. It generates a gateway token when one is not supplied; enter that
+token in the local UI and do not put it in a URL or source file. The default
+container name is `openclaw-gateway`.
 
-### 2. Configure OpenClaw Gateway
+The gateway can execute tools in short-lived `openclaw-sandbox:bookworm-slim`
+containers. Access to the Docker socket is effectively root access to the TDVM;
+only grant it to a trusted gateway process.
 
-Onboard OpenClaw interactively or mount configuration into the config volume:
+## Configure Ollama as the primary model
 
-```bash
-docker run --rm -it --user node \
-  -v openclaw-config:/home/node/.openclaw \
-  -v openclaw-workspace:/home/node/.openclaw/workspace \
-  --entrypoint node openclaw-sbx:latest /app/dist/index.js onboard --mode local --no-install-daemon
-```
-
-Bind host Ollama to `docker0` with `ollama-td.sh setup docker`, then configure the provider in the `openclaw-config` volume at `/home/node/.openclaw/openclaw.json`:
-
-```json
-{
-  "models": {
-    "providers": {
-      "local-ollama": {
-        "baseUrl": "http://host.docker.internal:11434/v1",
-        "apiKey": "ollama",
-        "api": "openai-completions",
-        "models": ["qwen2.5:7b"]
-      }
-    },
-    "default": "local-ollama/qwen2.5:7b"
-  }
-}
-```
-
-### 3. Verify Sandbox Execution
-
-1. `run-sbx.sh` prints the gateway token. Open `http://127.0.0.1:18789/` and enter the token in the UI. Do not put the token in the URL.
-2. When a task requires tool or code execution, the gateway launches an ephemeral `openclaw-sandbox:bookworm-slim` container.
-
----
-
-## Workflow 2: Trusted Build, Publish & Launch via TC-API
-
-TC-API provides a verifiable control plane for building encrypted images, generating SBOMs, signing artifacts, and gating container deployment on TDX hardware attestation.
-
-### Prerequisites
-
-- An Intel TDX TDVM with `/dev/tdx_guest` available.
-- Docker daemon running inside the TDVM.
-- TC-API, Trust Service, and local KBS dependencies running. Refer to the [TC-API Quick Start](../../core/tc_api/README.md) and [trust_service.sh](../../core/trust-service/trust_service.sh).
-- Sigstore/OIDC identity and Docker registry credentials configured in TC-API `.env`.
-
-### 1. Start TC-API Control Plane
-
-Start TC-API inside the TDVM:
-
-```bash
-cd cczoo/agent-cc/core/tc_api
-./start.sh restart dev
-```
-
-### 2. Build, Publish, and Attested Launch Flow
-
-Use `create_luks`, `mount_luks`, `build`, `publish`, and `deploy`. Request fields are listed at `http://localhost:8000/docs` and in the [TC-API README](../../core/tc_api/README.md). Publishing also requires registry settings in `.env`.
-
-```bash
-cd cczoo/agent-cc/core/tc_api
-source venv/bin/activate
-
-venv/bin/python -m tc_api.cli.client --base-url http://localhost:8000 \
-  create_luks --payload-json '{"user_id":"<sigstore account>","vfs_path":"<luks file>","vfs_size":"<size>","passwd":"<luks key file>"}'
-```
-
-### 3. Inspect Trust Evidence
-
-Query TC-API verification endpoints to validate end-to-end evidence:
-
-- `GET /api/build-result/{build_id}`: Image digest, SBOM location, and build-time trust status.
-- `GET /api/publish-result/{build_id}`: Cosign signatures and registry publication proof.
-- `GET /api/launch-result/{launch_id}`: TDX Quote validation results and container launch status.
-- `GET /api/transparency-log/{log_id}`: Signed, immutable audit records in Rekor.
-
-For comprehensive API request specifications, see the [TC-API Documentation](../../core/tc_api/README.md).
-
----
-
-## End-to-End OpenViking Example
-
-The [OpenClaw end-to-end runner](scripts/run_openclaw_openviking_e2e.sh) exercises the TC-API, OpenViking, Argus Provider and Guard, and OpenClaw flow with TDX evidence. It requires an Intel TDX TDVM, TSM configfs, Docker Compose (`docker-compose`), and a TC-API identity token. See the [OpenViking adapter guide](../OpenViking/README.md) for service details.
-
-From the repository root, enter the token without echoing it, then run the workflow:
+This connector configures OpenClaw to call a local Ollama server. It does not
+perform Argus verification or make model access attestation-gated. Keep the
+Ollama model files on the active LUKS mount:
 
 ```bash
 cd cczoo/agent-cc/adapters/OpenClaw/scripts
-read -rsp 'TC-API identity token: ' TC_API_IDENTITY_TOKEN
-printf '\n'
-export TC_API_IDENTITY_TOKEN
-./run_openclaw_openviking_e2e.sh
+./run_ollama_luks.sh pull llama3.2
 ```
 
-Keep the token out of source files, command-line arguments, and logs.
+For the gateway container to reach the host service without listening on every
+host interface, bind Ollama to the Docker bridge address rather than
+`0.0.0.0`:
 
-## Security Boundaries & Operational Considerations
+```bash
+DOCKER0_IP="$(ip -4 -o addr show dev docker0 | awk 'NR == 1 { split($4, a, "/"); print a[1] }')"
+if [[ -z "$DOCKER0_IP" ]]; then
+  echo "docker0 has no IPv4 address" >&2
+  exit 1
+fi
+OLLAMA_HOST="${DOCKER0_IP}:11434" ./run_ollama_luks.sh serve
+```
 
-1. **Docker Daemon Boundary**: The Docker daemon running inside the TDVM controls container execution. Access to `/var/run/docker.sock` must be restricted to trusted processes, as access to the Docker socket allows full root control over the TDVM.
-2. **Container vs. Hardware Boundary**: Containers inside a TD share the same kernel and TDX TCB. Containers provide process namespace isolation, while the TDVM provides hardware memory encryption against the external host.
-3. **Secret Hygiene**: Never store API tokens or Sigstore signing secrets in Docker images or container layers. Passwords and keys must be injected at runtime or mounted from an encrypted volume.
+Keep the `serve` command running in a separate terminal. In another terminal,
+configure the running gateway:
 
----
+```bash
+cd cczoo/agent-cc/adapters/OpenClaw/scripts
+export OPENCLAW_CONTAINER=openclaw-gateway
+export OLLAMA_BASE_URL="http://${DOCKER0_IP}:11434"
+export OLLAMA_CONTAINER_BASE_URL=http://host.docker.internal:11434
+export OLLAMA_MODEL=llama3.2
+./connect_openclaw_ollama.sh
+```
 
-## Related References
+`run-sbx.sh` adds the `host.docker.internal:host-gateway` mapping. If you use a
+different gateway container or Docker network, set `OPENCLAW_CONTAINER` and
+`OLLAMA_CONTAINER_BASE_URL` to the actual reachable values. Binding Ollama to
+`docker0` limits exposure to that bridge, but other trusted containers on the
+bridge may still reach its unauthenticated API. Use firewall or dedicated
+network controls where needed.
 
-- [OpenViking Adapter](../OpenViking/README.md) - Confidential memory service integration
-- [Argus](../../core/argus/README.md) - Service identity and TDX evidence verification
-- [OpenClaw end-to-end runner](scripts/run_openclaw_openviking_e2e.sh) - Full attestation-backed example
-- [OpenClaw Best Practices Guide](../../best-practices/README.md) - Production architecture and deployment recommendations
-- [TC-API Control Plane](../../core/tc_api/README.md) - Complete documentation of the build/publish/launch API
-- [Trusted Log (TLog)](../../core/tlog/README.md) - Immutable signed audit logging
-- [Trust Service script](../../core/trust-service/trust_service.sh) - Remote attestation and key broker helper
+The connector checks Ollama readiness, verifies that the model is installed,
+tests connectivity from the gateway, updates the provider configuration, and
+restarts OpenClaw. `run_ollama_luks.sh` requires an active LUKS mount and stores
+models below it; do not substitute plain `ollama pull` or `ollama serve` when
+encrypted model storage is required.
+
+## TC-API build-to-runtime lifecycle
+
+TC-API provides build, publish, and launch endpoints for workflows that need
+signed artifacts, SBOMs, and runtime evidence. See the
+[TC-API Quick Start](../../core/tc_api/README.md) for prerequisites and API
+details. The TC-API launch interface must remain fixed and allowlisted; do not
+pass caller-controlled Docker command strings.
+
+## OpenViking integration status
+
+The OpenViking adapter's official-image launcher currently fails closed because
+the TC-API launch path uses host networking and lacks structured
+loopback-only-port and validated configuration/data-mount options. The previous
+one-click end-to-end workflow is therefore unavailable; see the
+[OpenViking adapter guide](../OpenViking/README.md) for the current limitation.
+Do not treat `connect_openclaw_openviking.sh` as a workload launcher; it only
+connects to services that are already running.
+
+## Security boundaries
+
+1. Access to `/var/run/docker.sock` can control the TDVM's Docker daemon and
+   must be restricted to trusted processes.
+2. Containers inside a TD share its kernel and TDX trust boundary; container
+   isolation does not replace least privilege, sandboxing, or policy controls.
+3. Never store API tokens or signing secrets in images, source files, command
+   history, or logs. Inject short-lived credentials at runtime or keep them in
+   an encrypted secret store.
+4. Bind local services to loopback or a dedicated trusted network. Do not
+   assume a container or host-network launch is loopback-only.
+
+## Related references
+
+- [OpenClaw container protection](openclaw_container_protection.md)
+- [OpenViking adapter](../OpenViking/README.md)
+- [Ollama adapter](../Ollama/README.md)
+- [Argus](../../core/argus/README.md)
+- [TC-API](../../core/tc_api/README.md)
+- [Trusted Log (TLog)](../../core/tlog/README.md)
+- [OpenClaw best practices](../../best-practices/README.md)

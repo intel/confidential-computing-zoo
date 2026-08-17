@@ -92,19 +92,13 @@ The identity verification system supports Non-SPIFFE and SPIFFE strategies. In t
 
 ## Quick Start
 
-For a complete OpenClaw + OpenViking attestation flow, follow the [OpenClaw adapter guide](./adapters/OpenClaw/README.md). It covers the TDX and Docker prerequisites, TC-API credentials, and the end-to-end startup steps.
-
-From the repository root, after meeting those prerequisites:
-
-```bash
-cd cczoo/agent-cc/adapters/OpenClaw/scripts
-read -rsp 'TC-API identity token: ' TC_API_IDENTITY_TOKEN
-printf '\n'
-export TC_API_IDENTITY_TOKEN
-./run_openclaw_openviking_e2e.sh
-```
-
-The script starts the required services, launches the workload through TC-API, and runs the attestation-backed example. Keep the token out of source files and logs.
+For OpenClaw sandbox setup and local Ollama integration, see the
+[OpenClaw adapter guide](./adapters/OpenClaw/openclaw_to_service_protection.md).
+The OpenViking official-image deployment is currently fail-closed because the
+TC-API launch path cannot guarantee loopback-only exposure or validated
+configuration/data mounts. See the [OpenViking adapter guide](./adapters/OpenViking/README.md)
+for details; the previous one-click end-to-end workflow is not currently
+available.
 
 ## Project Status
 
@@ -132,3 +126,6 @@ Status applies to each combination: ✅ implementation or example available; �
 | [OpenClaw](./adapters/OpenClaw/README.md) | ✅ | ✅ | — |
 | [Hermes Agent](./adapters/Hermes/README.md) | ✅ | 🚧 | 🚧 |
 | Third-party service communication | 🚧 | 🚧 | 🚧 |
+
+For configuring Ollama as OpenClaw's primary model, see the
+[connector guide](./adapters/OpenClaw/openclaw_to_service_protection.md#configure-ollama-as-the-primary-model).
