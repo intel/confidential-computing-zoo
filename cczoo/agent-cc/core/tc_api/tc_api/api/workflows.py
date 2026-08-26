@@ -1223,7 +1223,7 @@ __all__ = [
     "PublishPackageResponse",
     "PublishResult",
     "_normalize_local_oci_reference",
-    "build_container_async",
+    "build_container_sync",
     "build_package",
     "deploy_launch",
     "docker_service",

@@ -32,7 +32,7 @@ from tc_api.api.sigstore_support import _missing_sigstore_identity_detail, _reso
 from tc_api.api.app import app
 from tc_api.config import BUILD_PACKAGE_MAX_REQUEST_BYTES, LUKS_VFS_BASE_DIR
 from tc_api.identity.sigstore_identity import MissingSigstoreIdentityTokenError
-from tc_api.models import GetTransparencyRequest, LaunchRequest, PublishPackageRequest
+from tc_api.models import GetTransparencyRequest, LaunchRequest, MountLuksRequest, PublishPackageRequest, UnmountLuksRequest
 from tc_api.services.base import BaseDockerService
 
 
@@ -879,6 +879,26 @@ def test_create_luks_rejects_vfs_path_outside_allowed_directory():
     assert "vfs_path" in response.text
 
 
+def test_mount_luks_rejects_mount_path_outside_allowed_directory():
+    with pytest.raises(ValidationError, match="mount_path"):
+        MountLuksRequest(
+            passwd="secret-passphrase",
+            vfs_path=str(Path(LUKS_VFS_BASE_DIR).resolve() / "test-user.img"),
+            mapper_dir="test-user",
+            loop_device="/dev/loop0",
+            mount_path="/etc",
+        )
+
+
+def test_unmount_luks_rejects_mount_path_outside_allowed_directory():
+    with pytest.raises(ValidationError, match="mount_path"):
+        UnmountLuksRequest(
+            mapper_dir="test-user",
+            loop_device="/dev/loop0",
+            mount_path="/etc",
+        )
+
+
 def test_luks_result_allows_unauthenticated_reads():
     with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "tc_api.api.luks_support.docker_service.get_luks_status",
@@ -981,10 +1001,8 @@ def test_build_package_accepts_missing_app_binary():
     fake_ctx = SimpleNamespace(record_id="rec-123")
 
     with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
-        "sigstore.oidc.Issuer.production"
-    ) as mock_production, patch(
-        "tc_api.api.workflows.build_container_async",
-        return_value=None,
+        "tc_api.api.workflows.build_container_sync",
+        return_value={"success": True, "transparencyLog_verify": "success"},
     ), patch(
         "tc_api.api.request_auth.inspect_identity_token",
         return_value={
@@ -1002,7 +1020,6 @@ def test_build_package_accepts_missing_app_binary():
         "tc_api.api.workflows.docker_service.update_build_status",
         return_value=None,
     ):
-        mock_production.return_value.identity_token.return_value = "fake-identity-token"
         with TestClient(app) as client:
             client.app.state.trusted_log.init_record = lambda context=None: fake_ctx
             client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
@@ -1011,7 +1028,7 @@ def test_build_package_accepts_missing_app_binary():
     assert response.status_code == 200
     data = response.json()
     assert data["build_id"] == "bld-123"
-    assert data["status"] == "submitted"
+    assert data["status"] == "success"
 
 
 def test_build_package_derives_owner_from_identity_token_when_user_id_differs():
@@ -1053,7 +1070,7 @@ def test_build_package_derives_owner_from_identity_token_when_user_id_differs():
 
 
 
-def test_build_container_async_skips_transparency_receipt_when_token_missing():
+def test_build_container_sync_skips_transparency_receipt_when_token_missing():
     request = workflow_mod.BuildPackageRequest(
         dockerfile="FROM busybox\nCMD [\"sh\", \"-c\", \"echo ok\"]\n",
         encrypt=False,
@@ -1079,8 +1096,10 @@ def test_build_container_async_skips_transparency_receipt_when_token_missing():
     ) as commit_receipt, patch(
         "tc_api.api.workflows.docker_service.verify_chain_state"
     ) as verify_chain_state:
-        workflow_mod.build_container_async(request, "bld-123", tlog, "rec-123")
+        result = workflow_mod.build_container_sync(request, "bld-123", tlog, "rec-123")
 
+    assert result["success"] is True
+    assert result["transparencyLog_verify"] == "skipped"
     commit_receipt.assert_not_called()
     verify_chain_state.assert_not_called()
     success_call = update_build_status.call_args_list[-1]

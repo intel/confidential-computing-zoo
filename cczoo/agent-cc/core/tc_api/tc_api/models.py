@@ -275,6 +275,11 @@ class CreateLuksRequest(BaseModel):
     passwd: str
     identity_token: Optional[str] = None
 
+    @field_validator("vfs_path")
+    @classmethod
+    def validate_vfs_path(cls, value: str) -> str:
+        return _normalize_path_in_base(value, LUKS_VFS_BASE_DIR, "vfs_path")
+
 
 class CreateLuksResponse(BaseModel):
     user_id: str
@@ -302,6 +307,26 @@ class MountLuksRequest(BaseModel):
     mount_path: str
     identity_token: Optional[str] = None
 
+    @field_validator("vfs_path")
+    @classmethod
+    def validate_vfs_path(cls, value: str) -> str:
+        return _normalize_path_in_base(value, LUKS_VFS_BASE_DIR, "vfs_path")
+
+    @field_validator("mapper_dir")
+    @classmethod
+    def validate_mapper_dir(cls, value: str) -> str:
+        return _validate_mapper_name(value)
+
+    @field_validator("loop_device")
+    @classmethod
+    def validate_loop_device(cls, value: str) -> str:
+        return _validate_loop_device(value)
+
+    @field_validator("mount_path")
+    @classmethod
+    def validate_mount_path(cls, value: str) -> str:
+        return _normalize_path_in_base(value, LUKS_MOUNT_BASE_DIR, "mount_path")
+
 
 
 class MountLuksResponse(BaseModel):
@@ -318,6 +343,7 @@ class UnmountLuksRequest(BaseModel):
     loop_device: str
     mount_path: str
     identity_token: Optional[str] = None
+
     @field_validator("mapper_dir")
     @classmethod
     def validate_mapper_dir(cls, value: str) -> str:
@@ -327,6 +353,11 @@ class UnmountLuksRequest(BaseModel):
     @classmethod
     def validate_loop_device(cls, value: str) -> str:
         return _validate_loop_device(value)
+
+    @field_validator("mount_path")
+    @classmethod
+    def validate_mount_path(cls, value: str) -> str:
+        return _normalize_path_in_base(value, LUKS_MOUNT_BASE_DIR, "mount_path")
 
 class UnmountLuksResponse(BaseModel):
     user_id: str
