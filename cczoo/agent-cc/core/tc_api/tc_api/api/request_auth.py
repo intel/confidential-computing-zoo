@@ -108,7 +108,11 @@ def authenticate_request_identity(
         )
 
     expected_identity = (claimed_user_id or None) if enforce_user_binding else None
-    token_report = inspect_identity_token(effective_token, expected_identity=expected_identity)
+    token_report = inspect_identity_token(
+        effective_token,
+        expected_identity=expected_identity,
+        verify_signature=True,
+    )
     if not token_report.get("valid_for_sigstore"):
         raise HTTPException(
             status_code=401,

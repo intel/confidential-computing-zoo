@@ -448,3 +448,8 @@ async def test_launch_containers_normalizes_local_oci_image_id(docker_service, t
     third_cmd = run_mock.call_args_list[2].args[0]
     assert first_cmd[-1].endswith(":tc-api-launch-123:latest")
     assert third_cmd[-1] == "tc-api-launch-123:latest"
+    assert "--privileged" not in third_cmd
+    assert ["--device", "/dev/tdx_guest:/dev/tdx_guest"] == third_cmd[
+        third_cmd.index("--device") : third_cmd.index("--device") + 2
+    ]
+    assert "/etc/hosts:/etc/hosts:ro" in third_cmd

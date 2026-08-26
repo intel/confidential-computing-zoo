@@ -130,14 +130,14 @@ This section describes the internal role of each major component.
 
 #### 3.1.1 OIDC Identity Preflight
 
-At the Sigstore identity boundary, tc-api performs an API-level preflight check on the OIDC identity token supplied with the request. It checks that the token is parseable, that its audience is suitable for Sigstore, and that its time claims are valid, then derives the signer identity.
+At the Sigstore identity boundary, tc-api authenticates the OIDC identity token supplied with a protected API request. It requires a Sigstore-trusted issuer, discovers that issuer's JWKS endpoint, and verifies the token signature, issuer, audience, and required time claims before deriving the signer identity. Discovery, key retrieval, or signature failures reject the request. The standalone preflight command can still inspect token claims without network access, but that inspection is not treated as authentication.
 
 **Typical user identity flow**
 
 1. The project first looks for a usable Sigstore OIDC identity token supplied by the client or already available in the local token cache. A cached token is reused while it remains valid.
 2. If no usable token is available, the project's integrated Sigstore login flow starts an interactive OIDC session. The user signs in through the identity provider; in the flow, Sigstore displays a short-lived verification code that the flow collects and exchanges for a token. The resulting token is cached locally for subsequent operations.
 3. The client supplies the resulting token to tc-api either as the request's `identity_token` field or as an `Authorization: Bearer <token>` header.
-4. tc-api preflights the token, derives the signer identity, and uses that authenticated identity for the protected operation.
+4. tc-api verifies the token against the trusted issuer's signing key, derives the signer identity, and uses that authenticated identity for the protected operation.
 
 For example, a protected request can carry the token in a header while using a separate metadata field for the logical workload:
 

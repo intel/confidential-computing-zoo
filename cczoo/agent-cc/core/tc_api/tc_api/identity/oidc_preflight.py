@@ -20,9 +20,11 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, Dict, Optional
 
 import jwt
+import requests
 from sigstore.oidc import IdentityToken, Issuer
 import sigstore.oidc as sigstore_oidc
 from .sigstore_identity import cache_sigstore_identity_token
@@ -128,7 +130,49 @@ def _utc_now_epoch() -> int:
     return int(datetime.now(timezone.utc).timestamp())
 
 
-def inspect_identity_token(raw_token: str, expected_identity: Optional[str] = None) -> Dict[str, Any]:
+@lru_cache(maxsize=8)
+def _oidc_jwk_client(issuer: str) -> jwt.PyJWKClient:
+    discovery_url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
+    response = requests.get(discovery_url, timeout=5)
+    response.raise_for_status()
+    metadata = response.json()
+    if metadata.get("issuer") != issuer:
+        raise ValueError("OIDC discovery issuer does not match the token issuer")
+    jwks_uri = metadata.get("jwks_uri")
+    if not isinstance(jwks_uri, str) or not jwks_uri.startswith("https://"):
+        raise ValueError("OIDC discovery did not provide a secure jwks_uri")
+    return jwt.PyJWKClient(jwks_uri, timeout=5)
+
+
+def verify_identity_token_signature(raw_token: str) -> Optional[str]:
+    try:
+        claims = jwt.decode(raw_token, options={"verify_signature": False})
+        issuer = claims.get("iss")
+        known_issuers = getattr(sigstore_oidc, "_KNOWN_OIDC_ISSUERS", {})
+        if not isinstance(issuer, str) or issuer not in known_issuers:
+            raise ValueError("Identity token issuer is not trusted by Sigstore")
+
+        signing_key = _oidc_jwk_client(issuer).get_signing_key_from_jwt(raw_token)
+        algorithm = signing_key.algorithm_name
+        jwt.decode(
+            raw_token,
+            signing_key.key,
+            algorithms=[algorithm],
+            audience=getattr(sigstore_oidc, "_DEFAULT_AUDIENCE", "sigstore"),
+            issuer=issuer,
+            options={"require": ["exp", "iat", "iss", "aud"]},
+        )
+    except Exception as exc:
+        return f"Identity token signature verification failed: {exc}"
+    return None
+
+
+def inspect_identity_token(
+    raw_token: str,
+    expected_identity: Optional[str] = None,
+    *,
+    verify_signature: bool = False,
+) -> Dict[str, Any]:
     try:
         claims = jwt.decode(
             raw_token,
@@ -190,6 +234,12 @@ def inspect_identity_token(raw_token: str, expected_identity: Optional[str] = No
         result["federated_issuer"] = identity_token.federated_issuer
     except Exception as exc:
         result["errors"].append(str(exc))
+
+    if verify_signature:
+        signature_error = verify_identity_token_signature(raw_token)
+        if signature_error:
+            result["valid_for_sigstore"] = False
+            result["errors"].append(signature_error)
 
     audience = claims.get("aud")
     default_audience = result["sigstore_default_audience"]

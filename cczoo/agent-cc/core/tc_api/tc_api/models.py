@@ -182,6 +182,8 @@ class BuildResult(BaseResult):
     luks_path: Optional[str] = None
 
 class LaunchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     image_id: str
     user_id: Optional[str] = None
     image_url: Optional[str] = None
@@ -189,7 +191,6 @@ class LaunchRequest(BaseModel):
     attestation_required: bool = True
     identity_token: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    dockercmd: Optional[str] = None
     @field_validator("image_url")
     @classmethod
     def validate_image_url(cls, value: Optional[str]) -> Optional[str]:
@@ -204,7 +205,6 @@ class LaunchResponse(BaseModel):
     log_id: Optional[str] = None
     transparencyLog_verify: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
-    dockercmd: Optional[str] = None
 
 class LaunchCommitRequest(BaseModel):
     identity_token: Optional[str] = None

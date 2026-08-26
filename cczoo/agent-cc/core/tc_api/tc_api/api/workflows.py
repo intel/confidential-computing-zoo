@@ -1037,7 +1037,6 @@ async def launch_container_async(
             launch_pth=launch_path,
             workload_id=workload_id,
             launch_id=launch_id,
-            dockercmd=request.dockercmd
         )
         tlog.add_entry(record_id, Entry(key="launch_instance_ids", value={"launch_instance_ids": instance_ids}))
         if not instance_ids:

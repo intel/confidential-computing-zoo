@@ -14,16 +14,20 @@
 
 import base64
 import json
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 import tc_api.api.workflows as workflow_mod
+from tc_api.api.request_auth import authenticate_request_identity
 from tc_api.api.sigstore_support import _missing_sigstore_identity_detail, _resolve_required_sigstore_identity_token
 from tc_api.api.app import app
 from tc_api.config import BUILD_PACKAGE_MAX_REQUEST_BYTES, LUKS_VFS_BASE_DIR
@@ -40,6 +44,78 @@ def _jwt(payload: dict) -> str:
         return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
 
     return f"{enc(header)}.{enc(payload)}.sig"
+
+
+def test_request_auth_rejects_attacker_signed_identity_token():
+    attacker_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    trusted_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = int(time.time())
+    token = jwt.encode(
+        {
+            "iss": "https://accounts.google.com",
+            "aud": "sigstore",
+            "sub": "attacker@evil.example",
+            "email": "attacker@evil.example",
+            "email_verified": True,
+            "iat": now,
+            "nbf": now - 10,
+            "exp": now + 3600,
+        },
+        attacker_key,
+        algorithm="RS256",
+    )
+
+    signing_key = SimpleNamespace(key=trusted_key.public_key(), algorithm_name="RS256")
+    jwk_client = SimpleNamespace(get_signing_key_from_jwt=lambda _token: signing_key)
+    with patch("tc_api.identity.oidc_preflight._oidc_jwk_client", return_value=jwk_client):
+        with pytest.raises(HTTPException) as exc_info:
+            authenticate_request_identity(
+                "launch",
+                user_id=None,
+                identity_token=token,
+            )
+
+    assert exc_info.value.status_code == 401
+
+
+def test_request_auth_accepts_trusted_issuer_signature():
+    trusted_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = int(time.time())
+    token = jwt.encode(
+        {
+            "iss": "https://accounts.google.com",
+            "aud": "sigstore",
+            "sub": "alice@example.com",
+            "email": "alice@example.com",
+            "email_verified": True,
+            "iat": now,
+            "nbf": now - 10,
+            "exp": now + 3600,
+        },
+        trusted_key,
+        algorithm="RS256",
+    )
+
+    signing_key = SimpleNamespace(key=trusted_key.public_key(), algorithm_name="RS256")
+    jwk_client = SimpleNamespace(get_signing_key_from_jwt=lambda _token: signing_key)
+    with patch("tc_api.identity.oidc_preflight._oidc_jwk_client", return_value=jwk_client):
+        caller = authenticate_request_identity(
+            "launch",
+            user_id=None,
+            identity_token=token,
+        )
+
+    assert caller.user_id == "alice@example.com"
+
+
+def test_launch_request_rejects_docker_command_override():
+    with pytest.raises(ValidationError) as exc_info:
+        LaunchRequest(
+            image_id="cczoo-marker",
+            dockercmd="docker run -d --privileged -v /:/host --network=host",
+        )
+
+    assert exc_info.value.errors()[0]["loc"] == ("dockercmd",)
 
 
 def test_required_sigstore_identity_uses_request_token():
