@@ -61,6 +61,7 @@ namespace sgx {
 #ifdef SGX_RA_TLS_TDX_BACKEND
 #include <sgx_ql_quote.h>
 #include <sgx_dcap_quoteverify.h>
+#include <sgx_quote_4.h>
 #endif
 
 #if defined (SGX_RA_TLS_AZURE_TDX_BACKEND) || defined (SGX_RA_TLS_GCP_TDX_BACKEND)
@@ -70,13 +71,6 @@ using namespace std::chrono;
 #endif
 
 const uint8_t g_att_key_id_list[256] = {0};
-
-static void tdx_gen_report_data(uint8_t *reportdata) {
-    srand(time(NULL));
-    for (int i = 0; i < TDX_REPORT_DATA_SIZE; i++) {
-        reportdata[i] = rand();
-    }
-}
 
 void tdx_verify_init() {
     generate_key_cert(dummy_generate_quote);
@@ -514,7 +508,8 @@ static int tdx_generate_quote(
     tdx_report_t tdx_report = {{0}};
     tdx_uuid_t selected_att_key_id = {0};
 
-    tdx_gen_report_data(report_data.d);
+    // Bind the TLS public-key hash into REPORTDATA so quote verification covers it.
+    memcpy(report_data.d, hash, SHA256_DIGEST_LENGTH);
     // print_hex_dump("TDX report data\n", " ", report_data.d, sizeof(report_data.d));
 
     if (TDX_ATTEST_SUCCESS != tdx_att_get_report(&report_data, &tdx_report)) {
@@ -529,14 +524,6 @@ static int tdx_generate_quote(
         ret = 0;
     }
     // print_hex_dump("TDX quote data\n", " ", *quote_buf, quote_size);
-
-    // printf("tdx_generate_quote, sizeof %d, quote_size %d\n", sizeof(*quote_buf), quote_size);
-
-    realloc(*quote_buf, quote_size+SHA256_DIGEST_LENGTH);
-    memcpy((*quote_buf)+quote_size, hash, SHA256_DIGEST_LENGTH);
-    quote_size += SHA256_DIGEST_LENGTH;
-
-    // printf("tdx_generate_quote, sizeof %d, quote_size %d\n", sizeof(*quote_buf), quote_size);
     return ret;
 };
 
@@ -646,13 +633,22 @@ int tdx_verify_cert(const char *der_crt, size_t len) {
         goto out;
     }
 
-    ret = tdx_verify_quote(quote_buf, quote_size-SHA256_DIGEST_LENGTH);
+    ret = tdx_verify_quote(quote_buf, quote_size);
     if (ret != 0) {
         grpc_printf("verify quote failed.\n");
         goto out;
     }
 
-    ret = verify_pubkey_hash(x509, quote_buf+quote_size-SHA256_DIGEST_LENGTH, SHA256_DIGEST_LENGTH);
+    if (quote_size < sizeof(sgx_quote4_t)) {
+        grpc_printf("quote too small to contain report body.\n");
+        ret = -1;
+        goto out;
+    }
+
+    ret = verify_pubkey_hash(
+            x509,
+            reinterpret_cast<sgx_quote4_t *>(quote_buf)->report_body.report_data.d,
+            SHA256_DIGEST_LENGTH);
     if (ret != 0) {
         grpc_printf("verify the public key hash failed.\n");
         goto out;
