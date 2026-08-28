@@ -17,6 +17,7 @@ esac
 
 copy_exec /sbin/opening_disk.sh
 copy_exec /sbin/getting_key.sh
+copy_exec /sbin/tdvm-security.sh
 
 
 # For RA

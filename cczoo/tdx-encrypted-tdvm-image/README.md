@@ -93,9 +93,16 @@ Create the encrypted image.
 ./create-encrypted-td-img.sh td-guest-ubuntu-22.04.qcow2 encrypted-tdvm-img.qcow2 35G
 ```
 
+To enable authenticated disk sectors with `dm-integrity`, build the image with a larger root partition budget and set `ENABLE_DM_INTEGRITY=true` before running the script. This switches the root volume to LUKS2 with `hmac-sha256` integrity tags and injects the `dm-integrity` module into initramfs.
+
+```bash
+ENABLE_DM_INTEGRITY=true ./create-encrypted-td-img.sh td-guest-ubuntu-22.04.qcow2 encrypted-tdvm-img-integrity.qcow2 40G
+```
+
 *Note:* 
 1. The initial user and password combination in this demo for the TDVM image is "root/123456".
 2. The encryption key set in the demo is TDVM@tdvm123. which is stored in `ra-server/secret.json` file.
+3. `dm-integrity` adds per-sector metadata overhead, so the target image usually needs to be larger than the non-integrity variant. The build script now stops if the mapped root volume becomes smaller than the source rootfs.
 
 Upon successful encryption of the image, a message - "Successfully created  xxx !" - will be displayed. 
 
@@ -113,6 +120,7 @@ http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= GRPC_DEFAULT_SSL_ROOTS_FILE_PA
 1. The port of the remote attestation service is 50051.
 2. The secret key should be configured in the `secret.json` file, and can be reset by the user as necessary.
 3. The "APP_ID=luksKey" in file `getting_key.sh` should match the name stored in `secret.json` file.
+4. The `dynamic_config.json` file on the `ra-server` side should be populated with the trusted `mr_td` and `rt_mr[0-3]` values of the encrypted TDVM image. These values form the server-side allowlist that gates secret release after quote verification.
 
 Please refer to the source code of `ra-server` [here](https://github.com/intel/confidential-computing-zoo/tree/main/cczoo/tdx-encrypted-vfs/get_secret) for more details about the key service. 
 
@@ -130,6 +138,15 @@ Note that this command assumes that a QEMU executable is located at `/usr/libexe
 Utilize the command line options `-c`, `-f`, and `-p` to specify the count of virtual CPU cores assigned, the port for SSH, and the port Telnet, respectively.
 
 During the boot sequence, the `getting_key.sh` script within the initramfs will endeavor to establish a connection with the `ra-server`, which will subsequently receive the attestation request and proceed to authenticate the TD report. Upon successful authentication, the `opening_disk.sh` script will proceed to decrypt the encrypted rootfs utilizing the obtained key.
+
+The generated guest image should fail closed during early boot. In particular, the image build flow now configures the guest kernel command line so an unlock or root-mount failure reboots instead of dropping into an interactive initramfs emergency shell. That shell would otherwise expose a live dm-crypt mapping to a local guest operator. Likewise, replacing `getting_key.sh` with a fixed key or removing the RA client from initramfs disables the trust check entirely and is not a valid deployment mode for this solution.
+
+The initramfs hardening now enforces five concrete controls during image creation and boot:
+1. The disk key can only be retrieved through the bundled RA client path; missing `ra-client` or `roots.pem` causes unlock failure.
+2. The guest boot path is configured to fail closed with panic or reboot semantics instead of leaving an interactive recovery shell.
+3. The initramfs validates the live kernel command line and rejects unsafe recovery arguments such as `break`, `rd.break`, `init=`, `rd.shell=1`, or `systemd.debug-shell` before contacting the key service.
+4. The unlock hook streams the attested key directly into `cryptsetup --key-file=-` so the key does not need to be echoed back through an extra shell expansion step.
+5. Any unlock failure or post-unlock inconsistency closes the `luks-rootfs` mapping before the boot flow aborts.
 
 
 

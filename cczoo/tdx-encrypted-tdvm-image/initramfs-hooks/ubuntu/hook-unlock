@@ -15,21 +15,40 @@ esac
 
 . /scripts/functions
 
+cleanup_on_failure()
+{
+	/sbin/tdvm-security.sh close-luks
+}
+
 log_begin_msg "-----------start----configure_networking"
 configure_networking
 log_end_msg "-----------end----configure_networking"
 # Begin real processing below this line
+
+/sbin/tdvm-security.sh validate-cmdline || {
+	cleanup_on_failure
+	panic "unsafe kernel command line"
+}
+
+/sbin/tdvm-security.sh validate-td || {
+	cleanup_on_failure
+	panic "non-TDX guest is not allowed to unlock encrypted rootfs"
+}
 
 if [ ! -e "/sbin/opening_disk.sh" ]; then
 	panic "unlocking executable not found"
 fi
 
 log_begin_msg "---------------Mounting rootfs"
-/sbin/opening_disk.sh || panic "unlocking failed"
+/sbin/opening_disk.sh || {
+	cleanup_on_failure
+	panic "unlocking failed"
+}
 log_end_msg
 
 
 if [ ! -e "/dev/mapper/luks-rootfs" ]; then
+	cleanup_on_failure
 	panic "luks rootfs dm target not found"
 fi
 

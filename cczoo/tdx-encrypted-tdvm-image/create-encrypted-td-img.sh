@@ -8,6 +8,12 @@ trap unmount ERR EXIT
 
 ENC_IMG_NAME="encrypted-td.qcow2"
 DEFAULT_ENC_IMG_SIZE="30G"
+ENABLE_DM_INTEGRITY=${ENABLE_DM_INTEGRITY:-false}
+DM_INTEGRITY_OPTIONS=()
+
+if [ "${ENABLE_DM_INTEGRITY}" = "true" ]; then
+	DM_INTEGRITY_OPTIONS=(--type luks2 --integrity hmac-sha256 --sector-size 4096 --integrity-no-wipe)
+fi
 
 # Reference image device
 IMG_REF_MOUNT_NBD="/dev/nbd1"
@@ -121,6 +127,94 @@ update_fstab_entry()
 	done | sort -k 2,3 -o ${fstab}
 }
 
+ensure_line_in_file()
+{
+	local file_path=${1}
+	local line=${2}
+
+	[ -z "${file_path}" ] && stop "file path is required!"
+	[ -z "${line}" ] && stop "line content is required!"
+	[ ! -e "${file_path}" ] && touch "${file_path}"
+
+	grep -Fqx "${line}" "${file_path}" 2>/dev/null || echo "${line}" >> "${file_path}"
+}
+
+verify_mapper_capacity()
+{
+	local source_device=${1}
+	local mapper_device=${2}
+	local source_size mapper_size
+
+	[ ! -b "${source_device}" ] && stop "source device ${source_device} is not a block device"
+	[ ! -b "${mapper_device}" ] && stop "mapper device ${mapper_device} is not a block device"
+
+	source_size=$(blockdev --getsize64 "${source_device}")
+	mapper_size=$(blockdev --getsize64 "${mapper_device}")
+
+	if [ "${mapper_size}" -lt "${source_size}" ]; then
+		stop "mapped LUKS device is smaller than the source rootfs (${mapper_size} < ${source_size}); increase the target image size or disable dm-integrity"
+	fi
+}
+
+append_grub_cmdline_args()
+{
+	local grub_file=${1}
+	local grub_var=${2}
+	shift 2
+
+	[ -z "${grub_file}" ] && stop "grub file is required!"
+	[ ! -f "${grub_file}" ] && stop "${grub_file} does not exist!"
+	[ -z "${grub_var}" ] && stop "grub variable is required!"
+
+	local current_args
+	current_args=$(sed -n "s/^${grub_var}=\"\(.*\)\"$/\1/p" "${grub_file}" | head -n 1)
+
+	if [ -z "${current_args}" ]; then
+		current_args=""
+		printf '%s=""\n' "${grub_var}" >> "${grub_file}"
+	fi
+
+	for arg in "$@"; do
+		case " ${current_args} " in
+			*" ${arg} "*) ;;
+			*) current_args="${current_args} ${arg}"
+			   current_args=$(echo "${current_args}" | xargs)
+			   ;;
+		esac
+	done
+
+	sed -i "s|^${grub_var}=\".*\"$|${grub_var}=\"${current_args}\"|" "${grub_file}"
+}
+
+remove_grub_cmdline_args()
+{
+	local grub_file=${1}
+	local grub_var=${2}
+	shift 2
+
+	[ -z "${grub_file}" ] && stop "grub file is required!"
+	[ ! -f "${grub_file}" ] && stop "${grub_file} does not exist!"
+	[ -z "${grub_var}" ] && stop "grub variable is required!"
+
+	local current_args
+	current_args=$(sed -n "s/^${grub_var}=\"\(.*\)\"$/\1/p" "${grub_file}" | head -n 1)
+	[ -n "${current_args}" ] || return 0
+
+	for arg in "$@"; do
+		current_args=$(printf '%s\n' "${current_args}" | awk -v drop="${arg}" '{
+			out = ""
+			for (i = 1; i <= NF; i++) {
+				if ($i != drop) {
+					out = out (out ? " " : "") $i
+				}
+			}
+			print out
+		}')
+		done
+
+	sed -i "s|^${grub_var}=\".*\"$|${grub_var}=\"${current_args}\"|" "${grub_file}"
+}
+
 execute_chroot()
 {
 	local root_path=${1}
@@ -192,10 +286,11 @@ main()
 	# 4. Create LUKS partition
 	# the input key for LUKS partition should be restored in secret.json of ra-server
 	printinfo "Setting up LUKS encryption for the root partition..."
-	cryptsetup luksFormat ${luks_partition}
+	cryptsetup luksFormat "${DM_INTEGRITY_OPTIONS[@]}" ${luks_partition}
 
 	printinfo "Unlocking the LUKS partition for installation..."
 	cryptsetup open ${luks_partition} ${IMG_LUKS_MOUNT_DM}
+	verify_mapper_capacity /dev/nbd1p${root_id} /dev/mapper/${IMG_LUKS_MOUNT_DM}
 
 	# 5. Format partition
 	printinfo "Formatting ${IMG_BOOT_MOUNT_NAME} partition..."
@@ -249,12 +344,14 @@ main()
 		echo "Copying initramfs hooks..."
 		cp -f hook-add-executables ${IMG_LUKS_MOUNT}/etc/initramfs-tools/hooks/
 		cp -f hook-unlock ${IMG_LUKS_MOUNT}/etc/initramfs-tools/scripts/init-premount/
+		ensure_line_in_file ${IMG_LUKS_MOUNT}/etc/initramfs-tools/modules dm-integrity
 
 		echo "Replacing fstab..."
 		cp -f fstab ${IMG_LUKS_MOUNT}/etc/fstab
 
 		echo "Instaling getting_key script..."
 		cp -f getting_key.sh ${IMG_LUKS_MOUNT}/sbin/
+		cp -f ../common/tdvm-security.sh ${IMG_LUKS_MOUNT}/sbin/
 
 		echo "Instaling opening_disk script..."
 		cp -f opening_disk.sh ${IMG_LUKS_MOUNT}/sbin/
@@ -272,6 +369,8 @@ main()
 		cp -rf ${hook_path}/ubuntu-grub-cfg/50-cloudimg-settings.cfg ${IMG_LUKS_MOUNT}/etc/default/grub.d/50-cloudimg-settings.cfg
 		echo "GRUB_DISABLE_OS_PROBER=true" >> ${IMG_LUKS_MOUNT}/etc/default/grub
 		echo "GRUB_ENABLE_BLSCFG=false" >> ${IMG_LUKS_MOUNT}/etc/default/grub
+		remove_grub_cmdline_args ${IMG_LUKS_MOUNT}/etc/default/grub.d/50-cloudimg-settings.cfg GRUB_CMDLINE_LINUX_DEFAULT debug break break=mount rd.break rd.shell rd.shell=1 rd.emergency=shell systemd.debug-shell systemd.unit=rescue.target systemd.unit=emergency.target single rescue emergency
+		append_grub_cmdline_args ${IMG_LUKS_MOUNT}/etc/default/grub.d/50-cloudimg-settings.cfg GRUB_CMDLINE_LINUX_DEFAULT panic=1
 		execute_chroot ${IMG_LUKS_MOUNT} update-grub
 	fi
 
@@ -297,6 +396,7 @@ main()
 		cp -f fstab ${IMG_LUKS_MOUNT}/etc/fstab
 		echo "Filling getting_key script..."
 		cp -f getting_key.sh ${IMG_LUKS_MOUNT}/sbin/
+		cp -f ../common/tdvm-security.sh ${IMG_LUKS_MOUNT}/sbin/
 		cp -f resolv.conf ${IMG_LUKS_MOUNT}/root/
 
 		# For Remote Attestation
@@ -308,6 +408,7 @@ main()
 		#Installing crypsetup in initramfs
 		cp -f crypt.conf ${IMG_LUKS_MOUNT}/etc/dracut.conf.d/crypt.conf
 		cp -f network.conf ${IMG_LUKS_MOUNT}/etc/dracut.conf.d/network.conf
+		ensure_line_in_file ${IMG_LUKS_MOUNT}/etc/dracut.conf.d/crypt.conf 'add_drivers+=" dm-integrity "'
 		popd
 
 		execute_chroot ${IMG_LUKS_MOUNT} dracut -f -v --regenerate-all
@@ -323,6 +424,8 @@ main()
 		echo "GRUB_DISABLE_OS_PROBER=true" >> ${IMG_LUKS_MOUNT}/etc/default/grub
 		echo "GRUB_ENABLE_BLSCFG=false" >> ${IMG_LUKS_MOUNT}/etc/default/grub
 		sed -i "s|"/dev/vda3"|"/dev/mapper/luks-rootfs"|g" ${IMG_LUKS_MOUNT}/etc/default/grub
+		remove_grub_cmdline_args ${IMG_LUKS_MOUNT}/etc/default/grub GRUB_CMDLINE_LINUX debug break break=mount rd.break rd.shell rd.shell=1 rd.emergency=shell systemd.debug-shell systemd.unit=rescue.target systemd.unit=emergency.target single rescue emergency
+		append_grub_cmdline_args ${IMG_LUKS_MOUNT}/etc/default/grub GRUB_CMDLINE_LINUX panic=1 rd.shell=0 rd.emergency=reboot
 		execute_chroot ${IMG_LUKS_MOUNT} grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
 
 		umount ${IMG_REF_EFI_MOUNT}
