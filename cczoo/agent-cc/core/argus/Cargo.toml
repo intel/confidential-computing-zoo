@@ -8,7 +8,7 @@ authors = ["Intel Corporation"]
 repository = "https://github.com/intel/cczoo/agent-cc"
 homepage = "https://github.com/intel/cczoo/agent-cc"
 readme = "README.md"
-rust-version = "1.75"
+rust-version = "1.88"
 
 [dependencies]
 # Async runtime
@@ -36,6 +36,8 @@ reqwest = { version = "0.11", features = ["json"] }
 
 # HTTP server (for evidence provider endpoint)
 axum = "0.7"
+hyper = { version = "1.0", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["service", "tokio"] }
 tower-http = { version = "0.5", features = ["cors"] }
 
 # Logging
@@ -57,14 +59,16 @@ tdx-quote = { path = "../tdx-quote" }
 [dev-dependencies]
 tokio-test = "0.4"
 proptest = "1.4"
-tower = { version = "0.4", features = ["util"] }
+tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-hyper = "1.0"
-hyper-util = "0.1"
 
 [[bin]]
 name = "argus-evidence-provider"
 path = "src/bin/evidence_provider.rs"
+
+[[bin]]
+name = "argus-tdx-evidence-provider"
+path = "src/bin/tdx_evidence_provider.rs"
 
 [[bin]]
 name = "argus-guard"
