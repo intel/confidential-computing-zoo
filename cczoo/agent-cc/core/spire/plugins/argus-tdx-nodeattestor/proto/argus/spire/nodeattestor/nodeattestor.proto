@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package argus.spire.nodeattestor;
+
+option go_package = "github.com/intel/confidential-computing-zoo/cczoo/agent-cc/core/spire/plugins/argus-tdx-nodeattestor/gen/argus/spire/nodeattestor;nodeattestor";
+
+// AgentHello identifies the proof key pinned to the fixed Agent slot.
+message AgentHello {
+  // Raw 32-byte Ed25519 public key.
+  bytes proof_public_key = 1;
+}
+
+// NodeChallenge makes the Quote fresh for one Server attestation stream.
+message NodeChallenge {
+  // Server-generated 32-byte nonce bound into TDX REPORTDATA.
+  bytes nonce = 1;
+  // Absolute expiry enforced before and after Trustee appraisal.
+  uint64 expires_at_unix_ms = 2;
+}
+
+// NodeEvidenceResponse returns hardware evidence and proof of key possession.
+message NodeEvidenceResponse {
+  // Raw TDX Quote whose REPORTDATA binds the nonce and proof public key.
+  bytes tdx_quote = 1;
+  // Ed25519 signature over the protocol transcript digest.
+  bytes transcript_signature = 2;
+}
