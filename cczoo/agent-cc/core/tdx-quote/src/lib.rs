@@ -108,7 +108,7 @@ mod tests {
         let digest = b"test_digest_1234567890";
         let report_data = ReportData::from_digest(digest).unwrap();
         
-        assert_eq!(report_data.len, 24);
+        assert_eq!(report_data.len, digest.len());
         assert_eq!(report_data.as_bytes(), digest);
     }
     
