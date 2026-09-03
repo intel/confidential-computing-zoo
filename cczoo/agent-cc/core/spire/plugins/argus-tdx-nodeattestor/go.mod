@@ -7,7 +7,7 @@ toolchain go1.23.12
 require (
 	github.com/hashicorp/go-hclog v0.15.0
 	github.com/hashicorp/hcl v1.0.0
-	github.com/spiffe/spire-plugin-sdk v1.15.2
+	github.com/spiffe/spire-plugin-sdk v1.15.3
 	google.golang.org/grpc v1.74.2
 	google.golang.org/protobuf v1.36.6
 )
