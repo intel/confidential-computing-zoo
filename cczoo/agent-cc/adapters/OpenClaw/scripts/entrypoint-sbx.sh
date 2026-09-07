@@ -99,9 +99,9 @@ fi
 #
 # Settings written:
 #   gateway.mode                          = local
-#   gateway.bind                          = $OPENCLAW_GATEWAY_BIND (default: lan)
+#   gateway.bind                          = $OPENCLAW_GATEWAY_BIND (default: loopback)
 #   agents.defaults.sandbox.mode          = $OPENCLAW_SANDBOX_MODE (default: all)
-#   agents.defaults.sandbox.scope         = agent
+#   agents.defaults.sandbox.scope         = $OPENCLAW_SANDBOX_SCOPE (default: session)
 #   agents.defaults.sandbox.workspaceAccess = $OPENCLAW_WORKSPACE_ACCESS (default: rw)
 #   agents.defaults.sandbox.backend       = docker
 #   gateway.controlUi.allowedOrigins      = localhost + 127.0.0.1 (non-loopback only)
@@ -148,7 +148,7 @@ if [[ ! -f "$INIT_MARKER" ]]; then
   # All config writes run as node so the resulting files are owned by node.
   run_as_node node /app/dist/index.js config set gateway.mode local
   run_as_node node /app/dist/index.js config set \
-    gateway.bind "${OPENCLAW_GATEWAY_BIND:-lan}"
+    gateway.bind "${OPENCLAW_GATEWAY_BIND:-loopback}"
 
   # Sandbox policy — four mandatory fields.
   # OPENCLAW_SANDBOX_MODE controls when sandboxing applies:
@@ -160,7 +160,7 @@ if [[ ! -f "$INIT_MARKER" ]]; then
   run_as_node node /app/dist/index.js config set \
     agents.defaults.sandbox.mode "${OPENCLAW_SANDBOX_MODE:-all}"  || sandbox_ok=false
   run_as_node node /app/dist/index.js config set \
-    agents.defaults.sandbox.scope "agent"                         || sandbox_ok=false
+    agents.defaults.sandbox.scope "${OPENCLAW_SANDBOX_SCOPE:-session}" || sandbox_ok=false
   run_as_node node /app/dist/index.js config set \
     agents.defaults.sandbox.workspaceAccess "${OPENCLAW_WORKSPACE_ACCESS:-rw}" || sandbox_ok=false
   run_as_node node /app/dist/index.js config set \
@@ -174,7 +174,7 @@ if [[ ! -f "$INIT_MARKER" ]]; then
 
   # Non-loopback bind: whitelist localhost origins for the control UI so
   # browser clients are not rejected by the CORS check.
-  if [[ "${OPENCLAW_GATEWAY_BIND:-lan}" != "loopback" ]]; then
+  if [[ "${OPENCLAW_GATEWAY_BIND:-loopback}" != "loopback" ]]; then
     port="${OPENCLAW_GATEWAY_PORT:-18789}"
     origins="[\"http://localhost:${port}\",\"http://127.0.0.1:${port}\"]"
     run_as_node node /app/dist/index.js config set \
@@ -184,7 +184,7 @@ if [[ ! -f "$INIT_MARKER" ]]; then
   # Write marker ONLY after all config steps succeed.
   # If any step above failed we would have exited before reaching here.
   run_as_node touch "$INIT_MARKER"
-  log "Sandbox config written: mode=${OPENCLAW_SANDBOX_MODE:-all}, scope=agent, workspaceAccess=${OPENCLAW_WORKSPACE_ACCESS:-rw}, backend=docker"
+  log "Sandbox config written: mode=${OPENCLAW_SANDBOX_MODE:-all}, scope=${OPENCLAW_SANDBOX_SCOPE:-session}, workspaceAccess=${OPENCLAW_WORKSPACE_ACCESS:-rw}, backend=docker"
 fi
 
 # ---------------------------------------------------------------------------
@@ -193,8 +193,8 @@ fi
 # exec replaces this root shell — no root process remains after this point.
 # ---------------------------------------------------------------------------
 
-log "Starting gateway (bind=${OPENCLAW_GATEWAY_BIND:-lan}, port=${OPENCLAW_GATEWAY_PORT:-18789})"
+log "Starting gateway (bind=${OPENCLAW_GATEWAY_BIND:-loopback}, port=${OPENCLAW_GATEWAY_PORT:-18789})"
 
 exec gosu node node /app/dist/index.js gateway \
-  --bind  "${OPENCLAW_GATEWAY_BIND:-lan}" \
+  --bind  "${OPENCLAW_GATEWAY_BIND:-loopback}" \
   --port  "${OPENCLAW_GATEWAY_PORT:-18789}"

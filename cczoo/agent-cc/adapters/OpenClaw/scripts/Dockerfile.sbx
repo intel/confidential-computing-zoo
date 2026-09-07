@@ -84,17 +84,24 @@ RUN --mount=type=cache,id=openclaw-sbx-apt-cache,target=/var/cache/apt,sharing=l
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       docker-ce-cli
 
-# Install openclaw skills
-RUN apt-get update && apt-get install -y python3 python3-pip wget
-RUN pip install Cython --break-system-packages
-RUN wget https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/distro/Debian12_temp/sgx_debian_local_repo.tgz && tar xf sgx_debian_local_repo.tgz && dpkg -i sgx_debian_local_repo/pool/main/libt/libtdx-attest/*
-RUN git clone https://github.com/intel/confidential-computing-zoo.git
-WORKDIR /app/confidential-computing-zoo/cczoo/openclaw-cc/tdx_utility
-RUN python3 -m pip install ./ --break-system-packages
-
-RUN cp -r /app/confidential-computing-zoo/cczoo/openclaw-cc/cc_tdx_skills/* /app/skills
-WORKDIR /app/skills/get_td_quote/scripts
-RUN python3 setup.py build_ext --inplace
+# Install OpenClaw TDX skills and dependencies with layer cleanup
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      python3 python3-pip wget git && \
+    pip install --no-cache-dir Cython --break-system-packages && \
+    wget -q https://download.01.org/intel-sgx/sgx-dcap/1.22/linux/distro/Debian12_temp/sgx_debian_local_repo.tgz && \
+    tar xf sgx_debian_local_repo.tgz && \
+    dpkg -i sgx_debian_local_repo/pool/main/libt/libtdx-attest/* && \
+    rm -rf sgx_debian_local_repo.tgz sgx_debian_local_repo && \
+    git clone --depth 1 https://github.com/intel/confidential-computing-zoo.git /tmp/cczoo && \
+    python3 -m pip install --no-cache-dir /tmp/cczoo/cczoo/openclaw-cc/tdx_utility --break-system-packages && \
+    mkdir -p /app/skills && \
+    cp -r /tmp/cczoo/cczoo/openclaw-cc/cc_tdx_skills/* /app/skills && \
+    rm -rf /tmp/cczoo && \
+    cd /app/skills/get_td_quote/scripts && \
+    python3 setup.py build_ext --inplace && \
+    apt-get purge -y --auto-remove wget && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 # Copy entrypoint script (expected alongside this Dockerfile in the build context).
@@ -108,7 +115,7 @@ ENV OPENCLAW_GATEWAY_PORT=18789
 ENV OPENCLAW_BRIDGE_PORT=18790
 # lan = bind to 0.0.0.0, accessible from the local network.
 # Use "loopback" for localhost-only access.
-ENV OPENCLAW_GATEWAY_BIND=lan
+ENV OPENCLAW_GATEWAY_BIND=loopback
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────
 # Runs as root; entrypoint-sbx.sh handles:

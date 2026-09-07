@@ -24,7 +24,7 @@
 #   --build          Force rebuild of the openclaw-sbx:latest image before run.
 #   --token TOKEN    Gateway auth token. Generated and printed if omitted.
 #   --port PORT      Host port for gateway (default: 18789).
-#   --bind BIND      Gateway bind mode: lan | loopback (default: lan).
+#   --bind BIND      Gateway bind mode: lan | loopback (default: loopback).
 #   --name NAME      Container name (default: openclaw-gateway).
 #   --no-start       Only build the image; do not start the container.
 #
@@ -51,7 +51,7 @@ IMAGE="openclaw-sbx:latest"
 CONTAINER_NAME="openclaw-gateway"
 GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 BRIDGE_PORT="${OPENCLAW_BRIDGE_PORT:-18790}"
-GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-lan}"
+GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-loopback}"
 GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-}"
 DOCKER_SOCKET="${OPENCLAW_DOCKER_SOCKET:-}"
 CONTAINER_DOCKER_HOST=""
@@ -94,11 +94,13 @@ prestart_sh_node() {
 
 # Run node /app/dist/index.js <subcommand> as node, non-interactively.
 prestart_cli() {
+  local token_args=()
+  [[ -n "$GATEWAY_TOKEN" ]] && token_args=(-e "OPENCLAW_GATEWAY_TOKEN=${GATEWAY_TOKEN}")
   docker run --rm \
     --user node \
     -v "${CONFIG_VOLUME}:/home/node/.openclaw" \
     -v "${WORKSPACE_VOLUME}:/home/node/.openclaw/workspace" \
-    ${GATEWAY_TOKEN:+-e "OPENCLAW_GATEWAY_TOKEN=${GATEWAY_TOKEN}"} \
+    "${token_args[@]}" \
     --entrypoint node \
     "$IMAGE" /app/dist/index.js "$@"
 }
@@ -107,11 +109,13 @@ prestart_cli() {
 prestart_cli_interactive() {
   local tty_flag=""
   [[ -t 0 ]] && tty_flag="--tty"
+  local token_args=()
+  [[ -n "$GATEWAY_TOKEN" ]] && token_args=(-e "OPENCLAW_GATEWAY_TOKEN=${GATEWAY_TOKEN}")
   docker run --rm -i $tty_flag \
     --user node \
     -v "${CONFIG_VOLUME}:/home/node/.openclaw" \
     -v "${WORKSPACE_VOLUME}:/home/node/.openclaw/workspace" \
-    ${GATEWAY_TOKEN:+-e "OPENCLAW_GATEWAY_TOKEN=${GATEWAY_TOKEN}"} \
+    "${token_args[@]}" \
     --entrypoint node \
     "$IMAGE" /app/dist/index.js "$@"
 }
@@ -132,6 +136,11 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+case "$GATEWAY_BIND" in
+  loopback|lan) ;;
+  *) fail "--bind must be loopback or lan" ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Pre-flight
@@ -227,7 +236,8 @@ if [[ "$FIRST_BOOT" -eq 1 ]]; then
   if [[ -z "$GATEWAY_TOKEN" ]]; then
     echo "Gateway auth token"
     echo "  Enter a token string, or press Enter to auto-generate one:"
-    read -r _input_token
+    read -r -s _input_token
+    echo
     if [[ -n "$_input_token" ]]; then
       GATEWAY_TOKEN="$_input_token"
       echo "Using provided token."
@@ -238,10 +248,12 @@ if [[ "$FIRST_BOOT" -eq 1 ]]; then
         GATEWAY_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
       fi
       echo ""
-      echo "  Auto-generated token (save this — shown once only):"
-      echo "  $GATEWAY_TOKEN"
+      echo "  ┌────────────────────────────────────────────────────────────────┐"
+      echo "  │  Gateway token (auto-generated — save this, shown once only):  │"
+      echo "  │  $GATEWAY_TOKEN"
+      echo "  └────────────────────────────────────────────────────────────────┘"
+      echo ""
     fi
-    echo ""
   fi
 
   # ---- Fix volume ownership -----------------------------------------------
@@ -277,17 +289,18 @@ if [[ "$FIRST_BOOT" -eq 1 ]]; then
   echo ""
   echo "==> Writing sandbox config"
   sandbox_ok=true
-  prestart_cli config set agents.defaults.sandbox.mode \
-    "${OPENCLAW_SANDBOX_MODE:-all}"                                          >/dev/null || sandbox_ok=false
-  prestart_cli config set agents.defaults.sandbox.scope         "session"      >/dev/null || sandbox_ok=false
-  prestart_cli config set agents.defaults.sandbox.workspaceAccess \
-    "${OPENCLAW_WORKSPACE_ACCESS:-rw}"                                        >/dev/null || sandbox_ok=false
-  prestart_cli config set agents.defaults.sandbox.backend       "docker"     >/dev/null || sandbox_ok=false
+  _sbx_mode="${OPENCLAW_SANDBOX_MODE:-all}"
+  _sbx_scope="${OPENCLAW_SANDBOX_SCOPE:-session}"
+  _sbx_access="${OPENCLAW_WORKSPACE_ACCESS:-rw}"
+  prestart_cli config set agents.defaults.sandbox.mode "$_sbx_mode"              >/dev/null || sandbox_ok=false
+  prestart_cli config set agents.defaults.sandbox.scope "$_sbx_scope"            >/dev/null || sandbox_ok=false
+  prestart_cli config set agents.defaults.sandbox.workspaceAccess "$_sbx_access" >/dev/null || sandbox_ok=false
+  prestart_cli config set agents.defaults.sandbox.backend "docker"               >/dev/null || sandbox_ok=false
 
   if [[ "$sandbox_ok" != true ]]; then
     fail "Sandbox config write failed. Aborting — gateway NOT started."
   fi
-  echo "    mode=${OPENCLAW_SANDBOX_MODE:-all}, scope=agent, workspaceAccess=${OPENCLAW_WORKSPACE_ACCESS:-rw}, backend=docker"
+  echo "    mode=$_sbx_mode, scope=$_sbx_scope, workspaceAccess=$_sbx_access, backend=docker"
 
   # ---- Control UI allowlist (non-loopback only) ---------------------------
   if [[ "$GATEWAY_BIND" != "loopback" ]]; then
@@ -389,6 +402,30 @@ fi
 TOKEN_ENV_ARGS=()
 [[ -n "$GATEWAY_TOKEN" ]] && TOKEN_ENV_ARGS=(-e "OPENCLAW_GATEWAY_TOKEN=${GATEWAY_TOKEN}")
 
+# Determine host port bind prefix.
+# If loopback is requested, restrict host binding to 127.0.0.1 to avoid exposing
+# gateway ports to 0.0.0.0 across all host network interfaces.
+PORT_BIND_PREFIX=""
+if [[ "$GATEWAY_BIND" == "loopback" ]]; then
+  PORT_BIND_PREFIX="127.0.0.1:"
+fi
+
+# Dynamically mount TDX devices and config files only when they exist on the host.
+# Avoids Docker creating dummy host directories for missing devices/files.
+TDX_MOUNT_ARGS=()
+if [[ -e /dev/tdx_guest ]]; then
+  TDX_MOUNT_ARGS+=(--device /dev/tdx_guest:/dev/tdx_guest)
+fi
+if [[ -f /etc/sgx_default_qcnl.conf ]]; then
+  TDX_MOUNT_ARGS+=(-v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf:ro)
+fi
+if [[ -f /etc/tdx-attest.conf ]]; then
+  TDX_MOUNT_ARGS+=(-v /etc/tdx-attest.conf:/etc/tdx-attest.conf:ro)
+fi
+if [[ -d /usr/share/doc/libtdx-attest-dev/examples ]]; then
+  TDX_MOUNT_ARGS+=(-v /usr/share/doc/libtdx-attest-dev/examples:/td-attest:ro)
+fi
+
 echo ''
 
 docker run \
@@ -396,16 +433,14 @@ docker run \
   --name "$CONTAINER_NAME" \
   --init \
   --restart unless-stopped \
+  --security-opt no-new-privileges:true \
   -v "${CONFIG_VOLUME}:/home/node/.openclaw" \
   -v "${WORKSPACE_VOLUME}:/home/node/.openclaw/workspace" \
   "${DOCKER_MOUNT_ARGS[@]}" \
   --group-add "$DOCKER_GID" \
-  -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf \
-  -v /dev/tdx_guest:/dev/tdx_guest \
-  -v /usr/share/doc/libtdx-attest-dev/examples/:/td-attest/ \
-  -v /etc/tdx-attest.conf:/etc/tdx-attest.conf \
-  -p "${GATEWAY_PORT}:18789" \
-  -p "${BRIDGE_PORT}:18790" \
+  "${TDX_MOUNT_ARGS[@]}" \
+  -p "${PORT_BIND_PREFIX}${GATEWAY_PORT}:18789" \
+  -p "${PORT_BIND_PREFIX}${BRIDGE_PORT}:18790" \
   -e "OPENCLAW_GATEWAY_PORT=${GATEWAY_PORT}" \
   -e "OPENCLAW_GATEWAY_BIND=${GATEWAY_BIND}" \
   "${DOCKER_HOST_ENV_ARGS[@]}" \
@@ -424,8 +459,7 @@ echo "  docker exec $CONTAINER_NAME node /app/dist/index.js health --token <toke
 echo "  docker exec -it $CONTAINER_NAME node /app/dist/index.js channels login"
 echo ""
 if [[ -z "$GATEWAY_TOKEN" ]]; then
-  echo "  To retrieve the auto-generated token:"
-  echo "  docker logs $CONTAINER_NAME 2>&1 | grep -A1 'Gateway token'"
+  echo "  A token was generated inside the config volume; check logs or retrieve it through your secret-management workflow."
   echo ""
 fi
 echo "  To stop:  docker stop $CONTAINER_NAME"
