@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: nano-bot-kata-qemu-tdx-asterinas
+  name: openai-workload-kata-qemu-tdx
   labels:
-    app: nano-bot
+    app: openai-workload
 spec:
   runtimeClassName: kata-qemu-tdx-asterinas
   restartPolicy: Never
   containers:
-    - name: nano-bot
+    - name: openai-workload
       image: docker.io/library/nano_bot:2.0
       imagePullPolicy: Always
       command: ["sleep", "infinity"]
@@ -19,9 +19,9 @@ spec:
               name: nano-bot-api-key
               key: OPENAI_API_KEY
         - name: OPENAI_API_ADDRESS
-          value: "https://aidemo.intel.cn/v1"
+          value: "https://openrouter.ai/api/v1"
         - name: NANO_BOT_MODEL
-          value: "minimax-m2.7"
+          value: "minimax/minimax-m3:free"
         - name: FARADAY_SSL_VERIFY
           value: "none"
         - name: NO_PROXY

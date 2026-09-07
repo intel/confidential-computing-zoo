@@ -222,7 +222,114 @@ The full payload shapes and additional operator notes remain in [`README.md`](..
 
 ## OpenClaw runtime measurements
 
-### Build and run gateway Docker container
+### CoCo TDX Confidential Pod Deployment
+
+This path runs OpenClaw as an authenticated gateway inside a hardware-isolated Intel TDX confidential virtual machine managed by Kubernetes (via Kata Containers TDX runtime).
+
+**Key Security & Architecture Properties:**
+- **No Docker Socket Exposure:** Intentionally avoids mounting `/var/run/docker.sock`, removing direct access to the host Docker daemon from this workload.
+- **Hardware-Enforced Memory Confidentiality:** Runtime state and LLM conversational context are encrypted in guest memory by Intel TDX hardware.
+- **Loopback-Only Gateway:** Listens on `127.0.0.1:18789` with token authentication enabled.
+- **Secret Separation:** Sensitive API keys and Gateway tokens are referenced from Kubernetes Secrets rather than embedded as plaintext values in the Pod manifest. Kubernetes injects them into the process environment at runtime.
+
+This deployment uses the CoCo/Kata TDX runtime path. It does not by itself prove remote-attestation verification or KBS-gated secret release; use the TC API attestation flow when those controls are required.
+
+#### Step 1: Verify Kubernetes & TDX RuntimeClass
+
+Ensure your Kubernetes cluster has the Kata TDX RuntimeClass deployed:
+
+```bash
+kubectl get runtimeclass kata-qemu-tdx-linux
+```
+*(Note: Depending on your cluster configuration, the runtime class name may also be `kata-qemu-tdx-asterinas` or custom-named. You can override it via `--runtime-class <name>`.)*
+
+#### Step 2: Prepare Target Image
+
+Ensure the base OpenClaw image is accessible to your cluster or loaded locally:
+
+```bash
+# Build the patched smoke image if building locally:
+# (From adapters/OpenClaw)
+docker build -f Dockerfile.coco-smoke -t docker.io/library/openclaw-coco-smoke:patched .
+```
+
+#### Step 3: Create Kubernetes Secrets Safely
+
+Create the LLM API secret and OpenClaw Gateway Token secret without leaving credentials in shell history:
+
+```bash
+# 1. Create LLM API key secret (e.g. OpenAI / OpenRouter key)
+read -r -s OPENAI_API_KEY
+printf '%s' "$OPENAI_API_KEY" | kubectl create secret generic nano-bot-api-key \
+	--from-file=OPENAI_API_KEY=/dev/stdin
+unset OPENAI_API_KEY
+
+# 2. Create OpenClaw Gateway auth token secret
+read -r -s OPENCLAW_GATEWAY_TOKEN
+printf '%s' "$OPENCLAW_GATEWAY_TOKEN" | kubectl create secret generic openclaw-gateway-token \
+	--from-file=OPENCLAW_GATEWAY_TOKEN=/dev/stdin
+unset OPENCLAW_GATEWAY_TOKEN
+```
+
+#### Step 4: Deploy OpenClaw to TDX
+
+You can deploy directly using the automation script or via declarative Kubernetes YAML.
+
+**Option A: Using the deployment script (Recommended)**
+
+```bash
+# In corporate / lab environments where an outbound proxy is required:
+export OPENCLAW_PROXY_URL=http://<proxy-host>:<port>
+
+./scripts/run-coco-tdx.sh \
+	--api-secret nano-bot-api-key \
+	--gateway-secret openclaw-gateway-token \
+	--runtime-class kata-qemu-tdx-linux \
+	--model openrouter/minimax/minimax-m3:free
+```
+
+*Useful flags:*
+- `--runtime-class <class>`: Specify Kata TDX RuntimeClass (default: `kata-qemu-tdx-linux`)
+- `--api-secret <name>` / `--api-secret-key <key>`: Custom secret name and key (default: `nano-bot-api-key` / `OPENAI_API_KEY`)
+- `--model <name>`: LLM model identifier (default: `openrouter/minimax/minimax-m3:free`)
+- `--delete`: Automatically delete any existing pod before deploying
+
+**Option B: Using declarative YAML manifest**
+
+Reference manifest: [`openclaw-coco-tdx.yaml`](openclaw-coco-tdx.yaml)
+```bash
+kubectl apply -f openclaw-coco-tdx.yaml
+kubectl wait --for=condition=Ready pod/openclaw-coco-tdx-gateway --timeout=10m
+```
+
+#### Step 5: Verify TDX Pod & Send Chat Probe
+
+Once the Pod reports `Ready`, send a chat message through the authenticated Gateway:
+
+```bash
+kubectl exec -it openclaw-coco-tdx-gateway -- sh -lc \
+	'node /app/dist/index.js agent --token "$OPENCLAW_GATEWAY_TOKEN" \
+		--message "Hello, please confirm TDX guest execution." --json'
+```
+
+#### Storage & Persistence Note
+By default, runtime state and caches use memory-backed `emptyDir` volumes (`/dev/shm/...`), which reside strictly in TDX encrypted guest RAM and are destroyed upon Pod deletion. For persistent workloads, bind to an encrypted persistent volume (e.g., LUKS-backed block device).
+
+### Security notes
+
+- Treat a mounted Docker socket as host-Docker administrative access. Use the
+	TDX script above when host sandbox containers are not required.
+- Keep `OPENCLAW_GATEWAY_BIND=loopback` unless an authenticated, restricted
+	Service or network policy is in place. Do not use `--auth none` outside an
+	isolated debugging Pod.
+- Do not put API keys or Gateway tokens in image layers, manifests, shell
+	arguments, command history, or logs. Use Kubernetes Secrets or a secret
+	manager and restrict their RBAC readers.
+- The generic Docker sandbox scripts still require Docker socket access for
+	sibling sandbox containers. Review the sandbox image, allowed tools, and
+	Docker daemon policy before enabling that mode in production.
+
+### Build and run gateway Docker container (Standalone Sandbox Mode)
 
 **Notice: If you do not use TC API service, please refer to `run-sbx.sh`.**
 
@@ -234,8 +341,8 @@ cd <workdir>/confidential-computing-zoo/cczoo/agent-cc/adapters/OpenClaw/scripts
 vim .env
 # OPENCLAW_GATEWAY_PORT=18789
 # OPENCLAW_BRIDGE_PORT=18790
-# OPENCLAW_GATEWAY_BIND=lan
-# OPENCLAW_GATEWAY_TOKEN=3eec2b1cdc012236e58e464f08b6092dc41f0cf6681670cf98bc2edf000e6182
+# OPENCLAW_GATEWAY_BIND=loopback
+# OPENCLAW_GATEWAY_TOKEN=<store-this-in-a-secret-manager>
 # OPENCLAW_IMAGE=openclaw:local
 # OPENCLAW_DOCKER_SOCKET=/var/run/docker.sock
 # DOCKER_GID=113

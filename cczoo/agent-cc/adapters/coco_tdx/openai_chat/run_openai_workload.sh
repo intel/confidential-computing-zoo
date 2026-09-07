@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+fail() { echo "ERROR: $*" >&2; exit 1; }
+info() { echo "INFO: $*"; }
+
 usage() {
     cat <<'EOF'
-Usage: run_nano_bot_asterinas.sh [options]
+Usage: run_openai_workload.sh [options]
 
 Run this script inside the official Asterinas CoCo container. It never accepts
 or prints an API key; the key must already exist in the selected Kubernetes
@@ -12,10 +15,13 @@ cluster as a Secret.
 Options:
   --image IMAGE             Guest image reference (default: docker.io/library/nano_bot:2.0)
   --secret NAME             Secret containing OPENAI_API_KEY (default: nano-bot-api-key)
-  --api-address URL         OpenAI-compatible base URL (default: https://aidemo.intel.cn/v1)
-  --model NAME              Model name (default: minimax-m2.7)
-  --proxy URL               Workload HTTP(S) proxy, for example http://10.0.0.5:913
+  --model-config FILE       Provider profile with MODEL_* settings
+  --api-address URL         OpenAI-compatible base URL (default: https://openrouter.ai/api/v1)
+  --model NAME              Model name (default: minimax/minimax-m3:free)
+  --proxy URL               Workload HTTP(S) proxy, guest-resolvable
   --no-proxy LIST           Workload no_proxy value
+  --namespace NAME          Kubernetes namespace (default: default)
+  --node-name NAME          Pin the Pod to a node (optional)
   --tmpfs-size SIZE         containerd tmpmount size (default: 2G)
   --nydus-size SIZE         Nydus temporary storage size (default: 2G)
   --help                    Show this help
@@ -24,24 +30,62 @@ EOF
 
 IMAGE_REF="${IMAGE_REF:-docker.io/library/nano_bot:2.0}"
 SECRET_NAME="${SECRET_NAME:-nano-bot-api-key}"
-API_ADDRESS="${OPENAI_API_ADDRESS:-https://aidemo.intel.cn/v1}"
-MODEL="${NANO_BOT_MODEL:-minimax-m2.7}"
+API_ADDRESS="${MODEL_API_ADDRESS:-${OPENAI_API_ADDRESS:-https://openrouter.ai/api/v1}}"
+MODEL="${MODEL_NAME:-${NANO_BOT_MODEL:-minimax/minimax-m3:free}}"
 PROXY_URL="${PROXY_URL:-${HTTPS_PROXY:-${https_proxy:-}}}"
 NO_PROXY_VALUE="${NO_PROXY_VALUE:-127.0.0.1,localhost,10.244.0.0/16,10.96.0.0/12}"
+FARADAY_SSL_VERIFY="${FARADAY_SSL_VERIFY:-none}"
 TMPFS_SIZE="${TMPFS_SIZE:-2G}"
 NYDUS_SIZE="${NYDUS_SIZE:-2G}"
-POD_NAME="${POD_NAME:-nano-bot-kata-qemu-tdx-asterinas}"
+POD_NAME="${POD_NAME:-openai-workload-kata-qemu-tdx}"
 RUNTIME_CLASS="${RUNTIME_CLASS:-kata-qemu-tdx-asterinas}"
+NAMESPACE="${NAMESPACE:-default}"
+NODE_NAME="${NODE_NAME:-}"
 KUBECTL="${KUBECTL:-kubectl}"
+MODEL_CONFIG="${MODEL_CONFIG:-}"
+
+load_model_config() {
+  local config_file="$1" key value
+  [[ -r "$config_file" ]] || fail "model config is not readable: $config_file"
+  while IFS='=' read -r key value || [[ -n "$key" ]]; do
+    [[ -z "$key" || "$key" == \#* ]] && continue
+    value="${value%$'\r'}"
+    case "$key" in
+      MODEL_API_ADDRESS) API_ADDRESS="$value" ;;
+      MODEL_NAME) MODEL="$value" ;;
+      MODEL_API_KEY_SECRET) SECRET_NAME="$value" ;;
+      MODEL_API_KEY_SECRET_KEY) SECRET_KEY="$value" ;;
+      MODEL_PROXY_URL) PROXY_URL="$value" ;;
+      MODEL_NO_PROXY) NO_PROXY_VALUE="$value" ;;
+      MODEL_TLS_VERIFY) FARADAY_SSL_VERIFY="$value" ;;
+      *) fail "unsupported model config key: $key" ;;
+    esac
+  done <"$config_file"
+}
+
+SECRET_KEY="${MODEL_API_KEY_SECRET_KEY:-OPENAI_API_KEY}"
+if (($#)); then
+  for ((config_index = 1; config_index <= $#; config_index++)); do
+    if [[ "${!config_index}" == "--model-config" ]]; then
+      next_index=$((config_index + 1))
+      [[ $next_index -le $# ]] || fail "--model-config requires a file"
+      MODEL_CONFIG="${!next_index}"
+    fi
+  done
+fi
+[[ -z "$MODEL_CONFIG" ]] || load_model_config "$MODEL_CONFIG"
 
 while (($#)); do
     case "$1" in
         --image) IMAGE_REF="$2"; shift 2 ;;
         --secret) SECRET_NAME="$2"; shift 2 ;;
+        --model-config) shift 2 ;;
         --api-address) API_ADDRESS="$2"; shift 2 ;;
         --model) MODEL="$2"; shift 2 ;;
         --proxy) PROXY_URL="$2"; shift 2 ;;
         --no-proxy) NO_PROXY_VALUE="$2"; shift 2 ;;
+        --namespace) NAMESPACE="$2"; shift 2 ;;
+        --node-name) NODE_NAME="$2"; shift 2 ;;
         --tmpfs-size) TMPFS_SIZE="$2"; shift 2 ;;
         --nydus-size) NYDUS_SIZE="$2"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
@@ -49,19 +93,16 @@ while (($#)); do
     esac
 done
 
-fail() { echo "ERROR: $*" >&2; exit 1; }
-info() { echo "INFO: $*"; }
-
-[[ -n "$IMAGE_REF" && -n "$API_ADDRESS" && -n "$MODEL" ]] || fail "image, API address, and model must be non-empty"
+[[ -n "$IMAGE_REF" && -n "$API_ADDRESS" && -n "$MODEL" && -n "$NAMESPACE" ]] || fail "image, API address, model, and namespace must be non-empty"
 [[ "$IMAGE_REF" == */*:* ]] || fail "image must include a repository and tag: $IMAGE_REF"
-[[ "$API_ADDRESS" != *$'\n'* && "$PROXY_URL" != *$'\n'* ]] || fail "URLs must not contain newlines"
+[[ "$API_ADDRESS" != *$'\n'* && "$PROXY_URL" != *$'\n'* && "$MODEL" != *$'\n'* && "$NAMESPACE" != *$'\n'* && "$NODE_NAME" != *$'\n'* ]] || fail "values must not contain newlines"
 command -v "$KUBECTL" >/dev/null || fail "kubectl is not available"
 [[ "$(id -u)" == 0 ]] || fail "run inside the privileged CoCo container as root"
 
 info "Kubernetes context: $($KUBECTL config current-context 2>/dev/null || echo unknown)"
 [[ "$($KUBECTL get runtimeclass "$RUNTIME_CLASS" -o name 2>/dev/null)" == *"$RUNTIME_CLASS" ]] || \
     fail "RuntimeClass $RUNTIME_CLASS is not available in this Kubernetes cluster"
-[[ "$($KUBECTL get secret "$SECRET_NAME" -o jsonpath='{.metadata.name}' 2>/dev/null)" == "$SECRET_NAME" ]] || \
+[[ "$($KUBECTL get secret "$SECRET_NAME" -n "$NAMESPACE" -o jsonpath='{.metadata.name}' 2>/dev/null)" == "$SECRET_NAME" ]] || \
     fail "Secret $SECRET_NAME is not available in this Kubernetes cluster"
 
 ensure_tmpfs() {
@@ -80,6 +121,8 @@ ensure_tmpfs /var/lib/containerd-nydus "$NYDUS_SIZE"
 
 INITRD="${INITRD:-/opt/coco/prebuilt/asterinas-coco/kata-containers-initrd.img}"
 [[ -r "$INITRD" ]] || fail "Asterinas initramfs not found: $INITRD"
+workdir=""
+manifest=""
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir" "$manifest"' EXIT
 gzip -dc "$INITRD" | cpio -idmu --quiet -D "$workdir" || fail "cannot inspect initramfs"
@@ -118,13 +161,14 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: $POD_NAME
+  namespace: $NAMESPACE
   labels:
-    app: nano-bot
+    app: openai-workload
 spec:
   runtimeClassName: $RUNTIME_CLASS
   restartPolicy: Never
   containers:
-    - name: nano-bot
+    - name: openai-workload
       image: $IMAGE_REF
       imagePullPolicy: Always
       command: ["sleep", "infinity"]
@@ -133,7 +177,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: $SECRET_NAME
-              key: OPENAI_API_KEY
+              key: $SECRET_KEY
         - name: OPENAI_API_ADDRESS
           value: "$API_ADDRESS"
         - name: NANO_BOT_MODEL
@@ -147,12 +191,16 @@ $proxy_env
           value: "$NO_PROXY_VALUE"
 EOF
 
-$KUBECTL delete pod "$POD_NAME" --ignore-not-found --wait=true >/dev/null
+if [[ -n "$NODE_NAME" ]]; then
+  sed -i "/^  runtimeClassName:/a\\  nodeName: $NODE_NAME" "$manifest"
+fi
+
+$KUBECTL delete pod "$POD_NAME" -n "$NAMESPACE" --ignore-not-found --wait=true >/dev/null
 $KUBECTL apply -f "$manifest"
-if ! $KUBECTL wait --for=condition=Ready "pod/$POD_NAME" --timeout=10m; then
-    $KUBECTL describe pod "$POD_NAME" | sed -n '/^Events:/,$p' >&2 || true
+if ! $KUBECTL wait --for=condition=Ready "pod/$POD_NAME" -n "$NAMESPACE" --timeout=10m; then
+  $KUBECTL describe pod "$POD_NAME" -n "$NAMESPACE" | sed -n '/^Events:/,$p' >&2 || true
     exit 1
 fi
-$KUBECTL get pod "$POD_NAME" -o wide
+$KUBECTL get pod "$POD_NAME" -n "$NAMESPACE" -o wide
 info "Run the chat probe with:"
-info "  printf 'Your message\\nquit\\n' | $KUBECTL exec -i $POD_NAME -- /usr/local/bin/tdx-chat-bot.rb"
+info "  printf 'Your message\\nquit\\n' | $KUBECTL exec -n $NAMESPACE -i $POD_NAME -- /usr/local/bin/tdx-chat-bot.rb"

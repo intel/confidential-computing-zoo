@@ -290,8 +290,8 @@ render_host_aliases_block() {
       hostnames: [\"${h}\"]
 "
     else
-      log "WARNING: could not resolve '$h' from this host; not adding a hostAliases entry for it."
-      log "         If the cluster has no working in-cluster DNS, name resolution for '$h' may fail inside the guest."
+      log "WARNING: could not resolve '$h' from this host; not adding a hostAliases entry for it." >&2
+      log "         If the cluster has no working in-cluster DNS, name resolution for '$h' may fail inside the guest." >&2
     fi
   done
 
@@ -518,9 +518,19 @@ ensure_containerd_tmpmounts() {
   docker_exec "
     mkdir -p /var/lib/containerd/tmpmounts
     if ! mountpoint -q /var/lib/containerd/tmpmounts; then
-      mount -t tmpfs -o size=512m tmpfs /var/lib/containerd/tmpmounts
+      mount -t tmpfs -o size=2G tmpfs /var/lib/containerd/tmpmounts
     fi
     findmnt /var/lib/containerd/tmpmounts
+  "
+}
+
+ensure_nydus_tmpfs() {
+  docker_exec "
+    mkdir -p /var/lib/containerd-nydus
+    if ! mountpoint -q /var/lib/containerd-nydus; then
+      mount -t tmpfs -o size=2G tmpfs /var/lib/containerd-nydus
+    fi
+    findmnt /var/lib/containerd-nydus
   "
 }
 
@@ -528,8 +538,8 @@ restart_nydus_snapshotter() {
   docker_exec "
     nydus_cmd='/opt/coco/nydus-snapshotter/containerd-nydus-grpc'
 
-    if pgrep -f \"\$nydus_cmd\" >/dev/null 2>&1; then
-      pkill -f \"\$nydus_cmd\" || true
+    if pgrep -f \"^\$nydus_cmd( |$)\" >/dev/null 2>&1; then
+      pkill -f \"^\$nydus_cmd( |$)\" || true
       sleep 2
     fi
 
@@ -575,6 +585,7 @@ restart_containerd_if_requested() {
   fi
 
   ensure_devlog_socket
+  ensure_nydus_tmpfs
   ensure_containerd_tmpmounts
 
   log "Restarting containerd with updated proxy bypasses."
@@ -607,6 +618,7 @@ restart_containerd_if_requested() {
   "
   log "Restarting containerd-nydus-grpc with updated proxy bypasses."
   restart_nydus_snapshotter
+  ensure_nydus_tmpfs
   ensure_containerd_tmpmounts
   docker_exec "ps aux | grep containerd"
 }
@@ -633,6 +645,12 @@ apply_runtimeclass() {
 
 ensure_api_key_secret() {
   local exists
+
+  if ! docker_exec "kubectl get serviceaccount default -n default >/dev/null 2>&1"; then
+    log "Creating missing default ServiceAccount in namespace default."
+    docker_exec "kubectl create serviceaccount default -n default"
+  fi
+
   exists="$(docker_exec "kubectl get secret '$API_KEY_SECRET_NAME' -o name" 2>/dev/null || true)"
   if [[ -n "$exists" ]]; then
     log "Secret '$API_KEY_SECRET_NAME' already exists, leaving it untouched."
