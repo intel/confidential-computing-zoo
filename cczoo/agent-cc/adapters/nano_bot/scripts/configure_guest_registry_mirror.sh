@@ -84,11 +84,13 @@ TOMLEOF
 initrd_already_patched() {
   docker_exec "
     set -e
+    registry='$REGISTRY_ADDRESS'
     work=\$(mktemp -d)
     trap 'rm -rf \$work' EXIT
     cd \$work
     zcat '$LINUX_INITRD' 2>/dev/null | cpio -idmu --quiet
     diff -q etc/registry-configuration.toml '$CDH_REGISTRY_CONFIG' >/dev/null 2>&1
+    grep -Fq \"[host.\\\"http://\${registry}\\\"]\" etc/containerd/certs.d/docker.io/hosts.toml
   "
 }
 
@@ -98,6 +100,7 @@ repack_initrd_with_registry_mirror() {
 set -euo pipefail
 img='$LINUX_INITRD'
 cfg='$CDH_REGISTRY_CONFIG'
+registry='$REGISTRY_ADDRESS'
 backup=\"\${img}.bak-before-registry-mirror-\$(date +%Y%m%d%H%M%S)\"
 cp -a \"\$img\" \"\$backup\"
 
@@ -108,6 +111,16 @@ trap 'rm -rf \$work \$out' EXIT
 cd \"\$work\"
 zcat \"\$img\" 2>/dev/null | cpio -idmu --quiet
 cp -a \"\$cfg\" etc/registry-configuration.toml
+mkdir -p etc/containerd/certs.d/docker.io
+cat > etc/containerd/certs.d/docker.io/hosts.toml << TOMLEOF
+server = \"https://registry-1.docker.io\"
+
+[host.\"http://\${registry}\"]
+  capabilities = [\"pull\", \"resolve\"]
+
+[host.\"https://registry-1.docker.io\"]
+  capabilities = [\"pull\", \"resolve\"]
+TOMLEOF
 find . -print0 | cpio --null -o -H newc --quiet | gzip -9 > \"\$out\"
 cp -a \"\$out\" \"\$img\"
 

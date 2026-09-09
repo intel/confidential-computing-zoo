@@ -9,7 +9,7 @@ cgroup_writable = false
 base_runtime_spec = ""
 cni_conf_dir = ""
 cni_max_conf_num = 0
-snapshotter = "nydus"
+snapshotter = "native"
 sandboxer = ""
 io_type = ""
 
@@ -18,4 +18,4 @@ ConfigPath = "/opt/coco/config/configuration-qemu-tdx-linux.toml"
 
 [plugins."io.containerd.cri.v1.images".runtime_platforms.kata-qemu-tdx-linux]
 platform = ""
-snapshotter = "nydus"
+snapshotter = "native"

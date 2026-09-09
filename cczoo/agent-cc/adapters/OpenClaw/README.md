@@ -260,7 +260,7 @@ Create the LLM API secret and OpenClaw Gateway Token secret without leaving cred
 ```bash
 # 1. Create LLM API key secret (e.g. OpenAI / OpenRouter key)
 read -r -s OPENAI_API_KEY
-printf '%s' "$OPENAI_API_KEY" | kubectl create secret generic nano-bot-api-key \
+printf '%s' "$OPENAI_API_KEY" | kubectl create secret generic agent-api-key \
 	--from-file=OPENAI_API_KEY=/dev/stdin
 unset OPENAI_API_KEY
 
@@ -282,16 +282,16 @@ You can deploy directly using the automation script or via declarative Kubernete
 export OPENCLAW_PROXY_URL=http://<proxy-host>:<port>
 
 ./scripts/run-coco-tdx.sh \
-	--api-secret nano-bot-api-key \
+	--api-secret agent-api-key \
 	--gateway-secret openclaw-gateway-token \
 	--runtime-class kata-qemu-tdx-linux \
-	--model openrouter/minimax/minimax-m3:free
+	--model openrouter/nvidia/nemotron-3.5-lightning:free
 ```
 
 *Useful flags:*
 - `--runtime-class <class>`: Specify Kata TDX RuntimeClass (default: `kata-qemu-tdx-linux`)
-- `--api-secret <name>` / `--api-secret-key <key>`: Custom secret name and key (default: `nano-bot-api-key` / `OPENAI_API_KEY`)
-- `--model <name>`: LLM model identifier (default: `openrouter/minimax/minimax-m3:free`)
+- `--api-secret <name>` / `--api-secret-key <key>`: Custom secret name and key (default: `agent-api-key` / `OPENAI_API_KEY`)
+- `--model <name>`: LLM model identifier (default: `openrouter/nvidia/nemotron-3.5-lightning:free`)
 - `--delete`: Automatically delete any existing pod before deploying
 
 **Option B: Using declarative YAML manifest**
@@ -308,12 +308,12 @@ Once the Pod reports `Ready`, send a chat message through the authenticated Gate
 
 ```bash
 kubectl exec -it openclaw-coco-tdx-gateway -- sh -lc \
-	'node /app/dist/index.js agent --token "$OPENCLAW_GATEWAY_TOKEN" \
-		--message "Hello, please confirm TDX guest execution." --json'
+	'node /app/dist/index.js agent \
+		--message "你好，请检查 TDX 状态并确认你已运行在 TDX 虚拟机中。" --json'
 ```
 
 #### Storage & Persistence Note
-By default, runtime state and caches use memory-backed `emptyDir` volumes (`/dev/shm/...`), which reside strictly in TDX encrypted guest RAM and are destroyed upon Pod deletion. For persistent workloads, bind to an encrypted persistent volume (e.g., LUKS-backed block device).
+By default, runtime state and caches use a single memory-backed `emptyDir` mounted at `/dev/shm` (`openclaw-state` and `openclaw-cache` reside inside `/dev/shm`), which resides strictly in TDX encrypted guest RAM and avoids virtio-fs device hotplug constraints in Kata confidential containers. For persistent workloads, bind to an encrypted persistent volume (e.g., LUKS-backed block device).
 
 ### Security notes
 

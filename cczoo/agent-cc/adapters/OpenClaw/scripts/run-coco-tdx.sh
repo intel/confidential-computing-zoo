@@ -19,10 +19,10 @@ Options:
   --pod NAME               Pod name (default: openclaw-coco-tdx-gateway)
   --namespace NAME         Namespace (default: default)
   --runtime-class CLASS    RuntimeClass (default: kata-qemu-tdx-linux)
-  --api-secret NAME        Secret containing API key (default: nano-bot-api-key)
+  --api-secret NAME        Secret containing API key (default: agent-api-key)
   --api-secret-key KEY     Key inside api-secret (default: OPENAI_API_KEY)
   --gateway-secret NAME    Secret containing OPENCLAW_GATEWAY_TOKEN (default: openclaw-gateway-token)
-  --model MODEL            Model name (default: openrouter/minimax/minimax-m3:free)
+  --model MODEL            Model name (default: openrouter/nvidia/nemotron-3.5-lightning:free)
   --max-tokens NUM         Max tokens (default: 4096)
   --proxy URL              HTTP(S) proxy reachable from the guest
   --node-name NAME         Optional nodeName
@@ -39,10 +39,10 @@ IMAGE="${OPENCLAW_IMAGE:-docker.io/library/openclaw-coco-smoke:patched}"
 POD_NAME="${OPENCLAW_POD_NAME:-openclaw-coco-tdx-gateway}"
 NAMESPACE="${OPENCLAW_NAMESPACE:-default}"
 RUNTIME_CLASS="${OPENCLAW_RUNTIME_CLASS:-kata-qemu-tdx-linux}"
-API_SECRET="${OPENCLAW_API_SECRET:-nano-bot-api-key}"
+API_SECRET="${OPENCLAW_API_SECRET:-agent-api-key}"
 API_SECRET_KEY="${OPENCLAW_API_SECRET_KEY:-OPENAI_API_KEY}"
 GATEWAY_SECRET="${OPENCLAW_GATEWAY_SECRET:-openclaw-gateway-token}"
-MODEL="${OPENCLAW_MODEL:-openrouter/minimax/minimax-m3:free}"
+MODEL="${OPENCLAW_MODEL:-openrouter/nvidia/nemotron-3.5-lightning:free}"
 MAX_TOKENS="${OPENCLAW_MAX_TOKENS:-4096}"
 PROXY_URL="${OPENCLAW_PROXY_URL:-${HTTPS_PROXY:-${https_proxy:-}}}"
 NO_PROXY_VALUE="${OPENCLAW_NO_PROXY:-127.0.0.1,localhost,10.244.0.0/16,10.96.0.0/12}"
@@ -155,6 +155,7 @@ $([ -n "$NODE_NAME" ] && printf '  nodeName: %s\n' "$(yaml_string "$NODE_NAME")"
       command: ["sh", "-eu", "-c"]
       args:
         - >-
+          mkdir -p /dev/shm/openclaw-state /dev/shm/openclaw-cache;
           node /app/dist/index.js config set gateway.mode local;
           node /app/dist/index.js config set gateway.bind loopback;
           node /app/dist/index.js config set gateway.auth.mode token;
@@ -164,12 +165,8 @@ $([ -n "$NODE_NAME" ] && printf '  nodeName: %s\n' "$(yaml_string "$NODE_NAME")"
           node /app/dist/index.js config set "agents.defaults.models[\\\"$MODEL\\\"].params.maxTokens" "$MAX_TOKENS" --strict-json;
           exec node /app/dist/index.js gateway run --bind loopback --auth token --port 18789
       volumeMounts:
-        - name: openclaw-state
-          mountPath: /dev/shm/openclaw-state
-        - name: openclaw-cache
-          mountPath: /dev/shm/openclaw-cache
-        - name: tmp
-          mountPath: /tmp
+        - name: dshm
+          mountPath: /dev/shm
       readinessProbe:
         exec:
           command:
@@ -189,17 +186,10 @@ $([ -n "$NODE_NAME" ] && printf '  nodeName: %s\n' "$(yaml_string "$NODE_NAME")"
         timeoutSeconds: 3
         failureThreshold: 12
   volumes:
-    - name: openclaw-state
+    - name: dshm
       emptyDir:
         medium: Memory
-        sizeLimit: 2Gi
-    - name: openclaw-cache
-      emptyDir:
-        medium: Memory
-        sizeLimit: 512Mi
-    - name: tmp
-      emptyDir:
-        sizeLimit: 512Mi
+        sizeLimit: 4Gi
 YAML
 
 "$KUBECTL" get runtimeclass "$RUNTIME_CLASS" >/dev/null || fail "RuntimeClass $RUNTIME_CLASS is unavailable"
@@ -207,9 +197,16 @@ YAML
 "$KUBECTL" get secret "$GATEWAY_SECRET" -n "$NAMESPACE" >/dev/null || fail "Gateway Secret is unavailable"
 [[ "$DELETE_EXISTING" -eq 1 ]] && "$KUBECTL" delete pod "$POD_NAME" -n "$NAMESPACE" --ignore-not-found --wait=true >/dev/null
 "$KUBECTL" apply -f "$manifest"
-"$KUBECTL" wait --for=condition=Ready "pod/$POD_NAME" -n "$NAMESPACE" --timeout=10m
+if ! "$KUBECTL" wait --for=condition=Ready "pod/$POD_NAME" -n "$NAMESPACE" --timeout=10m; then
+  echo "ERROR: Pod did not become Ready; collecting diagnostics" >&2
+  "$KUBECTL" get pod "$POD_NAME" -n "$NAMESPACE" -o wide >&2 || true
+  "$KUBECTL" describe pod "$POD_NAME" -n "$NAMESPACE" >&2 || true
+  "$KUBECTL" get events -n "$NAMESPACE" --field-selector "involvedObject.name=$POD_NAME" --sort-by=.lastTimestamp >&2 || true
+  "$KUBECTL" logs "$POD_NAME" -n "$NAMESPACE" --all-containers=true --tail=200 >&2 || true
+  exit 1
+fi
 
 info "Pod is ready: $POD_NAME (runtimeClass=$RUNTIME_CLASS)"
 info "Credentials were injected from Secrets and were not printed."
 info "Chat with:"
-info "  $KUBECTL exec -n $NAMESPACE -it $POD_NAME -- sh -lc 'node /app/dist/index.js agent --token \"\$OPENCLAW_GATEWAY_TOKEN\" --message \"你好，请检查 TDX 状态\" --json'"
+info "  $KUBECTL exec -n $NAMESPACE -it $POD_NAME -- sh -lc 'node /app/dist/index.js agent --message \"你好，请检查 TDX 状态\" --json'"
