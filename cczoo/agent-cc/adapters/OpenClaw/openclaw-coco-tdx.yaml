@@ -36,12 +36,12 @@ spec:
         - name: OPENROUTER_API_KEY
           valueFrom:
             secretKeyRef:
-              name: nano-bot-api-key
+              name: agent-api-key
               key: OPENAI_API_KEY
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
-              name: nano-bot-api-key
+              name: agent-api-key
               key: OPENAI_API_KEY
         - name: OPENCLAW_GATEWAY_TOKEN
           valueFrom:
@@ -59,21 +59,18 @@ spec:
       command: ["sh", "-eu", "-c"]
       args:
         - >-
+          mkdir -p /dev/shm/openclaw-state /dev/shm/openclaw-cache;
           node /app/dist/index.js config set gateway.mode local;
           node /app/dist/index.js config set gateway.bind loopback;
           node /app/dist/index.js config set gateway.auth.mode token;
           node /app/dist/index.js config set agents.defaults.sandbox.mode off;
           node /app/dist/index.js config set plugins.entries.perplexity.enabled false --strict-json;
-          node /app/dist/index.js config set agents.defaults.model openrouter/minimax/minimax-m3:free;
-          node /app/dist/index.js config set "agents.defaults.models[\"openrouter/minimax/minimax-m3:free\"].params.maxTokens" 4096 --strict-json;
+          node /app/dist/index.js config set agents.defaults.model openrouter/nvidia/nemotron-3.5-lightning:free;
+          node /app/dist/index.js config set "agents.defaults.models[\"openrouter/nvidia/nemotron-3.5-lightning:free\"].params.maxTokens" 4096 --strict-json;
           exec node /app/dist/index.js gateway run --bind loopback --auth token --port 18789
       volumeMounts:
-        - name: openclaw-state
-          mountPath: /dev/shm/openclaw-state
-        - name: openclaw-cache
-          mountPath: /dev/shm/openclaw-cache
-        - name: tmp
-          mountPath: /tmp
+        - name: dshm
+          mountPath: /dev/shm
       readinessProbe:
         exec:
           command:
@@ -93,14 +90,7 @@ spec:
         timeoutSeconds: 3
         failureThreshold: 12
   volumes:
-    - name: openclaw-state
+    - name: dshm
       emptyDir:
         medium: Memory
-        sizeLimit: 2Gi
-    - name: openclaw-cache
-      emptyDir:
-        medium: Memory
-        sizeLimit: 512Mi
-    - name: tmp
-      emptyDir:
-        sizeLimit: 512Mi
+        sizeLimit: 4Gi

@@ -10,7 +10,7 @@ There are four independently configured network/runtime boundaries:
 1. The real host, which starts Docker and provides TDX, KVM, and the registry.
 2. The CoCo container, which runs Kubernetes, containerd, and Nydus.
 3. The Kata QEMU TDX VM, which boots Asterinas and `kata-agent`.
-4. The workload container, which runs `nano_bot` and calls the API.
+4. The workload container, which runs `nano_bot` or OpenClaw and calls the API.
 
 A proxy or DNS fix at one boundary does not automatically apply to the others.
 The guest agent needs proxy kernel parameters before the workload exists; the
@@ -111,7 +111,7 @@ Back up the initramfs before repacking. Keep its archive format and every file
 except the intended registry configuration unchanged. After repacking, create
 a new Pod; an existing VM retains its old initramfs.
 
-The related helper [../scripts/configure_guest_registry_mirror.sh](../scripts/configure_guest_registry_mirror.sh)
+The related helper [../nano_bot/scripts/configure_guest_registry_mirror.sh](../nano_bot/scripts/configure_guest_registry_mirror.sh)
 can stage this change. Review its transport and address values for the target
 host before running it.
 
@@ -144,7 +144,7 @@ docker exec -i "$COCO_CONTAINER" bash -s -- \
   --model "$MODEL" \
   ${PROXY_URL:+--proxy "$PROXY_URL"} \
   ${NODE_NAME:+--node-name "$NODE_NAME"} \
-  < cczoo/agent-cc/adapters/coco_tdx/openai_chat/run_openai_workload.sh
+  < cczoo/agent-cc/adapters/coco_tdx/run_openai_workload.sh
 ```
 
 When shell array handling makes optional arguments awkward, enter the CoCo
