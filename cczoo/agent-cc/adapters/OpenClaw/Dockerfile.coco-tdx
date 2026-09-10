@@ -1,5 +1,5 @@
 FROM openclaw-flat:latest
 
-# Asterinas does not support the rename sequence used by the external SQLite worker.
+# Avoid the external SQLite worker rename sequence unsupported by Asterinas.
 RUN sed -i 's/prepareSqliteReadOnlyLocationSync : prepareSqliteReadOnlyLocationSyncInProcess/prepareSqliteReadOnlyLocationSyncInProcess : prepareSqliteReadOnlyLocationSyncInProcess/' \
     /app/dist/openclaw-state-db-readonly-*.js

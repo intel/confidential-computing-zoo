@@ -18,7 +18,7 @@ spec:
       type: RuntimeDefault
   containers:
     - name: openclaw
-      image: docker.io/library/openclaw-coco-smoke:patched
+      image: docker.io/library/openclaw-coco-tdx:latest
       imagePullPolicy: IfNotPresent
       securityContext:
         allowPrivilegeEscalation: false

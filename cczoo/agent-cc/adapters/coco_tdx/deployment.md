@@ -9,7 +9,7 @@ There are four independently configured network/runtime boundaries:
 
 1. The real host, which starts Docker and provides TDX, KVM, and the registry.
 2. The CoCo container, which runs Kubernetes, containerd, and Nydus.
-3. The Kata QEMU TDX VM, which boots Asterinas and `kata-agent`.
+3. The Kata QEMU TDX VM, which boots the Linux guest and `kata-agent`.
 4. The workload container, which runs `nano_bot` or OpenClaw and calls the API.
 
 A proxy or DNS fix at one boundary does not automatically apply to the others.
@@ -53,7 +53,7 @@ Inside the CoCo container:
 ```bash
 export KUBECONFIG=/etc/kubernetes/super-admin.conf
 kubectl get nodes -o wide
-kubectl get runtimeclass kata-qemu-tdx-asterinas
+kubectl get runtimeclass kata-qemu-tdx-linux
 pgrep -af 'containerd|containerd-nydus'
 findmnt /var/lib/containerd-nydus
 findmnt /var/lib/containerd/tmpmounts
@@ -97,7 +97,7 @@ registry outside an isolated development network.
 
 CDH reads `/etc/registry-configuration.toml` from the Kata initramfs. Editing
 `/opt/coco/config/cdh/registry-configuration.toml` alone does not change a new
-VM. Inspect and repack the exact initramfs selected by the Asterinas runtime:
+VM. Inspect and repack the exact initramfs selected by the Linux TDX runtime:
 
 ```bash
 INITRD=/opt/coco/prebuilt/asterinas-coco/kata-containers-initrd.img
@@ -119,7 +119,7 @@ host before running it.
 
 The workload's `HTTP_PROXY` does not help image pulling because image pulling
 happens before the workload starts. Add these tokens to the existing
-`kernel_params` in the Asterinas runtime TOML:
+`kernel_params` in the Linux TDX runtime TOML:
 
 ```text
 agent.https_proxy=<proxy-url>
@@ -159,7 +159,8 @@ Before deployment, verify:
 - The host has TDX enabled and the required device nodes.
 - The CoCo image version is a tested set of kernel, initrd, Kata, containerd,
   and Nydus artifacts.
-- RuntimeClass `kata-qemu-tdx-asterinas` points to the active Asterinas handler.
+- RuntimeClass `kata-qemu-tdx-linux` points to the active Linux TDX handler,
+  whose runtime and image-platform entries use the nydus snapshotter.
 - The API Secret exists in the CoCo cluster namespace.
 - The image repository and architecture are available from the guest.
 - The guest initramfs mirror uses the new machine's reachable address.
@@ -180,7 +181,7 @@ settings. It does not change the TDX VM or image-pull path.
 
 For a native provider with another protocol, place an OpenAI-compatible gateway
 or a provider adapter beside the workload. Do not add provider-specific logic
-to the Asterinas runtime setup. This keeps model replacement independent from
+to the Linux TDX runtime setup. This keeps model replacement independent from
 confidential VM deployment.
 
 ## OpenClaw as a workload
