@@ -22,6 +22,7 @@ spec:
       imagePullPolicy: IfNotPresent
       securityContext:
         allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
         capabilities:
           drop: [ALL]
       env:
@@ -71,6 +72,8 @@ spec:
       volumeMounts:
         - name: dshm
           mountPath: /dev/shm
+        - name: tmp
+          mountPath: /tmp
       readinessProbe:
         exec:
           command:
@@ -94,3 +97,7 @@ spec:
       emptyDir:
         medium: Memory
         sizeLimit: 4Gi
+    - name: tmp
+      emptyDir:
+        medium: Memory
+        sizeLimit: 512Mi

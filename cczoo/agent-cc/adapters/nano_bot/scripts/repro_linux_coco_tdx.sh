@@ -750,15 +750,28 @@ ${signed_images_annotations}
 spec:
   runtimeClassName: kata-qemu-tdx-linux
 ${node_name_block}${host_aliases_block}
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: nano-bot
       image: "${NANO_BOT_IMAGE}"
       imagePullPolicy: ${IMAGE_PULL_POLICY}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
       command:
         - /bin/bash
         - -lc
         - |
-          mkdir -p /root/.config/nano-bots /root/.local/share/nano-bots/cartridges /root/.local/state/nano-bots
+          mkdir -p /home/nano/.config/nano-bots /home/nano/.local/share/nano-bots/cartridges /home/nano/.local/state/nano-bots
           exec sleep infinity
       env:
         - name: GEM_HOME
@@ -774,9 +787,9 @@ ${node_name_block}${host_aliases_block}
         - name: TEMP
           value: "/tmp"
         - name: NANO_BOTS_STATE_PATH
-          value: "/root/.local/state/nano-bots"
+          value: "/home/nano/.local/state/nano-bots"
         - name: NANO_BOTS_CARTRIDGES_PATH
-          value: "/root/.local/share/nano-bots/cartridges"
+          value: "/home/nano/.local/share/nano-bots/cartridges"
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -797,9 +810,9 @@ ${proxy_env_block}
         - name: confidential-workdir
           mountPath: /var/tmp
         - name: confidential-workdir
-          mountPath: /root/.config
+          mountPath: /home/nano/.config
         - name: confidential-workdir
-          mountPath: /root/.local
+          mountPath: /home/nano/.local
   volumes:
     - name: confidential-workdir
       emptyDir:
@@ -836,15 +849,28 @@ spec:
   restartPolicy: Never
   runtimeClassName: kata-qemu-tdx-linux
 ${node_name_block}${host_aliases_block}
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: nano-bot
       image: "${probe_image}"
       imagePullPolicy: ${PROBE_IMAGE_PULL_POLICY}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
       command:
         - /bin/bash
         - -lc
         - |
-          mkdir -p /root/.config/nano-bots /root/.local/share/nano-bots/cartridges /root/.local/state/nano-bots
+          mkdir -p /home/nano/.config/nano-bots /home/nano/.local/share/nano-bots/cartridges /home/nano/.local/state/nano-bots
           echo "nano-bot chat probe starting"
           echo "model=${NANO_BOT_MODEL}"
           ruby -e '
@@ -869,9 +895,9 @@ ${node_name_block}${host_aliases_block}
         - name: TEMP
           value: "/tmp"
         - name: NANO_BOTS_STATE_PATH
-          value: "/root/.local/state/nano-bots"
+          value: "/home/nano/.local/state/nano-bots"
         - name: NANO_BOTS_CARTRIDGES_PATH
-          value: "/root/.local/share/nano-bots/cartridges"
+          value: "/home/nano/.local/share/nano-bots/cartridges"
         - name: FARADAY_SSL_VERIFY
           value: "${FARADAY_SSL_VERIFY}"
 ${proxy_env_block}
@@ -881,9 +907,9 @@ ${proxy_env_block}
         - name: confidential-workdir
           mountPath: /var/tmp
         - name: confidential-workdir
-          mountPath: /root/.config
+          mountPath: /home/nano/.config
         - name: confidential-workdir
-          mountPath: /root/.local
+          mountPath: /home/nano/.local
   volumes:
     - name: confidential-workdir
       emptyDir:
