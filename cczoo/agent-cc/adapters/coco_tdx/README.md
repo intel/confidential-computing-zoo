@@ -178,6 +178,29 @@ kubectl exec -it openclaw-coco-tdx-gateway -- sh -lc \
     --message "Hello, please check the TDX status and confirm that you are running inside a TDX virtual machine." --json'
 ```
 
+#### 2.5 Optional: TC API trust plane and signed image
+
+The TC API `POST /api/deploy-launch` endpoint launches Docker containers and
+does not use the Kubernetes Kata RuntimeClass. For the deployment above, retain
+the Kubernetes launcher and use the same Trustee/KBS trust plane to verify the
+OpenClaw image inside the guest:
+
+```bash
+OPENCLAW_PROXY_URL="${PROXY_URL:-${HTTPS_PROXY:-${https_proxy:-}}}" \
+  bash cczoo/agent-cc/adapters/OpenClaw/scripts/run-signed-images-trustee.sh
+```
+
+The helper signs the registry digest, publishes only the Cosign public key and
+a deny-by-default policy to Trustee, installs the separate
+`kata-qemu-tdx-linux-signed` guest-pull RuntimeClass, and invokes the normal
+OpenClaw launcher. The signing key remains on the host. The existing
+`kata-qemu-tdx-linux` path is left unchanged.
+
+This flow succeeds only when the Kata guest image includes signed-image
+verification support. The helper treats a Ready Pod without a Trustee
+attestation or resource request as a failure; a RuntimeClass annotation alone
+is not proof that the image policy was enforced.
+
 ### 3. Deploy the NanoBot example
 
 NanoBot demonstrates a smaller OpenAI-compatible chat workload using the same

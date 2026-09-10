@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+# Copyright (c) 2026 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Deploy OpenClaw in the Linux TDX Kata runtime without host Docker access.
 
 set -euo pipefail
@@ -26,6 +40,9 @@ Options:
   --max-tokens NUM         Max tokens (default: 4096)
   --proxy URL              HTTP(S) proxy reachable from the guest
   --node-name NAME         Optional nodeName
+  --signed-images          Require guest-side image signature verification
+  --kbs-url URL            Trustee KBS URL reachable from the guest
+  --image-policy URI       Image policy URI, for example kbs:///default/security-policy/openclaw
   --delete                 Delete the existing Pod before deploying
   --help                   Show this help
 
@@ -47,6 +64,9 @@ MAX_TOKENS="${OPENCLAW_MAX_TOKENS:-4096}"
 PROXY_URL="${OPENCLAW_PROXY_URL:-${HTTPS_PROXY:-${https_proxy:-}}}"
 NO_PROXY_VALUE="${OPENCLAW_NO_PROXY:-127.0.0.1,localhost,10.244.0.0/16,10.96.0.0/12}"
 NODE_NAME="${OPENCLAW_NODE_NAME:-}"
+SIGNED_IMAGES="${OPENCLAW_SIGNED_IMAGES:-0}"
+KBS_URL="${OPENCLAW_KBS_URL:-}"
+IMAGE_POLICY="${OPENCLAW_IMAGE_POLICY:-}"
 DELETE_EXISTING=0
 KUBECTL="${KUBECTL:-kubectl}"
 
@@ -63,6 +83,9 @@ while (($#)); do
     --max-tokens) [[ $# -ge 2 ]] || fail "--max-tokens requires a value"; MAX_TOKENS="$2"; shift 2 ;;
     --proxy) [[ $# -ge 2 ]] || fail "--proxy requires a value"; PROXY_URL="$2"; shift 2 ;;
     --node-name) [[ $# -ge 2 ]] || fail "--node-name requires a value"; NODE_NAME="$2"; shift 2 ;;
+    --signed-images) SIGNED_IMAGES=1; shift ;;
+    --kbs-url) [[ $# -ge 2 ]] || fail "--kbs-url requires a value"; KBS_URL="$2"; shift 2 ;;
+    --image-policy) [[ $# -ge 2 ]] || fail "--image-policy requires a value"; IMAGE_POLICY="$2"; shift 2 ;;
     --delete) DELETE_EXISTING=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) fail "unknown option: $1" ;;
@@ -70,7 +93,7 @@ while (($#)); do
 done
 
 command -v "$KUBECTL" >/dev/null 2>&1 || fail "kubectl is not available"
-for value_name in IMAGE POD_NAME NAMESPACE RUNTIME_CLASS API_SECRET API_SECRET_KEY GATEWAY_SECRET MODEL MAX_TOKENS PROXY_URL NO_PROXY_VALUE NODE_NAME; do
+for value_name in IMAGE POD_NAME NAMESPACE RUNTIME_CLASS API_SECRET API_SECRET_KEY GATEWAY_SECRET MODEL MAX_TOKENS PROXY_URL NO_PROXY_VALUE NODE_NAME KBS_URL IMAGE_POLICY; do
   value="${!value_name}"
   [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || fail "$value_name contains a newline"
 done
@@ -79,6 +102,10 @@ done
 [[ "$IMAGE" == */*:* ]] || fail "image must include repository and tag: $IMAGE"
 [[ "$MODEL" =~ ^[A-Za-z0-9._:/-]+$ ]] || fail "model contains unsupported characters: $MODEL"
 [[ "$MAX_TOKENS" =~ ^[1-9][0-9]*$ ]] || fail "max-tokens must be a positive integer"
+if [[ "$SIGNED_IMAGES" == "1" ]]; then
+  [[ "$KBS_URL" =~ ^https?://[^[:space:]]+$ ]] || fail "signed image verification requires a valid --kbs-url"
+  [[ "$IMAGE_POLICY" =~ ^kbs:///[^[:space:]]+$ ]] || fail "signed image verification requires a valid --image-policy"
+fi
 
 yaml_string() {
   local value="$1"
@@ -88,6 +115,12 @@ yaml_string() {
 
 manifest="$(mktemp)"
 trap 'rm -f "$manifest"' EXIT
+if [[ "$SIGNED_IMAGES" == "1" ]]; then
+  signed_images_annotations="  annotations:
+    io.katacontainers.config.hypervisor.kernel_params: $(yaml_string "agent.aa_kbc_params=cc_kbc::$KBS_URL agent.image_policy_file=$IMAGE_POLICY agent.enable_signature_verification=true")"
+else
+  signed_images_annotations=""
+fi
 cat >"$manifest" <<YAML
 apiVersion: v1
 kind: Pod
@@ -96,6 +129,7 @@ metadata:
   namespace: $(yaml_string "$NAMESPACE")
   labels:
     app: openclaw-coco-tdx
+$signed_images_annotations
 spec:
   runtimeClassName: $(yaml_string "$RUNTIME_CLASS")
 $([ -n "$NODE_NAME" ] && printf '  nodeName: %s\n' "$(yaml_string "$NODE_NAME")")
