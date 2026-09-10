@@ -1,36 +1,33 @@
-# OpenClaw and NanoBot on CoCo with Intel TDX
+# Run AI Agents in Confidential Containers with Intel TDX
 
-These examples run OpenClaw and an OpenAI-compatible NanoBot chat workload
-inside an Intel TDX confidential VM:
+This guide shows how to deploy AI agent workloads in Intel TDX confidential
+VMs with Confidential Containers (CoCo). OpenClaw and NanoBot are two example
+agents; the same deployment pattern can be adapted to other containerized
+agents that can reach their model provider from the guest.
 
-```text
-Kubernetes -> Kata QEMU TDX -> Asterinas guest -> kata-agent/CDH -> workload
-```
+The host needs Intel TDX support, `/dev/kvm`, `/dev/vhost-vsock`, Docker, and
+outbound access to the image registry and model API endpoint.
 
-Use this directory when the target machine already has the official CoCo
-environment with the TDX RuntimeClass.
+## Deployment guide
 
-## Quick start
-
-The commands below are split between the real host and the CoCo container.
-
-### 1. Setup CoCo TDX environment
+### 1. Prepare the CoCo TDX environment
 
 Run this section once before deploying either OpenClaw or NanoBot. The
 `docker run` command starts the Asterinas-maintained CoCo container; the
 workload containers are launched later as Kubernetes Pods inside its TDX
 runtime.
 
-The target host needs Linux Intel TDX, `/dev/kvm`, `/dev/vhost-vsock`, Docker,
-and outbound access to the image registry and API endpoint. The earlier
-CoCo/TDX validation recorded in this repository used
-`asterinas/coco:0.18.0-20260603`.
-
-On the real host, start the CoCo container with an interactive shell:
+On the **host**, start the CoCo container with an interactive shell:
 
 ```bash
-# Keep Kubernetes, Docker-network, and CoCo-internal traffic off the proxy.
-export NO_PROXY=localhost,127.0.0.1,::1,172.16.0.0/12,10.96.0.0/12,10.244.0.0/16
+# Override these defaults if the cluster uses different Service or Pod CIDRs.
+export K8S_SERVICE_CIDR="${K8S_SERVICE_CIDR:-10.96.0.0/12}"
+export K8S_POD_CIDR="${K8S_POD_CIDR:-10.244.0.0/16}"
+DOCKER_BRIDGE_CIDR="$(docker network inspect bridge \
+  --format '{{(index .IPAM.Config 0).Subnet}}')"
+
+# Keep loopback, Docker bridge, and Kubernetes traffic off the proxy.
+export NO_PROXY="localhost,127.0.0.1,::1,$DOCKER_BRIDGE_CIDR,$K8S_SERVICE_CIDR,$K8S_POD_CIDR"
 export no_proxy="$NO_PROXY"
 export COCO_CONTAINER="${COCO_CONTAINER:-asterinas-coco-tdx}"
 
@@ -41,47 +38,39 @@ docker run -it \
   --cgroupns host \
   --device /dev/kvm \
   --device /dev/vhost-vsock \
-  --tmpfs /var/lib/containerd-tmpmounts:rw,size=8g \
+  --tmpfs /var/lib/containerd/tmpmounts:rw,size=8g \
   --tmpfs /var/lib/containerd-nydus:rw,size=8g \
   -e HTTP_PROXY -e HTTPS_PROXY -e NO_PROXY \
   -e http_proxy -e https_proxy -e no_proxy \
   asterinas/coco:0.18.0-20260603 bash
 ```
 
-Run only one CoCo container on a host. Do not start a second container with a
-different name: the containers share host TDX/KVM and runtime resources, and
-parallel instances can leave the guest API endpoint or QEMU sandboxes
-unusable. Keep this container running for the entire Kubernetes workload
-lifecycle. If it is forcibly terminated, start a fresh container and rerun
-`/opt/coco/setup-coco-k8s.sh` before creating another TDX Pod.
-
-Inside the CoCo container, configure and bootstrap Kubernetes:
+Inside the **CoCo container**, select its Kubernetes configuration:
 
 ```bash
 export KUBECONFIG=/etc/kubernetes/super-admin.conf
 ```
 
-### 1.1 Bootstrap and check the runtime
+Then bootstrap Kubernetes and verify the node and Linux TDX RuntimeClass:
 
 ```bash
 # Init Kubernetes env
 /opt/coco/setup-coco-k8s.sh
 kubectl get nodes
-kubectl get runtimeclass kata-qemu-tdx-asterinas
+kubectl get runtimeclass kata-qemu-tdx-linux
 ```
 
-Keep this terminal attached to the CoCo container. Run host-side commands such
-as `docker build`, `skopeo copy`, and `docker exec` from a second host terminal.
-In every host terminal, set `COCO_CONTAINER` to the running container name. For
-example, use `asterinas-coco-official` for an existing container, or
-`asterinas-coco-tdx` for the container started above:
+Keep Terminal A attached to the CoCo container. In Terminal B on the host, run
+`docker build`, `skopeo copy`, and `docker exec`. Set `COCO_CONTAINER` to the
+same container name used in Terminal A:
 
 ```bash
-export COCO_CONTAINER=asterinas-coco-official
+export COCO_CONTAINER="${COCO_CONTAINER:-asterinas-coco-tdx}"
 ```
 
-The guest registry mirror must also be configured with a guest-reachable
-address before either workload pulls an image:
+Before deploying an agent, configure the guest registry mirror with an
+address reachable from a TDX guest. Run this on the **host** from the
+repository root:
 
 ```bash
 cd <workdir>
@@ -94,64 +83,41 @@ CONTAINER_NAME="$COCO_CONTAINER" \
 ```
 
 The script repacks the initramfs, so create a new workload Pod after changing
-the mirror. The 8 GiB tmpfs mounts are required by the guest-pull and nydus
-paths used by the OpenClaw image.
+the mirror. The Linux TDX handler uses the nydus snapshotter for this
+guest-pull configuration; the 8 GiB tmpfs mounts provide working space for
+the image-pull path.
 
-For the Asterinas TDX handler, use the native containerd snapshotter. The
-handler's runtime and image-platform entries must both contain
-`snapshotter = "native"`; nydus is not supported for TDX cleanup in this
-flow and can leave later Pods stuck in `ContainerCreating`.
+If a Pod remains in `ContainerCreating` or a forced termination leaves a TDX
+sandbox behind, follow the recovery steps in
+[troubleshooting.md](troubleshooting.md#pod-remains-containercreating) before
+creating another Pod.
 
-If a forced Pod deletion or Docker termination leaves a TDX sandbox stuck in
-`ContainerCreating`, stop creating Pods and recover the runtime first. The
-containerd temporary directory must exist after any manual cleanup:
-
-```bash
-docker exec "$COCO_CONTAINER" bash -lc \
-  'mkdir -p /var/lib/containerd/tmpmounts /var/lib/containerd-nydus \
-          /var/lib/containerd-tmpmounts'
-```
-
-Restart the dedicated CoCo container only after deleting the failed workload,
-and run `/opt/coco/setup-coco-k8s.sh` inside it. Do not remove
-`/var/lib/containerd`, and do not share runtime state with
-`asterinas-coco-official`. Verify `kubectl get nodes` is `Ready` before
-deploying again. The Asterinas CoCo image used here can retain stale TDX
-shims/QEMU processes after a forced termination; when that happens, a fresh
-CoCo container is required before retrying.
-
-### 2. OpenClaw on CoCo TDX
-
-Use the CoCo container, Kubernetes control plane, RuntimeClass, guest
-registry mirror, and proxy setup described below. The OpenClaw-specific image,
-gateway token, Pod manifest, and deployment script remain in `../OpenClaw/`.
+### 2. Deploy the OpenClaw example
 
 #### 2.1 Prepare the image on the host
 
-Run the image build and registry push on the real host:
+Run the image build and registry push on the **host**:
 
 ```bash
 cd cczoo/agent-cc/adapters/OpenClaw
-docker build -f Dockerfile.coco-smoke \
-  -t docker.io/library/openclaw-coco-smoke:patched .
+docker build -f Dockerfile.coco-tdx \
+  -t docker.io/library/openclaw-coco-tdx:latest .
 
 # Push the image to the local registry used by the guest mirror.
 # Keep the guest-facing mirror address separate from this host-side push address.
 export REGISTRY_PUSH_ADDRESS="${REGISTRY_PUSH_ADDRESS:-127.0.0.1:5000}"
 skopeo copy --dest-tls-verify=false \
-  docker-daemon:docker.io/library/openclaw-coco-smoke:patched \
-  docker://$REGISTRY_PUSH_ADDRESS/library/openclaw-coco-smoke:patched
+  docker-daemon:docker.io/library/openclaw-coco-tdx:latest \
+  docker://$REGISTRY_PUSH_ADDRESS/library/openclaw-coco-tdx:latest
 ```
 
-The guest still uses the image reference
-`docker.io/library/openclaw-coco-smoke:patched`; the configured guest mirror
-rewrites that reference to the registry address reachable from the TDX VM.
-Configure or repair the mirror before deploying either workload when the CoCo
-container's Docker network has changed.
+This image is based on `openclaw-flat:latest`. Its Dockerfile replaces the
+external SQLite read-only preparation path with OpenClaw's in-process
+implementation, avoiding a file rename sequence unsupported by Asterinas.
 
 #### 2.2 Create OpenClaw Secrets
 
-Run these commands inside the CoCo container with the CoCo cluster context:
+Run these commands inside the **CoCo container**:
 
 ```bash
 read -rsp 'OPENAI_API_KEY: ' OPENAI_API_KEY
@@ -169,8 +135,7 @@ printf '%s' "$OPENCLAW_GATEWAY_TOKEN" |
 unset OPENCLAW_GATEWAY_TOKEN
 ```
 
-Run this section in the terminal attached to the CoCo container, not in a host
-terminal using the host's default Kubernetes context. Verify with:
+And verify with:
 
 ```bash
 kubectl config current-context
@@ -179,23 +144,12 @@ kubectl get secret agent-api-key openclaw-gateway-token
 
 #### 2.3 Deploy OpenClaw
 
-Run this from a second host terminal. The script itself runs inside the CoCo
-container so that it uses the CoCo Kubernetes cluster, RuntimeClass, and
-containerd. Set `OPENCLAW_PROXY_URL` only when the TDX guest needs an outbound
-proxy; the value must be resolvable from the guest.
-
-> **Note on RuntimeClass & Storage:**
-> - In standard Kata CoCo TDX setups, use `--runtime-class kata-qemu-tdx-linux`
->   (default in `run-coco-tdx.sh`). The Linux TDX guest runtime provides full
->   POSIX support for Node.js runtime and networking.
-> - Kata TDX guests with `shared_fs = "none"` cannot mount arbitrary host directories
->   or multiple nested `emptyDir` volumes. A single memory-backed `emptyDir` mounted
->   at `/dev/shm` ensures all state (`/dev/shm/openclaw-state`) and cache
->   (`/dev/shm/openclaw-cache`) remain encrypted in confidential guest RAM without
->   triggering virtio-fs or virtio-block hotplug timeouts.
+Run this from Terminal B on the **host**. Set `OPENCLAW_PROXY_URL` only when
+the TDX guest needs an outbound proxy. The proxy address must be resolvable
+from the guest.
 
 ```bash
-export COCO_CONTAINER="${COCO_CONTAINER:-asterinas-coco-official}"
+export COCO_CONTAINER="${COCO_CONTAINER:-asterinas-coco-tdx}"
 export OPENCLAW_PROXY_URL="${PROXY_URL:-${HTTPS_PROXY:-${https_proxy:-}}}"
 docker exec -i \
   -e KUBECONFIG=/etc/kubernetes/super-admin.conf \
@@ -208,9 +162,14 @@ docker exec -i \
   < cczoo/agent-cc/adapters/OpenClaw/scripts/run-coco-tdx.sh
 ```
 
+`--model` sets OpenClaw's default model. The value above uses OpenClaw's
+`openrouter/<provider>/<model>` format: `openrouter` selects the OpenRouter
+integration, and `nvidia/nemotron-3.5-lightning:free` is the OpenRouter model
+slug. `:free` model availability and identifiers may change over time.
+
 #### 2.4 Verify the OpenClaw gateway
 
-Run the verification commands inside the CoCo container:
+Run the verification commands inside the **CoCo container**:
 
 ```bash
 kubectl wait --for=condition=Ready pod/openclaw-coco-tdx-gateway --timeout=10m
@@ -219,19 +178,17 @@ kubectl exec -it openclaw-coco-tdx-gateway -- sh -lc \
     --message "Hello, please check the TDX status and confirm that you are running inside a TDX virtual machine." --json'
 ```
 
-### 3. NanoBot on CoCo TDX
+### 3. Deploy the NanoBot example
 
-The following steps deploy the standalone `nano_bot` OpenAI-compatible
-workload using the same CoCo TDX foundation.
+NanoBot demonstrates a smaller OpenAI-compatible chat workload using the same
+Linux guest runtime and CoCo TDX foundation as OpenClaw.
 
 #### 3.1 Create the API Secret
 
-Create the Secret against the Kubernetes cluster inside the CoCo container.
-Do not replace a placeholder in this command with the API key. Run it in a
-real terminal and enter the actual key when prompted. The key is stored in the
-temporary `OPENAI_API_KEY` shell variable, then piped into the Kubernetes
-Secret named `nano-bot-api-key`; it is not written into the command line or
-shell history:
+Inside the **CoCo container**, create the Secret in the CoCo Kubernetes
+cluster. Enter the API key only at the prompt. The command stores it in a
+temporary shell variable and pipes it into `nano-bot-api-key`, so the value is
+not written to the command line or shell history:
 
 ```bash
 read -rsp 'OPENAI_API_KEY: ' OPENAI_API_KEY
@@ -245,9 +202,9 @@ kubectl get secret nano-bot-api-key
 
 #### 3.2 Configure and run the workload
 
-Open a second host terminal while the interactive CoCo container session is
-running. Export `COCO_CONTAINER` in that terminal, then run the command from
-the repository root:
+In Terminal B on the **host**, export `COCO_CONTAINER`, then run this command
+from the repository root while Terminal A remains attached to the CoCo
+container:
 
 ```bash
 docker exec -i -e KUBECONFIG=/etc/kubernetes/super-admin.conf \
@@ -259,10 +216,10 @@ docker exec -i -e KUBECONFIG=/etc/kubernetes/super-admin.conf \
   < cczoo/agent-cc/adapters/coco_tdx/run_openai_workload.sh
 ```
 
-The command above is ready to copy when the TDX guest has direct API access.
-For a proxy, export the address once in the host terminal and pass it into the
-CoCo container explicitly. The value can come from the host's existing proxy
-configuration; it must also be resolvable and reachable from the TDX guest:
+Use the command above when the TDX guest has direct API access. When a proxy
+is required, export its address in the host terminal and pass it into the CoCo
+container explicitly. The proxy must be resolvable and reachable from the TDX
+guest:
 
 ```bash
 export WORKLOAD_PROXY_URL="${PROXY_URL:-${HTTPS_PROXY:-${https_proxy:-}}}"
@@ -282,12 +239,13 @@ API access. If you need to pin the Pod to a node, add `--node-name
 <real-node-name>` after replacing the placeholder with the actual Kubernetes
 node name.
 
-If you only have one host terminal, detach from the interactive container with
-`Ctrl-p`, then `Ctrl-q` (do not press `Ctrl-c`). The container keeps running;
-execute the same `docker exec` command from the host shell after detaching.
+If only one terminal is available, detach it from the interactive container
+with `Ctrl-p`, then `Ctrl-q` (do not press `Ctrl-c`). The container keeps
+running and the terminal returns to the host shell, where it can run the same
+`docker exec` command.
 
 If the repository is mounted inside the CoCo container, run the entrypoint
-directly there instead and do not use `docker exec`:
+directly there instead of using `docker exec`:
 
 ```bash
 bash /path/to/coco_tdx/run_openai_workload.sh \
@@ -304,7 +262,9 @@ For repeatable provider changes, copy
 file and pass it with `--model-config`. It contains only endpoint, model,
 Secret reference, proxy, and TLS settings; it never contains the API key.
 
-#### 3.3 Run the probe
+#### 3.3 Verify NanoBot
+
+Run the probe inside the **CoCo container**:
 
 ```bash
 printf 'Reply with exactly: TDX guest connectivity confirmed.\nquit\n' |
@@ -316,7 +276,7 @@ A successful run prints the requested confirmation. A `401` means the Secret
 or key is invalid. A `404` can mean that the selected model is no longer
 available; inspect the response body before changing credentials.
 
-## Files
+## Reference
 
 - [run_openai_workload.sh](run_openai_workload.sh): NanoBot deployment
   entrypoint; accepts machine-specific values as options or environment
@@ -340,17 +300,19 @@ chosen setup. Treat the CoCo container, registry, initramfs, and proxy as part
 of the trusted deployment boundary. Add image signing, attestation policy,
 registry authentication, and TLS CA provisioning before production use.
 
-## Other agents and models
+## Adapt the guide to other agents and models
 
-The default image is `nano_bot`, but it is only an example workload, not the
-model abstraction.
-The client speaks the OpenAI Chat Completions protocol, so OpenAI, OpenRouter,
-vLLM, Ollama-compatible gateways, and similar providers can be selected with a
-model profile when they expose that protocol.
+The deployment foundation is not tied to OpenClaw or NanoBot. To add another
+agent, provide a container image, select a compatible TDX RuntimeClass, inject
+credentials through Kubernetes Secrets, and account for the guest's storage
+and network constraints.
 
-OpenClaw is an agent/workload runtime, not a model provider. Its CoCo TDX
-deployment is documented below in this guide; it uses its own image, gateway
-token, workspace volumes, and startup/readiness probe.
+The NanoBot client speaks the OpenAI Chat Completions protocol. OpenAI,
+OpenRouter, vLLM, Ollama-compatible gateways, and similar providers can be
+selected with a model profile when they expose that protocol.
+
+OpenClaw is an agent runtime, not a model provider. Its deployment uses its
+own image, gateway token, workspace storage, and startup/readiness probe.
 
 Providers that do not implement OpenAI-compatible chat need a provider adapter
 or gateway translating their native API to this contract. Keep that

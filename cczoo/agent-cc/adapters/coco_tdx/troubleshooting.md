@@ -35,9 +35,9 @@ This usually means Kata guest boot or CDH image pull is waiting. Check:
 
 1. `/var/lib/containerd-nydus` and `/var/lib/containerd/tmpmounts` are mounted
    and have free space.
-2. The active RuntimeClass is `kata-qemu-tdx-asterinas`.
+2. The active RuntimeClass is `kata-qemu-tdx-linux`.
 3. The QEMU command line contains `confidential-guest-support=tdx`, the
-   Asterinas kernel, and the expected initramfs.
+  expected Linux guest kernel, and the expected initramfs.
 4. The guest `AgentConfig` contains the intended agent proxy.
 5. The registry mirror is present inside the selected initramfs.
 6. The guest can route to the mirror and the mirror transport is correct.
@@ -50,6 +50,24 @@ pull works. With guest pull enabled, CDH retrieves the image independently.
 Create/remount both tmpfs paths in the CoCo container. A container restart can
 remove manually-created mounts. Supply them as Docker `--tmpfs` mounts when
 starting a reusable CoCo container.
+
+If forced Pod deletion or Docker termination leaves a TDX sandbox stuck, stop
+creating Pods and delete the failed workload before recovering the runtime.
+Ensure the containerd temporary directories exist after manual cleanup:
+
+```bash
+docker exec "$COCO_CONTAINER" bash -lc \
+  'mkdir -p /var/lib/containerd/tmpmounts /var/lib/containerd-nydus'
+```
+
+Restart the dedicated CoCo container, then run
+`/opt/coco/setup-coco-k8s.sh` inside it. Do not remove
+`/var/lib/containerd`, and do not share runtime state between CoCo containers.
+Verify that `kubectl get nodes` reports `Ready` before deploying again.
+
+The Asterinas CoCo image can retain stale TDX shims or QEMU processes after a
+forced termination. If they remain after the recovery steps above, replace
+the CoCo container with a fresh one before retrying.
 
 ## Registry errors
 
@@ -65,9 +83,9 @@ starting a reusable CoCo container.
 
 ## Proxy or DNS errors
 
-The proxy must be configured both in the Asterinas guest-agent kernel
-parameters and in the workload environment. A host `/etc/hosts` entry is not
-visible in the TDX guest. Use a guest-resolvable proxy hostname or IP.
+The proxy must be configured both in the Linux guest-agent kernel parameters
+and in the workload environment. A host `/etc/hosts` entry is not visible in
+the TDX guest. Use a guest-resolvable proxy hostname or IP.
 
 A direct connectivity check from a running Pod:
 
@@ -106,14 +124,14 @@ kubectl get secret nano-bot-api-key
 
 ## Guest reboots or powers down
 
-Use the complete official Asterinas runtime TOML and preserve its existing
-`kernel_params`. A short replacement often omits required Kata/Asterinas
-parameters. Also verify `/dev/kvm`, `/dev/vhost-vsock`, TDX kernel support,
-QGS, and firmware on the host.
+Use the complete Linux TDX runtime TOML derived from the official baseline and
+preserve its required `kernel_params`. A short replacement often omits
+required Kata/TDX parameters. Also verify `/dev/kvm`, `/dev/vhost-vsock`, TDX
+kernel support, QGS, and firmware on the host.
 
-## Linux runtime confusion
+## RuntimeClass mismatch
 
-`../scripts/repro_linux_coco_tdx.sh` targets a Linux guest kernel and
-`kata-qemu-tdx-linux`. It does not validate this Asterinas flow. Use
-`run_openai_workload.sh` and RuntimeClass
-`kata-qemu-tdx-asterinas` for the deployment documented here.
+This deployment uses the Linux guest kernel and `kata-qemu-tdx-linux` for both
+OpenClaw and NanoBot. If a Pod references another RuntimeClass, delete and
+recreate it with `kata-qemu-tdx-linux`; `runtimeClassName` cannot be changed on
+an existing Pod.

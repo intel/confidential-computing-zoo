@@ -15,7 +15,7 @@ Credentials are read from Kubernetes Secrets and are never accepted as
 command-line values or printed by this script.
 
 Options:
-  --image IMAGE            Image (default: docker.io/library/openclaw-coco-smoke:patched)
+  --image IMAGE            Image (default: docker.io/library/openclaw-coco-tdx:latest)
   --pod NAME               Pod name (default: openclaw-coco-tdx-gateway)
   --namespace NAME         Namespace (default: default)
   --runtime-class CLASS    RuntimeClass (default: kata-qemu-tdx-linux)
@@ -35,7 +35,7 @@ Create the gateway token without putting it in shell history:
 EOF
 }
 
-IMAGE="${OPENCLAW_IMAGE:-docker.io/library/openclaw-coco-smoke:patched}"
+IMAGE="${OPENCLAW_IMAGE:-docker.io/library/openclaw-coco-tdx:latest}"
 POD_NAME="${OPENCLAW_POD_NAME:-openclaw-coco-tdx-gateway}"
 NAMESPACE="${OPENCLAW_NAMESPACE:-default}"
 RUNTIME_CLASS="${OPENCLAW_RUNTIME_CLASS:-kata-qemu-tdx-linux}"

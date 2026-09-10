@@ -248,9 +248,9 @@ kubectl get runtimeclass kata-qemu-tdx-linux
 Ensure the base OpenClaw image is accessible to your cluster or loaded locally:
 
 ```bash
-# Build the patched smoke image if building locally:
+# Build the CoCo TDX image if building locally:
 # (From adapters/OpenClaw)
-docker build -f Dockerfile.coco-smoke -t docker.io/library/openclaw-coco-smoke:patched .
+docker build -f Dockerfile.coco-tdx -t docker.io/library/openclaw-coco-tdx:latest .
 ```
 
 #### Step 3: Create Kubernetes Secrets Safely

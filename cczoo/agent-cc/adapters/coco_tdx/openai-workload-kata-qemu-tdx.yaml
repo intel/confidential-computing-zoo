@@ -5,7 +5,7 @@ metadata:
   labels:
     app: openai-workload
 spec:
-  runtimeClassName: kata-qemu-tdx-asterinas
+  runtimeClassName: kata-qemu-tdx-linux
   restartPolicy: Never
   containers:
     - name: openai-workload
