@@ -152,8 +152,7 @@ export NANO_BOT_MODEL=gpt-3.5-turbo                   # your model name
 # 3. Only if your network requires an outbound HTTP proxy to reach the
 #    endpoint above (omit entirely if you don't need one):
 export PROXY_URL=http://your-proxy:port
-# If your proxy does TLS interception with a self-signed CA, also set:
-# export FARADAY_SSL_VERIFY=none
+# If your proxy intercepts TLS, install its CA in the guest trust store.
 
 # 4. Run everything: builds+publishes the nano_bot image using tc-api, wires up the guest
 #    registry mirror, prepares the Linux runtime config, deploys the Pod,
@@ -439,7 +438,7 @@ itself except `OPENAI_API_KEY`, which is never written to disk in this repo
 |---|---|---|
 | `PROXY_URL` | *(empty = no proxy)* | Outbound HTTP proxy the guest should use to reach `OPENAI_API_ADDRESS`. |
 | `NO_PROXY_VALUE` | `localhost,127.0.0.1,::1,10.96.0.0/12,10.244.0.0/16,10.88.0.0/16` | Proxy bypass list. The `10.88.0.0/16` bridge range matters when the guest-visible local registry is on the container bridge, e.g. `10.88.0.1:5000`. |
-| `FARADAY_SSL_VERIFY` | *(empty = verify on)* | Set to `none` only if your proxy does TLS interception with a self-signed CA. |
+| `FARADAY_SSL_VERIFY` | *(empty = verify on)* | Keep verification enabled; install an intercepting proxy's CA in the guest trust store. |
 | `ADD_HOST_ALIASES` | `1` | Auto-resolves the hostnames in `OPENAI_API_ADDRESS`/`PROXY_URL` on the *host* and injects them as Pod `hostAliases`. Useful if the cluster has no working in-cluster DNS (see [Troubleshooting](#troubleshooting)). |
 
 ### nano_bot / Image Configuration
@@ -652,9 +651,11 @@ Attestation.
 ### Confidential EmptyDir
 
 The generated nano bot Pod mounts a `1Gi` ordinary Kubernetes `emptyDir` as
-`confidential-workdir` at `/tmp`, `/var/tmp`, `/root/.config`, and
-`/root/.local`. With `kata-qemu-tdx-linux`, an ordinary block-backed
+`confidential-workdir` at `/tmp`, `/var/tmp`, `/home/nano/.config`, and
+`/home/nano/.local`. With `kata-qemu-tdx-linux`, an ordinary block-backed
 `emptyDir` is presented to the guest as a LUKS2-protected device. The Pod
+and probe run as UID/GID 10001 with a read-only image filesystem; use an image
+built from this adapter's Dockerfile rather than a root-only legacy image. The Pod
 startup command recreates the nano-bots configuration, cartridge, and state
 directories after the mount hides the corresponding image-layer directories.
 `TMPDIR`, `TMP`, and `TEMP` point at the encrypted `/tmp` mount.
@@ -666,17 +667,17 @@ mounted directories below, preventing the normal defaults or deployment
 configuration from drifting to another location:
 
 ```text
-NANO_BOTS_STATE_PATH=/root/.local/state/nano-bots
-NANO_BOTS_CARTRIDGES_PATH=/root/.local/share/nano-bots/cartridges
+NANO_BOTS_STATE_PATH=/home/nano/.local/state/nano-bots
+NANO_BOTS_CARTRIDGES_PATH=/home/nano/.local/share/nano-bots/cartridges
 ```
 
 The following workload-side data is covered by this mount:
 
 | Path in the nano bot container | Component/data | Protection status |
 |---|---|---|
-| `/root/.config/nano-bots` | nano-bots configuration or credential files placed under this directory | Encrypted by `confidential-workdir` |
-| `/root/.local/share/nano-bots/cartridges` | nano-bots cartridge files and downloaded/generated cartridge data | Encrypted by `confidential-workdir` |
-| `/root/.local/state/nano-bots` | nano-bots encrypted session state and interaction history when a state key is used | Encrypted by `confidential-workdir` |
+| `/home/nano/.config/nano-bots` | nano-bots configuration or credential files placed under this directory | Encrypted by `confidential-workdir` |
+| `/home/nano/.local/share/nano-bots/cartridges` | nano-bots cartridge files and downloaded/generated cartridge data | Encrypted by `confidential-workdir` |
+| `/home/nano/.local/state/nano-bots` | nano-bots encrypted session state and interaction history when a state key is used | Encrypted by `confidential-workdir` |
 | `/tmp` | Ruby, OpenSSL, HTTP client, shell, and other workload temporary files | Encrypted by `confidential-workdir`; `TMPDIR`, `TMP`, and `TEMP` direct compatible libraries and tools here |
 | `/var/tmp` | Longer-lived temporary files created by the workload or its libraries | Encrypted by `confidential-workdir` |
 
@@ -686,15 +687,15 @@ chat responses to stdout. Therefore it does not currently create a chat
 history or checkpoint file. The installed upstream `nano-bots` CLI/library is
 different: when given a non-empty state key it stores encrypted conversation
 history under the explicit state path above. The startup command recreates the
-three nano-bots directories because mounting over `/root/.config` and
-`/root/.local` hides the corresponding empty directories that were created in
-the image layer.
+three nano-bots directories because mounting over `/home/nano/.config` and
+`/home/nano/.local` hides the corresponding empty directories that were created
+in the image layer.
 
 This is not a blanket guarantee for every file that nano-bots or a cartridge
 may touch. Upstream loads `.env` from the current working directory, which is
-`/root` in this image; `/root/.env` is therefore outside the volume. Do not
+`/home/nano` in this image; `/home/nano/.env` is therefore outside the volume. Do not
 place secrets in `.env` for this workload. Provider credential files are only
-covered when their configured path is under `/root/.config`, `/root/.local`,
+covered when their configured path is under `/home/nano/.config`, `/home/nano/.local`,
 `/tmp`, or `/var/tmp`; an arbitrary path elsewhere is outside the encrypted
 volume. Cartridge-specific state paths can also bypass the mount, so use the
 generated fixed environment paths and do not override them in a cartridge.
@@ -896,10 +897,9 @@ them as Pod `hostAliases`. If DNS still fails, check the WARNING logged by
 the script - it means the hostname couldn't be resolved on the host either.
 
 **Chat request gets an SSL certificate error**
-Some corporate proxies perform TLS interception with a self-signed CA, which
-the guest's default trust store won't validate. Set `FARADAY_SSL_VERIFY=none`
-to disable certificate verification for the chat client only (does not
-affect any other component).
+Some corporate proxies perform TLS interception with a CA the guest does not
+trust. Install the proxy CA into the guest's certificate store; TLS verification
+remains enabled by default.
 
 **`docker exec ... tee file << HEREDOC` silently writes an empty file**
 `docker exec` does not attach stdin unless you pass `-i`. Any script that

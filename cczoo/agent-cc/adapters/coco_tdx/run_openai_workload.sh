@@ -1,4 +1,19 @@
 #!/usr/bin/env bash
+
+# Copyright (c) 2026 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 set -euo pipefail
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
@@ -13,7 +28,7 @@ or prints an API key; the key must already exist in the selected Kubernetes
 cluster as a Secret.
 
 Options:
-  --image IMAGE             Guest image reference (default: docker.io/library/nano_bot:2.0)
+  --image IMAGE             Guest image reference (default: docker.io/library/nano_bot:1.0)
   --secret NAME             Secret containing OPENAI_API_KEY (default: nano-bot-api-key)
   --model-config FILE       Provider profile with MODEL_* settings
   --api-address URL         OpenAI-compatible base URL (default: https://openrouter.ai/api/v1)
@@ -28,13 +43,13 @@ Options:
 EOF
 }
 
-IMAGE_REF="${IMAGE_REF:-docker.io/library/nano_bot:2.0}"
+IMAGE_REF="${IMAGE_REF:-docker.io/library/nano_bot:1.0}"
 SECRET_NAME="${SECRET_NAME:-nano-bot-api-key}"
 API_ADDRESS="${MODEL_API_ADDRESS:-${OPENAI_API_ADDRESS:-https://openrouter.ai/api/v1}}"
 MODEL="${MODEL_NAME:-${NANO_BOT_MODEL:-minimax/minimax-m3:free}}"
 PROXY_URL="${PROXY_URL:-${HTTPS_PROXY:-${https_proxy:-}}}"
 NO_PROXY_VALUE="${NO_PROXY_VALUE:-127.0.0.1,localhost,10.244.0.0/16,10.96.0.0/12}"
-FARADAY_SSL_VERIFY="${FARADAY_SSL_VERIFY:-none}"
+FARADAY_SSL_VERIFY="${FARADAY_SSL_VERIFY:-}"
 TMPFS_SIZE="${TMPFS_SIZE:-2G}"
 NYDUS_SIZE="${NYDUS_SIZE:-2G}"
 POD_NAME="${POD_NAME:-openai-workload-kata-qemu-tdx}"
@@ -167,10 +182,23 @@ metadata:
 spec:
   runtimeClassName: $RUNTIME_CLASS
   restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: openai-workload
       image: $IMAGE_REF
       imagePullPolicy: Always
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
       command: ["sleep", "infinity"]
       env:
         - name: OPENAI_API_KEY
@@ -183,12 +211,25 @@ spec:
         - name: NANO_BOT_MODEL
           value: "$MODEL"
         - name: FARADAY_SSL_VERIFY
-          value: "none"
+          value: "$FARADAY_SSL_VERIFY"
 $proxy_env
         - name: NO_PROXY
           value: "$NO_PROXY_VALUE"
         - name: no_proxy
           value: "$NO_PROXY_VALUE"
+      volumeMounts:
+        - name: confidential-workdir
+          mountPath: /tmp
+        - name: confidential-workdir
+          mountPath: /var/tmp
+        - name: confidential-workdir
+          mountPath: /home/nano/.config
+        - name: confidential-workdir
+          mountPath: /home/nano/.local
+  volumes:
+    - name: confidential-workdir
+      emptyDir:
+        sizeLimit: 1Gi
 EOF
 
 if [[ -n "$NODE_NAME" ]]; then

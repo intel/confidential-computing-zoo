@@ -69,7 +69,7 @@ if [[ -n "$pod_json" ]] && jq -e '
   all(.spec.containers[]?.volumeMounts[]?;
     (.name != "confidential-workdir") or
     (.mountPath == "/tmp" or .mountPath == "/var/tmp" or
-     .mountPath == "/root/.config" or .mountPath == "/root/.local"))
+     .mountPath == "/home/nano/.config" or .mountPath == "/home/nano/.local"))
 ' >/dev/null 2>&1 <<<"$pod_json"; then
   confidential_emptydir=true
 fi

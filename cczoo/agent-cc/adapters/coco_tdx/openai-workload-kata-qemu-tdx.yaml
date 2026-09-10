@@ -1,3 +1,17 @@
+# Copyright (c) 2026 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 apiVersion: v1
 kind: Pod
 metadata:
@@ -7,10 +21,23 @@ metadata:
 spec:
   runtimeClassName: kata-qemu-tdx-linux
   restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: openai-workload
-      image: docker.io/library/nano_bot:2.0
+      image: docker.io/library/nano_bot:1.0
       imagePullPolicy: Always
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
       command: ["sleep", "infinity"]
       env:
         - name: OPENAI_API_KEY
@@ -23,8 +50,21 @@ spec:
         - name: NANO_BOT_MODEL
           value: "minimax/minimax-m3:free"
         - name: FARADAY_SSL_VERIFY
-          value: "none"
+          value: ""
         - name: NO_PROXY
           value: "127.0.0.1,localhost,10.244.0.0/16,10.96.0.0/12"
         - name: no_proxy
           value: "127.0.0.1,localhost,10.244.0.0/16,10.96.0.0/12"
+      volumeMounts:
+        - name: confidential-workdir
+          mountPath: /tmp
+        - name: confidential-workdir
+          mountPath: /var/tmp
+        - name: confidential-workdir
+          mountPath: /home/nano/.config
+        - name: confidential-workdir
+          mountPath: /home/nano/.local
+  volumes:
+    - name: confidential-workdir
+      emptyDir:
+        sizeLimit: 1Gi

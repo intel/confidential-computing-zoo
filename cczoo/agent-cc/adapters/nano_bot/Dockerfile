@@ -76,9 +76,10 @@ COPY --from=builder /usr/local/bundle /usr/local/bundle
 COPY --from=builder /usr/local/bin/bb /usr/local/bin/bb
 
 # Directories nano-bots expects to exist.
-RUN mkdir -p /root/.config && \
-    mkdir -p /root/.local/share/nano-bots/cartridges && \
-    mkdir -p /root/.local/state/nano-bots
+RUN groupadd -g 10001 nano && useradd -u 10001 -g nano -m -d /home/nano nano && \
+    mkdir -p /home/nano/.config /home/nano/.local/share/nano-bots/cartridges \
+      /home/nano/.local/state/nano-bots && \
+    chown -R nano:nano /home/nano
 
 # Minimal chat-bot script used to exercise the OpenAI-compatible endpoint from
 # inside the guest. It is intentionally independent from any specific
@@ -87,6 +88,8 @@ RUN mkdir -p /root/.config && \
 COPY scripts/tdx-chat-bot.rb /usr/local/bin/tdx-chat-bot.rb
 RUN chmod +x /usr/local/bin/tdx-chat-bot.rb
 
-WORKDIR /root
+ENV HOME=/home/nano
+WORKDIR /home/nano
+USER nano
 
 CMD ["bash"]

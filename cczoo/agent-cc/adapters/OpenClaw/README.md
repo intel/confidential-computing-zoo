@@ -292,11 +292,21 @@ export OPENCLAW_PROXY_URL=http://<proxy-host>:<port>
 - `--runtime-class <class>`: Specify Kata TDX RuntimeClass (default: `kata-qemu-tdx-linux`)
 - `--api-secret <name>` / `--api-secret-key <key>`: Custom secret name and key (default: `agent-api-key` / `OPENAI_API_KEY`)
 - `--model <name>`: LLM model identifier (default: `openrouter/nvidia/nemotron-3.5-lightning:free`)
+- `--signed-images --kbs-url <url> --image-policy <kbs-uri>`: Enable guest-side Trustee image verification
 - `--delete`: Automatically delete any existing pod before deploying
+
+For an end-to-end local signing and Trustee setup, run
+`scripts/run-signed-images-trustee.sh` on the host. It creates a separate
+`kata-qemu-tdx-linux-signed` RuntimeClass so the normal Nydus deployment remains
+unchanged. The helper fails if the Pod becomes Ready without contacting Trustee;
+this indicates that the selected guest image does not enforce signed-image
+policy even if the Kata kernel parameters are present.
 
 **Option B: Using declarative YAML manifest**
 
-Reference manifest: [`openclaw-coco-tdx.yaml`](openclaw-coco-tdx.yaml)
+Reference manifest: [`openclaw-coco-tdx.yaml`](openclaw-coco-tdx.yaml).
+The Pod runs without privilege escalation on a read-only image filesystem;
+runtime state uses `/dev/shm` and temporary files use a memory-backed `/tmp`.
 ```bash
 kubectl apply -f openclaw-coco-tdx.yaml
 kubectl wait --for=condition=Ready pod/openclaw-coco-tdx-gateway --timeout=10m

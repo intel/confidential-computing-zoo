@@ -22,7 +22,7 @@ Keep these values outside git. Set them in a local shell or deployment system:
 
 ```bash
 export COCO_CONTAINER=<container-name>
-export IMAGE_REF=docker.io/library/nano_bot:2.0
+export IMAGE_REF=docker.io/library/nano_bot:1.0
 export API_ADDRESS=https://openrouter.ai/api/v1
 export MODEL=minimax/minimax-m3:free
 export PROXY_URL=http://<guest-resolvable-proxy>:<port>  # empty if direct
@@ -80,8 +80,8 @@ The image reference, registry repository, and guest mirror must agree. For a
 local Docker registry, publish the normalized repository used by Docker:
 
 ```text
-docker.io/library/nano_bot:2.0
-registry-address/library/nano_bot:2.0
+docker.io/library/nano_bot:1.0
+registry-address/library/nano_bot:1.0
 ```
 
 The registry address used by the guest must be reachable from the guest, while
@@ -178,6 +178,10 @@ the repository.
 The current workload contract is the OpenAI Chat Completions API. A provider
 profile changes only the endpoint, model, Secret reference, proxy, and TLS
 settings. It does not change the TDX VM or image-pull path.
+TLS verification is enabled by default; install a trusted CA in the guest
+instead of disabling it for an intercepting proxy. The hardened Pod manifests
+require a compatible image that runs as UID/GID 10001 with writable state under
+`/home/nano/.config` and `/home/nano/.local` (as built by the NanoBot adapter).
 
 For a native provider with another protocol, place an OpenAI-compatible gateway
 or a provider adapter beside the workload. Do not add provider-specific logic

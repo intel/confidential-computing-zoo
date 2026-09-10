@@ -11,6 +11,14 @@ metadata:
   # generating gzip+base64 init-data from a reviewed, non-secret TOML file.
 spec:
   runtimeClassName: kata-qemu-tdx-linux
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
   # Only needed if your cluster has no working in-cluster DNS for the
   # container's /etc/resolv.conf (rendered automatically when possible).
   hostAliases:
@@ -24,11 +32,16 @@ spec:
     - name: nano-bot
       image: "docker.io/library/nano_bot:1.0"
       imagePullPolicy: IfNotPresent
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
       command:
         - /bin/bash
         - -lc
         - |
-          mkdir -p /root/.config/nano-bots /root/.local/share/nano-bots/cartridges /root/.local/state/nano-bots
+          mkdir -p /home/nano/.config/nano-bots /home/nano/.local/share/nano-bots/cartridges /home/nano/.local/state/nano-bots
           exec sleep infinity
       env:
         - name: GEM_HOME
@@ -44,9 +57,9 @@ spec:
         - name: TEMP
           value: "/tmp"
         - name: NANO_BOTS_STATE_PATH
-          value: "/root/.local/state/nano-bots"
+          value: "/home/nano/.local/state/nano-bots"
         - name: NANO_BOTS_CARTRIDGES_PATH
-          value: "/root/.local/share/nano-bots/cartridges"
+          value: "/home/nano/.local/share/nano-bots/cartridges"
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -78,9 +91,9 @@ spec:
         - name: confidential-workdir
           mountPath: /var/tmp
         - name: confidential-workdir
-          mountPath: /root/.config
+          mountPath: /home/nano/.config
         - name: confidential-workdir
-          mountPath: /root/.local
+          mountPath: /home/nano/.local
   # Whether it is a Confidential EmptyDir depends on the runtimeClassName used by the Pod.
   volumes:
     - name: confidential-workdir
