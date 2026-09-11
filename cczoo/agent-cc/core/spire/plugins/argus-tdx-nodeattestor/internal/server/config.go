@@ -1,3 +1,17 @@
+// Copyright (c) 2026 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package server
 
 import (
@@ -21,9 +35,7 @@ import (
 	"github.com/intel/confidential-computing-zoo/cczoo/agent-cc/core/spire/plugins/argus-tdx-nodeattestor/internal/protocol"
 )
 
-const requiredTrustDomain = "argus.local"
-
-// Config contains the fixed Agent slot, Trustee trust anchors, appraisal pins,
+// Config contains the configured Agent slot, Trustee trust anchors, appraisal pins,
 // and protocol limits validated at SPIRE startup.
 type Config struct {
 	TrustDomain             string
@@ -68,11 +80,14 @@ func parseConfig(core *configapi.CoreConfiguration, input string) (*Config, []st
 		return nil, []string{fmt.Sprintf("decode HCL configuration: %v", err)}
 	}
 	var notes []string
-	if core == nil || core.TrustDomain != requiredTrustDomain {
-		notes = append(notes, "core trust_domain must be argus.local")
+	if core == nil || core.TrustDomain == "" {
+		notes = append(notes, "core trust_domain is required")
 	}
-	if raw.AgentID != protocol.FixedAgentSPIFFEID {
-		notes = append(notes, "agent_id must be "+protocol.FixedAgentSPIFFEID)
+	agentTrustDomain, identityErr := protocol.AgentTrustDomain(raw.AgentID)
+	if identityErr != nil {
+		notes = append(notes, identityErr.Error())
+	} else if core != nil && agentTrustDomain != core.TrustDomain {
+		notes = append(notes, "agent_id trust domain must match core trust_domain")
 	}
 	slotOwnerKeySHA256, err := parseSHA256(raw.SlotOwnerKeySHA256)
 	if err != nil {

@@ -1,0 +1,134 @@
+[
+  {
+    "name": "worker",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/worker-01",
+    "trust_domain": "example.org"
+  },
+  {
+    "name": "another deployment",
+    "agent_id": "spiffe://another.example/spire/agent/argus_tdx/database-02",
+    "trust_domain": "another.example"
+  },
+  {
+    "name": "allowed punctuation",
+    "agent_id": "spiffe://team_1.local/spire/agent/argus_tdx/Node_01.a-b",
+    "trust_domain": "team_1.local"
+  },
+  {
+    "name": "empty",
+    "agent_id": "",
+    "trust_domain": ""
+  },
+  {
+    "name": "scheme",
+    "agent_id": "https://example.org/spire/agent/argus_tdx/node",
+    "trust_domain": ""
+  },
+  {
+    "name": "workload identity",
+    "agent_id": "spiffe://example.org/services/database",
+    "trust_domain": ""
+  },
+  {
+    "name": "other plugin",
+    "agent_id": "spiffe://example.org/spire/agent/other/node",
+    "trust_domain": ""
+  },
+  {
+    "name": "port",
+    "agent_id": "spiffe://example.org:443/spire/agent/argus_tdx/node",
+    "trust_domain": ""
+  },
+  {
+    "name": "user info",
+    "agent_id": "spiffe://user@example.org/spire/agent/argus_tdx/node",
+    "trust_domain": ""
+  },
+  {
+    "name": "uppercase domain",
+    "agent_id": "spiffe://EXAMPLE.ORG/spire/agent/argus_tdx/node",
+    "trust_domain": ""
+  },
+  {
+    "name": "empty domain",
+    "agent_id": "spiffe:///spire/agent/argus_tdx/node",
+    "trust_domain": ""
+  },
+  {
+    "name": "empty node",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/",
+    "trust_domain": ""
+  },
+  {
+    "name": "dot segment",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/.",
+    "trust_domain": ""
+  },
+  {
+    "name": "parent segment",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/..",
+    "trust_domain": ""
+  },
+  {
+    "name": "only dots",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/...",
+    "trust_domain": ""
+  },
+  {
+    "name": "nested path",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/node/child",
+    "trust_domain": ""
+  },
+  {
+    "name": "query",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/node?a=b",
+    "trust_domain": ""
+  },
+  {
+    "name": "fragment",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/node#fragment",
+    "trust_domain": ""
+  },
+  {
+    "name": "encoded slash",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/node%2f",
+    "trust_domain": ""
+  },
+  {
+    "name": "newline",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/node\n",
+    "trust_domain": ""
+  },
+  {
+    "name": "space",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/node name",
+    "trust_domain": ""
+  },
+  {
+    "name": "backslash",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/node\\child",
+    "trust_domain": ""
+  },
+  {
+    "name": "unicode node",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/n\u00f8de",
+    "trust_domain": ""
+  },
+  {
+    "name": "unicode domain",
+    "agent_id": "spiffe://\u00e9xample.org/spire/agent/argus_tdx/node",
+    "trust_domain": ""
+  },
+  {
+    "name": "LP16 boundary 65535",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/n",
+    "padding": 65491,
+    "trust_domain": "example.org"
+  },
+  {
+    "name": "LP16 boundary 65536",
+    "agent_id": "spiffe://example.org/spire/agent/argus_tdx/n",
+    "padding": 65492,
+    "trust_domain": ""
+  }
+]

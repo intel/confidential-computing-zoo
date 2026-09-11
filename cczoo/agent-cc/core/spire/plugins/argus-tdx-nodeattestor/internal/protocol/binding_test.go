@@ -1,3 +1,17 @@
+// Copyright (c) 2026 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package protocol
 
 import (
@@ -7,6 +21,8 @@ import (
 	"os"
 	"testing"
 )
+
+const testAgentID = "spiffe://example.org/spire/agent/argus_tdx/worker-01"
 
 type bindingGolden struct {
 	AgentID            string `json:"agent_id"`
@@ -27,8 +43,8 @@ func TestNodeBindingGoldenVector(t *testing.T) {
 	if err := decoder.Decode(&vector); err != nil {
 		t.Fatal(err)
 	}
-	if vector.AgentID != FixedAgentSPIFFEID {
-		t.Fatalf("Agent ID = %q, want %q", vector.AgentID, FixedAgentSPIFFEID)
+	if vector.AgentID != testAgentID {
+		t.Fatalf("Agent ID = %q, want %q", vector.AgentID, testAgentID)
 	}
 	nonce, err := hex.DecodeString(vector.NonceHex)
 	if err != nil {
@@ -39,7 +55,7 @@ func TestNodeBindingGoldenVector(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runtimeData, err := NodeRuntimeData(nonce, publicKey)
+	runtimeData, err := NodeRuntimeData(testAgentID, nonce, publicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +63,7 @@ func TestNodeBindingGoldenVector(t *testing.T) {
 		t.Fatalf("node runtime data = %s, want %s", got, vector.NodeRuntimeDataHex)
 	}
 
-	reportData, err := ReportData(nonce, publicKey)
+	reportData, err := ReportData(testAgentID, nonce, publicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,9 +95,9 @@ func TestBindingRejectsInvalidLengths(t *testing.T) {
 	validKey := make([]byte, PublicKeySize)
 
 	for name, operation := range map[string]func() error{
-		"runtime nonce": func() error { _, err := NodeRuntimeData(validNonce[:31], validKey); return err },
-		"runtime key":   func() error { _, err := NodeRuntimeData(validNonce, validKey[:31]); return err },
-		"report nonce":  func() error { _, err := ReportData(validNonce[:31], validKey); return err },
+		"runtime nonce": func() error { _, err := NodeRuntimeData(testAgentID, validNonce[:31], validKey); return err },
+		"runtime key":   func() error { _, err := NodeRuntimeData(testAgentID, validNonce, validKey[:31]); return err },
+		"report nonce":  func() error { _, err := ReportData(testAgentID, validNonce[:31], validKey); return err },
 		"transcript key": func() error {
 			_, err := TranscriptDigest(validKey[:31], validNonce, 1, []byte{1})
 			return err
