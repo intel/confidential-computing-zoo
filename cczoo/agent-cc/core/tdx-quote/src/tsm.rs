@@ -4,9 +4,26 @@
 //! This is the preferred backend when running in a TDX environment with TSM support.
 
 use std::fs;
-use std::path::PathBuf;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 
 use crate::{QuoteError, QuoteGenerator, QuoteMaterial, ReportData};
+
+const MAX_QUOTE_SIZE: usize = 4 * 1024 * 1024;
+
+fn validate_quote_bytes(quote: Vec<u8>) -> Result<Vec<u8>, QuoteError> {
+    if quote.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "TDX quote is empty").into());
+    }
+    if quote.len() > MAX_QUOTE_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("TDX quote exceeds {MAX_QUOTE_SIZE} bytes"),
+        )
+        .into());
+    }
+    Ok(quote)
+}
 
 /// TSM-based TDX Quote Generator
 ///
@@ -126,18 +143,50 @@ impl TsmInstanceQuoteGenerator {
     fn create_instance_dir(&self) -> Result<PathBuf, QuoteError> {
         let instance_id = uuid::Uuid::new_v4().to_string();
         let report_dir = self.report_root_path.join(format!("report0_{}", instance_id));
-        fs::create_dir_all(&report_dir)?;
+        fs::create_dir(&report_dir)?;
         Ok(report_dir)
     }
     
-    fn cleanup_instance_dir(&self, report_dir: &PathBuf) -> Result<(), QuoteError> {
-        if let Ok(entries) = fs::read_dir(report_dir) {
-            for entry in entries.flatten() {
-                let _ = fs::remove_file(entry.path());
+    fn cleanup_instance_dir(&self, report_dir: &Path) -> Result<(), QuoteError> {
+        match fs::remove_dir(report_dir) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                for entry in fs::read_dir(report_dir)? {
+                    fs::remove_file(entry?.path())?;
+                }
+                fs::remove_dir(report_dir)?;
+                Ok(())
             }
         }
-        fs::remove_dir(report_dir)?;
-        Ok(())
+    }
+
+    /// Generate and return the exact raw TDX Quote bytes.
+    ///
+    /// Each call owns one configfs report instance. Transport encoding and
+    /// Quote appraisal remain the caller's responsibility.
+    pub fn generate_quote_bytes(
+        &self,
+        report_data: &ReportData,
+    ) -> Result<Vec<u8>, QuoteError> {
+        let report_dir = self.create_instance_dir()?;
+        let generation_result = (|| {
+            let report_data_path = report_dir.join("inblob");
+            let quote_path = report_dir.join("outblob");
+
+            // Writing inblob triggers Quote generation; outblob is the raw
+            // kernel-produced evidence returned to the caller.
+            fs::write(&report_data_path, self.encode_inblob(report_data.as_bytes()))?;
+
+            let quote_file = fs::File::open(&quote_path)?;
+            let mut quote_bytes = Vec::new();
+            quote_file
+                .take((MAX_QUOTE_SIZE + 1) as u64)
+                .read_to_end(&mut quote_bytes)?;
+            validate_quote_bytes(quote_bytes)
+        })();
+
+        self.cleanup_instance_dir(&report_dir)?;
+        generation_result
     }
 }
 
@@ -149,22 +198,8 @@ impl Default for TsmInstanceQuoteGenerator {
 
 impl QuoteGenerator for TsmInstanceQuoteGenerator {
     fn generate_quote(&self, report_data: &ReportData) -> Result<QuoteMaterial, QuoteError> {
-        let report_dir = self.create_instance_dir()?;
-        
-        let report_data_path = report_dir.join("inblob");
-        let quote_path = report_dir.join("outblob");
-        
-        let inblob = self.encode_inblob(report_data.as_bytes());
-        
-        // Write report data
-        fs::write(&report_data_path, &inblob)?;
-        
-        // Read generated quote
-        let quote_bytes = fs::read(&quote_path)?;
-        
-        // Cleanup instance directory
-        let _ = self.cleanup_instance_dir(&report_dir);
-        
+        let quote_bytes = self.generate_quote_bytes(report_data)?;
+
         Ok(QuoteMaterial {
             quote: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &quote_bytes),
             report_data: hex::encode(report_data.as_bytes()),
@@ -176,6 +211,7 @@ impl QuoteGenerator for TsmInstanceQuoteGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
     
     #[test]
     fn test_tsm_generator_creation() {
@@ -187,5 +223,27 @@ mod tests {
     fn test_tsm_instance_generator_creation() {
         let generator = TsmInstanceQuoteGenerator::new();
         assert_eq!(generator.resolve_quote_format(), "tdx-configfs-tsm");
+    }
+
+    #[test]
+    fn instance_generator_removes_report_directory_when_quote_generation_fails() {
+        let root = tempdir().unwrap();
+        let generator = TsmInstanceQuoteGenerator::with_path(root.path().to_path_buf());
+        let report_data = ReportData::from_digest(&[0x5a; 48]).unwrap();
+
+        let result = generator.generate_quote_bytes(&report_data);
+
+        assert!(result.is_err());
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn instance_generator_rejects_empty_quote() {
+        assert!(validate_quote_bytes(Vec::new()).is_err());
+    }
+
+    #[test]
+    fn instance_generator_rejects_quote_larger_than_four_mib() {
+        assert!(validate_quote_bytes(vec![0; MAX_QUOTE_SIZE + 1]).is_err());
     }
 }

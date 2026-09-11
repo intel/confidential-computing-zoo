@@ -1,10 +1,17 @@
 # Argus
 
-Argus is a runtime trust verification framework for agent-to-service (A2S) communication in confidential computing environments.
+Argus v1.5 is a runtime trust verification framework for agent-to-service
+(A2S) communication in Intel TDX environments. It supports general deployment
+mode for checking a peer before a sensitive call, and SPIFFE mode for
+establishing infrastructure identities through TDX-backed SPIRE attestation.
 
-Before a caller sends sensitive data to a peer service, Argus fetches evidence for that peer, verifies the evidence through an external attestation or identity system, and evaluates caller-local policy to decide whether the call should proceed.
+In general deployment mode, the caller-side Guard fetches fresh evidence from
+the target service's Evidence Provider, verifies it, and evaluates local policy
+to decide whether the call should proceed.
 
 ## Architecture At A Glance
+
+### A2S Runtime Verification
 
 ```mermaid
 flowchart LR
@@ -37,18 +44,63 @@ and only then allows the sensitive service call. See
 [Architecture](./docs/architecture.md) for trust boundaries, evidence binding,
 and deployment details.
 
+### SPIFFE/SPIRE Identity: SPIRE Node Attestation
+
+SPIFFE defines identities and SPIFFE Verifiable Identity Documents (SVIDs).
+SPIRE implements this model through two stages:
+
+1. **Node Attestation** authenticates the SPIRE Agent running inside a TDX
+   trust domain (TD, an isolated guest VM) and
+   enables SPIRE to issue an X.509-SVID for that Agent.
+2. **Workload Attestation** subsequently identifies a service process or
+   container and enables its own workload SVID under registration policy.
+
+The current implementation covers the node stage. The SVID issued here belongs
+to the SPIRE Agent, not to a business service instance. Argus supplies the guest-local
+SPIRE Evidence Provider and external `argus_tdx` Agent and Server plugins;
+Trustee appraises the Quote and SPIRE's Server CA issues the Agent's SVID.
+
+![SPIRE node attestation deployment and trust boundaries](./docs/images/spire-node-attestation.svg)
+
+The SPIRE Agent and Provider run inside the attested TD. The SPIRE Server and
+Trustee run on the verifier side. See [Architecture](./docs/architecture.md)
+for the exchange, identity binding, and trust boundaries.
+
+### Evidence Provider Programs
+
+| Program | Mode and client | API |
+|---------|-----------------|-----|
+| `argus-evidence-provider` | General mode; called by the caller-side Argus Guard | HTTP `POST /ra/v1/evidence` with request and workload binding claims |
+| `argus-spire-evidence-provider` | SPIFFE mode; called by the SPIRE Agent in the same TD | Guest-local UDS `POST /node-evidence` with nonce and proof public key |
+
+Both use the shared `tdx-quote` crate for hardware evidence generation. Their
+request contracts and clients differ. `start_argus.sh` starts the general-mode
+Provider. The SPIRE-mode Provider is a separate program with its own
+[configuration contract](./docs/configuration.md#spire-node-attestation).
+
 ## Prerequisites
 
-- Intel TDX-enabled platform
-- Linux kernel 5.15+ with TDX support
-- Rust 1.75+
-- `/dev/tdx_guest` device
-- TSM configfs interface at `/sys/kernel/config/tsm/report/`
+* Intel TDX-enabled platform
+
+* Linux kernel 5.15+ with TDX support
+
+* Rust 1.88+
+
+* Go 1.23.12
+
+* SPIRE v1.15.3
+
+* SPIRE external NodeAttestor plugin:
+  [`../spire/plugins/argus-tdx-nodeattestor`](../spire/plugins/argus-tdx-nodeattestor)
+
+* `/dev/tdx_guest` device
+
+* TSM configfs interface at `/sys/kernel/config/tsm/report/`
 
 ## Quick Start
 
-The following steps run both the Evidence Provider and Guard Service on a
-TDX-enabled Linux host.
+The following steps run the A2S Evidence Provider and Guard Service on a
+TDX-enabled Linux host. They do not start the SPIRE Node Attestation path.
 
 ### 1. Build
 
@@ -141,16 +193,16 @@ for example `tee_type: "tdx"` and `quote_valid: true`.
 
 ### Common configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ARGUS_WORKLOAD_IDENTITY` | _(required for stable identity)_ | Preferred identity bound into service evidence |
-| `ARGUS_SERVICE_NAME` | _(optional alias)_ | Compatibility alias for the workload identity |
-| `HOST` | Provider: `0.0.0.0`; Guard: `127.0.0.1` | HTTP bind address |
-| `PORT` | `8008` / `8007` | Evidence Provider / Guard port |
-| `RUST_LOG` | `info` | Logging level |
-| `EVIDENCE_ENDPOINT` | `http://localhost:8008` | Guard's Evidence Provider endpoint |
-| `INTEL_CA_CERT_PATH` | _(required by Guard)_ | Trusted Intel CA certificate used to authenticate quote certificates |
-| `ARGUS_API_TOKEN` | _(required for non-loopback Guard)_ | Bearer token protecting verification endpoints |
+| Variable                  | Default                                 | Description                                                          |
+| ------------------------- | --------------------------------------- | -------------------------------------------------------------------- |
+| `ARGUS_WORKLOAD_IDENTITY` | _(required for stable identity)_        | Preferred identity bound into service evidence                       |
+| `ARGUS_SERVICE_NAME`      | _(optional alias)_                      | Compatibility alias for the workload identity                        |
+| `HOST`                    | Provider: `0.0.0.0`; Guard: `127.0.0.1` | HTTP bind address                                                    |
+| `PORT`                    | `8008` / `8007`                         | Evidence Provider / Guard port                                       |
+| `RUST_LOG`                | `info`                                  | Logging level                                                        |
+| `EVIDENCE_ENDPOINT`       | `http://localhost:8008`                 | Guard's Evidence Provider endpoint                                   |
+| `INTEL_CA_CERT_PATH`      | _(required by Guard)_                   | Trusted Intel CA certificate used to authenticate quote certificates |
+| `ARGUS_API_TOKEN`         | _(required for non-loopback Guard)_     | Bearer token protecting verification endpoints                       |
 
 See [Configuration](./docs/configuration.md) for the complete reference.
 
@@ -188,22 +240,63 @@ sudo systemctl status argus-guard
 See [Architecture](./docs/architecture.md) for deployment shapes, trust
 boundaries, and production considerations.
 
+## SPIRE Node Attestation Scope
+
+The current Server plugin configuration admits one SPIRE Agent identity,
+pinned to one Ed25519 proof key. The Provider's required `--agent-id` must
+match the Server plugin's `agent_id` and SPIRE's configured trust domain.
+Service identities are separate; making the Agent ID configurable does not
+add multi-node enrollment or workload attestation.
+
+See the [configuration contract](./docs/configuration.md#spire-node-attestation)
+for the inputs and their relationships. The Quick Start above runs general
+deployment mode only.
+
 ## Security Guarantees
 
-On the validated path, Argus currently provides:
+### A2S Runtime Verification
 
-- Replay resistance via a caller-generated nonce bound into `report_data`.
-- A single verifiable chain linking the caller request, the returned `BindingClaims`, and the `report_data` in the evidence.
-- Fail-closed behavior on the caller side whenever evidence fetch or verification fails.
-- Extraction of RTMR values and TCB status for upstream policy to further restrict access.
-- Separation of caller-side trust enforcement from service-side evidence generation, so application code never directly controls the attestation flow.
+On the validated A2S path, Argus currently provides:
 
-Current boundaries to keep in mind: the default request path performs structural validation and request-binding validation of a live TSM quote, but does not yet perform full Intel collateral/certificate-chain verification in the Guard's main path. The current implementation is more accurately described as "request-bound TDX evidence verification" rather than "full PKI-based remote attestation verification". See [Design Decisions](./docs/design-decisions.md) for the full rationale and roadmap.
+* Replay resistance via a caller-generated nonce bound into `report_data`.
+
+* A single verifiable chain linking the caller request, the returned `BindingClaims`, and the `report_data` in the evidence.
+
+* Fail-closed behavior on the caller side whenever evidence fetch or verification fails.
+
+* Extraction of RTMR values and TCB status for upstream policy to further restrict access.
+
+* Separation of caller-side trust enforcement from service-side evidence generation, so application code never directly controls the attestation flow.
+
+### SPIFFE/SPIRE Identity: SPIRE Node Attestation
+
+The SPIRE Node Attestation path provides:
+
+* A fresh SPIRE Server nonce bound with the configured Agent SPIFFE ID and
+  proof public key into TDX `REPORTDATA`; the challenge expiry is signed in
+  the proof-of-possession transcript and enforced by the Server.
+
+* A pinned Agent-slot proof key and an Ed25519 transcript signature that proves
+  possession of the key bound into the Quote.
+
+* Trustee appraisal of the TDX Quote, followed by NodeAttestor verification of
+  the signed EAR before it returns `AgentAttributes`.
+
+* Issuance of the SVID for the SPIRE Agent by the SPIRE Server CA only after
+  node admission succeeds.
+
+This path currently covers Node Attestation only. Workload identity,
+Registration Entries, business mTLS, and Guard authorization require the
+subsequent Workload Attestation and service-integration stages.
 
 ## Documentation
 
-- [Architecture](./docs/architecture.md): system model, trust boundaries, deployment modes, governance boundary, and v1 MVP.
-- [OpenClaw deployment example](../../adapters/OpenClaw/openclaw_to_service_protection.md). An example of communication between OpenClaw and OpenViking based on Argus.
-- [API Contract](./docs/api.md): evidence request and response, verifier contract, profile model, policy model, and diagnostics surface.
-- [Configuration](./docs/configuration.md): environment variables and runtime configuration reference.
-- [Troubleshooting](./docs/troubleshooting.md): common issues and fixes.
+* [Architecture](./docs/architecture.md): A2S and SPIFFE/SPIRE identity models, including SPIRE Node Attestation, trust boundaries, evidence binding, and deployment modes.
+
+* [OpenClaw deployment example](../../adapters/OpenClaw/openclaw_to_service_protection.md). An example of communication between OpenClaw and OpenViking based on Argus.
+
+* [API Contract](./docs/api.md): evidence request and response, verifier contract, profile model, policy model, and diagnostics surface.
+
+* [Configuration](./docs/configuration.md): environment variables and runtime configuration reference.
+
+* [Troubleshooting](./docs/troubleshooting.md): common issues and fixes.
