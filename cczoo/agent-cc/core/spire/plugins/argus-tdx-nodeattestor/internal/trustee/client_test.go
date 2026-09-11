@@ -1,3 +1,17 @@
+// Copyright (c) 2026 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package trustee
 
 import (
@@ -18,6 +32,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/intel/confidential-computing-zoo/cczoo/agent-cc/core/spire/plugins/argus-tdx-nodeattestor/internal/protocol"
 )
 
 const (
@@ -132,6 +148,28 @@ func TestVerifyNodeDoesNotRetryTrusteeFailure(t *testing.T) {
 	}
 	if postCount != 1 {
 		t.Fatalf("POST count = %d, want 1", postCount)
+	}
+}
+
+func TestVerifyNodeRejectsEARForAnotherAgentIdentity(t *testing.T) {
+	now := time.Now().UTC()
+	key := newSigningKey(t)
+	nonce, proofKey := make([]byte, protocol.NonceSize), make([]byte, protocol.PublicKeySize)
+	runtimeData, err := protocol.NodeRuntimeData("spiffe://example.org/spire/agent/argus_tdx/worker-01", nonce, proofKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherRuntimeData, err := protocol.NodeRuntimeData("spiffe://example.org/spire/agent/argus_tdx/worker-02", nonce, proofKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = writer.Write([]byte(signEAR(t, key, validClaims(now, otherRuntimeData))))
+	}))
+	defer server.Close()
+	client := testClient(server, key, now)
+	if _, err := client.VerifyNode(context.Background(), VerifyInput{Quote: []byte{1}, RuntimeData: runtimeData}); err == nil {
+		t.Fatal("signed EAR for another configured identity was accepted")
 	}
 }
 

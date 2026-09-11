@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+  <title id="title">Argus v1.5: SPIRE node attestation trust boundaries</title>
+  <desc id="desc">The SPIRE Agent, proof key, Evidence Provider, and Linux TSM run inside the attested TDX guest. The remote SPIRE Server and Trustee verify evidence and issue the SPIRE Agent's SVID. The service workload is separate from this node attestation flow. The TDX Quote infrastructure crosses the guest trust boundary.</desc>
+  <!-- Copyright (c) 2026 Intel Corporation. Licensed under the Apache License, Version 2.0. -->
+  <rect width="1400" height="900" fill="white"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="40" y="48" font-size="29" font-weight="700">Argus v1.5 · SPIRE node attestation</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="40" y="82" font-size="19">Deployment location, evidence exchange, and identity authority</text>
+
+  <rect x="40" y="120" width="520" height="550" rx="12" fill="#eff8ff" stroke="#1376ad" stroke-width="3" stroke-dasharray="10 6"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="65" y="158" font-size="23" font-weight="700">Attested TD · TDX guest</text>
+  <rect x="80" y="185" width="440" height="155" rx="8" fill="white" stroke="#1376ad" stroke-width="2"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="105" y="220" font-size="23" font-weight="700">SPIRE Agent</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="105" y="252" font-size="19">argus_tdx Agent plugin</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="105" y="282" font-size="17">Provisioned Ed25519 proof key</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="105" y="311" font-size="17">Own SVID key managed separately by SPIRE</text>
+
+  <rect x="80" y="435" width="265" height="100" rx="8" fill="white" stroke="#1376ad" stroke-width="2"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="98" y="467" font-size="23" font-weight="700">Evidence Provider</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="98" y="495" font-size="17">argus-spire-evidence-provider</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="98" y="520" font-size="17">Configured Agent ID + binding</text>
+  <path d="M 160 340 L 160 435" fill="none" stroke="#334155" stroke-width="2"/><polygon points="160,435 155,425 165,425" fill="#334155"/><polygon points="160,340 165,350 155,350" fill="#334155"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="177" y="371" font-size="18">2. Nonce + proof public key</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="177" y="397" font-size="18">3. Raw TDX Quote</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="177" y="421" font-size="17">Guest-local UDS</text>
+
+  <rect x="395" y="435" width="125" height="100" rx="8" fill="white" stroke="#1376ad" stroke-width="2"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="411" y="475" font-size="19">Linux TSM</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="419" y="505" font-size="17">configfs</text>
+  <path d="M 345 485 L 395 485" fill="none" stroke="#334155" stroke-width="2"/><polygon points="395,485 385,490 385,480" fill="#334155"/><polygon points="345,485 355,480 355,490" fill="#334155"/>
+
+  <rect x="80" y="570" width="345" height="65" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="98" y="597" font-size="19">Service process / container</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="98" y="622" font-size="17">Separate workload attestation stage</text>
+  <path d="M 458 535 L 458 715" fill="none" stroke="#334155" stroke-width="2"/><polygon points="458,715 453,705 463,705" fill="#334155"/><polygon points="458,535 463,545 453,545" fill="#334155"/>
+  <rect x="40" y="715" width="520" height="95" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="62" y="750" font-size="23" font-weight="700">TDX platform / Quote infrastructure</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="62" y="781" font-size="19">TDX module, quoting service, signing material</text>
+
+  <rect x="840" y="120" width="520" height="550" rx="12" fill="#f5f3ff" stroke="#7762ab" stroke-width="2"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="865" y="158" font-size="23" font-weight="700">Remote verifier control plane</text>
+  <rect x="875" y="185" width="450" height="155" rx="8" fill="white" stroke="#7762ab" stroke-width="2"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="898" y="220" font-size="23" font-weight="700">SPIRE Server</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="898" y="252" font-size="19">argus_tdx Server plugin</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="898" y="282" font-size="17">Checks identity pin, proof signature, and EAR</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="898" y="311" font-size="17">Server CA issues SVID after AgentAttributes</text>
+
+  <path d="M 875 230 L 520 230" fill="none" stroke="#334155" stroke-width="2"/><polygon points="520,230 530,225 530,235" fill="#334155"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="575" y="216" font-size="18">1. Fresh nonce + expiry</text>
+  <path d="M 520 281 L 875 281" fill="none" stroke="#334155" stroke-width="2"/><polygon points="875,281 865,286 865,276" fill="#334155"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="575" y="268" font-size="18">4. Quote + proof signature</text>
+  <path d="M 875 332 L 520 332" fill="none" stroke="#334155" stroke-width="2"/><polygon points="520,332 530,327 530,337" fill="#334155"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="575" y="318" font-size="18">6. SPIRE Agent's SVID</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="585" y="365" font-size="17">SPIRE enrollment stream</text>
+
+  <rect x="875" y="460" width="450" height="120" rx="8" fill="white" stroke="#7762ab" stroke-width="2"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="898" y="496" font-size="23" font-weight="700">Trustee</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="898" y="528" font-size="19">Quote, collateral, TCB, and policy appraisal</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="898" y="556" font-size="17">Signs the EAR; does not issue SVIDs</text>
+  <path d="M 925 340 L 925 460" fill="none" stroke="#334155" stroke-width="2"/><polygon points="925,460 920,450 930,450" fill="#334155"/><polygon points="925,340 930,350 920,350" fill="#334155"/>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="945" y="379" font-size="18">5. Quote + expected binding</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="945" y="407" font-size="18">Signed EAR returned over HTTPS</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="945" y="435" font-size="17">Independent TLS and EAR trust anchors</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="875" y="620" font-size="17">SPIRE Server and Trustee may use separate hosts.</text>
+
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="605" y="744" font-size="19">Dashed blue boundary: memory protected by TDX.</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="605" y="776" font-size="19">Quote generation crosses this boundary; appraisal verifies the result.</text>
+  <text font-family="Arial, Helvetica, sans-serif" fill="#172b4d" x="40" y="855" font-size="19">Node attestation authenticates infrastructure. Service identities require workload attestation and registration policy.</text>
+</svg>

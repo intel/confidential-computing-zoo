@@ -1,3 +1,17 @@
+// Copyright (c) 2026 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package server
 
 import (
@@ -91,7 +105,7 @@ func (stream *fakeAttestStream) Context() context.Context     { return stream.co
 func (stream *fakeAttestStream) SendMsg(any) error            { return nil }
 func (stream *fakeAttestStream) RecvMsg(any) error            { return nil }
 
-func TestAttestPinsKeyVerifiesPoPAndReturnsFixedAttributes(t *testing.T) {
+func TestAttestPinsKeyVerifiesPoPAndReturnsConfiguredAttributes(t *testing.T) {
 	plugin, stream, verifier, _ := configuredAttestation(t)
 	if err := plugin.Attest(stream); err != nil {
 		t.Fatal(err)
@@ -103,7 +117,7 @@ func TestAttestPinsKeyVerifiesPoPAndReturnsFixedAttributes(t *testing.T) {
 	if err := proto.Unmarshal(stream.sentResponses[0].GetChallenge(), challenge); err != nil {
 		t.Fatal(err)
 	}
-	expectedRuntimeData, err := protocol.NodeRuntimeData(challenge.Nonce, stream.privateKey.Public().(ed25519.PublicKey))
+	expectedRuntimeData, err := protocol.NodeRuntimeData(testAgentID, challenge.Nonce, stream.privateKey.Public().(ed25519.PublicKey))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +125,7 @@ func TestAttestPinsKeyVerifiesPoPAndReturnsFixedAttributes(t *testing.T) {
 		t.Fatalf("Trustee input = %#v", verifier.input)
 	}
 	attributes := stream.sentResponses[1].GetAgentAttributes()
-	if attributes == nil || attributes.SpiffeId != protocol.FixedAgentSPIFFEID || len(attributes.SelectorValues) != 0 || !attributes.CanReattest {
+	if attributes == nil || attributes.SpiffeId != testAgentID || len(attributes.SelectorValues) != 0 || !attributes.CanReattest {
 		t.Fatalf("AgentAttributes = %#v", attributes)
 	}
 }
@@ -125,6 +139,38 @@ func TestAttestRejectsUnpinnedKeyBeforeGeneratingChallenge(t *testing.T) {
 	}
 	if verifier.called || len(stream.sentResponses) != 0 {
 		t.Fatal("challenge or Trustee call occurred before the static pin matched")
+	}
+}
+
+func TestAttestUsesConfiguredIdentityForAppraisalAndAdmission(t *testing.T) {
+	plugin, stream, verifier, _ := configuredAttestation(t)
+	const alternateID = "spiffe://another.example/spire/agent/argus_tdx/database-02"
+	plugin.state.config.AgentID = alternateID
+	plugin.state.config.TrustDomain = "another.example"
+	if err := plugin.Attest(stream); err != nil {
+		t.Fatal(err)
+	}
+	challenge := new(argusnodeattestor.NodeChallenge)
+	if err := proto.Unmarshal(stream.sentResponses[0].GetChallenge(), challenge); err != nil {
+		t.Fatal(err)
+	}
+	want, err := protocol.NodeRuntimeData(alternateID, challenge.Nonce, stream.privateKey.Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(verifier.input.RuntimeData, want) || stream.sentResponses[1].GetAgentAttributes().SpiffeId != alternateID {
+		t.Fatal("configured identity was not used for both appraisal and AgentAttributes")
+	}
+}
+
+func TestAttestRejectsAppraisalFailureWithoutAdmittingAgent(t *testing.T) {
+	plugin, stream, verifier, _ := configuredAttestation(t)
+	verifier.err = fmt.Errorf("REPORTDATA does not match configured Agent identity")
+	if err := plugin.Attest(stream); err == nil {
+		t.Fatal("failed appraisal admitted the Agent")
+	}
+	if !verifier.called || len(stream.sentResponses) != 1 {
+		t.Fatal("expected only a challenge before appraisal failure")
 	}
 }
 
@@ -185,7 +231,7 @@ func configuredAttestation(t *testing.T) (*Plugin, *fakeAttestStream, *fakeVerif
 	currentTime := time.Now().UTC()
 	plugin := New()
 	plugin.state = &runtimeState{config: &Config{
-		TrustDomain: requiredTrustDomain, AgentID: protocol.FixedAgentSPIFFEID,
+		TrustDomain: "example.org", AgentID: testAgentID,
 		SlotOwnerKeySHA256: keyDigest, ChallengeTTL: 30 * time.Second,
 		TrusteeTimeout: time.Second, MaxQuoteBytes: protocol.MaxQuoteSize,
 	}, verifier: verifier}

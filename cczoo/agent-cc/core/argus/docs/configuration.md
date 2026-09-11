@@ -7,6 +7,7 @@ This document provides a comprehensive reference for all configuration options a
 - [Environment Variables](#environment-variables)
 - [Configuration File](#configuration-file)
 - [CLI Arguments](#cli-arguments)
+- [SPIRE Node Attestation](#spire-node-attestation)
 - [Binding Assurance Levels](#binding-assurance-levels)
 - [Verifier Configuration](#verifier-configuration)
 - [Policy Configuration](#policy-configuration)
@@ -191,6 +192,41 @@ argus-guard [OPTIONS]
 
 ---
 
+## SPIRE Node Attestation
+
+`argus-spire-evidence-provider` and the `argus_tdx` NodeAttestor plugins use
+the inputs below. This is a configuration reference; deployment must also
+provide the SPIRE Agent/Server, bootstrap trust, proof key, and Trustee policy.
+
+| Component | Input | Contract |
+|-----------|-------|----------|
+| Provider CLI | `--agent-id` | Required SPIRE Agent ID; must equal the Server plugin's `agent_id`. It is fixed for the lifetime of the Provider process and cannot be supplied in `/node-evidence` requests. |
+| Provider CLI | `--socket-path` | Defaults to `/run/argus/evidence-provider.sock`; the SPIRE Agent in the same TD must be able to access it. |
+| Provider CLI | `--tsm-report-root` | Defaults to `/sys/kernel/config/tsm/report`; Linux TSM supplies the Quote. |
+| Agent plugin HCL | `evidence_socket_path` | Absolute path matching the Provider socket. |
+| Agent plugin HCL | `proof_key_path` | Absolute path to a regular PKCS#8 Ed25519 `PRIVATE KEY` PEM file with `0600` permissions on Linux. |
+| Server plugin HCL | `agent_id` | Same identity as the Provider; its trust domain must match SPIRE's core `trust_domain`. |
+| Server plugin HCL | `slot_owner_key_sha256` | SHA-256 of the Agent's raw 32-byte proof public key, encoded as 64 lowercase hexadecimal characters. This key is separate from SPIRE's SVID key. |
+| Server plugin HCL | `trustee_url`, `trustee_ca_path`, `trustee_server_name` | HTTPS origin, trusted CA file, and TLS server name for the Trustee endpoint. |
+| Server plugin HCL | `ear_public_key_path`, `ear_expected_issuer`, `ear_expected_profile`, `policy_id` | Independent P-256 EAR verification key and expected appraisal claims from the configured Trustee deployment. |
+
+An Agent ID has the form
+`spiffe://<trust-domain>/spire/agent/argus_tdx/<node-id>`, for example
+`spiffe://example.org/spire/agent/argus_tdx/worker-01`. The trust domain accepts
+lowercase letters, digits, `.`, `_`, and `-`; the nonempty node ID accepts
+letters, digits, `.`, `_`, and `-` and cannot consist only of dots. Ports,
+escapes, query strings, fragments, and extra path segments are rejected. The
+complete UTF-8 ID is limited to 65,535 bytes by the protocol's `LP16` encoding.
+Rust and Go tests consume the same identity acceptance cases and binding vector.
+
+This configuration supports one pinned Agent slot. A node may host multiple
+services, but admitting additional SPIRE Agents requires an enrollment design
+with distinct identities and proof-key pins. Service SVIDs require workload
+attestation and registration policy. A SPIFFE trust domain is an identity
+namespace; it is distinct from the TDX trust domain (TD) containing the Agent.
+
+---
+
 ## Binding Assurance Levels
 
 Argus defines four levels of binding assurance that indicate how claims are anchored:
@@ -262,7 +298,7 @@ TCB (Trusted Computing Base) status indicates the security state of the TDX envi
 | `ConfigurationRequired` | TCB requires additional configuration |
 | `Unknown` | Unable to determine TCB status |
 
-**Current implementation status:** Argus intentionally does **not** evaluate
+**General-mode verifier status:** The built-in TDX verifier does **not** evaluate
 TCB freshness. `check_tcb_status()` in `tdx_verifier.rs` always reports
 `Unknown` rather than fabricating a status — this is a deliberate scope
 decision, not a placeholder awaiting a fix. Real TCB freshness checking
@@ -270,9 +306,9 @@ requires fetching PCCS/QGS collateral (PCK certificate chain, TCB Info, QE
 Identity) and matching it against the quote, which is a materially heavier
 verifier (Intel's DCAP Quote Verification Library, or a hosted
 Trustee/Attestation Service) that Argus does not implement. No shipped
-policy evaluator gates on this field. See [Design Decisions § TCB Status
-Checking](./design-decisions.md#1-tcb-status-checking-is-it-needed-and-where-does-it-belong)
-for the full rationale and scope decision.
+policy evaluator gates on this field. The SPIRE Node Attestation path delegates
+Quote, collateral, and TCB appraisal to Trustee, as described in the
+[verifier contract](./architecture.md#verifier-contract).
 
 ### Trust Anchor Verification
 
@@ -288,9 +324,8 @@ byte offsets and a simplified assumption that a PEM certificate is embedded
 verbatim in the quote bytes. This has not yet been validated against a real
 hardware-generated TDX quote's actual TLV-encoded `auth_data`/`cert_data`
 layout. Validate against real quotes and adjust the extraction logic before
-relying on this in production. See [Design Decisions § TCB Status
-Checking](./design-decisions.md#1-tcb-status-checking-is-it-needed-and-where-does-it-belong)
-for the full scope decision.
+relying on this in production. The SPIRE Node Attestation path uses Trustee
+for Quote verification instead of this built-in Guard verifier.
 
 #### Certificate Chain Structure
 

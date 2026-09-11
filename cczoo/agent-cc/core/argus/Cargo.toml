@@ -63,12 +63,14 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 
 [[bin]]
+# General deployment mode: service evidence for the caller-side Argus Guard.
 name = "argus-evidence-provider"
 path = "src/bin/evidence_provider.rs"
 
 [[bin]]
-name = "argus-tdx-evidence-provider"
-path = "src/bin/tdx_evidence_provider.rs"
+# SPIFFE mode: guest-local TDX evidence for SPIRE node attestation.
+name = "argus-spire-evidence-provider"
+path = "src/bin/spire_evidence_provider.rs"
 
 [[bin]]
 name = "argus-guard"
