@@ -1,3 +1,17 @@
+// Copyright (c) 2026 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package protocol
 
 import (
@@ -11,7 +25,10 @@ import (
 // NodeRuntimeData returns the canonical bytes shared by the Rust Provider and
 // the Server-side Trustee request. Length prefixes keep the identity fields
 // unambiguous before the fixed-size nonce and proof key.
-func NodeRuntimeData(nonce, proofPublicKey []byte) ([]byte, error) {
+func NodeRuntimeData(agentID string, nonce, proofPublicKey []byte) ([]byte, error) {
+	if _, err := AgentTrustDomain(agentID); err != nil {
+		return nil, err
+	}
 	if len(nonce) != NonceSize {
 		return nil, fmt.Errorf("nonce must be %d bytes", NonceSize)
 	}
@@ -19,9 +36,9 @@ func NodeRuntimeData(nonce, proofPublicKey []byte) ([]byte, error) {
 		return nil, fmt.Errorf("proof public key must be %d bytes", PublicKeySize)
 	}
 
-	runtimeData := make([]byte, 0, 2+len(reportDataDomain)+2+len(FixedAgentSPIFFEID)+NonceSize+PublicKeySize)
+	runtimeData := make([]byte, 0, 2+len(reportDataDomain)+2+len(agentID)+NonceSize+PublicKeySize)
 	runtimeData = appendLP16(runtimeData, []byte(reportDataDomain))
-	runtimeData = appendLP16(runtimeData, []byte(FixedAgentSPIFFEID))
+	runtimeData = appendLP16(runtimeData, []byte(agentID))
 	runtimeData = append(runtimeData, nonce...)
 	runtimeData = append(runtimeData, proofPublicKey...)
 	return runtimeData, nil
@@ -29,9 +46,9 @@ func NodeRuntimeData(nonce, proofPublicKey []byte) ([]byte, error) {
 
 // ReportData maps NodeRuntimeData into TDX REPORTDATA as SHA-384 followed by a
 // zero-filled 16-byte tail.
-func ReportData(nonce, proofPublicKey []byte) ([64]byte, error) {
+func ReportData(agentID string, nonce, proofPublicKey []byte) ([64]byte, error) {
 	var reportData [64]byte
-	runtimeData, err := NodeRuntimeData(nonce, proofPublicKey)
+	runtimeData, err := NodeRuntimeData(agentID, nonce, proofPublicKey)
 	if err != nil {
 		return reportData, err
 	}

@@ -1,24 +1,13 @@
 # Argus
 
-Argus is a runtime trust verification framework for agent-to-service (A2S)
-communication that integrates with SPIFFE/SPIRE to establish identities in
-confidential computing environments.
+Argus v1.5 is a runtime trust verification framework for agent-to-service
+(A2S) communication in Intel TDX environments. It supports general deployment
+mode for checking a peer before a sensitive call, and SPIFFE mode for
+establishing infrastructure identities through TDX-backed SPIRE attestation.
 
-SPIFFE defines the identity and SVID model, while SPIRE implements that model
-through attestation and identity issuance. The SPIRE identity flow has two
-stages:
-
-1. Node Attestation first admits a SPIRE Agent after verifying TDX evidence
-   for its node;
-2. Workload Attestation then identifies a concrete process or
-   container and enables workload SVID issuance under registration policy.
-
-The current implementation covers the SPIRE Node Attestation stage.
-
-On the A2S path, before a caller sends sensitive data to a peer service, Argus
-fetches evidence for that peer, verifies it through an external attestation or
-identity system, and evaluates caller-local policy to decide whether the call
-should proceed.
+In general deployment mode, the caller-side Guard fetches fresh evidence from
+the target service's Evidence Provider, verifies it, and evaluates local policy
+to decide whether the call should proceed.
 
 ## Architecture At A Glance
 
@@ -57,38 +46,37 @@ and deployment details.
 
 ### SPIFFE/SPIRE Identity: SPIRE Node Attestation
 
-Node Attestation is a SPIRE node-admission flow. Argus supplies the TDX Evidence
-Provider and external `argus_tdx` plugins; SPIRE coordinates attestation and
-issues the SPIFFE Agent SVID after admission.
+SPIFFE defines identities and SPIFFE Verifiable Identity Documents (SVIDs).
+SPIRE implements this model through two stages:
 
-```mermaid
-flowchart LR
-    subgraph Node[TDX node]
-        Agent[SPIRE Agent<br/>argus_tdx Agent plugin]
-        Provider[TDX Evidence Provider]
-        TDX[Linux TSM / TDX]
-    end
+1. **Node Attestation** authenticates the SPIRE Agent running inside a TDX
+   trust domain (TD, an isolated guest VM) and
+   enables SPIRE to issue an X.509-SVID for that Agent.
+2. **Workload Attestation** subsequently identifies a service process or
+   container and enables its own workload SVID under registration policy.
 
-    subgraph Control[Trust control plane]
-        Server[SPIRE Server<br/>argus_tdx Server plugin]
-        Trustee[Trustee]
-        CA[SPIRE Server CA]
-    end
+The current implementation covers the node stage. The SVID issued here belongs
+to the SPIRE Agent, not to a business service instance. Argus supplies the guest-local
+SPIRE Evidence Provider and external `argus_tdx` Agent and Server plugins;
+Trustee appraises the Quote and SPIRE's Server CA issues the Agent's SVID.
 
-    Server -- "fresh nonce + expiry" --> Agent
-    Agent -- "nonce + proof public key" --> Provider
-    Provider -- "generate Quote" --> TDX
-    TDX -- "raw TDX Quote" --> Provider
-    Provider -- "Quote" --> Agent
-    Agent -- "Quote + transcript signature" --> Server
-    Server -- "Quote + runtime data" --> Trustee
-    Trustee -- "signed EAR" --> Server
-    Server -- "AgentAttributes" --> CA
-    CA -- "Agent SVID" --> Agent
-```
+![SPIRE node attestation deployment and trust boundaries](./docs/images/spire-node-attestation.svg)
 
-This stage admits the SPIRE Agent identity. It does not identify an
-application workload or issue a workload SVID.
+The SPIRE Agent and Provider run inside the attested TD. The SPIRE Server and
+Trustee run on the verifier side. See [Architecture](./docs/architecture.md)
+for the exchange, identity binding, and trust boundaries.
+
+### Evidence Provider Programs
+
+| Program | Mode and client | API |
+|---------|-----------------|-----|
+| `argus-evidence-provider` | General mode; called by the caller-side Argus Guard | HTTP `POST /ra/v1/evidence` with request and workload binding claims |
+| `argus-spire-evidence-provider` | SPIFFE mode; called by the SPIRE Agent in the same TD | Guest-local UDS `POST /node-evidence` with nonce and proof public key |
+
+Both use the shared `tdx-quote` crate for hardware evidence generation. Their
+request contracts and clients differ. `start_argus.sh` starts the general-mode
+Provider. The SPIRE-mode Provider is a separate program with its own
+[configuration contract](./docs/configuration.md#spire-node-attestation).
 
 ## Prerequisites
 
@@ -252,6 +240,18 @@ sudo systemctl status argus-guard
 See [Architecture](./docs/architecture.md) for deployment shapes, trust
 boundaries, and production considerations.
 
+## SPIRE Node Attestation Scope
+
+The current Server plugin configuration admits one SPIRE Agent identity,
+pinned to one Ed25519 proof key. The Provider's required `--agent-id` must
+match the Server plugin's `agent_id` and SPIRE's configured trust domain.
+Service identities are separate; making the Agent ID configurable does not
+add multi-node enrollment or workload attestation.
+
+See the [configuration contract](./docs/configuration.md#spire-node-attestation)
+for the inputs and their relationships. The Quick Start above runs general
+deployment mode only.
+
 ## Security Guarantees
 
 ### A2S Runtime Verification
@@ -268,14 +268,13 @@ On the validated A2S path, Argus currently provides:
 
 * Separation of caller-side trust enforcement from service-side evidence generation, so application code never directly controls the attestation flow.
 
-Current boundaries to keep in mind: the default request path performs structural validation and request-binding validation of a live TSM quote, but does not yet perform full Intel collateral/certificate-chain verification in the Guard's main path. The current implementation is more accurately described as "request-bound TDX evidence verification" rather than "full PKI-based remote attestation verification".
-
 ### SPIFFE/SPIRE Identity: SPIRE Node Attestation
 
 The SPIRE Node Attestation path provides:
 
-* A fresh SPIRE Server nonce and expiry bound with the Agent SPIFFE ID
-  and Agent proof public key into TDX `REPORTDATA`.
+* A fresh SPIRE Server nonce bound with the configured Agent SPIFFE ID and
+  proof public key into TDX `REPORTDATA`; the challenge expiry is signed in
+  the proof-of-possession transcript and enforced by the Server.
 
 * A pinned Agent-slot proof key and an Ed25519 transcript signature that proves
   possession of the key bound into the Quote.
@@ -283,7 +282,8 @@ The SPIRE Node Attestation path provides:
 * Trustee appraisal of the TDX Quote, followed by NodeAttestor verification of
   the signed EAR before it returns `AgentAttributes`.
 
-* Agent SVID issuance by the SPIRE Server CA only after node admission succeeds.
+* Issuance of the SVID for the SPIRE Agent by the SPIRE Server CA only after
+  node admission succeeds.
 
 This path currently covers Node Attestation only. Workload identity,
 Registration Entries, business mTLS, and Guard authorization require the

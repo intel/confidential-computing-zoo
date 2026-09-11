@@ -1,5 +1,19 @@
+// Copyright (c) 2026 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package server implements the SPIRE Server side of Argus TDX Node
-// Attestation. It binds a fixed Agent slot to a proof key and delegates Quote
+// Attestation. It binds a configured Agent slot to a proof key and delegates Quote
 // appraisal to the configured Trustee.
 package server
 
@@ -96,10 +110,10 @@ func (plugin *Plugin) Attest(stream nodeattestorapi.NodeAttestor_AttestServer) e
 		return status.Errorf(codes.InvalidArgument, "validate AgentHello: %v", err)
 	}
 	// REPORTDATA can bind any supplied key. The independent slot pin limits this
-	// fixed Agent identity to the operator-provisioned proof key.
+	// configured Agent identity to the operator-provisioned proof key.
 	keyDigest := sha256.Sum256(hello.ProofPublicKey)
 	if keyDigest != state.config.SlotOwnerKeySHA256 {
-		return status.Error(codes.PermissionDenied, "proof public key does not match the fixed Agent slot")
+		return status.Error(codes.PermissionDenied, "proof public key does not match the configured Agent slot")
 	}
 
 	// A fresh Server nonce makes each accepted Quote specific to this stream.
@@ -147,7 +161,7 @@ func (plugin *Plugin) Attest(stream nodeattestorapi.NodeAttestor_AttestServer) e
 	if !ed25519.Verify(ed25519.PublicKey(hello.ProofPublicKey), transcriptDigest[:], response.TranscriptSignature) {
 		return status.Error(codes.PermissionDenied, "transcript signature verification failed")
 	}
-	runtimeData, err := protocol.NodeRuntimeData(nonce, hello.ProofPublicKey)
+	runtimeData, err := protocol.NodeRuntimeData(state.config.AgentID, nonce, hello.ProofPublicKey)
 	if err != nil {
 		return status.Errorf(codes.Internal, "construct node runtime data: %v", err)
 	}
@@ -165,10 +179,10 @@ func (plugin *Plugin) Attest(stream nodeattestorapi.NodeAttestor_AttestServer) e
 		return status.Error(codes.PermissionDenied, "NodeChallenge expired during Trustee verification")
 	}
 	// AgentAttributes admit the Agent to SPIRE. The SPIRE Server CA, not this
-	// plugin or Trustee, subsequently issues the Agent SVID.
+	// plugin or Trustee, subsequently issues the SVID for this SPIRE Agent.
 	if err := stream.Send(&nodeattestorapi.AttestResponse{
 		Response: &nodeattestorapi.AttestResponse_AgentAttributes{AgentAttributes: &nodeattestorapi.AgentAttributes{
-			SpiffeId:       protocol.FixedAgentSPIFFEID,
+			SpiffeId:       state.config.AgentID,
 			SelectorValues: nil,
 			// Re-attestation repeats the full fresh-nonce Quote and Trustee flow.
 			CanReattest: true,

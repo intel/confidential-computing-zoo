@@ -1,3 +1,17 @@
+// Copyright (c) 2026 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package server
 
 import (
@@ -17,17 +31,17 @@ import (
 	"time"
 
 	configapi "github.com/spiffe/spire-plugin-sdk/proto/spire/service/common/config/v1"
-
-	"github.com/intel/confidential-computing-zoo/cczoo/agent-cc/core/spire/plugins/argus-tdx-nodeattestor/internal/protocol"
 )
 
-func TestParseConfigLoadsFixedIdentityAndTrusteePins(t *testing.T) {
+const testAgentID = "spiffe://example.org/spire/agent/argus_tdx/worker-01"
+
+func TestParseConfigLoadsConfiguredIdentityAndTrusteePins(t *testing.T) {
 	paths := writeConfigFixtures(t, t.TempDir())
-	config, notes := parseConfig(&configapi.CoreConfiguration{TrustDomain: "argus.local"}, validServerHCL(paths))
+	config, notes := parseConfig(&configapi.CoreConfiguration{TrustDomain: "example.org"}, validServerHCL(paths))
 	if len(notes) != 0 {
 		t.Fatalf("config notes = %v", notes)
 	}
-	if config.AgentID != protocol.FixedAgentSPIFFEID {
+	if config.AgentID != testAgentID {
 		t.Fatalf("Agent ID = %q", config.AgentID)
 	}
 	if got := hex.EncodeToString(config.SlotOwnerKeySHA256[:]); got != strings.Repeat("ab", sha256.Size) {
@@ -47,15 +61,30 @@ func TestParseConfigLoadsFixedIdentityAndTrusteePins(t *testing.T) {
 func TestParseConfigRejectsOtherTrustDomainAgentAndNonHTTPSTrustee(t *testing.T) {
 	paths := writeConfigFixtures(t, t.TempDir())
 	input := strings.Replace(validServerHCL(paths), `trustee_url = "https://trustee.argus.local"`, `trustee_url = "http://trustee.argus.local"`, 1)
-	input = strings.Replace(input, protocol.FixedAgentSPIFFEID, "spiffe://argus.local/spire/agent/other", 1)
+	input = strings.Replace(input, testAgentID, "spiffe://argus.local/spire/agent/other", 1)
 	config, notes := parseConfig(&configapi.CoreConfiguration{TrustDomain: "other.local"}, input)
-	if config != nil || len(notes) < 3 {
+	if config != nil || len(notes) < 2 {
 		t.Fatalf("config = %#v, notes = %v", config, notes)
 	}
 }
 
 type fixturePaths struct {
 	ca, earKey string
+}
+
+func TestParseConfigRejectsMissingOrMismatchedIdentity(t *testing.T) {
+	paths := writeConfigFixtures(t, t.TempDir())
+	for _, id := range []string{"", "spiffe://other.example/spire/agent/argus_tdx/worker-01", "spiffe://example.org/services/database"} {
+		input := strings.Replace(validServerHCL(paths), testAgentID, id, 1)
+		if config, notes := parseConfig(&configapi.CoreConfiguration{TrustDomain: "example.org"}, input); config != nil || len(notes) == 0 {
+			t.Fatalf("identity %q: config = %#v, notes = %v", id, config, notes)
+		}
+	}
+	for _, core := range []*configapi.CoreConfiguration{nil, {}} {
+		if config, notes := parseConfig(core, validServerHCL(paths)); config != nil || len(notes) == 0 {
+			t.Fatalf("missing trust domain: config = %#v, notes = %v", config, notes)
+		}
+	}
 }
 
 func writeConfigFixtures(t *testing.T, directory string) fixturePaths {
@@ -104,7 +133,7 @@ func writePEM(t *testing.T, path, kind string, contents []byte) {
 
 func validServerHCL(paths fixturePaths) string {
 	return `
-agent_id = "` + protocol.FixedAgentSPIFFEID + `"
+agent_id = "` + testAgentID + `"
 slot_owner_key_sha256 = "` + strings.Repeat("ab", sha256.Size) + `"
 trustee_url = "https://trustee.argus.local"
 trustee_ca_path = "` + paths.ca + `"
