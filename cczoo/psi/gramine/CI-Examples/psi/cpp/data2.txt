@@ -1,5 +1,0 @@
-train
-car
-e-car
-cat
-computer
