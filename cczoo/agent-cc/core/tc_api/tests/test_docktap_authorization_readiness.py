@@ -127,7 +127,7 @@ def test_explicit_mode_rejects_missing_token_before_readiness_check():
         with pytest.raises(HTTPException) as exc_info:
             asyncio.run(docktap_authorization_ready(DocktapAuthorizationRequest(chain_id=DEFAULT_CHAIN_ID)))
 
-    assert exc_info.value.status_code == 400
+    assert exc_info.value.status_code == 401
     assert exc_info.value.detail["operation"] == "docktap_authorize"
 
 

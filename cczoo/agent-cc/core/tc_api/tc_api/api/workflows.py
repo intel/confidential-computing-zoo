@@ -41,6 +41,8 @@ from ..models import (
     PublishPackageResponse,
     PublishResult,
     _validate_runtime_id,
+    normalize_luks_path,
+    resolve_path_in_base,
 )
 from .sigstore_support import _missing_sigstore_identity_detail
 from ..transparency.commit_client import TrustedLogAPI
@@ -103,7 +105,7 @@ async def build_package(
 
         if request.luks_path:
             if os.path.exists(request.luks_path):
-                build_path = request.luks_path
+                build_path = resolve_path_in_base(request.luks_path, build_id)
             else:
                 build_path = os.path.join(BUILD_DIR, build_id)
                 logger.info("NOW build not in luks file.")
@@ -551,8 +553,8 @@ async def publish_package(http_request: Request, request: PublishPackageRequest)
         if build_result.user_id and build_result.user_id != caller.user_id:
             raise HTTPException(status_code=403, detail="Publish request does not own the referenced build artifact")
 
-        if os.path.exists(request.luks_path):
-            expected_build_dir = (Path(request.luks_path) / request.build_id).resolve(strict=False)
+        if request.luks_path and os.path.exists(request.luks_path):
+            expected_build_dir = Path(resolve_path_in_base(request.luks_path, request.build_id))
         else:
             expected_build_dir = (Path(BUILD_DIR) / request.build_id).resolve(strict=False)
         logger.info(f"CHECK statu: {expected_build_dir}")
@@ -867,13 +869,16 @@ async def complete_publish_commit(
     )
 
 
-async def get_build_result(http_request: Request, build_id: str, luks_path):
+async def get_build_result(http_request: Request, build_id: str, luks_path: Optional[str] = None):
     try:
         build_id = _validate_runtime_id(build_id, "build_id")
+        luks_path = normalize_luks_path(luks_path)
         build_result = docker_service.get_build_status(build_id, luks_path)
         if not build_result:
             raise HTTPException(status_code=404, detail="Build not found")
         return build_result
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except HTTPException:
         raise
     except Exception as exc:

@@ -41,6 +41,25 @@ def _normalize_path_in_base(path_value: str, base_dir: str, field_name: str) -> 
     return str(resolved_path)
 
 
+def resolve_path_in_base(base_dir: str, *path_parts: str) -> str:
+    resolved_base = Path(base_dir).resolve(strict=False)
+    resolved_path = resolved_base.joinpath(*path_parts).resolve(strict=False)
+    try:
+        resolved_path.relative_to(resolved_base)
+    except ValueError as exc:
+        raise ValueError(f"derived path must stay under {resolved_base}") from exc
+    return str(resolved_path)
+
+
+def normalize_luks_path(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    val = value.strip()
+    if not val:
+        return None
+    return _normalize_path_in_base(val, LUKS_MOUNT_BASE_DIR, "luks_path")
+
+
 def _validate_mapper_name(value: str) -> str:
     if not _MAPPER_NAME_RE.fullmatch(value):
         raise ValueError("mapper_dir must contain only letters, numbers, dot, dash, or underscore")
@@ -118,6 +137,11 @@ class BuildPackageRequest(BaseModel):
     identity_token: Optional[str] = None
     luks_path: Optional[str] = None
 
+    @field_validator("luks_path")
+    @classmethod
+    def validate_luks_path(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_luks_path(value)
+
 
 class BuildCommitRequest(BaseModel):
     identity_token: Optional[str] = None
@@ -157,6 +181,11 @@ class PublishPackageRequest(BaseModel):
         if not value.startswith("oci:"):
             raise ValueError("image_id must use the oci: transport for publish requests")
         return value
+
+    @field_validator("luks_path")
+    @classmethod
+    def validate_luks_path(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_luks_path(value)
 
 class PublishPackageResponse(BaseModel):
     build_id: str

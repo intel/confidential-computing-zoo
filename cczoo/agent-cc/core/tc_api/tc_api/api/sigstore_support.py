@@ -36,7 +36,7 @@ from ..identity.sigstore_oauth import (
     normalize_sigstore_login_flow as _normalize_sigstore_login_flow,
     sigstore_provider_callback_base_url as _sigstore_provider_callback_base_url,
 )
-from ..identity.sigstore_identity import MissingSigstoreIdentityTokenError, cache_sigstore_identity_token, resolve_sigstore_identity_token
+from ..identity.sigstore_identity import cache_sigstore_identity_token, resolve_sigstore_identity_token
 from .sigstore_templates import render_callback_page, render_interactive_login_page
 
 # Setup logging
@@ -454,20 +454,7 @@ def _resolve_required_sigstore_identity_token(
 ) -> str:
     if supplied_token:
         return supplied_token
-
-    try:
-        identity_token = resolve_sigstore_identity_token(
-            operation,
-            logger=logger,
-            min_ttl_seconds=0,
-            require_token=True,
-        )
-    except MissingSigstoreIdentityTokenError as exc:
-        raise HTTPException(status_code=400, detail=_missing_sigstore_identity_detail(operation, request=request)) from exc
-
-    if not identity_token:
-        raise HTTPException(status_code=400, detail=_missing_sigstore_identity_detail(operation, request=request))
-    return identity_token
+    raise HTTPException(status_code=401, detail=_missing_sigstore_identity_detail(operation, request=request))
 
 __all__ = [
     'sigstore_identity_callback',

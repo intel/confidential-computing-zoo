@@ -32,7 +32,7 @@ from ..config import (
 )
 from ..identity.oidc_preflight import inspect_identity_token
 from ..identity.sigstore_identity import MissingSigstoreIdentityTokenError, resolve_sigstore_identity_token
-from ..models import BuildResult, LaunchResult, LuksResult, PublishResult, TransparencyResult
+from ..models import BuildResult, LaunchResult, LuksResult, PublishResult, TransparencyResult, resolve_path_in_base
 from ..transparency.commit_client import TrustedLogAPI
 from tlog.types import Entry
 
@@ -232,15 +232,15 @@ class BaseDockerService:
     def _build_status_path(self, build_id: str, luks_path: str) -> str:
         if luks_path:
             if os.path.exists(luks_path):
-                return os.path.join(luks_path, build_id, "build-status.json")
+                return resolve_path_in_base(luks_path, build_id, "build-status.json")
             else:
                 return os.path.join(BUILD_DIR, build_id, "build-status.json")
         else:
             return os.path.join(BUILD_DIR, build_id, "build-status.json")
 
     def _persist_build_status(self, build_result: BuildResult) -> None:
-        if os.path.exists(build_result.luks_path):
-            build_path = os.path.join(build_result.luks_path, build_result.build_id)
+        if build_result.luks_path and os.path.exists(build_result.luks_path):
+            build_path = resolve_path_in_base(build_result.luks_path, build_result.build_id)
         else:
             build_path = os.path.join(BUILD_DIR, build_result.build_id)
         os.makedirs(build_path, exist_ok=True)
@@ -261,8 +261,8 @@ class BaseDockerService:
             return None
 
     def _recover_legacy_build_status(self, build_id: str, luks_path: str = '') -> Optional[BuildResult]:
-        if os.path.exists(luks_path):
-            build_path = os.path.join(luks_path, build_id)
+        if luks_path and os.path.exists(luks_path):
+            build_path = resolve_path_in_base(luks_path, build_id)
         else:
             build_path = os.path.join(BUILD_DIR, build_id)
         if not os.path.isdir(build_path):
@@ -419,7 +419,7 @@ class BaseDockerService:
         try:
             if luks_path:
                 if os.path.exists(luks_path):
-                    build_path = os.path.join(luks_path, build_id)
+                    build_path = resolve_path_in_base(luks_path, build_id)
                 else:
                     build_path = os.path.join(BUILD_DIR, build_id)
                     logger.info(f"NOW not in luks files.")
@@ -507,7 +507,7 @@ class BaseDockerService:
         try:
             if luks_path:
                 if os.path.exists(luks_path):
-                    kbs_key_dir = os.path.join(luks_path, "_kbs_keys", record_id or uuid.uuid4().hex[:8])
+                    kbs_key_dir = resolve_path_in_base(luks_path, "_kbs_keys", record_id or uuid.uuid4().hex[:8])
                 else:
                     kbs_key_dir = os.path.join(BUILD_DIR, "_kbs_keys", record_id or uuid.uuid4().hex[:8])
                     logger.info("NOW get pubkey not in luks file.")
@@ -642,7 +642,7 @@ class BaseDockerService:
             }
             if luks_path:
                 if os.path.exists(luks_path):
-                    receipt_path = os.path.join(luks_path, build_id, f"{api_type}-commit-receipt.json")
+                    receipt_path = resolve_path_in_base(luks_path, build_id, f"{api_type}-commit-receipt.json")
                 else:
                     receipt_path = os.path.join(BUILD_DIR, build_id, f"{api_type}-commit-receipt.json")
                     logger.info("NOW receipt file not in luks file.")

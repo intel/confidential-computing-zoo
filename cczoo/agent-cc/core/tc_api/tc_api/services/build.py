@@ -25,6 +25,7 @@ from ..config import (
     SKOPEO_CMD,
     SYFT_CMD,
 )
+from ..models import resolve_path_in_base
 from ..transparency.commit_client import TrustedLogAPI
 from ..transparency.events import EventEntryKey, build_identity_entries
 from tlog.types import Entry
@@ -48,7 +49,7 @@ class BuildServiceMixin:
             self.update_build_status(user_id, build_id, "preparing",luks_path, step="Setting up build environment")
             if luks_path:
                 if os.path.exists(luks_path):
-                    build_path = os.path.join(luks_path, build_id)
+                    build_path = resolve_path_in_base(luks_path, build_id)
                 else:
                     build_path = os.path.join(BUILD_DIR, build_id)
                     logger.info("NOW build image not in luks.")
@@ -169,7 +170,7 @@ class BuildServiceMixin:
         try:
             if luks_path:
                 if os.path.exists(luks_path):
-                    build_path = os.path.join(luks_path, build_id)
+                    build_path = resolve_path_in_base(luks_path, build_id)
                 else:
                     build_path = os.path.join(BUILD_DIR, build_id)
                     logger.info("NOW build image not in luks.")
@@ -295,7 +296,7 @@ class BuildServiceMixin:
             # Setup paths for encrypted image
             if luks_path:
                 if os.path.exists(luks_path):
-                    build_path = os.path.join(luks_path, build_id)
+                    build_path = resolve_path_in_base(luks_path, build_id)
                 else:
                     build_path = os.path.join(BUILD_DIR, build_id)
                     logger.info("NOW is not in luks.")
@@ -639,7 +640,7 @@ class BuildServiceMixin:
         try:
             if luks_path:
                 if os.path.exists(luks_path):
-                    key_dir = os.path.join(luks_path, build_id)
+                    key_dir = resolve_path_in_base(luks_path, build_id)
                 else:
                     key_dir = os.path.join(BUILD_DIR, build_id)
                     logger.info("NOW generate key not in luks file.")

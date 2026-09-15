@@ -99,7 +99,7 @@ def authenticate_request_identity(
 
     if not effective_token:
         raise HTTPException(
-            status_code=400,
+            status_code=401,
             detail={
                 "error": f"Sigstore identity token is required for {operation}.",
                 "operation": operation,
@@ -204,7 +204,7 @@ def get_authenticated_caller(
         identity_token=identity_token,
         request=request,
         enforce_user_binding=False,
-        allow_cached_token=True,
+        allow_cached_token=False,
     )
 
 
@@ -259,7 +259,7 @@ async def enforce_authenticated_request(request: Request) -> Optional[JSONRespon
             identity_token=identity_token,
             request=request,
             enforce_user_binding=False,
-            allow_cached_token=True,
+            allow_cached_token=False,
         )
     except HTTPException as exc:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})

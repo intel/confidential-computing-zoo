@@ -30,9 +30,9 @@ import tc_api.api.workflows as workflow_mod
 from tc_api.api.request_auth import authenticate_request_identity
 from tc_api.api.sigstore_support import _missing_sigstore_identity_detail, _resolve_required_sigstore_identity_token
 from tc_api.api.app import app
-from tc_api.config import BUILD_PACKAGE_MAX_REQUEST_BYTES, LUKS_VFS_BASE_DIR
+from tc_api.config import BUILD_PACKAGE_MAX_REQUEST_BYTES, LUKS_MOUNT_BASE_DIR, LUKS_VFS_BASE_DIR
 from tc_api.identity.sigstore_identity import MissingSigstoreIdentityTokenError
-from tc_api.models import GetTransparencyRequest, LaunchRequest, MountLuksRequest, PublishPackageRequest, UnmountLuksRequest
+from tc_api.models import BuildPackageRequest, GetTransparencyRequest, LaunchRequest, MountLuksRequest, PublishPackageRequest, UnmountLuksRequest, resolve_path_in_base
 from tc_api.services.base import BaseDockerService
 
 
@@ -132,11 +132,11 @@ def test_startup_fails_when_default_chain_baseline_is_required_and_init_fails():
                 pass
 
 
-def test_required_sigstore_identity_returns_http_400_when_missing():
+def test_required_sigstore_identity_returns_http_401_when_missing():
     with pytest.raises(HTTPException) as exc_info:
         _resolve_required_sigstore_identity_token("build", None)
 
-    assert exc_info.value.status_code == 400
+    assert exc_info.value.status_code == 401
     assert exc_info.value.detail == _missing_sigstore_identity_detail("build")
 
 
@@ -416,7 +416,7 @@ def test_sigstore_identity_token_complete_accepts_provider_callback_url():
     assert data["identity_token"] == token
 
 
-def test_build_package_accepts_cached_identity_token_without_request_token():
+def test_build_package_rejects_cached_identity_token_without_request_token():
     payload = {
         "dockerfile": "FROM python:3.11-slim",
         "app_binary": "dGVzdA==",
@@ -429,7 +429,7 @@ def test_build_package_accepts_cached_identity_token_without_request_token():
     with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "tc_api.api.request_auth.resolve_sigstore_identity_token",
         return_value="cached-identity-token",
-    ), patch(
+    ) as resolve_token, patch(
         "tc_api.api.request_auth.inspect_identity_token",
         return_value={
             "valid_for_sigstore": True,
@@ -454,14 +454,12 @@ def test_build_package_accepts_cached_identity_token_without_request_token():
             client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
             response = client.post("/api/build-package", json=payload)
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["build_id"] == "bld-123"
-    assert data["status"] == "success"
-    assert data["user_id"] == "alice@example.com"
+    assert response.status_code == 401
+    assert "identity token is required" in response.json()["detail"]["error"].lower()
+    resolve_token.assert_not_called()
 
 
-def test_build_package_accepts_missing_user_id_when_cached_identity_exists():
+def test_build_package_rejects_missing_request_token_when_cached_identity_exists():
     payload = {
         "dockerfile": "FROM python:3.11-slim",
         "app_binary": "dGVzdA==",
@@ -498,12 +496,11 @@ def test_build_package_accepts_missing_user_id_when_cached_identity_exists():
             client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
             response = client.post("/api/build-package", json=payload)
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["user_id"] == "alice@example.com"
+    assert response.status_code == 401
+    assert "identity token is required" in response.json()["detail"]["error"].lower()
 
 
-def test_build_package_warns_when_user_id_differs_from_cached_identity(caplog):
+def test_build_package_does_not_use_cached_identity_for_claimed_user(caplog):
     payload = {
         "dockerfile": "FROM python:3.11-slim",
         "app_binary": "dGVzdA==",
@@ -542,9 +539,8 @@ def test_build_package_warns_when_user_id_differs_from_cached_identity(caplog):
                 client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
                 response = client.post("/api/build-package", json=payload)
 
-    assert response.status_code == 200
-    assert response.json()["user_id"] == "alice@example.com"
-    assert "Ignoring caller-supplied user_id 'test-user' for build; using authenticated identity 'alice@example.com'" in caplog.text
+    assert response.status_code == 401
+    assert "Ignoring caller-supplied user_id" not in caplog.text
 
 
 def test_build_package_rejects_missing_identity_token_when_no_cached_fallback_exists():
@@ -572,7 +568,7 @@ def test_build_package_rejects_missing_identity_token_when_no_cached_fallback_ex
             client.app.state.trusted_log.add_entry = lambda *args, **kwargs: None
             response = client.post("/api/build-package", json=payload)
 
-    assert response.status_code == 400
+    assert response.status_code == 401
     detail = response.json()["detail"]
     assert detail["operation"] == "build"
     assert "identity token is required" in detail["error"].lower()
@@ -845,7 +841,7 @@ def test_create_luks_rejects_missing_identity_token():
             client.app.state.trusted_log = DummyTrustedLog()
             response = client.post("/api/create_luks", json=payload)
 
-    assert response.status_code == 400
+    assert response.status_code == 401
     assert response.json()["detail"]["operation"] == "create_luks"
     commit_receipt.assert_not_called()
     verify_chain_state.assert_not_called()
@@ -897,6 +893,95 @@ def test_unmount_luks_rejects_mount_path_outside_allowed_directory():
             loop_device="/dev/loop0",
             mount_path="/etc",
         )
+
+
+def test_build_package_rejects_luks_path_outside_allowed_directory():
+    with pytest.raises(ValidationError, match="luks_path"):
+        BuildPackageRequest(
+            dockerfile="FROM alpine",
+            luks_path="/etc/cron.d",
+        )
+
+
+def test_build_package_api_rejects_luks_path_outside_allowed_directory():
+    payload = {
+        "dockerfile": "POC-ROOT-WRITE",
+        "identity_token": "header.payload.signature",
+        "luks_path": "/etc",
+    }
+
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "test-user",
+            "subject": "test-user",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "test-user",
+        },
+    ), patch("tc_api.api.workflows.docker_service.generate_uuid") as generate_uuid:
+        with TestClient(app) as client:
+            response = client.post("/api/build-package", json=payload)
+
+    assert response.status_code == 422
+    assert "luks_path" in response.text
+    generate_uuid.assert_not_called()
+
+
+def test_publish_package_rejects_luks_path_outside_allowed_directory():
+    with pytest.raises(ValidationError, match="luks_path"):
+        PublishPackageRequest(
+            build_id="bld-123",
+            sbom_url="/tmp/sbom.json",
+            image_id="oci:/tmp/builds/bld-123/plain",
+            luks_path="/etc",
+        )
+
+
+def test_publish_package_rejects_cached_identity_without_request_token():
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.request_auth.resolve_sigstore_identity_token",
+        return_value="cached-identity-token",
+    ) as resolve_token:
+        with TestClient(app) as client:
+            response = client.post("/api/publish-package", json={})
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["operation"] == "publish"
+    resolve_token.assert_not_called()
+
+
+def test_build_package_accepts_luks_path_inside_allowed_directory():
+    allowed_dir = str(Path(LUKS_MOUNT_BASE_DIR).resolve() / "user-volume")
+    req = BuildPackageRequest(
+        dockerfile="FROM alpine",
+        luks_path=allowed_dir,
+    )
+    assert req.luks_path == allowed_dir
+
+
+def test_build_result_rejects_luks_path_outside_allowed_directory():
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.workflows.docker_service.get_build_status"
+    ) as get_build_status:
+        with TestClient(app) as client:
+            response = client.get("/api/build-result/bld-123", params={"luks_path": "/etc"})
+
+    assert response.status_code == 422
+    assert "luks_path" in response.text
+    get_build_status.assert_not_called()
+
+
+def test_derived_luks_path_rejects_symlink_escape(tmp_path):
+    luks_root = tmp_path / "luks"
+    outside_dir = tmp_path / "outside"
+    luks_root.mkdir()
+    outside_dir.mkdir()
+    (luks_root / "_kbs_keys").symlink_to(outside_dir, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="derived path must stay under"):
+        resolve_path_in_base(str(luks_root), "_kbs_keys", "record-123")
 
 
 def test_luks_result_allows_unauthenticated_reads():
