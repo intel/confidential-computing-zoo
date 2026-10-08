@@ -299,6 +299,103 @@ def test_sigstore_identity_token_start_endpoint_returns_auth_url():
     assert data["interactive_login_url"] == "/api/sigstore/interactive-login?operation=build"
 
 
+def test_sigstore_identity_token_start_does_not_return_cached_token():
+    issuer = SimpleNamespace(
+        oidc_config=SimpleNamespace(
+            authorization_endpoint="https://oauth2.sigstore.dev/auth",
+            token_endpoint="https://oauth2.sigstore.dev/token",
+        )
+    )
+    session = {
+        "session_id": "sess-456",
+        "expires_at_epoch": time.time() + 600,
+    }
+
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.sigstore_support.resolve_sigstore_identity_token",
+        return_value="cached-victim-token",
+    ) as resolve_token, patch(
+        "tc_api.api.sigstore_support._get_sigstore_issuer",
+        return_value=issuer,
+    ), patch(
+        "tc_api.api.sigstore_support._build_sigstore_pkce_pair",
+        return_value=("verifier", "challenge"),
+    ), patch(
+        "tc_api.api.sigstore_support._store_sigstore_login_session",
+        return_value=session,
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/sigstore/identity-token?operation=build&flow=copy-url")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "browser_login_pending"
+    assert "identity_token" not in response.json()
+    assert "cached-victim-token" not in response.text
+    assert response.headers["cache-control"] == "no-store"
+    resolve_token.assert_not_called()
+
+
+def test_sigstore_identity_token_start_caps_active_sessions():
+    issuer = SimpleNamespace(
+        oidc_config=SimpleNamespace(
+            authorization_endpoint="https://oauth2.sigstore.dev/auth",
+            token_endpoint="https://oauth2.sigstore.dev/token",
+        )
+    )
+    active_sessions = {
+        "existing-session": {"expires_at_epoch": int(time.time()) + 600},
+    }
+
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.sigstore_support.SIGSTORE_LOGIN_SESSION_CAPACITY",
+        1,
+    ), patch(
+        "tc_api.api.sigstore_support._sigstore_login_sessions",
+        active_sessions,
+    ), patch(
+        "tc_api.api.sigstore_support._sigstore_login_results",
+        {},
+    ), patch(
+        "tc_api.api.sigstore_support._get_sigstore_issuer",
+        return_value=issuer,
+    ), patch(
+        "tc_api.api.sigstore_support._build_sigstore_pkce_pair",
+        return_value=("verifier", "challenge"),
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/sigstore/identity-token?operation=build&flow=copy-url")
+
+    assert response.status_code == 429
+    assert "Too many active Sigstore login sessions" in response.json()["detail"]
+
+
+def test_sigstore_login_status_does_not_return_completed_token():
+    completed_result = {
+        "operation": "build",
+        "status": "token_ready",
+        "session_id": "sess-completed",
+        "identity_token": "completed-victim-token",
+        "source": "verification_code",
+        "derived_identity": "alice@example.com",
+        "expires_at": "2026-04-30T00:00:00Z",
+        "expires_in_seconds": 300,
+        "expires_at_epoch": time.time() + 300,
+    }
+
+    with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
+        "tc_api.api.sigstore_support._sigstore_login_results",
+        {"sess-completed": completed_result},
+    ), patch("tc_api.api.sigstore_support._prune_sigstore_login_sessions", return_value=None):
+        with TestClient(app) as client:
+            response = client.get("/api/sigstore/login-status/sess-completed")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "token_ready"
+    assert "identity_token" not in response.json()
+    assert "completed-victim-token" not in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
 def test_sigstore_callback_page_returns_token_metadata():
     token = _jwt({
         "iss": "https://oauth2.sigstore.dev/auth",
@@ -332,6 +429,7 @@ def test_sigstore_callback_page_returns_token_metadata():
             response = client.get("/api/sigstore/callback?code=code-123&state=state-123")
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     assert "Sigstore Login Complete" in response.text
     assert token in response.text
     assert "postMessage" in response.text
@@ -620,7 +718,7 @@ def test_build_package_returns_sigstore_commit_challenge_for_client_side_retry()
 def test_launch_result_returns_sigstore_commit_challenge_for_client_side_retry():
     with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "tc_api.api.workflows.docker_service.get_launch_status",
-        return_value=SimpleNamespace(launch_id="launch-123", status="signing"),
+        return_value=SimpleNamespace(launch_id="launch-123", user_id="test-user", status="signing"),
     ), patch(
         "tc_api.api.workflows.docker_service.get_pending_launch_commit",
         return_value={"record_id": "rec-123", "user_id": "test-user", "chain_id": "default"},
@@ -984,7 +1082,7 @@ def test_derived_luks_path_rejects_symlink_escape(tmp_path):
         resolve_path_in_base(str(luks_root), "_kbs_keys", "record-123")
 
 
-def test_luks_result_allows_unauthenticated_reads():
+def test_luks_result_requires_authenticated_owner():
     with patch("tc_api.transparency.commit_client.TrustedLogAPI.init_chain", return_value=None), patch(
         "tc_api.api.luks_support.docker_service.get_luks_status",
         return_value={
@@ -994,9 +1092,25 @@ def test_luks_result_allows_unauthenticated_reads():
             "loop_device": "/dev/loop0",
             "vfs_path": str(Path(LUKS_VFS_BASE_DIR).resolve() / "test-user.img"),
         },
+    ), patch(
+        "tc_api.api.request_auth.inspect_identity_token",
+        return_value={
+            "valid_for_sigstore": True,
+            "errors": [],
+            "derived_identity": "test-user",
+            "subject": "test-user",
+            "issuer": "https://oauth2.sigstore.dev/auth",
+            "email": "test-user",
+        },
     ):
         with TestClient(app) as client:
-            response = client.get("/api/luks-result/test-user")
+            unauthenticated_response = client.get("/api/luks-result/test-user")
+            response = client.get(
+                "/api/luks-result/test-user",
+                headers={"Authorization": "Bearer test-user-token"},
+            )
+
+    assert unauthenticated_response.status_code == 401
 
     assert response.status_code == 200
     assert response.json()["user_id"] == "test-user"
@@ -1016,9 +1130,9 @@ def test_luks_result_ignores_reader_identity_headers():
         "tc_api.api.request_auth.inspect_identity_token",
         return_value={
             "valid_for_sigstore": True,
-            "errors": [],
-            "derived_identity": "alice@example.com",
-            "subject": "alice@example.com",
+            "errors": ["owner mismatch"],
+            "derived_identity": "other@example.com",
+            "subject": "other@example.com",
             "issuer": "https://oauth2.sigstore.dev/auth",
             "email": "alice@example.com",
         },
@@ -1029,8 +1143,7 @@ def test_luks_result_ignores_reader_identity_headers():
                 headers={"Authorization": "Bearer reader-token"},
             )
 
-    assert response.status_code == 200
-    assert response.json()["user_id"] == "alice@example.com"
+    assert response.status_code == 403
 
 
 def test_build_package_rejects_payloads_over_limit():

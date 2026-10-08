@@ -15,7 +15,7 @@
 from decouple import config
 
 # Server Configuration
-HOST = config("HOST", default="0.0.0.0")
+HOST = config("HOST", default="127.0.0.1")
 PORT = config("PORT", default=8000, cast=int)
 DEBUG = config("DEBUG", default=False, cast=bool)
 LOG_LEVEL = config("LOG_LEVEL", default="DEBUG" if DEBUG else "INFO")

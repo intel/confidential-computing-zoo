@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -73,6 +74,44 @@ def test_build_command_retries_after_sigstore_login(monkeypatch, capsys):
     assert '"build_id": "bld-123"' in captured.out
     assert "Open this browser page and finish login there" in captured.err
     assert "points at localhost" in captured.err
+
+
+def test_server_session_login_reads_token_without_echo_after_status_completes(monkeypatch):
+    class StatusClient:
+        base_url = "http://localhost:8000"
+
+        def request_json(self, method, path):
+            assert method == "GET"
+            assert path == "/api/sigstore/login-status/sess-123"
+            return FakeResponse(200, {"status": "token_ready"})
+
+    monkeypatch.setattr(client_mod, "_select_sigstore_login_mode", lambda *args: "server-session")
+    monkeypatch.setattr(client_mod, "_rewrite_browser_url", lambda url, _base: url)
+    monkeypatch.setattr(client_mod, "_maybe_open_browser", lambda *_args: None)
+    monkeypatch.setattr(client_mod.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr(client_mod.getpass, "getpass", lambda _prompt: "browser-token")
+
+    token = client_mod._complete_sigstore_login(
+        StatusClient(),
+        {
+            "after_login_open_url": "http://localhost:8000/api/sigstore/interactive-login?session_id=sess-123",
+            "session_id": "sess-123",
+            "login_status_url": "/api/sigstore/login-status/sess-123",
+        },
+        operation="build",
+        open_browser=False,
+        browser_base_url="",
+        sigstore_login_mode="server-session",
+    )
+
+    assert token == "browser-token"
+
+
+def test_identity_token_prompt_rejects_non_interactive_stdin(monkeypatch):
+    monkeypatch.setattr(client_mod.sys, "stdin", SimpleNamespace(isatty=lambda: False))
+
+    with pytest.raises(client_mod.ClientError, match="interactive terminal"):
+        client_mod._read_identity_token_from_terminal()
 
 
 def test_build_command_retries_via_resume_path_after_sigstore_login(monkeypatch, capsys):

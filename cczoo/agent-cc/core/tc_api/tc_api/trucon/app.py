@@ -785,6 +785,12 @@ async def service_auth_middleware(request: Request, call_next):
             return denial
         return await call_next(request)
 
+    if not _SERVICE_TOKEN:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "TruCon HTTP authentication is unavailable because TRUCON_SERVICE_TOKEN is not configured"},
+        )
+
     auth_header = request.headers.get("authorization")
     if not auth_header:
         return JSONResponse(status_code=401, content={"detail": "Missing Authorization header"})

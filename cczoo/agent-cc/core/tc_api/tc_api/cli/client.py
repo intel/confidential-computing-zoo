@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -448,7 +449,7 @@ def _complete_sigstore_login(
             if status_payload.get("status") == "token_ready":
                 identity_token = str(status_payload.get("identity_token") or "").strip()
                 if not identity_token:
-                    raise ClientError("Sigstore login completed but no identity_token was returned.")
+                    identity_token = _read_identity_token_from_terminal()
                 return identity_token
         elif status_response.status_code != 404:
             raise ClientError(f"Sigstore login polling failed: {json.dumps(status_response.data, ensure_ascii=False)}")
@@ -457,6 +458,17 @@ def _complete_sigstore_login(
     raise ClientError(
         f"Timed out waiting for Sigstore login to finish for {operation}. Keep the browser page open and retry the command once login completes."
     )
+
+
+def _read_identity_token_from_terminal() -> str:
+    if not sys.stdin.isatty():
+        raise ClientError(
+            "Sigstore login completed. Copy the identity token from the browser and rerun this command in an interactive terminal."
+        )
+    identity_token = getpass.getpass("Paste the identity token displayed in the browser: ").strip()
+    if not identity_token:
+        raise ClientError("No identity token was entered.")
+    return identity_token
 
 
 def _authorization_headers(identity_token: Optional[str]) -> Optional[dict[str, str]]:

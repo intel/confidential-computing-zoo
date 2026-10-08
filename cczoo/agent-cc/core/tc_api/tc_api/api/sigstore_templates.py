@@ -246,7 +246,7 @@ def render_callback_page(*, title: str, payload_json: str) -> str:
 </head>
 <body>
     <h1>{escape(title, quote=True)}</h1>
-    <p>This window can be closed. The opener page will receive the login result automatically.</p>
+    <p>Copy the identity token below to the client that started login. Close this window after transferring it.</p>
     <pre id="payload"></pre>
     <script>
         const payload = {payload_json};

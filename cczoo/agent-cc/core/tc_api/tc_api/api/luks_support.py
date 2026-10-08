@@ -196,6 +196,14 @@ async def get_luks_result(http_request: Request, user_id: str):
         luks = docker_service.get_luks_status(user_id)
         if not luks:
             raise HTTPException(status_code=404, detail="User not found")
+        owner_user_id = luks.get("user_id") if isinstance(luks, dict) else getattr(luks, "user_id", None)
+        if not isinstance(owner_user_id, str) or not owner_user_id.strip():
+            raise HTTPException(status_code=404, detail="User not found")
+        require_authenticated_owner(
+            "luks_result",
+            request=http_request,
+            owner_user_id=owner_user_id,
+        )
         return luks
     except HTTPException:
         raise

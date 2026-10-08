@@ -52,6 +52,14 @@ async def limit_build_package_request_size(request: Request, call_next):
 
 
 @app.middleware("http")
+async def prevent_sigstore_response_caching(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/sigstore/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.middleware("http")
 async def authenticate_write_requests(request: Request, call_next):
     denial = await enforce_authenticated_request(request)
     if denial is not None:

@@ -73,6 +73,21 @@ class TestAuthEnforcement:
         assert resp.status_code == 401
         assert resp.json()["detail"] == "Invalid service token"
 
+    def test_empty_service_token_rejects_http_even_with_uds_configured(self):
+        with patch(f"{MOD}._SERVICE_TOKEN", ""), patch(
+            f"{MOD}._TRUCON_UDS_PATH", "/tmp/trucon.sock"
+        ):
+            resp = self.client.get(
+                "/status",
+                headers={
+                    "Authorization": "Bearer ",
+                    "X-TruCon-Caller-Service": "tc_api",
+                },
+            )
+
+        assert resp.status_code == 503
+        assert "TRUCON_SERVICE_TOKEN is not configured" in resp.json()["detail"]
+
     def test_commit_endpoint_requires_auth(self):
         resp = self.client.post(
             "/commit",

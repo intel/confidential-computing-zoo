@@ -85,7 +85,7 @@ class ControlPlaneHarness:
         self._monkeypatch.setattr(
             request_auth_mod,
             "inspect_identity_token",
-            lambda _token, expected_identity=None: {
+            lambda _token, expected_identity=None, **_kwargs: {
                 "valid_for_sigstore": True,
                 "errors": [],
                 "derived_identity": expected_identity,
@@ -354,30 +354,31 @@ def test_launch_flow_preserves_result_fields(harness, commit_success, verify_sta
     assert result_data["instance_ids"] == ["container-1"]
 
 
-def test_build_result_allows_unauthenticated_reads(harness):
-    harness.patch_build_success()
-    harness.patch_trucon(commit_success=True, verify_status="success")
+def test_build_result_requires_authenticated_owner(harness):
+    harness.seed_build_result(
+        user_id="build-user",
+        build_id="bld-test123",
+        image_id="oci:/tmp/test-image",
+    )
 
     with harness.client() as client:
-        response = client.post("/api/build-package", json=_build_payload())
+        unauthenticated_result = client.get("/api/build-result/bld-test123")
+        result = client.get("/api/build-result/bld-test123", headers=_auth_headers())
 
-        assert response.status_code == 200
-        result = client.get("/api/build-result/bld-test123")
-
+    assert unauthenticated_result.status_code == 401
     assert result.status_code == 200
     assert result.json()["build_id"] == "bld-test123"
 
 
 def test_build_result_ignores_reader_identity_headers(harness, monkeypatch):
-    harness.patch_build_success()
-    harness.patch_trucon(commit_success=True, verify_status="success")
+    harness.seed_build_result(
+        user_id="build-user",
+        build_id="bld-test123",
+        image_id="oci:/tmp/test-image",
+    )
 
     with harness.client() as client:
-        response = client.post("/api/build-package", json=_build_payload())
-
-        assert response.status_code == 200
-
-        def _inspect_identity_token(_token, expected_identity=None):
+        def _inspect_identity_token(_token, expected_identity=None, **_kwargs):
             return {
                 "valid_for_sigstore": True,
                 "errors": [] if expected_identity == "other-user" else ["owner mismatch"],
@@ -390,5 +391,4 @@ def test_build_result_ignores_reader_identity_headers(harness, monkeypatch):
         monkeypatch.setattr(request_auth_mod, "inspect_identity_token", _inspect_identity_token)
         result = client.get("/api/build-result/bld-test123", headers=_auth_headers("wrong-token"))
 
-    assert result.status_code == 200
-    assert result.json()["build_id"] == "bld-test123"
+    assert result.status_code == 403

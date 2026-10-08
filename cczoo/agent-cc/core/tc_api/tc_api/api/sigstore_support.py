@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 _sigstore_login_sessions: dict[str, dict[str, Any]] = {}
 _sigstore_login_results: dict[str, dict[str, Any]] = {}
 _sigstore_login_sessions_lock = threading.Lock()
+SIGSTORE_LOGIN_SESSION_CAPACITY = 256
 
 
 class SigstoreIdentityTokenExchangeRequest(BaseModel):
@@ -132,32 +133,16 @@ def _store_sigstore_login_session(
     }
     with _sigstore_login_sessions_lock:
         _prune_sigstore_login_sessions(now_epoch)
+        if len(_sigstore_login_sessions) + len(_sigstore_login_results) >= SIGSTORE_LOGIN_SESSION_CAPACITY:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many active Sigstore login sessions. Retry after an existing session expires.",
+            )
         _sigstore_login_sessions[session["session_id"]] = session
     return session
 
 def _start_sigstore_login(operation: str, request: Request, flow: str = "copy-url", force_oob: bool = False) -> dict[str, Any]:
     normalized_flow = _normalize_sigstore_login_flow(flow)
-    cached_token = resolve_sigstore_identity_token(
-        operation,
-        logger=logger,
-        allow_interactive=False,
-        min_ttl_seconds=0,
-        suppress_warning=True,
-    )
-    if cached_token:
-        token_report = inspect_identity_token(cached_token)
-        return {
-            "operation": operation,
-            "status": "token_ready",
-            "source": "cache",
-            "identity_token": cached_token,
-            "derived_identity": token_report.get("derived_identity"),
-            "federated_issuer": token_report.get("federated_issuer"),
-            "expires_at": token_report.get("expires_at"),
-            "expires_in_seconds": token_report.get("expires_in_seconds"),
-            "interactive_login_url": _sigstore_interactive_login_path(operation),
-        }
-
     issuer = _get_sigstore_issuer()
     code_verifier, code_challenge = _build_sigstore_pkce_pair()
     state = str(uuid.uuid4())
@@ -244,7 +229,11 @@ def _get_sigstore_login_status(session_id: str) -> dict[str, Any]:
         _prune_sigstore_login_sessions()
         completed = _sigstore_login_results.get(session_id)
         if completed is not None:
-            return {key: value for key, value in completed.items() if key != "expires_at_epoch"}
+            return {
+                key: value
+                for key, value in completed.items()
+                if key not in {"expires_at_epoch", "identity_token"}
+            }
         session = _sigstore_login_sessions.get(session_id)
     if session is None:
         raise HTTPException(
@@ -327,7 +316,7 @@ def _exchange_sigstore_verification_code(
     with _sigstore_login_sessions_lock:
         _sigstore_login_sessions.pop(session_id, None)
         _sigstore_login_results[session_id] = {
-            **result,
+            **{key: value for key, value in result.items() if key != "identity_token"},
             "expires_at_epoch": session["expires_at_epoch"],
         }
     return result

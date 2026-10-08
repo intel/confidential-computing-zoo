@@ -13,7 +13,7 @@ services:
         - HTTPS_PROXY=${HTTPS_PROXY:-}
         - NO_PROXY=${NO_PROXY:-}
     ports:
-      - "8000:8000"
+      - "${TC_API_BIND_ADDRESS:-127.0.0.1}:8000:8000"
     environment:
       - HOST=0.0.0.0
       - PORT=8000
@@ -25,7 +25,7 @@ services:
       - DOCKER_REPOSITORY=myrepo
       - TRUCON_URL=http://trucon:8001
       - TRUCON_UDS_PATH=/var/run/trucon/trucon.sock
-      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
+      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN:?TRUCON_SERVICE_TOKEN must be set}
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-}
@@ -57,11 +57,9 @@ services:
         - https_proxy=${https_proxy:-}
         - no_proxy=${no_proxy:-}
     command: ["python", "-m", "uvicorn", "tc_api.trucon.app:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]
-    ports:
-      - "8001:8001"
     environment:
       - TRUCON_UDS_PATH=/var/run/trucon/trucon.sock
-      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
+      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN:?TRUCON_SERVICE_TOKEN must be set}
       - LOGS_DIR=/dev/shm/tc_api_logs
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
@@ -88,12 +86,10 @@ services:
         - https_proxy=${https_proxy:-}
         - no_proxy=${no_proxy:-}
     command: ["/app/venv/bin/python", "-m", "tc_api.docktap.main", "--socket-path", "/var/run/docktap/docker.sock", "--docker-socket-path", "/var/run/docker-daemon.sock"]
-    ports:
-      - "8002:8002"
     environment:
       - TRUCON_URL=http://trucon:8001
       - TRUCON_UDS_PATH=/var/run/trucon/trucon.sock
-      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN}
+      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN:?TRUCON_SERVICE_TOKEN must be set}
       - LOGS_DIR=/dev/shm/tc_api_logs
       - DOCKER_SOCKET=/var/run/docker-daemon.sock
       - SOCK_BRIDGE_SOCKET=/var/run/docktap/docker.sock
@@ -122,7 +118,7 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - "80:80"
+      - "${NGINX_BIND_ADDRESS:-127.0.0.1}:80:80"
     volumes:
       - ../deploy/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:

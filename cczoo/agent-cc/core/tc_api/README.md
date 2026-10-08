@@ -75,12 +75,14 @@ cp .env.example .env
 
 The most important settings are:
 
-- `HOST` and `PORT` control the REST listener; defaults are `0.0.0.0` and `8000`.
+- `HOST` and `PORT` control the REST listener; local startup defaults to `127.0.0.1` and `8000`. The Compose container listens on its private network interface, but its host-published API and Nginx ports bind to loopback by default.
 - `UPLOAD_DIR` and `BUILD_DIR` default to `/dev/shm/tc_api_uploads` and `/dev/shm/tc_api_builds`; uploaded inputs and build artifacts are intentionally volatile. Runtime logs default to `/dev/shm/tc_api_logs`.
 - `DOCKER_REGISTRY` and `DOCKER_REPOSITORY` select the image destination.
 - `KBS_URL` and `KBS_ENDPOINT` configure key retrieval.
-- `TRUCON_SERVICE_TOKEN` authenticates internal tc_api, TruCon, and Docktap calls. If omitted, local startup generates one; use the same value for all processes in a deployment.
+- `TRUCON_SERVICE_TOKEN` authenticates internal tc_api, TruCon, and Docktap calls. `start.sh` generates a session token if omitted; direct `docker compose up` requires a non-empty value. Keep the same value for all processes in a deployment.
 - `TRUCON_UDS_PATH` and `TRUCON_BUNDLE_MIRROR_DIR` configure the preferred local transport and bundle mirror.
+
+The Compose deployment does not publish TruCon or Docktap ports to the host. Its API and Nginx HTTP ports bind to `127.0.0.1`; remote access must go through a TLS-terminating reverse proxy. Do not expose the loopback HTTP ports directly to an untrusted network.
 
 See [.env.example](.env.example) for the full list.
 

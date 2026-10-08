@@ -397,7 +397,7 @@ if [[ -f "$TC_API_PID_FILE" || -f "$DOCKTAP_PID_FILE" || -f "$TRUCON_PID_FILE" ]
 fi
 
 # Set default environment variables if not set
-export HOST=${HOST:-0.0.0.0}
+export HOST=${HOST:-127.0.0.1}
 export PORT=${PORT:-8000}
 export TRUCON_PORT=${TRUCON_PORT:-8001}
 export TRUCON_RTMR_INDEX=${TRUCON_RTMR_INDEX:-2}
@@ -437,7 +437,7 @@ fi
 echo "Starting TruCon (single-instance sequencer) on port $TRUCON_PORT..."
 mkdir -p "$(dirname "$TRUCON_LOG_FILE")"
 : > "$TRUCON_LOG_FILE"
-"$PYTHON_BIN" -m uvicorn tc_api.trucon.app:app --host 0.0.0.0 --port $TRUCON_PORT --workers 1 >> "$TRUCON_LOG_FILE" 2>&1 &
+"$PYTHON_BIN" -m uvicorn tc_api.trucon.app:app --host 127.0.0.1 --port $TRUCON_PORT --workers 1 >> "$TRUCON_LOG_FILE" 2>&1 &
 TRUCON_PID=$!
 echo "$TRUCON_PID" > "$TRUCON_PID_FILE"
 

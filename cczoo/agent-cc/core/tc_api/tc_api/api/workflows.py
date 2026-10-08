@@ -757,6 +757,12 @@ async def get_publish_result(http_request: Request, build_id: str):
             raise HTTPException(status_code=404, detail="Publish not found")
         pending = docker_service.get_pending_publish_commit(build_id)
         if publish_result.status == "signing" and pending is not None:
+            if http_request.headers.get("Authorization"):
+                require_authenticated_owner(
+                    "publish",
+                    request=http_request,
+                    owner_user_id=publish_result.user_id,
+                )
             detail = _missing_sigstore_identity_detail("publish", request=http_request)
             detail.update(
                 {
@@ -767,6 +773,11 @@ async def get_publish_result(http_request: Request, build_id: str):
                 }
             )
             raise HTTPException(status_code=428, detail=detail)
+        require_authenticated_owner(
+            "publish",
+            request=http_request,
+            owner_user_id=publish_result.user_id,
+        )
         return publish_result
     except HTTPException:
         raise
@@ -876,6 +887,11 @@ async def get_build_result(http_request: Request, build_id: str, luks_path: Opti
         build_result = docker_service.get_build_status(build_id, luks_path)
         if not build_result:
             raise HTTPException(status_code=404, detail="Build not found")
+        require_authenticated_owner(
+            "build",
+            request=http_request,
+            owner_user_id=build_result.user_id,
+        )
         return build_result
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1200,6 +1216,12 @@ async def get_launch_result(http_request: Request, launch_id: str):
             raise HTTPException(status_code=404, detail="Launch not found")
         pending = docker_service.get_pending_launch_commit(launch_id)
         if launch_result.status == "signing" and pending is not None:
+            if http_request.headers.get("Authorization"):
+                require_authenticated_owner(
+                    "launch",
+                    request=http_request,
+                    owner_user_id=launch_result.user_id,
+                )
             detail = _missing_sigstore_identity_detail("launch", request=http_request)
             detail.update(
                 {
@@ -1210,6 +1232,11 @@ async def get_launch_result(http_request: Request, launch_id: str):
                 }
             )
             raise HTTPException(status_code=428, detail=detail)
+        require_authenticated_owner(
+            "launch",
+            request=http_request,
+            owner_user_id=launch_result.user_id,
+        )
         return launch_result
     except HTTPException:
         raise
