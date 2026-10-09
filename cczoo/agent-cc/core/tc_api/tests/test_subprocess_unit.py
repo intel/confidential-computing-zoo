@@ -141,7 +141,7 @@ def test_create_luks_block_prepares_file_before_allocating_loop(tmp_path):
             return SimpleNamespace(returncode=0, stdout="/dev/loop7\n", stderr="")
         if cmd[:2] == ["curl", "-fsSL"]:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
-        if str(cmd[0]).endswith("create_encrypted_vfs.sh"):
+        if str(cmd[1]).endswith("encrypted_vfs.sh") and cmd[2] == "create":
             return SimpleNamespace(returncode=0, stdout="created", stderr="")
         raise AssertionError(f"Unexpected command: {cmd}")
 
@@ -153,7 +153,8 @@ def test_create_luks_block_prepares_file_before_allocating_loop(tmp_path):
     assert calls[0] == ["truncate", "-s", "8M", vfs_path]
     assert calls[1] == ["losetup", "--find", "--show", vfs_path]
     assert calls[2][:2] == ["curl", "-fsSL"]
-    assert str(calls[3][0]).endswith("create_encrypted_vfs.sh")
+    assert str(calls[3][1]).endswith("encrypted_vfs.sh")
+    assert calls[3][2] == "create"
     assert len(mapper_dir) == 32
     assert loop_device == "/dev/loop7"
 
@@ -171,7 +172,7 @@ def test_create_luks_block_raises_script_error_and_detaches_loop(tmp_path):
             return SimpleNamespace(returncode=0, stdout="/dev/loop7\n", stderr="")
         if cmd[:2] == ["curl", "-fsSL"]:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
-        if str(cmd[0]).endswith("create_encrypted_vfs.sh"):
+        if str(cmd[1]).endswith("encrypted_vfs.sh") and cmd[2] == "create":
             return SimpleNamespace(returncode=1, stdout="Create 8M block file", stderr="losetup: /dev/loop7: failed to set up loop device")
         if cmd[:2] == ["losetup", "-d"]:
             detach_calls.append(cmd)

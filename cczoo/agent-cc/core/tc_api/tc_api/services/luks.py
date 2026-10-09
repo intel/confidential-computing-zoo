@@ -90,7 +90,7 @@ class LuksServiceMixin:
             _detach_loop_device(loop_device)
             raise RuntimeError(error_message)
 
-        cmd = [str(SCRIPT_DIR / "create_encrypted_vfs.sh"), vfs_path, vfs_size, passwd, mapper_dir, loop_device]
+        cmd = ["bash", str(SCRIPT_DIR / "encrypted_vfs.sh"), "create", vfs_path, vfs_size, passwd, mapper_dir, loop_device]
         try:
             logger.info(' '.join(cmd))
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -114,7 +114,7 @@ class LuksServiceMixin:
 
     def mount_luks_block(self, user_id, tlog: TrustedLogAPI, record_id: str, mapper_dir, passwd, mount_path, vfs_path, loop_device):
         loop_device = _attach_loop_device(vfs_path)
-        cmd = ["bash", str(SCRIPT_DIR / "mount_encrypted_vfs.sh"), vfs_path, mount_path, mapper_dir, passwd, loop_device]
+        cmd = ["bash", str(SCRIPT_DIR / "encrypted_vfs.sh"), "mount", vfs_path, mount_path, mapper_dir, passwd, loop_device]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             logger.info(result.stdout)
@@ -136,7 +136,7 @@ class LuksServiceMixin:
 
     def unmount_luks_block(self, user_id, tlog: TrustedLogAPI, record_id: str, mapper_dir, mount_path, loop_device):
         mapper_path = f"/dev/mapper/{mapper_dir}"
-        cmd = ["bash", str(SCRIPT_DIR / "unmount_encrypted_vfs.sh"), mount_path, mapper_path, loop_device]
+        cmd = ["bash", str(SCRIPT_DIR / "encrypted_vfs.sh"), "unmount", mount_path, mapper_path, loop_device]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode == 0:

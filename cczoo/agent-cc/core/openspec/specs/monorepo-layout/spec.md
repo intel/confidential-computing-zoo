@@ -39,7 +39,7 @@ System-level orchestration scripts SHALL remain at `scripts/` in the repository 
 
 #### Scenario: System-level scripts stay at root
 - **WHEN** inspecting `scripts/` at the repository root
-- **THEN** it SHALL contain `dev-up.sh`, `trust_service.sh`, `create_encrypted_vfs.sh`, `mount_encrypted_vfs.sh`, and `unmount_encrypted_vfs.sh`
+- **THEN** it SHALL contain `dev-up.sh`, `trust_service.sh`, and `encrypted_vfs.sh`
 
 #### Scenario: tc-api scripts are in tc-api/scripts/
 - **WHEN** inspecting `tc-api/scripts/`
