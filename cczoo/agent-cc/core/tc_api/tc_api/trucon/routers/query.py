@@ -15,10 +15,11 @@
 """Read-only query endpoints for TruCon."""
 
 from typing import List
+import threading
 
 from fastapi import APIRouter, HTTPException
 
-from ..chain_verification import verify_chain_records
+from ..chain_verification import confirmed_chain_state, verify_chain_records
 from .. import database as _db
 from ..schemas import (
     ChainStateResponse,
@@ -32,14 +33,42 @@ from ..schemas import (
 router = APIRouter()
 
 DEFAULT_CHAIN_ID = "default"
+MAX_HISTORY_ENTRIES = 4096
+sequencer_lock = threading.Lock()
 
 
-@router.get("/chain-state", response_model=ChainStateResponse)
-def get_chain_state_endpoint():
-    """Return current chain state for the default measured chain."""
+@router.get("/chain-state", response_model=ChainStateResponse, response_model_exclude_unset=True)
+def get_chain_state_endpoint(include_history: bool = False):
+    """Return chain state, optionally requiring complete confirmed history.
+
+    History mode returns a consistent head and its ordered log references, or
+    409 while any record is unconfirmed. References retain the backend's format.
+    """
+    # Same lock as mutation reservation and commit in the service. The returned
+    # view linearizes before a new reservation can be acknowledged to Docktap.
+    with sequencer_lock:
+        return _chain_state(include_history)
+
+
+def _chain_state(include_history):
+    # Even the old head is unsafe to report while Docker may have changed
+    # without a confirmed lifecycle record describing the outcome.
+    if _db.has_unresolved_docktap_mutation(DEFAULT_CHAIN_ID):
+        raise HTTPException(status_code=409, detail='Docker mutation has no confirmed lifecycle record',
+                            headers={'X-Argus-Reason': 'MUTATION_PENDING'})
+    if include_history:
+        # Read one extra row to reject overflow, never silently return a
+        # truncated prefix as the complete history needed for RTMR2 replay.
+        rows = _db.get_chain_records(DEFAULT_CHAIN_ID, limit=MAX_HISTORY_ENTRIES + 1, metadata_only=True)
+        try:
+            return confirmed_chain_state(DEFAULT_CHAIN_ID, rows, MAX_HISTORY_ENTRIES)
+        except ValueError as exc:
+            reason = 'HISTORY_CAPACITY' if len(rows) > MAX_HISTORY_ENTRIES else 'HISTORY_NOT_CONFIRMED'
+            raise HTTPException(status_code=409, detail=str(exc), headers={'X-Argus-Reason': reason}) from exc
     state = _db.get_chain_state(DEFAULT_CHAIN_ID)
     if not state:
-        raise HTTPException(status_code=404, detail=f"No chain state for '{DEFAULT_CHAIN_ID}'")
+        raise HTTPException(status_code=404, detail=f"No chain state for '{DEFAULT_CHAIN_ID}'",
+                            headers={'X-Argus-Reason': 'HISTORY_MISSING'})
     return ChainStateResponse(
         chain_id=DEFAULT_CHAIN_ID,
         head_record_id=state['head_record_id'],

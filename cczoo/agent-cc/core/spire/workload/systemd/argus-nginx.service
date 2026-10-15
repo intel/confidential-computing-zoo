@@ -1,0 +1,20 @@
+[Unit]
+Description=Attested workload NGINX mTLS ingress
+# Ingress follows Helper/AuthZ lifetimes. The publish hook starts this unit once
+# credentials are available; this unit has no independent restart loop.
+BindsTo=argus-helper.service argus-authz.service
+After=argus-helper.service argus-authz.service
+
+[Service]
+Type=simple
+User=root
+RuntimeDirectory=@RUN_NAME@-nginx
+RuntimeDirectoryMode=0755
+ExecStartPre=@BIN@/argus-workload -action check -registration @TARGET@
+# The hook enters the registered target's network namespace while retaining
+# host-managed binaries, configuration and credential files.
+ExecStart=@BIN@/nginx-hook.sh exec
+ExecReload=@BIN@/nginx-hook.sh reload
+TimeoutStopSec=2s
+KillSignal=SIGTERM
+KillMode=control-group

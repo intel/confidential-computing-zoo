@@ -1,0 +1,15 @@
+[Unit]
+Description=NGINX local SPIFFE client authorization
+
+[Service]
+Type=simple
+User=root
+Group=argus-nginx
+# Restrict the TLS-header trust boundary to root and the NGINX worker group.
+RuntimeDirectory=@RUN_NAME@-authz
+RuntimeDirectoryMode=0750
+ExecStart=@BIN@/spiffe-authz -socket @AUTHZ_SOCKET@ @CLIENT_ID_ARGS@
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=5
+NoNewPrivileges=yes

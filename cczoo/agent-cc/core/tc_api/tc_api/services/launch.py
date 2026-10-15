@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import subprocess
+import tempfile
 import time
 import uuid
 from datetime import datetime
@@ -27,6 +28,7 @@ from ..config import (
     SKOPEO_CMD,
 )
 from ..docktap.workload_store import WorkloadStore
+from . import workload_profile
 from ..models import LaunchResult, TransparencyResult
 from ..transparency.commit_client import TrustedLogAPI
 from ..transparency.events import EventEntryKey
@@ -105,22 +107,28 @@ class LaunchServiceMixin:
             logger.debug("Falling back to synthetic digest for %s: %s", image_ref, exc)
         return self._sha384_digest(image_ref)
 
-    def _build_launch_security_projection(self, launch_id: str, workload_id: str) -> Dict[str, Any]:
+    def _build_launch_security_projection(self, launch_id: str, workload_id: str, metadata=None, settings=None) -> Dict[str, Any]:
+        if settings is None:
+            settings = workload_profile.profile_settings(metadata, workload_id)
+        if settings is not None:
+            projection = workload_profile.security_projection(settings, launch_id, workload_id)
+            projection["launch_env_digest"] = self._json_sha384_digest(workload_profile.launch_environment(settings))
+            return projection
         mounts = [
-            "/etc/hosts:/etc/hosts",
-            "/etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf",
-            "/usr/share/doc/libtdx-attest-dev/examples/:/td-attest/",
-            "/etc/tdx-attest.conf:/etc/tdx-attest.conf",
+            "/etc/hosts:/etc/hosts:ro",
+            "/etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf:ro",
+            "/usr/share/doc/libtdx-attest-dev/examples/:/td-attest/:ro",
+            "/etc/tdx-attest.conf:/etc/tdx-attest.conf:ro",
         ]
         devices = ["/dev/tdx_guest"]
         return {
             "launch_id": launch_id,
             "workload_id": workload_id,
-            "privileged": True,
+            "privileged": False,
             "network_mode": "host",
             "mounts": mounts,
             "devices": devices,
-            "capabilities": ["ALL"],
+            "capabilities": [],
             "launch_env_keys": ["HF_HUB_OFFLINE"],
             "launch_env_digest": self._json_sha384_digest({"HF_HUB_OFFLINE": "1"}),
         }
@@ -168,13 +176,33 @@ class LaunchServiceMixin:
             
         return base_name
 
-    def pull_image(self, tlog: TrustedLogAPI, record_id: str, image_url: str, openssl_key: str, target_dir: str, max_retries: int = 3, retry_delay: int = 5) -> bool:
+    def image_archive_refs(self, image_id: str, launch_pth: str, launch_id: Optional[str] = None, workload_id: Optional[str] = None):
+        """
+        Compute the docker-archive destination and the image reference it must
+        load as. Shared by the pull step (which may write the archive directly)
+        and the launch step (which consumes it), so both agree on the naming.
+        """
+        if image_id.startswith("oci:"):
+            local_tag = launch_id or workload_id or f"local-{uuid.uuid4().hex[:12]}"
+            loaded_image_ref = f"tc-api-{local_tag}:latest"
+        else:
+            loaded_image_ref = image_id if ':' in image_id else f"{image_id}:latest"
+        archive_name = loaded_image_ref.replace('/', '_').replace(':', '_')
+        archive_path = os.path.join(launch_pth, f"{archive_name}-image.tar")
+        archive_ref = f"docker-archive:{archive_path}:{loaded_image_ref}"
+        return loaded_image_ref, archive_path, archive_ref
+
+    def pull_image(self, tlog: TrustedLogAPI, record_id: str, image_url: str, openssl_key: str, target_dir: str, max_retries: int = 3, retry_delay: int = 5, dest_ref: Optional[str] = None) -> bool:
 
         source_ref = image_url
         if source_ref and ":" not in source_ref and os.path.isdir(source_ref):
             source_ref = f"oci:{source_ref}"
         source_ref = source_ref.replace("docker.io","docker:/")
-        dest_ref = os.path.join('oci:'+target_dir,'encrypted')
+        # Preserve the image config bytes for non-encrypted registry pulls by
+        # writing the docker-archive destination directly. The docker->oci copy
+        # deterministically rewrites the config JSON, which would change the
+        # loaded image config digest and fail the strict approval comparison.
+        dest_ref = dest_ref or os.path.join('oci:'+target_dir,'encrypted')
         insecure_local_registry = _is_insecure_local_registry_ref(source_ref)
 
         attempt = 0
@@ -334,30 +362,42 @@ class LaunchServiceMixin:
         launch_id: Optional[str] = None,
         image_digest: Optional[str] = None,
         service_name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        attested_settings: Optional[Dict[str, Any]] = None,
+        pulled_archive_ref: Optional[str] = None,
     ):
-        image_dir = 'oci:' + os.path.join(launch_pth,'encrypted')
-        if image_id.startswith("oci:"):
-            local_tag = launch_id or workload_id or f"local-{uuid.uuid4().hex[:12]}"
-            loaded_image_ref = f"tc-api-{local_tag}:latest"
-        else:
-            loaded_image_ref = image_id if ':' in image_id else f"{image_id}:latest"
-        archive_name = loaded_image_ref.replace('/', '_').replace(':', '_')
-        archive_path = os.path.join(launch_pth, f"{archive_name}-image.tar")
-        archive_ref = f"docker-archive:{archive_path}:{loaded_image_ref}"
-        
+        if attested_settings is None:
+            attested_settings = workload_profile.profile_settings(metadata, workload_id)
+        loaded_image_ref, archive_path, archive_ref = self.image_archive_refs(
+            image_id, launch_pth, launch_id=launch_id, workload_id=workload_id)
+
         try:
-            cmd = [SKOPEO_CMD, "copy", image_dir, archive_ref]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-            
-            if res.returncode == 0:
-                logger.info(f"Success export {loaded_image_ref} archive.")
-                logger.debug(f"CMD: {' '.join(cmd)}")
-                tlog.add_entry(record_id, Entry(key="pullImage", value={"pullImage_cmd": " ".join(cmd), "pullImage_status": "success"}))
+            # When the pull step already wrote the docker-archive directly (no
+            # encrypted oci intermediate), there is nothing to export. The pull
+            # step must have produced exactly the archive this launch step expects.
+            if pulled_archive_ref is not None:
+                if pulled_archive_ref != archive_ref:
+                    raise ValueError(
+                        f"pulled archive {pulled_archive_ref} does not match expected archive {archive_ref}")
+                tlog.add_entry(record_id, Entry(key="export_skipped", value={
+                    "export_skipped": True,
+                    "reason": "pull_image wrote the docker-archive destination directly",
+                    "archive_ref": archive_ref,
+                }))
             else:
-                logger.info("Failed add image.")
-                logger.debug(f"CMD: {' '.join(cmd)}")
-                tlog.add_entry(record_id, Entry(key="pullImage_status", value="failed"))
-                return False
+                image_dir = 'oci:' + os.path.join(launch_pth,'encrypted')
+                cmd = [SKOPEO_CMD, "copy", image_dir, archive_ref]
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+                if res.returncode == 0:
+                    logger.info(f"Success export {loaded_image_ref} archive.")
+                    logger.debug(f"CMD: {' '.join(cmd)}")
+                    tlog.add_entry(record_id, Entry(key="pullImage", value={"pullImage_cmd": " ".join(cmd), "pullImage_status": "success"}))
+                else:
+                    logger.info("Failed add image.")
+                    logger.debug(f"CMD: {' '.join(cmd)}")
+                    tlog.add_entry(record_id, Entry(key="pullImage_status", value="failed"))
+                    return False
 
             load_cmd = [DOCKER_CMD, "load", "-i", archive_path]
             load_res = subprocess.run(load_cmd, capture_output=True, text=True, timeout=600)
@@ -380,35 +420,53 @@ class LaunchServiceMixin:
                 }))
                 return False
 
-            docker_cmd = [
-                DOCKER_CMD,
-                "run",
-                "-d",
-                "-it",
-                "--device",
-                "/dev/tdx_guest:/dev/tdx_guest",
-                "-e",
-                "HF_HUB_OFFLINE=1",
-                "-v",
-                "/etc/hosts:/etc/hosts:ro",
-                "--network=host",
-            ]
+            if attested_settings is not None:
+                docker_cmd = workload_profile.docker_command(DOCKER_CMD, attested_settings)
+            else:
+                docker_cmd = [
+                    DOCKER_CMD,
+                    "run",
+                    "-d",
+                    "-it",
+                    "--device",
+                    "/dev/tdx_guest:/dev/tdx_guest",
+                    "-e",
+                    "HF_HUB_OFFLINE=1",
+                    "-v",
+                    "/etc/hosts:/etc/hosts:ro",
+                    "--network=host",
+                ]
             if workload_id:
                 docker_cmd.extend(["--label", f"io.trucon.workload-id={workload_id}"])
             if launch_id:
                 docker_cmd.extend(["--label", f"io.trucon.launch-id={launch_id}"])
-            docker_cmd.extend([
-                "-v",
-                "/etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf:ro",
-                "-v",
-                "/usr/share/doc/libtdx-attest-dev/examples/:/td-attest/:ro",
-                "-v",
-                "/etc/tdx-attest.conf:/etc/tdx-attest.conf:ro",
-            ])
+            if attested_settings is None:
+                docker_cmd.extend([
+                    "-v",
+                    "/etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf:ro",
+                    "-v",
+                    "/usr/share/doc/libtdx-attest-dev/examples/:/td-attest/:ro",
+                    "-v",
+                    "/etc/tdx-attest.conf:/etc/tdx-attest.conf:ro",
+                ])
 
-            docker_cmd.append(loaded_image_ref)
-            logger.info(f"Runcmd : {' '.join(docker_cmd)}")
-            dockerRUn = subprocess.run(docker_cmd, capture_output=True, text=True)
+            # Keep application environment values out of argv and launch logs.
+            environment_file = None
+            try:
+                if attested_settings is not None:
+                    # mkstemp creates a private file. Docker consumes it during
+                    # this call; finally removes it on both success and failure.
+                    fd, environment_file = tempfile.mkstemp(prefix="argus-workload-env-")
+                    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as output:
+                        for key, value in workload_profile.launch_environment(attested_settings).items():
+                            output.write(f"{key}={value}\n")
+                    docker_cmd.extend(["--env-file", environment_file])
+                docker_cmd.append(loaded_image_ref)
+                logger.info(f"Runcmd : {' '.join(docker_cmd)}")
+                dockerRUn = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=120)
+            finally:
+                if environment_file is not None:
+                    os.unlink(environment_file)
             if dockerRUn.returncode == 0:
                 logger.info(f"Success run image {image_id}.")
                 tlog.add_entry(record_id, Entry(key="launch_cmd", value={"launch_cmd": " ".join(docker_cmd),
@@ -424,21 +482,20 @@ class LaunchServiceMixin:
                 tlog.add_entry(record_id, Entry(key=EventEntryKey.launch_result.value, value="failed"))
                 return False
 
-            # docker ps -q --latest
-            getID = [DOCKER_CMD, "ps", "-q", "--latest"]
-            getID_res = subprocess.run(getID, capture_output=True, text=True)
-            if getID_res.returncode == 0:
-                containerID = getID_res.stdout.strip()
+            # Use this invocation's returned ID. A global "latest container"
+            # query could select another concurrent launch.
+            containerID = dockerRUn.stdout.strip()
+            if containerID:
                 logger.info(f"Success get image ID {containerID}")
-                tlog.add_entry(record_id, Entry(key="getContainerID_cmd", value={"getContainerID_cmd": " ".join(getID),
+                tlog.add_entry(record_id, Entry(key="getContainerID_cmd", value={"getContainerID_cmd": " ".join(docker_cmd),
                                      "getContainerID_status": "success",
                                      "getID_stdout": containerID
                                      }))
                 tlog.add_entry(record_id, Entry(key=EventEntryKey.instance_id.value, value=containerID))
             else:
-                logger.info("Failed get container ID.")
+                logger.info("Docker run returned an empty container ID.")
                 tlog.add_entry(record_id, Entry(key="getContainerID_status", value={"getContainerID_status": "failed",
-                                     "getID_stderr": getID_res.stderr
+                                     "getID_stderr": "docker run returned an empty container ID"
                                      }))
                 return False
             
@@ -459,6 +516,14 @@ class LaunchServiceMixin:
                 return False
             
             container_info = {"container_ID": containerID, "container_Status": status_text}
+            if attested_settings is not None:
+                # Record Docker's actual content identifiers and launch labels;
+                # requested image names/digests alone do not identify the running instance.
+                inspect_result = subprocess.run([DOCKER_CMD, "inspect", containerID], capture_output=True, text=True, timeout=30, check=True)
+                inspected = json.loads(inspect_result.stdout)
+                if len(inspected) != 1:
+                    raise ValueError("expected exactly one launched container")
+                container_info = workload_profile.observed_container(inspected[0], launch_id, workload_id)
             tlog.add_entry(record_id, Entry(key="container_info", value=container_info))
             if workload_id:
                 workload_store = WorkloadStore()

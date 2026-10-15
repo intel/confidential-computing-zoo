@@ -7,6 +7,43 @@ TC API is the Trusted Container runtime, composed of three service processes and
 - **TruCon** is the trusted-event core. Its internal service interface accepts events from tc-api and Docktap, sequences them, records queue state, binds event digests to the guest measurement register, and submits records to immutable backends.
 - **tc-verify** is the verification CLI. It fetches or consumes attested chain-head evidence, replays the immutable event history, and verifies chain continuity, event authorization, signatures, and the attested measurement state.
 
+## Workload attestation profile
+
+Set `ARGUS_WORKLOAD_CONFIG` to the root-protected `tc-api-workload.json`
+exported by the [workload deployment](../spire/workload/README.md). The
+configured application paths must also be visible to TC API at the same paths
+used by the Docker host. A launch with
+`metadata.workload_attestation_profile = "nginx-spiffe"` uses the
+approved profile and rejects `dockercmd` overrides.
+
+The protected export contains the workload launch settings. Application
+environment values come from `workload.environment`, with
+`environment[config_env] == config_path`.
+The `config_json_checks` field must be present. Its entries describe JSON Pointer
+equalities against literal values or declared workload fields; an empty list
+(`[]`) permits non-JSON configuration files.
+TC API applies these declarations without parsing product-specific field
+names. Docker receives environment values in a temporary owner-only env file,
+removed after launch, keeping values out of command arguments and log records.
+
+The profile uses read-only rootfs/configuration, a separate writable data
+directory, limited tmpfs, no capabilities and Docker bridge networking (not
+host networking).
+The application listens on loopback and only the NGINX TLS port is published. The
+launch record retains the daemon's actual image config ID, full container ID
+and launch association for workload appraisal. Plain registry pulls for this
+profile preserve image config bytes through the final Docker archive.
+
+TruCon's `GET /chain-state?include_history=true` requires complete confirmed
+history and denies unresolved Docker mutations. The root UDS Provider caller
+has only read access to this endpoint. Docktap's durable mutation fence is
+reserved before forwarding, and is released only after immutable-log
+confirmation. An uncertain operation remains pending across process restarts
+within the same guest boot while the database remains available. The default
+database under `/dev/shm` does not survive a guest reboot. Do not reset state
+to bypass a fence or an interrupted RTMR/database commit. See
+[Docktap architecture](docs/docktap/architecture.md#durable-mutation-fences).
+
 The reusable trusted-log types and backend interfaces live in the sibling [`tlog`](../tlog/) package. TC API depends on `tlog`; TruCon is implemented inside TC API rather than being a separate package.
 
 ## Capabilities
@@ -123,6 +160,13 @@ For API-only development, run `python -m tc_api.api.app`; this does not replace 
 ### 4. Log in and run a build
 
 The shortest useful Quick Start builds a minimal image based on the Docker Hub official `busybox` image (the default `busybox:latest` tag) and lets you inspect the asynchronous result. The example container runs `sh -c "echo hello from tc-client"`; it contains no application-specific files. The flow requires Docker, Syft, a Sigstore identity, and a working TruCon stack. Publishing and launching are separate flows because they require a configured image registry, KBS, and (for the default path) TDX.
+
+For a workload-attested deployment, these development reset commands are not
+a recovery path for unresolved mutations or measurement commits. Stop the
+managed ingress and reconcile the operation through the recorded lifecycle
+path; deleting SQLite state does not undo the guest's RTMR extensions.
+
+Local development now uses the consolidated `tlog` project. Rekor-specific code lives under `tlog.backends.rekor`, and the Rekor dependency set is enabled through the `rekor` extra on `tlog`.
 
 First acquire and cache a Sigstore identity token with the interactive script included in this package:
 

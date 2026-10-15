@@ -1,0 +1,34 @@
+[Unit]
+Description=Argus SPIFFE Helper Broker for the registered workload
+Requires=argus-workload-agent.service argus-authz.service
+BindsTo=argus-authz.service
+After=argus-workload-agent.service argus-authz.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+# Type=simple starts supervision immediately. Helper startup_timeout separately
+# bounds the time allowed for the first attested credential publication.
+Type=simple
+NotifyAccess=main
+Environment=ARGUS_REQUIRE_SYSTEMD_WATCHDOG=1
+WatchdogSec=5s
+WatchdogSignal=SIGKILL
+TimeoutStartSec=15s
+User=root
+UMask=0077
+RuntimeDirectory=@RUN_NAME@-credentials
+RuntimeDirectoryMode=0700
+ExecStartPre=@BIN@/argus-workload -action check -registration @TARGET@
+ExecStart=@BIN@/spiffe-helper -config @ETC@/helper.conf
+# ExecStopPost also runs after a watchdog kill, when Helper cannot clean up.
+# Stop ingress before deleting files because NGINX can hold keys in memory.
+ExecStopPost=@BIN@/nginx-hook.sh stop
+ExecStopPost=@BIN@/nginx-hook.sh clear
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=5s
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

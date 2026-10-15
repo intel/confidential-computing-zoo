@@ -41,6 +41,15 @@ from .oci_mirror import OciBundleMirror
 logger = logging.getLogger(__name__)
 
 
+def parse_log_reference(log_id: str) -> dict[str, Any]:
+    """Select Rekor's index or UUID lookup without rewriting stored references."""
+    # A hex UUID can contain only digits. Its full length must keep it on the
+    # UUID route; Unicode digit strings must not become decimal log indexes.
+    if log_id.isascii() and log_id.isdigit() and len(log_id) < 64:
+        return {"log_index": int(log_id)}
+    return {"uuid": log_id}
+
+
 class SigstoreLogAdapter(ImmutableLogAdapter):
     _bundle_entry_cache: dict[tuple[str, str], dict[str, Any]] = {}
     _SUPPORTED_ENTRY_TYPES = {"dsse", "intoto"}
@@ -88,9 +97,7 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
 
     @staticmethod
     def _parse_log_reference(log_id: str) -> dict[str, Any]:
-        if log_id.isdigit():
-            return {"log_index": int(log_id)}
-        return {"uuid": log_id}
+        return parse_log_reference(log_id)
 
     @staticmethod
     def _existing_bundle_reference(bundle: Bundle) -> tuple[Optional[str], Any]:
@@ -401,8 +408,9 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
 
     def _fetch_raw_rekor_entry(self, log_id: str) -> Optional[dict[str, Any]]:
         base_url = f"{self.rekor_url.rstrip('/')}/api/v1/log/entries"
-        if log_id.isdigit():
-            request_url = f"{base_url}?{urlencode({'logIndex': int(log_id)})}"
+        reference = parse_log_reference(log_id)
+        if "log_index" in reference:
+            request_url = f"{base_url}?{urlencode({'logIndex': reference['log_index']})}"
         else:
             request_url = f"{base_url}/{log_id}"
 
@@ -876,6 +884,8 @@ class SigstoreLogAdapter(ImmutableLogAdapter):
                 or existing_kind == self.rekor_entry_type
             )
             if reuse_existing_entry:
+                # UUIDs and numeric indexes both locate the confirmed entry.
+                # Reusing a bundle does not require another network lookup.
                 entry_dict = self._entry_to_dict(log_entry)
                 alternate_ids = []
                 if getattr(log_entry, "uuid", None):
