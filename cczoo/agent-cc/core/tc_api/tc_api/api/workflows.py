@@ -48,6 +48,7 @@ from ..transparency.commit_client import TrustedLogAPI
 from ..transparency.events import EventEntryKey, launch_security_entries
 from .request_auth import add_authenticated_identity_entries, authenticate_request_identity, get_authenticated_caller, require_authenticated_owner
 from . import runtime
+from ..services import workload_profile
 
 
 docker_service = runtime.docker_service
@@ -960,7 +961,13 @@ async def launch_container_async(
         tlog.add_entry(record_id, Entry(key="workload_id", value=workload_id))
 
         image_digest = docker_service._resolve_image_digest(request.image_url or request.image_id)
-        security_projection = docker_service._build_launch_security_projection(launch_id, workload_id)
+        # Reuse the same validated operator settings for the recorded security
+        # projection and launch, even if image pulling takes a long time.
+        attested_settings = workload_profile.profile_settings(request.metadata, workload_id)
+        if attested_settings is not None:
+            security_projection = docker_service._build_launch_security_projection(launch_id, workload_id, request.metadata, settings=attested_settings)
+        else:
+            security_projection = docker_service._build_launch_security_projection(launch_id, workload_id)
         launch_config_digest = docker_service._json_sha384_digest(
             {
                 "request": request.model_dump(),
@@ -996,12 +1003,29 @@ async def launch_container_async(
                 return
 
         log_proxy_configuration("Launch image pull")
+        # Attested plain registry pulls must preserve the approved image config
+        # bytes. The docker->oci conversion can rewrite them, so use the final
+        # docker-archive destination for this profile.
+        pulled_archive_ref = None
+        if (
+            attested_settings is not None
+            and decryption_key is None
+            and (request.image_url or "").startswith("docker://")
+            and not (request.image_id or "").startswith("oci:")
+        ):
+            pulled_archive_ref = docker_service.image_archive_refs(
+                request.image_id,
+                launch_path,
+                launch_id=launch_id,
+                workload_id=workload_id,
+            )[2]
         pull_success = docker_service.pull_image(
             tlog,
             record_id,
             image_url=request.image_url,
             target_dir=launch_path,
             openssl_key=decryption_key["opensslKey"] if decryption_key else None,
+            dest_ref=pulled_archive_ref,
         )
         if not pull_success:
             docker_service.update_launch_status(request.user_id, launch_id, "failed", error_message="Image pull failed")
@@ -1038,7 +1062,9 @@ async def launch_container_async(
             launch_pth=launch_path,
             workload_id=workload_id,
             launch_id=launch_id,
-            dockercmd=request.dockercmd
+            dockercmd=request.dockercmd,
+            pulled_archive_ref=pulled_archive_ref,
+            **({"metadata": request.metadata, "attested_settings": attested_settings} if attested_settings is not None else {}),
         )
         tlog.add_entry(record_id, Entry(key="launch_instance_ids", value={"launch_instance_ids": instance_ids}))
         if not instance_ids:

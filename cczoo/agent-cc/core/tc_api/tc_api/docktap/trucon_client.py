@@ -56,6 +56,7 @@ logger = logging.getLogger(__name__)
 
 # Only these Docker operation types trigger a TruCon commit.
 SUBMITTABLE_OPERATIONS = {"pull", "build", "create", "start", "stop", "rm"}
+LIFECYCLE_OPERATIONS = {'create', 'start', 'stop', 'rm'}
 DEFAULT_RUNTIME_CHAIN_ID = _cfg.RUNTIME_CHAIN_ID
 
 
@@ -155,6 +156,7 @@ class PendingSubmission:
     op_record: Any = None
     workload_id: Optional[str] = None
     launch_id: Optional[str] = None
+    mutation_id: Optional[str] = None
 
 
 class RetryQueuedError(RuntimeError):
@@ -235,6 +237,7 @@ class TruConCommitter:
         self._pending_submissions: Dict[str, PendingSubmission] = {}
         self._stop_retry_worker = threading.Event()
         self._retry_worker = None
+        self._mutation_lock = threading.Lock()
 
         if start_retry_worker:
             self._retry_worker = threading.Thread(
@@ -268,6 +271,7 @@ class TruConCommitter:
 
     def process_retry_queue(self, now: Optional[float] = None) -> None:
         """Process all retryable submissions whose next attempt is due."""
+        self._recover_mutations()
         current_time = time.monotonic() if now is None else now
         with self._retry_lock:
             due_items = [
@@ -282,6 +286,78 @@ class TruConCommitter:
                 self._process_queued_submission(submission)
                 continue
             self._retry_submission(submission, current_time)
+
+    @staticmethod
+    def _mutation_record(op_record) -> Dict[str, Any]:
+        # Only reconstruction/signing fields, never raw requests, headers,
+        # identity tokens, environment, command text or arbitrary query values.
+        return {
+            'operation_id': op_record.operation_id, 'timestamp': op_record.timestamp,
+            'runtime_engine': _resolve_runtime_engine(op_record),
+            'operation': {key: (value.split('?', 1)[0] if key == 'api_path' else value)
+                          for key, value in op_record.operation.items() if key in {'type', 'action', 'api_path', 'method'}},
+            'image': {key: value for key, value in op_record.image.items() if key in {'name', 'tag', 'digest', 'platform'}},
+            'container': {key: value for key, value in op_record.container.items() if key in {'id', 'name', 'created_from_image', 'created_from_digest'}},
+            'response': {key: value for key, value in op_record.response.items() if key == 'status'},
+        }
+
+    def begin_mutation(self, op_record, operation_type: str, *, workload_id=None, launch_id=None) -> str:
+        """Must complete before Docker forwarding. Lost replies must not replay."""
+        mutation_id = 'mutation-' + uuid.uuid4().hex
+        response = request_json('POST', '/mutations/reserve', caller_service='docktap',
+            trucon_url=self._trucon_url, json_body={'mutation_id': mutation_id,
+                'chain_id': self._runtime_chain_id, 'operation_type': operation_type,
+                'op_record': self._mutation_record(op_record), 'workload_id': workload_id, 'launch_id': launch_id})
+        if response.get('mutation_id') != mutation_id or response.get('status') != 'INFLIGHT':
+            raise RuntimeError('Durable mutation reservation was not acknowledged')
+        return mutation_id
+
+    def complete_mutation(self, mutation_id: str, op_record) -> None:
+        """Durably save Docker outcome before returning its response to callers."""
+        response = request_json('POST', f'/mutations/{mutation_id}/result', caller_service='docktap',
+            trucon_url=self._trucon_url, json_body={'op_record': self._mutation_record(op_record)})
+        if response.get('mutation_id') != mutation_id or response.get('result_json') is None:
+            raise RuntimeError('Durable Docker result was not acknowledged')
+
+    def _save_mutation_submission(self, mutation_id: str, submission: Dict[str, Any]) -> None:
+        response = request_json('POST', f'/mutations/{mutation_id}/submission', caller_service='docktap',
+            trucon_url=self._trucon_url, json_body={'submission': submission})
+        if response.get('mutation_id') != mutation_id or response.get('submission_json') is None:
+            raise RuntimeError('Durable signed submission was not acknowledged')
+
+    def _recover_mutations(self) -> None:
+        # One signer per process. Nothing in this path invokes Docker.
+        if not self._mutation_lock.acquire(blocking=False):
+            return
+        try:
+            from .proxy.operation_log import OperationRecord
+            rows = request_json('GET', '/mutations', caller_service='docktap', trucon_url=self._trucon_url)['mutations']
+            for row in rows:
+                if row['status'] != 'RESULT_READY':
+                    continue  # Unknown outcomes and accepted records remain fenced.
+                try:
+                    saved = json.loads(row['submission_json']) if row['submission_json'] else None
+                    if saved:
+                        # Reconcile the existing intent first. A lost commit
+                        # reply requires replaying the same signed bytes, not
+                        # creating another Docker operation or log event.
+                        reservation = self._reserve_commit_intent(row['chain_id'], row['mutation_id'])
+                        if reservation.get('committed') or reservation.get('intent_token') == saved['intent_token']:
+                            self._post_to_trucon(bundle_json=saved['bundle'], **{key: saved[key] for key in
+                                ('chain_id', 'event_digest', 'event_id', 'intent_token', 'idempotency_key', 'instance_id', 'owner_authorization')})
+                            continue
+                    result, context = json.loads(row['result_json']), json.loads(row['request_json'])
+                    pending = PendingSubmission(operation_type=row['operation_type'], bundle_json='',
+                        chain_id=row['chain_id'], event_digest='', event_id='', idempotency_key=row['mutation_id'],
+                        instance_id=None, mutation_id=row['mutation_id'])
+                    self._do_submit(OperationRecord(**result['op_record']), row['operation_type'],
+                        workload_id=context['workload_id'], launch_id=context['launch_id'], pending_submission=pending)
+                except Exception:
+                    logger.warning('Durable lifecycle submission remains fenced: %s', row['mutation_id'], exc_info=True)
+        except Exception:
+            logger.warning('Cannot recover durable lifecycle outbox', exc_info=True)
+        finally:
+            self._mutation_lock.release()
 
     def enqueue_operation(
         self,
@@ -667,7 +743,7 @@ class TruConCommitter:
         if identity_token_str:
             self._ensure_chain_initialized(chain_id, identity_token_str)
 
-        idempotency_key = f"idk-{uuid.uuid4().hex[:12]}"
+        idempotency_key = pending_submission.mutation_id if pending_submission and pending_submission.mutation_id else f"idk-{uuid.uuid4().hex[:12]}"
         reservation = self._reserve_commit_intent(
             chain_id=chain_id,
             idempotency_key=idempotency_key,
@@ -752,6 +828,16 @@ class TruConCommitter:
                 pending_submission.bundle_json = bundle_json
                 pending_submission.owner_authorization = owner_authorization
 
+            if pending_submission is not None and pending_submission.mutation_id:
+                # The durable outbox must own the exact signed submission
+                # before /commit can extend a measurement or lose its reply.
+                self._save_mutation_submission(pending_submission.mutation_id, {
+                    'bundle': bundle_json, 'chain_id': chain_id, 'event_digest': event_digest,
+                    'event_id': event_id, 'intent_token': reservation.get('intent_token'),
+                    'idempotency_key': idempotency_key, 'instance_id': instance_id,
+                    'owner_authorization': owner_authorization,
+                })
+
             try:
                 response = self._post_to_trucon(
                     bundle_json=bundle_json,
@@ -765,6 +851,8 @@ class TruConCommitter:
                 )
             except Exception as exc:
                 if self._is_retryable_commit_error(exc):
+                    if pending_submission is not None and pending_submission.mutation_id:
+                        raise  # Exact bytes are durable; the outbox retries them.
                     self._queue_retry(submission, exc)
                     raise RetryQueuedError(str(exc)) from exc
                 raise

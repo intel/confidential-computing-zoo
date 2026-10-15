@@ -1,12 +1,12 @@
 {
   "server": {
-    "host": "0.0.0.0",
+    "host": "127.0.0.1",
     "port": 1933,
     "auth_mode": "api_key",
     "root_api_key": "REPLACE_WITH_A_RANDOM_ROOT_KEY"
   },
   "storage": {
-    "workspace": "/app/.openviking/data",
+    "workspace": "/var/lib/openviking",
     "agfs": {
       "backend": "local"
     },

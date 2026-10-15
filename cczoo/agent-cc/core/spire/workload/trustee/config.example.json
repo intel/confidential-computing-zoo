@@ -1,0 +1,9 @@
+{
+  "rekor_url": "https://rekor.sigstore.dev",
+  "https_proxy": "http://proxy.example:3128",
+  "rekor_public_key_path": "/etc/argus-trucon/rekor.pub",
+  "sigstore_trusted_root_path": "/etc/argus-trucon/trusted_root.json",
+  "signer_identity": "REQUIRED_APPROVED_TC_API_OIDC_SUBJECT",
+  "signer_issuer": "REQUIRED_APPROVED_OIDC_ISSUER",
+  "allowed_baseline_rtmr": ["REQUIRED_96_LOWERCASE_HEX"]
+}
