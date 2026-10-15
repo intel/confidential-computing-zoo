@@ -1,0 +1,17 @@
+[Unit]
+Description=Guest-local real TDX Node and Workload Evidence Provider
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+# Collection reads Docker, procfs and TSM state in the trusted guest. Restrict
+# the socket's parent directory rather than exposing a network evidence service.
+RuntimeDirectory=@RUN_NAME@
+RuntimeDirectoryMode=0700
+ExecStart=@BIN@/argus-spire-evidence-provider --agent-id @AGENT_ID@ --socket-path @PROVIDER_SOCKET@ --workload-registration-path @TARGET@ --workload-data-path @DATA_PATH@ --trucon-socket-path @TRUCON_SOCKET@
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5
+KillMode=control-group

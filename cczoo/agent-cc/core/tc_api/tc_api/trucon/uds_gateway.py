@@ -36,7 +36,9 @@ from .internal_transport import (
 logger = logging.getLogger("trucon.uds_gateway")
 
 _PEERCRED_STRUCT = struct.Struct("3i")
-_ALLOWED_CALLER_SERVICES = {"tc_api", "docktap"}
+# Service names select authorization roles; peer UID/PID comes from SO_PEERCRED
+# and is forwarded with the gateway's secret rather than trusted input headers.
+_ALLOWED_CALLER_SERVICES = {"tc_api", "docktap", "argus_provider"}
 
 
 def get_peer_credentials(connection: socket.socket) -> Tuple[int, int, int]:
@@ -106,6 +108,8 @@ class _GatewayHandler(BaseHTTPRequestHandler):
                 continue
             forward_headers[key] = value
 
+        # Overwrite transport and peer assertions after filtering client input.
+        # TruCon's Provider role checks the resulting root-UDS context.
         forward_headers[INTERNAL_PROXY_SECRET_HEADER] = gateway.internal_proxy_secret
         forward_headers[CALLER_SERVICE_HEADER] = caller_service
         forward_headers[AUTH_TRANSPORT_HEADER] = "uds"

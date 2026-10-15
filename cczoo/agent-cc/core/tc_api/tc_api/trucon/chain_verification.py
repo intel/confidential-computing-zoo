@@ -14,6 +14,7 @@
 
 import hashlib
 import json
+import re
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
@@ -21,7 +22,42 @@ from fastapi import HTTPException
 from .bundles import compute_record_lookup_hash
 from .database import get_chain_records
 from .owner_authorization import verify_owner_authorization
-from .schemas import ChainEntryResult, ChainVerificationResponse
+from .schemas import ChainEntryResult, ChainStateResponse, ChainVerificationResponse
+
+
+def confirmed_chain_state(chain_id: str, records: list[Any], limit: int) -> ChainStateResponse:
+    """Describe one complete uploaded prefix; remote verifiers authenticate it.
+
+    Readiness includes all queue states: hiding unconfirmed records would pair
+    an older log head with a newer hardware measurement. Derive every head
+    field from the same record instead of mixing sequencer/upload cursors.
+    """
+    if not records:
+        raise ValueError("Measured chain is not initialized")
+    if len(records) > limit:
+        raise ValueError("Measured history exceeds query limit")
+    references = []
+    for sequence, record in enumerate(records, 1):
+        if record["sequence_num"] != sequence:
+            raise ValueError("Measured history is not contiguous")
+        if record["status"] != "CONFIRMED":
+            raise ValueError("Measured events are awaiting log confirmation")
+        reference = record["log_id"]
+        if not isinstance(reference, str) or not reference or len(reference) > 128:
+            raise ValueError("Confirmed log reference is required for every event")
+        references.append(reference)
+    # Head, measurement and ordered references all come from this one prefix;
+    # an upload cursor must not be mixed with a newer sequencer measurement.
+    head = records[-1]
+    if not isinstance(head["mr_value"], str) or not re.fullmatch(r"[0-9a-f]{96}", head["mr_value"]):
+        raise ValueError("Measured history has no valid RTMR2 state")
+    if len(set(references)) != len(references):
+        raise ValueError("Duplicate log reference in measured history")
+    return ChainStateResponse(
+        chain_id=chain_id, head_record_id=head["record_id"], head_log_id=head["log_id"],
+        sequence_num=head["sequence_num"], mr_value=head["mr_value"],
+        updated_at=head["updated_at"], log_ids=references,
+    )
 
 
 def record_is_baseline(record: Any) -> bool:

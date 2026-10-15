@@ -22,7 +22,22 @@ def authorize_caller(caller_service: str, request: Request) -> Optional[JSONResp
     if caller_service in {"auth_bypass", "compat_http", "tc_api"}:
         return None
 
+    if caller_service == "argus_provider":
+        # The gateway supplies peer credentials. Provider collection needs only
+        # a root UDS read of chain-state, with no mutation or commit privileges.
+        if (request.method == "GET" and request.url.path == "/chain-state"
+                and getattr(request.state, "auth_transport", None) == "uds"
+                and getattr(request.state, "peer_uid", None) == "0"):
+            return None
+        return JSONResponse(status_code=403, content={"detail": "Provider requires root UDS peer and read-only chain-state access"})
+
     if caller_service == "docktap":
+        if request.method == 'GET' and request.url.path == '/mutations':
+            return None
+        if request.method == 'POST' and (request.url.path == '/mutations/reserve' or
+                (request.url.path.startswith('/mutations/mutation-') and
+                 request.url.path.rsplit('/', 1)[-1] in {'result', 'submission'})):
+            return None
         if request.method == "POST" and request.url.path in {"/commit", "/commit-intents/reserve", "/init-chain"}:
             return None
         if request.method == "GET" and request.url.path.startswith("/init-chain/") and request.url.path.endswith("/baseline"):

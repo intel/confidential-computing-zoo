@@ -2,6 +2,42 @@
 
 A RESTful API service framework built with Python and FastAPI for handling Docker image building, packing, launching, deploying of applications runtime in a secure and auditable manner.
 
+## Workload attestation profile
+
+Set `ARGUS_WORKLOAD_CONFIG` to the root-protected `tc-api-workload.json`
+exported by the [workload deployment](../spire/workload/README.md). The
+configured application paths must also be visible to TC API at the same paths
+used by the Docker host. A launch with
+`metadata.workload_attestation_profile = "nginx-spiffe"` uses the
+approved profile and rejects `dockercmd` overrides.
+
+The protected export contains the workload launch settings. Application
+environment values come from `workload.environment`, with
+`environment[config_env] == config_path`.
+The `config_json_checks` field must be present. Its entries describe JSON Pointer
+equalities against literal values or declared workload fields; an empty list
+(`[]`) permits non-JSON configuration files.
+TC API applies these declarations without parsing product-specific field
+names. Docker receives environment values in a temporary owner-only env file,
+removed after launch, keeping values out of command arguments and log records.
+
+The profile uses read-only rootfs/configuration, a separate writable data
+directory, limited tmpfs, no capabilities and a private bridge namespace.
+The application listens on loopback and only the NGINX TLS port is published. The
+launch record retains the daemon's actual image config ID, full container ID
+and launch association for workload appraisal. Plain registry pulls for this
+profile preserve image config bytes through the final Docker archive.
+
+TruCon's `GET /chain-state?include_history=true` requires complete confirmed
+history and denies unresolved Docker mutations. The root UDS Provider caller
+has only read access to this endpoint. Docktap's durable mutation fence is
+reserved before forwarding, and is released only after immutable-log
+confirmation. An uncertain operation remains pending across process restarts
+within the same guest boot while the database remains available. The default
+database under `/dev/shm` does not survive a guest reboot. Do not reset state
+to bypass a fence or an interrupted RTMR/database commit. See
+[Docktap architecture](docs/docktap/architecture.md#durable-mutation-fences).
+
 ## Features
 
 - **Container Image Building**: Build and package container images with Dockerfile and application components
@@ -103,6 +139,11 @@ To clear local state without starting services:
 `--reset-state` and `reset-state` remove the local TruCon queue database, derived chain state stored in that database, SQLite WAL/SHM files, the TruCon lock file, and the Docktap workload database. They are the supported way to recover from stale local chain or queue state during development.
 
 They do not remove build artifacts under `builds/`, published mirror material, or the cached Sigstore identity token file.
+
+For a workload-attested deployment, these development reset commands are not
+a recovery path for unresolved mutations or measurement commits. Stop the
+managed ingress and reconcile the operation through the recorded lifecycle
+path; deleting SQLite state does not undo the guest's RTMR extensions.
 
 Local development now uses the consolidated `tlog` project. Rekor-specific code lives under `tlog.backends.rekor`, and the Rekor dependency set is enabled through the `rekor` extra on `tlog`.
 
