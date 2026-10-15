@@ -14,15 +14,14 @@
 
 //! CLI tool for serving TDX evidence to a guest-local SPIRE Agent.
 //!
-//! The Provider serves the guest-local SPIRE Agent over a Unix domain socket.
-//! It binds the configured SPIRE Agent identity, Server challenge, and proof
-//! key into TDX REPORTDATA, then returns the raw Quote produced by Linux TSM.
-//! Quote appraisal remains in the Server-side Trustee path, and SPIRE remains
-//! responsible for issuing the SVID for the SPIRE Agent, not a service workload.
+//! The Node endpoint binds the configured Agent identity, Server challenge and
+//! proof key into TDX REPORTDATA. The optional Workload endpoint instead binds
+//! observed instance claims and the WorkloadAttestor nonce. Both return raw
+//! Linux TSM Quotes over a local UDS; neither appraises evidence or issues SVIDs.
+//! Node/Workload plugins call Trustee and verify its EAR in their respective
+//! admission paths. SPIRE Server's CA signs the resulting Agent/target SVIDs.
 
-#[cfg(unix)]
-use anyhow::Context;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use axum::{
     extract::State,
     http::StatusCode,
@@ -33,19 +32,17 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha384};
-#[cfg(unix)]
-use std::path::Path;
 use std::{
     ffi::{OsStr, OsString},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 use tdx_quote::{tsm::TsmInstanceQuoteGenerator, QuoteError, ReportData};
 
+mod workload;
+
 const DEFAULT_SOCKET_PATH: &str = "/run/argus/evidence-provider.sock";
 const DEFAULT_TSM_REPORT_ROOT: &str = "/sys/kernel/config/tsm/report";
-
-// Keep this domain byte-for-byte aligned with the Go NodeAttestor protocol.
 const NODE_BINDING_DOMAIN: &[u8] = b"argus.node.tdx.reportdata";
 
 /// Deployment identity and runtime paths for the guest-local evidence service.
@@ -54,11 +51,17 @@ struct Config {
     agent_id: String,
     socket_path: PathBuf,
     tsm_report_root: PathBuf,
+    workload_registration_path: Option<PathBuf>,
+    workload_data_path: Option<PathBuf>,
+    trucon_socket_path: PathBuf,
 }
 
 impl Config {
     fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Self> {
         let mut agent_id = None;
+        let mut workload_registration_path = None;
+        let mut workload_data_path = None;
+        let mut trucon_socket_path = PathBuf::from(workload::trucon::DEFAULT_SOCKET);
         let mut socket_path = PathBuf::from(DEFAULT_SOCKET_PATH);
         let mut tsm_report_root = PathBuf::from(DEFAULT_TSM_REPORT_ROOT);
         let mut args = args.into_iter();
@@ -79,11 +82,42 @@ impl Config {
                             .ok_or_else(|| anyhow!("--socket-path requires a value"))?,
                     );
                 }
+                value if value == OsStr::new("--trucon-socket-path") => {
+                    trucon_socket_path = PathBuf::from(
+                        args.next()
+                            .context("--trucon-socket-path requires a value")?,
+                    );
+                    if !trucon_socket_path.is_absolute() {
+                        bail!("TruCon socket path must be absolute");
+                    }
+                }
                 value if value == OsStr::new("--tsm-report-root") => {
                     tsm_report_root = PathBuf::from(
                         args.next()
                             .ok_or_else(|| anyhow!("--tsm-report-root requires a value"))?,
                     );
+                }
+                value if value == OsStr::new("--workload-registration-path") => {
+                    workload_registration_path =
+                        Some(PathBuf::from(args.next().ok_or_else(|| {
+                            anyhow!("--workload-registration-path requires a value")
+                        })?));
+                }
+                value if value == OsStr::new("--workload-data-path") => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| anyhow!("--workload-data-path requires a value"))?;
+                    let text = value.to_str().context("workload data path must be UTF-8")?;
+                    if !text.starts_with('/')
+                        || text.ends_with('/')
+                        || text
+                            .split('/')
+                            .skip(1)
+                            .any(|p| p.is_empty() || p == "." || p == "..")
+                    {
+                        bail!("workload data path must be a clean absolute Linux directory");
+                    }
+                    workload_data_path = Some(PathBuf::from(value));
                 }
                 _ => bail!("unknown argument: {:?}", argument),
             }
@@ -91,10 +125,18 @@ impl Config {
 
         let agent_id = agent_id.ok_or_else(|| anyhow!("--agent-id is required"))?;
         validate_agent_id(&agent_id)?;
+        if workload_registration_path.is_some() != workload_data_path.is_some() {
+            bail!(
+                "--workload-registration-path and --workload-data-path must be configured together"
+            );
+        }
         Ok(Self {
             agent_id,
             socket_path,
             tsm_report_root,
+            workload_registration_path,
+            workload_data_path,
+            trucon_socket_path,
         })
     }
 }
@@ -155,6 +197,11 @@ impl QuoteSource for TsmInstanceQuoteGenerator {
 struct AppState {
     agent_id: String,
     quote_source: Arc<dyn QuoteSource>,
+    workload_registration_path: Option<PathBuf>,
+    workload_data_path: Option<PathBuf>,
+    observe: fn(&Path, &Path) -> Result<workload::Target>,
+    trucon_socket_path: PathBuf,
+    snapshot: fn(&Path) -> Result<workload::trucon::Snapshot>,
 }
 
 #[derive(Debug)]
@@ -228,12 +275,12 @@ async fn node_evidence_handler(
     let nonce = decode_fixed_32("nonce", &request.nonce)?;
     let proof_public_key = decode_fixed_32("proof_public_key", &request.proof_public_key)?;
     let report_data = node_report_data(&state.agent_id, &nonce, &proof_public_key);
-    let quote_source = state.quote_source;
     // TSM configfs I/O is blocking, so keep it off the async HTTP worker.
-    let quote = tokio::task::spawn_blocking(move || quote_source.generate_quote(&report_data))
-        .await
-        .map_err(ProviderError::QuoteTask)?
-        .map_err(ProviderError::Quote)?;
+    let quote =
+        tokio::task::spawn_blocking(move || state.quote_source.generate_quote(&report_data))
+            .await
+            .map_err(ProviderError::QuoteTask)?
+            .map_err(ProviderError::Quote)?;
 
     Ok(Json(NodeEvidenceResponse {
         evidence_type: "tdx_quote".to_string(),
@@ -243,16 +290,102 @@ async fn node_evidence_handler(
 }
 
 /// Expose only the Node Evidence API used by the SPIRE Agent plugin.
+#[cfg(test)]
 fn router(agent_id: String, quote_source: Arc<dyn QuoteSource>) -> Router {
-    Router::new()
-        .route("/node-evidence", post(node_evidence_handler))
-        .with_state(AppState {
-            agent_id,
-            quote_source,
-        })
+    provider_router(AppState {
+        agent_id,
+        quote_source,
+        workload_registration_path: None,
+        workload_data_path: None,
+        observe: workload::load_and_check,
+        trucon_socket_path: PathBuf::from(workload::trucon::DEFAULT_SOCKET),
+        snapshot: workload::trucon::snapshot,
+    })
+}
+fn provider_router(state: AppState) -> Router {
+    let mut app = Router::new().route("/ra/v1/node-evidence", post(node_evidence_handler));
+    // Node-only deployments expose no workload route until both workload
+    // paths have been explicitly configured and validated at startup.
+    if state.workload_registration_path.is_some() {
+        app = app.route("/ra/v1/workload-evidence", post(workload_evidence_handler));
+    }
+    app.layer(axum::extract::DefaultBodyLimit::max(32768))
+        .with_state(state)
 }
 
-/// Removes only the socket created by this Provider when the listener exits.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkloadEvidenceRequest {
+    protocol: String,
+    nonce: String,
+    pid: i32,
+}
+
+async fn workload_evidence_handler(
+    State(state): State<AppState>,
+    Json(request): Json<WorkloadEvidenceRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    if request.protocol != workload::PROTOCOL
+        || request.pid <= 0
+        || decode_fixed_32("nonce", &request.nonce).is_err()
+    {
+        return Err((StatusCode::BAD_REQUEST, "invalid workload request".into()));
+    }
+    // Docker, procfs, TruCon and TSM access are blocking. Keep the complete
+    // observation/Quote sequence off the async HTTP worker.
+    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value> {
+        let path = state.workload_registration_path.as_ref().context("workload endpoint disabled")?;
+        let data_path = state.workload_data_path.as_ref().context("workload data path is not configured")?;
+        let before = (state.observe)(path, data_path)?;
+        if before["agent_id"] != state.agent_id || before["pid"] != request.pid.to_string() {
+            return Err(workload::trucon::HistoryFailure("TARGET_CHANGED").into());
+        }
+        let data = workload::runtime_data(&before, &request.nonce)?;
+        // Only return a Quote bracketed by the same target and history state.
+        // Retries tolerate a busy sequencer; they never reuse an earlier Quote.
+        for attempt in 0..3 {
+            let snapshot = match (state.snapshot)(&state.trucon_socket_path) {
+                Ok(value) => value,
+                Err(error) => {
+                    if attempt == 2 { return Err(error); }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    continue;
+                }
+            };
+            let quote = state.quote_source.generate_quote(&workload::report_data(&data)?)
+                .context(workload::trucon::HistoryFailure("QUOTE_UNAVAILABLE"))?;
+            if (state.observe)(path, data_path)? != before {
+                return Err(workload::trucon::HistoryFailure("TARGET_CHANGED").into());
+            }
+            let after = (state.snapshot)(&state.trucon_socket_path);
+            // Snapshot equality is a collection consistency check. Trustee
+            // must still authenticate these log entries and replay Quote RTMR2.
+            if after.as_ref().is_ok_and(|value| value == &snapshot) {
+                tracing::info!(launch_id=%before["launch_id"], pid=%before["pid"], "fresh workload TDX Quote generated");
+                return Ok(serde_json::json!({"evidence_type":"tdx_quote", "quote":URL_SAFE_NO_PAD.encode(quote), "runtime_data":data, "rekor_entry_ids":snapshot.log_ids}));
+            }
+            if attempt == 2 {
+                return Err(after.err().unwrap_or_else(|| workload::trucon::HistoryFailure("HISTORY_CHANGED").into()));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        unreachable!()
+    }).await;
+    match result {
+        Ok(Ok(value)) => Ok(Json(value)),
+        error => {
+            tracing::error!(?error, "workload evidence failed");
+            Err((
+                StatusCode::FORBIDDEN,
+                "workload evidence unavailable; inspect Provider log".into(),
+            ))
+        }
+    }
+}
+
+/// Removes a socket at the configured path on shutdown; non-sockets are left.
+/// This path-based cleanup assumes a single Provider and a protected parent
+/// directory supplied by deployment; it does not compare socket inode identity.
 #[cfg(unix)]
 struct SocketGuard(PathBuf);
 
@@ -277,7 +410,9 @@ impl Drop for SocketGuard {
     }
 }
 
-/// Bind the protected guest-local socket, replacing a stale socket only.
+/// Replaces an existing socket path and binds a mode-0660 local listener.
+/// Deployment must protect the parent and exclude another live owner; this
+/// function checks the existing file type, not whether a listener is active.
 #[cfg(unix)]
 fn bind_socket(path: &Path) -> Result<(tokio::net::UnixListener, SocketGuard)> {
     use std::io;
@@ -316,7 +451,15 @@ async fn serve(config: Config) -> Result<()> {
     use hyper_util::{rt::TokioIo, service::TowerToHyperService};
 
     let quote_source = Arc::new(TsmInstanceQuoteGenerator::with_path(config.tsm_report_root));
-    let app = router(config.agent_id, quote_source);
+    let app = provider_router(AppState {
+        agent_id: config.agent_id,
+        quote_source,
+        workload_registration_path: config.workload_registration_path,
+        workload_data_path: config.workload_data_path,
+        observe: workload::load_and_check,
+        trucon_socket_path: config.trucon_socket_path,
+        snapshot: workload::trucon::snapshot,
+    });
     let (listener, _socket_guard) = bind_socket(&config.socket_path)?;
     tracing::info!(socket = %config.socket_path.display(), "TDX Evidence Provider listening");
 
@@ -394,7 +537,7 @@ mod tests {
     fn request(body: serde_json::Value) -> Request<Body> {
         Request::builder()
             .method("POST")
-            .uri("/node-evidence")
+            .uri("/ra/v1/node-evidence")
             .header("content-type", "application/json")
             .body(Body::from(serde_json::to_vec(&body).unwrap()))
             .unwrap()
@@ -541,6 +684,9 @@ mod tests {
                 agent_id: TEST_AGENT_ID.to_string(),
                 socket_path: PathBuf::from(DEFAULT_SOCKET_PATH),
                 tsm_report_root: PathBuf::from(DEFAULT_TSM_REPORT_ROOT),
+                workload_registration_path: None,
+                workload_data_path: None,
+                trucon_socket_path: PathBuf::from(workload::trucon::DEFAULT_SOCKET),
             }
         );
     }

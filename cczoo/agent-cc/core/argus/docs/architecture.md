@@ -2,23 +2,23 @@
 
 ## Purpose And Scope
 
-Argus v1.5 establishes runtime trust in Intel TDX environments through two
+Argus establishes runtime trust in Intel TDX environments through two
 deployment modes:
 
 - **General deployment mode**: the caller-side Guard requests fresh evidence
   from a provider beside the target service, verifies it, and applies local
   policy before releasing sensitive data.
-- **SPIFFE mode**: Argus integrates TDX evidence with SPIRE node attestation.
-  The current implementation authenticates a SPIRE Agent running inside a TDX
-  trust domain (TD, an isolated guest VM) and enables SPIRE to issue that
-  Agent's SVID.
+- **SPIFFE mode**: Argus integrates TDX evidence with SPIRE Node and Workload
+  Attestation. It authenticates the Agent inside a TDX guest and separately
+  appraises a registered application process for its workload SVID.
 
 SPIFFE defines identities and SPIFFE Verifiable Identity Documents (SVIDs).
 SPIRE implements attestation, registration, and identity issuance. Node
 attestation authenticates the SPIRE Agent; subsequent workload attestation
 identifies processes or containers and enables their own SVIDs under workload
-registration policy. The current implementation covers the node stage. It
-does not attest a business service's process, image, or endpoint.
+registration policy. Workload attestation checks the registered process and
+its authenticated lifecycle history before certificate issuance. Helper then
+configures NGINX to use that identity for the registered backend.
 
 ## Design Goals
 
@@ -124,6 +124,28 @@ Server-plugin calls are handled by their respective SPIRE processes.
 | NodeAttestor Server | Verifies the Agent-slot pin, proof of possession, and EAR, then returns `AgentAttributes` |
 | SPIRE Server CA | Issues the SVID for the SPIRE Agent after SPIRE accepts the returned attributes |
 
+### SPIFFE/SPIRE Identity: Workload Attestation Flow
+
+After node admission, a separate WorkloadAttestor handles Broker
+`WorkloadPIDReference` requests for the registered target. The local Provider
+observes the PID instance and brackets fresh Quote generation with confirmed
+TruCon history and target checks. Trustee authenticates the Quote, verifies
+and replays the authenticated history, and signs an attestation result
+(EAR). The plugin verifies the EAR and rechecks the target before returning
+verified workload selectors.
+SPIRE Server's CA issues the workload SVID after registration matching.
+
+Helper uses its own infrastructure identity to subscribe and publishes the
+target credential to guest-managed NGINX. NGINX verifies the client's
+certificate and exact SPIFFE ID before forwarding to the application's loopback
+listener. After attestation, Helper supervises the registered process while
+NGINX handles ordinary requests. Same-subscription SVID updates do not obtain
+another workload Quote. New subscriptions reappraise fresh evidence, and replacements
+need independent registration and admission. See the
+[workload architecture](../../spire/workload/ARCHITECTURE.md)
+for identity ownership, durable mutation fences, credential cleanup and the
+limits of instance monitoring and SVID renewal.
+
 ## Trust And Threat Model
 
 | Threat | Argus Response |
@@ -206,7 +228,7 @@ UTF-8 bytes. It avoids ambiguous concatenation. SHA-384 yields 48 bytes, and
 the remaining 16 bytes are zero so the complete value fits TDX's 64-byte
 `REPORTDATA`. The Server reconstructs this binding from its own configured
 identity, nonce, and pinned proof key and verifies the signed EAR against it.
-A caller cannot select the Provider's identity through `/node-evidence`.
+A caller cannot select the Provider's identity through `/ra/v1/node-evidence`.
 
 The Agent also signs a transcript digest containing the proof public key,
 nonce, expiry, and Quote digest. **Expiry is covered by this signature, not

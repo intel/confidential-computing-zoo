@@ -1,81 +1,135 @@
-# OpenViking Adapter
+# OpenViking with workload attestation
 
-This adapter is intended to deploy the official OpenViking server as the
-`openviking-cmem` workload and connect it to OpenClaw through the official
-plugin.
+This adapter deploys the official OpenViking server as the `openviking-cmem`
+workload and uses the shared workload-attestation runtime to authenticate
+service access.
 
-## Current deployment status
+## Security model and status
 
-The launcher deliberately fails closed. The current TC-API launch path runs
-workloads with host networking and does not provide structured options for
-loopback-only port exposure or validated configuration/data mounts. Therefore,
-the adapter cannot currently guarantee that OpenViking is isolated to
-`127.0.0.1` or that its state is stored on the intended encrypted volume.
+The supported deployment uses the TC-API `nginx-spiffe` workload profile.
+Runtime settings come from a root-owned operator configuration, not request
+supplied Docker arguments. The profile uses a Docker bridge network, a
+read-only root filesystem and configuration mount, a separate writable data
+mount, no added capabilities, and a limited `/tmp`. The application container
+does not receive TDX devices, SPIRE sockets, or SVID private keys.
 
-Do not bypass this check with arbitrary Docker command overrides. Support can
-be enabled after TC-API provides an allowlisted loopback-port interface and a
-path-validated mount API for configuration and LUKS-backed state.
+Host-managed NGINX presents the workload's X.509-SVID and requires mTLS,
+an exact client SPIFFE-ID allowlist, and OpenViking API-key authorization.
+Docker publishes the configured TLS port on host interfaces; it is not
+loopback-only. Restrict that port to trusted clients with network/firewall
+controls. Ordinary requests use the established mTLS identity and do not
+perform a new remote attestation.
 
-The Compose stack binds its published control-plane ports to `127.0.0.1`, but
-TC-API and the evidence provider require privileged TDX access, and TC-API
-mounts the host Docker socket. Run this development stack only on a trusted
-host.
+The legacy [`scripts/launch_openviking.sh`](scripts/launch_openviking.sh)
+generic launch path remains fail-closed. Use the workload-attestation
+deployment described below; do not bypass the guard with arbitrary Docker
+command overrides.
 
-## Prepare a pinned official image
+## Build a pinned image
 
-The wrapper image uses the official OpenViking image as its base. Select a
-tested release and resolve it to an immutable digest:
-
-```bash
-docker pull "ghcr.io/volcengine/openviking:<tested-version>"
-docker image inspect "ghcr.io/volcengine/openviking:<tested-version>" \
-  --format '{{index .RepoDigests 0}}'
-```
-
-Configure embedding and VLM providers, models, endpoints, and API keys in a
-copy of [`configs/ov.conf.example`](configs/ov.conf.example). Treat the file as
-a secret: replace all placeholders, restrict its permissions, and do not commit
-it or bake it into an image. The structured configuration and storage mount
-interfaces are not implemented yet, so preparing this file does not enable
-deployment.
-
-## Launch
-
-`scripts/launch_openviking.sh` validates a pinned base image and defines the
-TC-API deployment flow, but currently exits before starting infrastructure or
-submitting a deployment because the TC-API launch boundary cannot enforce the
-required network and mount restrictions. Do not use a `latest` tag or add a
-caller-controlled Docker command to work around this limitation.
-
-Once the structured TC-API interfaces are available, the intended invocation
-will be:
+Choose a tested official release and resolve its immutable base-image digest:
 
 ```bash
-export OPENVIKING_VERSION="<tested-version>"
-export OPENVIKING_BASE="ghcr.io/volcengine/openviking@sha256:<digest>"
-./scripts/launch_openviking.sh
+cd cczoo/agent-cc/adapters/OpenViking
+export OPENVIKING_BASE='ghcr.io/volcengine/openviking@sha256:<approved-base-digest>'
+export OPENVIKING_IMAGE='registry:5000/openviking:<approved-release>'
+docker build --build-arg OPENVIKING_BASE="$OPENVIKING_BASE" \
+  -f configs/Dockerfile.openviking -t "$OPENVIKING_IMAGE" .
+docker push "$OPENVIKING_IMAGE"
+docker image inspect "$OPENVIKING_IMAGE" --format '{{.Id}}'
 ```
 
-## Verify and connect OpenClaw
+The Docker image config ID (`.Id`) is the value required by
+`approved.image_config_digest`; it is distinct from the registry manifest and
+base-image digests. The wrapper Dockerfile fixes the server entrypoint and
+clears the inherited command.
 
-After a safely configured OpenViking workload is available, verify its health
-before connecting OpenClaw:
+## Prepare application configuration and encrypted data
+
+Mount the dedicated LUKS filesystem at `/srv/openviking` before creating these
+paths. The TC-API profile validates configured paths and keeps mounts
+structured, but it does not verify the backing filesystem type. Confirm the
+mount source is the intended dm-crypt device and keep the mount active for the
+workload's lifetime:
 
 ```bash
-curl -fsS http://127.0.0.1:1933/health
-curl -fsS http://127.0.0.1:1933/ready
+findmnt --mountpoint /srv/openviking >/dev/null || {
+  echo "/srv/openviking must be the active LUKS mount point" >&2
+  exit 1
+}
+findmnt --noheadings --output SOURCE,FSTYPE --mountpoint /srv/openviking
+sudo install -d -m 0700 /srv/openviking/data
+sudo install -m 0600 configs/ov.conf.example /srv/openviking/ov.conf
 ```
 
-The OpenClaw gateway must meet the official plugin's Node.js and OpenClaw
-version requirements. Create a dedicated User API Key; never give OpenClaw the
-Root Key.
+Replace every placeholder in `ov.conf.example`, including the root API key,
+embedding/VLM providers, endpoints, model names, and API keys. Keep the root
+key on the server; clients must use a dedicated User API Key. Do not commit the
+completed file or bake it into an image. Record the exact configuration
+SHA-256 as `approved.config_digest`.
+
+The example deployment checks the application's configuration against its
+declared listener and data paths:
+
+| OpenViking setting | Workload setting |
+|---|---|
+| `server.host = 127.0.0.1` | NGINX shares the workload network namespace |
+| `server.port = 1933` | `workload.listen_port = 1933` |
+| Host `ov.conf` | Read-only mount at `/etc/openviking/ov.conf` |
+| `OPENVIKING_CONFIG_FILE` | Must match `workload.config_path` |
+| `storage.workspace = /var/lib/openviking` | Writable host path is `/srv/openviking/data` |
+| NGINX TLS port `1943` | Configured `tls_port` and `published_port` |
+
+These configuration checks verify declared JSON fields and types; they do not
+prove that application code continues to consume the file. The runtime
+supervisor separately monitors the registered process, configuration digest,
+and listener.
+
+## Deploy and verify
+
+Follow the [workload-attestation deployment guide](../../core/spire/workload/README.md)
+to build/install the runtime and configure Trustee, SPIRE, and TC-API. Its
+strict root-owned `environment.json` must contain the approved image config ID,
+configuration digest, TDX measurements, exact client SPIFFE ID(s), and the
+OpenViking host/container paths.
+
+Set TC-API's `ARGUS_WORKLOAD_CONFIG` to the protected workload export. If
+TC-API runs in a container, mount that file read-only and make
+`config_host_path` and `data_host_path` visible at the same paths used by the
+Docker host. The request selects `workload_attestation_profile=nginx-spiffe`;
+the profile derives Docker options and environment from the protected export
+and rejects arbitrary command overrides.
+
+On the guest, use the guide's lifecycle commands:
 
 ```bash
-export OPENVIKING_API_KEY="<openviking-user-key>"
-../OpenClaw/scripts/connect_openclaw_openviking.sh
+sudo python3 /opt/argus-workload/scripts/workload.py launch \
+  --config /etc/argus-workload/environment.json
+sudo python3 /opt/argus-workload/scripts/workload.py register \
+  --config /etc/argus-workload/environment.json
+sudo python3 /opt/argus-workload/scripts/workload.py preflight \
+  --config /etc/argus-workload/environment.json
+sudo python3 /opt/argus-workload/scripts/workload.py start \
+  --config /etc/argus-workload/environment.json
+sudo --preserve-env=OPENVIKING_API_KEY \
+  python3 /opt/argus-workload/scripts/workload.py verify \
+  --config /etc/argus-workload/environment.json
 ```
 
-The connection script checks both service probes, installs the official
-OpenViking plugin, configures `http://127.0.0.1:1933`, and displays plugin
-status. Ensure the gateway state is persistent so the plugin and its
-configuration survive recreation.
+Clients connect to `https://<guest>:1943` using a valid SVID, private key,
+trust bundle, an allowlisted SPIFFE ID, and an OpenViking User API Key. Keep
+the Root API Key on the server. Use `resume-launch` with the original launch
+ID after an interrupted operation; do not create a replacement until the
+existing lifecycle state has been reconciled.
+
+The shared runtime supports explicit mTLS clients and API-key headers. Direct
+OpenClaw plugin provisioning for this mTLS endpoint is not performed by the
+legacy connector script; configure a client-side credential integration
+before routing OpenClaw traffic to it.
+
+## References
+
+- [Workload-attestation deployment guide](../../core/spire/workload/README.md)
+- [Workload-attestation architecture](../../core/spire/workload/ARCHITECTURE.md)
+- [TC-API workload profile](../../core/tc_api/README.md#workload-attestation-profile)
+- [OpenClaw adapter guide](../OpenClaw/openclaw_to_service_protection.md)

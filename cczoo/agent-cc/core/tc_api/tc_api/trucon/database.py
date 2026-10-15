@@ -140,6 +140,7 @@ def init_db(db_path: str = DB_PATH):
     with sqlite3.connect(db_path) as conn:
         # Enable Write-Ahead Logging for better concurrency and crash resilience
         conn.execute('PRAGMA journal_mode=WAL;')
+        conn.execute('PRAGMA synchronous=FULL;')
         
         # Check if legacy schema exists (missing rtmr_extended column)
         _migrate_legacy_schema(conn)
@@ -235,12 +236,31 @@ def init_db(db_path: str = DB_PATH):
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_delegations_chain_expires ON delegations(chain_id, expires_at)')
 
+        # Independent of expiring sequence reservations: a Docker request may
+        # have taken effect even when its response or signer was lost.
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS docktap_mutations (
+                mutation_id TEXT PRIMARY KEY,
+                chain_id TEXT NOT NULL,
+                operation_type TEXT NOT NULL,
+                request_json TEXT NOT NULL,
+                result_json TEXT,
+                submission_json TEXT,
+                record_id TEXT,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_docktap_mutations_chain_status ON docktap_mutations(chain_id, status)')
+
         conn.commit()
 
 @contextmanager
 def get_db_connection(db_path: str = DB_PATH):
     """Context manager for database connections."""
     conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.execute('PRAGMA synchronous=FULL;')
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -285,7 +305,101 @@ def insert_record(record_id: str, event_id: Optional[str], payload: Dict[str, An
             now,
             now,
         ))
+        if idempotency_key:
+            # Link the accepted record and outbox transition in the same SQLite
+            # transaction; a crash must not leave an accepted event unassociated.
+            conn.execute("UPDATE docktap_mutations SET record_id=?, status='SUBMITTED', updated_at=? WHERE mutation_id=? AND chain_id=? AND status='RESULT_READY' AND submission_json IS NOT NULL",
+                         (record_id, now, idempotency_key, chain_id))
         conn.commit()
+
+
+# Durable lifecycle: INFLIGHT -> RESULT_READY -> SUBMITTED -> CONFIRMED.
+# INFLIGHT has no timeout: Docker may have changed state before its reply was lost.
+def reserve_docktap_mutation(mutation_id: str, chain_id: str, operation_type: str,
+                            request: Dict[str, Any], db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Durably fence an operation before Docker. Reusing an ID never resends it."""
+    encoded = json.dumps(request, sort_keys=True)
+    now = datetime.utcnow().isoformat()
+    with get_db_connection(db_path or DB_PATH) as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        existing = conn.execute('SELECT * FROM docktap_mutations WHERE mutation_id=?', (mutation_id,)).fetchone()
+        if existing:
+            if (existing['chain_id'], existing['operation_type'], existing['request_json']) != (chain_id, operation_type, encoded):
+                raise ValueError('Mutation ID already has a different operation')
+            return dict(existing)
+        conn.execute('INSERT INTO docktap_mutations(mutation_id,chain_id,operation_type,request_json,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
+                     (mutation_id, chain_id, operation_type, encoded, 'INFLIGHT', now, now))
+        conn.commit()
+        return dict(conn.execute('SELECT * FROM docktap_mutations WHERE mutation_id=?', (mutation_id,)).fetchone())
+
+
+def complete_docktap_mutation(mutation_id: str, result: Dict[str, Any], db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Persist the observed result; never infer an outcome from current state."""
+    encoded = json.dumps(result, sort_keys=True)
+    with get_db_connection(db_path or DB_PATH) as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        row = conn.execute('SELECT * FROM docktap_mutations WHERE mutation_id=?', (mutation_id,)).fetchone()
+        if row is None:
+            raise ValueError('Unknown mutation')
+        if row['result_json'] is not None:
+            if row['result_json'] != encoded:
+                raise ValueError('Mutation result is immutable')
+            return dict(row)
+        before, after = json.loads(row['request_json'])['op_record'], result['op_record']
+        if after['operation_id'] != before['operation_id'] or after['operation'] != before['operation']:
+            raise ValueError('Mutation operation changed')
+        if row['operation_type'] in {'start', 'stop', 'rm'} and after.get('container', {}).get('id') != before.get('container', {}).get('id'):
+            raise ValueError('Mutation target changed')
+        status = after.get('response', {}).get('status')
+        if type(status) is not int or not 200 <= status <= 599:
+            raise ValueError('Complete Docker response is required')
+        conn.execute("UPDATE docktap_mutations SET result_json=?,status='RESULT_READY',updated_at=? WHERE mutation_id=?",
+                     (encoded, datetime.utcnow().isoformat(), mutation_id))
+        conn.commit()
+        return dict(conn.execute('SELECT * FROM docktap_mutations WHERE mutation_id=?', (mutation_id,)).fetchone())
+
+
+def save_docktap_submission(mutation_id: str, submission: Dict[str, Any], db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Persist exact signed bytes before /commit, so a lost reply is idempotent."""
+    encoded = json.dumps(submission, sort_keys=True)
+    with get_db_connection(db_path or DB_PATH) as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        row = conn.execute('SELECT * FROM docktap_mutations WHERE mutation_id=?', (mutation_id,)).fetchone()
+        if row is None or row['result_json'] is None:
+            raise ValueError('Mutation has no durable Docker result')
+        if submission.get('idempotency_key') != mutation_id or submission.get('chain_id') != row['chain_id']:
+            raise ValueError('Mutation submission binding mismatch')
+        if row['submission_json'] is not None:
+            if row['submission_json'] != encoded:
+                old = json.loads(row['submission_json'])
+                intent = conn.execute('SELECT * FROM commit_intents WHERE intent_token=?', (old.get('intent_token'),)).fetchone()
+                accepted = conn.execute('SELECT 1 FROM commit_queue WHERE idempotency_key=? AND chain_id=?', (mutation_id, row['chain_id'])).fetchone()
+                # Replace a signed attempt only when its intent has expired and
+                # no commit was accepted; otherwise retain the original bytes.
+                if accepted or intent is None or (intent['status'] != 'EXPIRED' and intent['expires_at'] >= datetime.utcnow().isoformat()):
+                    raise ValueError('Mutation signed submission is immutable while its outcome is unknown')
+            else:
+                return dict(row)
+        conn.execute('UPDATE docktap_mutations SET submission_json=?,updated_at=? WHERE mutation_id=?',
+                     (encoded, datetime.utcnow().isoformat(), mutation_id))
+        conn.commit()
+        return dict(conn.execute('SELECT * FROM docktap_mutations WHERE mutation_id=?', (mutation_id,)).fetchone())
+
+
+def get_docktap_mutations(chain_id: str = 'default', db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    with get_db_connection(db_path or DB_PATH) as conn:
+        return [dict(row) for row in conn.execute("SELECT * FROM docktap_mutations WHERE chain_id=? AND status!='CONFIRMED' ORDER BY created_at,mutation_id", (chain_id,))]
+
+
+def has_unresolved_docktap_mutation(chain_id: str = 'default', db_path: Optional[str] = None) -> bool:
+    with get_db_connection(db_path or DB_PATH) as conn:
+        return conn.execute("SELECT 1 FROM docktap_mutations WHERE chain_id=? AND status!='CONFIRMED' LIMIT 1", (chain_id,)).fetchone() is not None
+
+
+def get_docktap_mutation(mutation_id: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    with get_db_connection(db_path or DB_PATH) as conn:
+        row = conn.execute('SELECT * FROM docktap_mutations WHERE mutation_id=?', (mutation_id,)).fetchone()
+        return dict(row) if row else None
 
 def get_record_by_idempotency_key(idempotency_key: str, chain_id: str, db_path: str = DB_PATH) -> Optional[sqlite3.Row]:
     """Look up an existing record by idempotency_key and chain_id. Returns None if not found."""
@@ -512,6 +626,13 @@ def update_record_confirmed(record_id: str, log_id: str, db_path: str = DB_PATH)
             SET status = 'CONFIRMED', log_id = ?, confirmed_at = ?, updated_at = ?
             WHERE record_id = ?
         ''', (log_id, datetime.utcnow().isoformat(), datetime.utcnow().isoformat(), record_id))
+        # Release the fence only with a confirmed log reference in this same
+        # transaction. Trustee still authenticates that remote log material.
+        conn.execute("""UPDATE docktap_mutations SET status='CONFIRMED',updated_at=?
+                        WHERE record_id=? AND status='SUBMITTED' AND EXISTS
+                        (SELECT 1 FROM commit_queue WHERE record_id=? AND status='CONFIRMED'
+                         AND log_id IS NOT NULL AND log_id!='')""",
+                     (datetime.utcnow().isoformat(), record_id, record_id))
         conn.commit()
 
 def delete_non_extended_records(db_path: str = DB_PATH) -> int:
@@ -689,15 +810,23 @@ def set_status_submitting(record_id: str, db_path: str = DB_PATH):
         ''', (datetime.utcnow().isoformat(), record_id))
         conn.commit()
 
-def get_chain_records(chain_id: str, db_path: str = DB_PATH) -> List[sqlite3.Row]:
-    """Get all records for a chain, ordered by sequence_num ascending."""
+def get_chain_records(chain_id: str, db_path: str = DB_PATH, *,
+                      limit: Optional[int] = None, metadata_only: bool = False) -> List[sqlite3.Row]:
+    """Read ordered records in one SQLite statement, including unconfirmed rows.
+
+    Metadata queries avoid loading signed bundles just to obtain references.
+    A caller checking a size limit can request one extra row to detect overflow.
+    """
+    columns = "record_id, sequence_num, status, log_id, mr_value, updated_at" if metadata_only else "*"
+    query = f"SELECT {columns} FROM commit_queue WHERE chain_id = ? ORDER BY sequence_num ASC"
+    params: tuple = (chain_id,)
+    if limit is not None:
+        if limit <= 0:
+            raise ValueError("chain record limit must be positive")
+        query += " LIMIT ?"
+        params += (limit,)
     with get_db_connection(db_path) as conn:
-        cursor = conn.execute('''
-            SELECT * FROM commit_queue
-            WHERE chain_id = ?
-            ORDER BY sequence_num ASC
-        ''', (chain_id,))
-        return cursor.fetchall()
+        return conn.execute(query, params).fetchall()
 
 
 def get_instances_for_workload(chain_id: str, db_path: str = DB_PATH) -> List[Dict[str, Any]]:

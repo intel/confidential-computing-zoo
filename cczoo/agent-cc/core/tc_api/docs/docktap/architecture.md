@@ -16,7 +16,8 @@ Docktap is a Unix socket proxy for container-runtime API traffic that:
 - submits signed DSSE bundles to TruCon for trusted event recording
 - emits the runtime identity, runtime engine, and outcome fields required by the `docktap-runtime` verification profile
 - propagates `launch_id` for runtime events that belong to a REST-originated launch flow
-- maintains bounded local routing, mapping, and retry state via periodic garbage collection
+- maintains bounded local routing and mapping state via periodic garbage collection
+- persists mutation fences and the signing outbox in TruCon's SQLite database
 - emits structured JSON logs for audit and troubleshooting
 - exposes an HTTP health endpoint (`/healthz`) for container orchestration
 
@@ -25,6 +26,45 @@ Primary runtime entrypoints:
 - `stream_test.py`: thin launcher used by test automation
 - `main.py`: sidecar bootstrap path that starts `DockerProxyServer` and health server
 - `test_suite.py`: single test entrypoint for all integration checks
+
+## Durable mutation fences
+
+Before forwarding a create/start/stop/rm request, Docktap reserves an
+`INFLIGHT` mutation through TruCon's authenticated UDS API. For lifecycle
+requests using names or short IDs, it resolves and pins the full daemon
+container ID before the operation. A durably observed response advances to
+`RESULT_READY`; the signing worker persists exact submission bytes, submits
+the record and waits for immutable-log confirmation. Only confirmation
+releases the fence.
+
+```mermaid
+stateDiagram
+    [*] --> INFLIGHT: Reserve before forwarding to Docker
+    INFLIGHT --> INFLIGHT: Unknown outcome stays pending; no replay or expiry
+    INFLIGHT --> RESULT_READY: Save observed response
+    RESULT_READY --> RESULT_READY: Persist exact signed submission bytes
+    RESULT_READY --> SUBMITTED: Link the submitted record to the queue
+    SUBMITTED --> CONFIRMED: Immutable-log confirmation
+    CONFIRMED --> [*]: Release admission fence
+```
+
+Every state before `CONFIRMED` blocks a new workload history snapshot.
+The gate governs new admission; it is not a per-request remote check for
+an already admitted ingress.
+
+TruCon exposes `/mutations/reserve`, `/mutations/{id}/result`,
+`/mutations/{id}/submission` and `/mutations` to the authenticated Docktap
+caller. Mutation reservation, measurement commit and history reads share
+the sequencer lock. `GET /chain-state?include_history=true` denies any
+unresolved fence, keeping workload admission from using incomplete history.
+
+Saved results/submissions can be recovered after a process restart within
+the same guest boot if the database and completed RTMR/database commit remain
+available. The default SQLite database is under `/dev/shm` and does not survive
+guest reboot. An unknown Docker outcome is neither replayed nor expired.
+A failure around RTMR extension requires explicit reconciliation; deleting
+the queue would not restore the hardware measurement. See the
+[workload trust boundaries](../../../spire/workload/ARCHITECTURE.md).
 
 ## Deployment
 
@@ -37,7 +77,7 @@ Current internal TruCon communication prefers the shared Unix domain socket tran
 
 Users route Docker CLI through the proxy by setting `DOCKER_HOST=unix:///var/run/docktap/docker.sock`.
 
-The v1 runtime adapter contract uses canonical engine identifiers:
+The runtime adapter contract uses canonical engine identifiers:
 
 - `docker`
 - `podman`

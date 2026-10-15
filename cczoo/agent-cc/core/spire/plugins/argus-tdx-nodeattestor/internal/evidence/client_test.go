@@ -44,7 +44,7 @@ func TestGetNodeEvidenceUsesTypedNodeEndpoint(t *testing.T) {
 			if request.Method != http.MethodPost {
 				t.Errorf("method = %s", request.Method)
 			}
-			if request.URL.Path != "/node-evidence" {
+			if request.URL.Path != "/ra/v1/node-evidence" {
 				t.Errorf("path = %s", request.URL.Path)
 			}
 			if request.Header.Get("Content-Type") != "application/json" {
@@ -67,7 +67,7 @@ func TestGetNodeEvidenceUsesTypedNodeEndpoint(t *testing.T) {
 				Header:     make(http.Header),
 			}, nil
 		})},
-		requestURL: "http://unix/node-evidence",
+		requestURL: "http://unix/ra/v1/node-evidence",
 		maxBytes:   1024,
 	}
 
@@ -99,7 +99,7 @@ func TestGetNodeEvidenceRejectsInvalidProviderResponses(t *testing.T) {
 				httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 					return &http.Response{StatusCode: test.statusCode, Body: io.NopCloser(strings.NewReader(test.body)), Header: make(http.Header)}, nil
 				})},
-				requestURL: "http://unix/node-evidence",
+				requestURL: "http://unix/ra/v1/node-evidence",
 				maxBytes:   1,
 			}
 			if _, err := client.GetNodeEvidence(context.Background(), make([]byte, protocol.NonceSize), make([]byte, protocol.PublicKeySize)); err == nil {
@@ -133,7 +133,7 @@ func TestNewClientRequiresAbsoluteUnixSocketAndLimits(t *testing.T) {
 }
 
 func TestGetNodeEvidenceRejectsInvalidRequestLengths(t *testing.T) {
-	client := &Client{httpClient: http.DefaultClient, requestURL: "http://unix/node-evidence", maxBytes: 1}
+	client := &Client{httpClient: http.DefaultClient, requestURL: "http://unix/ra/v1/node-evidence", maxBytes: 1}
 	if _, err := client.GetNodeEvidence(context.Background(), make([]byte, protocol.NonceSize-1), make([]byte, protocol.PublicKeySize)); err == nil {
 		t.Fatal("invalid nonce was accepted")
 	}

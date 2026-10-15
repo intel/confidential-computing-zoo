@@ -1,0 +1,2 @@
+# Shell entrypoints must also work from Windows checkouts and Git archives.
+*.sh text eol=lf

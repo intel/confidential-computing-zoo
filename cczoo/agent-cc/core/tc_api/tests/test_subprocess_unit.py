@@ -428,7 +428,6 @@ async def test_launch_containers_normalizes_local_oci_image_id(docker_service, t
     results = [
         SimpleNamespace(returncode=0, stdout="copied", stderr=""),
         SimpleNamespace(returncode=0, stdout="loaded", stderr=""),
-        SimpleNamespace(returncode=0, stdout="started", stderr=""),
         SimpleNamespace(returncode=0, stdout="container-1\n", stderr=""),
         SimpleNamespace(returncode=0, stdout="running\n", stderr=""),
     ]

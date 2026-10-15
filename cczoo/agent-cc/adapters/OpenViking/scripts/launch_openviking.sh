@@ -93,8 +93,9 @@ ensure_infra_stack() {
 }
 
 check_safe_openviking_launch() {
-    echo "Refusing to launch OpenViking: the current TC-API launch path uses host networking and has no structured loopback-port or validated config/data-mount options." >&2
-    echo "Do not bypass this check with arbitrary Docker command overrides. Add an allowlisted TC-API launch API before enabling this deployment." >&2
+    echo "Refusing to launch through the legacy OpenViking path: it does not select the nginx-spiffe workload profile and uses the generic host-network launch." >&2
+    echo "Use core/spire/workload/scripts/workload.py with the protected ARGUS_WORKLOAD_CONFIG for structured mounts and mTLS ingress." >&2
+    echo "Do not bypass this check with arbitrary Docker command overrides." >&2
     exit 1
 }
 
