@@ -94,27 +94,25 @@ The identity verification system supports Non-SPIFFE and SPIFFE strategies. In t
 
 Status: ✅ Completed　🚧 In progress
 
+**Best Practices & Guides**
+
+- 📘 **[OpenClaw Confidential Agent Best Practices](./best-practices/README.md)**: End-to-end OpenClaw reference for local LLM co-location, encrypted state, and runtime attestation.
+
 **Core Services**
 
 [Core Services](core/README.md) implement the three architecture requirements described above:
 
 - ✅ **[TC API](core/tc_api)**: Trusted build/publish/launch control path for build-to-runtime verification and policy enforcement.
 - ✅ **[Trusted Log (TLog)](core/tlog)**: Immutable, signed runtime evidence and audit trail.
-- **Argus (Trusted Service Composition)**: Architecture for cross-service trusted admission and interaction.
-  - ✅ Non-SPIFFE
-  - 🚧 SPIFFE
+- 🚧 **Argus (Trusted Service Composition)**: Architecture for cross-service trusted admission and interaction.
 
-**Adapters**
+**Adapters × Deployment Mode**
 
-Adapters use trusted services to build TEE-based agent security scenarios:
-- 🚧 Deploy the agent's LLM service with Ollama
-- Proxy trusted communication with third-party services (e.g. memory services)
-  - ✅ Non-SPIFFE
-  - 🚧 SPIFFE
-- Agent deployment across different TEE configurations
-  - ✅ Single TD
-  - ✅ Container-based execution within a single TD
-  - 🚧 Task-partitioned TDs (TD + cc-sandbox)
+Status applies to each combination: ✅ implementation or example available; 🚧 in progress or awaiting validation; — not applicable/not currently provided.
 
-- ✅ **[OpenClaw](./adapters/OpenClaw/README.md)**
-- 🚧 Hermes agent
+| Adapter/capability | Single TD | Container execution within a single TD | Task-partitioned TDs (CoCo/Kata or TD + cc-sandbox) |
+| --- | --- | --- | --- |
+| [Ollama LLM service](./adapters/Ollama/README.md) | ✅ | 🚧 | 🚧 |
+| [OpenClaw](./adapters/OpenClaw/README.md) | ✅ | ✅ | — |
+| [Hermes Agent](./adapters/Hermes/README.md) | ✅ | 🚧 | 🚧 |
+| Third-party service communication | 🚧 | 🚧 | 🚧 |

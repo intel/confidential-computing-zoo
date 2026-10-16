@@ -90,26 +90,24 @@ TD 是全生命周期数据保护的信任基础。Agent 进程运行在硬件�
 
 状态：✅ 已完成　🚧 进行中
 
+**最佳实践与部署指南**
+
+- 📘 **[OpenClaw 机密部署最佳实践](./best-practices/README_CN.md)**：以 OpenClaw 为参考的端到端指南，覆盖本地大模型协同部署、加密持久化存储与运行证明。
+
 **核心服务**
 
 核心服务用于实现上述三项架构要求：
 - ✅ **[TC-API](core/tc_api)**：可信构建、发布与启动控制路径，用于构建到运行时的校验与策略执行。
 - ✅ **[Trusted Log (TLog)](core/tlog)**：不可篡改、带签名的运行时证据与审计轨迹。
-- **Argus（可信服务组合）**：面向跨服务可信接入与可信交互的架构。
-  - ✅ Non-SPIFFE
-  - 🚧 SPIFFE
+- 🚧 **Argus（可信服务组合）**：面向跨服务可信接入与可信交互的架构。
 
-**适配器**
+**适配器 × 部署方式**
 
-适配器利用可信服务构建基于 TEE 的 Agent 安全场景：
-- 🚧 使用 Ollama 部署 Agent 中的 LLM 服务
-- 代理与第三方服务的可信通信 (记忆服务等)
-  - ✅ Non-SPIFFE
-  - 🚧 SPIFFE
-- Agent结合不同 TEE 部署方式
-  - ✅ 单一 TD
-  - ✅ 单一 TD 内的基于容器的执行
-  - 🚧 按任务划分的 TD （TD + cc-sandbox）
+状态标注到具体组合：✅ 已有实现或示例；🚧 进行中或尚待验证；— 不适用/暂无该部署形态。
 
-- ✅ **[OpenClaw](./adapters/OpenClaw/README.md)**
-- 🚧 Hermes agent
+| 适配器/能力 | 单一 TD | 单一 TD 内的容器执行 | 按任务划分的 TD（CoCo/Kata 或 TD + cc-sandbox） |
+| --- | --- | --- | --- |
+| [Ollama LLM 服务](./adapters/Ollama/README_CN.md) | ✅ | 🚧 | 🚧 |
+| [OpenClaw](./adapters/OpenClaw/README_CN.md) | ✅ | ✅ | — |
+| [Hermes Agent](./adapters/Hermes/README_CN.md) | ✅ | 🚧 | 🚧 |
+| 第三方服务通信 | 🚧 | 🚧 | 🚧 |

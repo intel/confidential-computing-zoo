@@ -1,0 +1,37 @@
+FROM ollama/ollama:0.5.7
+
+# Copyright (c) 2026 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+ARG OLLAMA_MODEL=qwen2.5:7b
+ENV OLLAMA_HOST=127.0.0.1:11434
+
+RUN set -eu; \
+    ollama serve >/tmp/ollama-build.log 2>&1 & server_pid=$!; \
+    trap 'kill "$server_pid" 2>/dev/null || true' EXIT; \
+    attempt=0; \
+    until ollama list >/dev/null 2>&1; do \
+      attempt=$((attempt + 1)); \
+      if [ "$attempt" -ge 60 ]; then \
+        cat /tmp/ollama-build.log; \
+        exit 1; \
+      fi; \
+      sleep 1; \
+    done; \
+    ollama pull "$OLLAMA_MODEL"; \
+    kill "$server_pid"; \
+    wait "$server_pid" || true; \
+    trap - EXIT
+
+ENTRYPOINT ["ollama", "serve"]

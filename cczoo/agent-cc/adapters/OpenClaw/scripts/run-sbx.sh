@@ -437,6 +437,7 @@ docker run \
   -v "${CONFIG_VOLUME}:/home/node/.openclaw" \
   -v "${WORKSPACE_VOLUME}:/home/node/.openclaw/workspace" \
   "${DOCKER_MOUNT_ARGS[@]}" \
+  --add-host=host.docker.internal:host-gateway \
   --group-add "$DOCKER_GID" \
   "${TDX_MOUNT_ARGS[@]}" \
   -p "${PORT_BIND_PREFIX}${GATEWAY_PORT}:18789" \
