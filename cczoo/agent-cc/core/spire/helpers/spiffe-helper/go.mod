@@ -1,12 +1,12 @@
 module github.com/spiffe/spiffe-helper
 
-go 1.25.3
+go 1.26.0
 
 require (
 	github.com/hashicorp/hcl v1.0.1-vault-7
 	github.com/spiffe/go-spiffe/v2 v2.8.1
-	golang.org/x/sys v0.39.0
-	google.golang.org/grpc v1.79.3
+	golang.org/x/sys v0.48.0
+	google.golang.org/grpc v1.83.2
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v0.34.1
 )
@@ -21,7 +21,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
@@ -37,8 +37,8 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/sirupsen/logrus v1.9.3
-	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.11
 )
 

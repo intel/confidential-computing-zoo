@@ -15,7 +15,7 @@ Trustee tree. The patch targets
 `apply.py` also checks the reviewed `attestation-service/src/lib.rs` SHA-256
 and refuses a different or already patched base.
 
-On a Linux build host with Trustee's TDX/DCAP dependencies, from
+On a Linux build host with Python 3.11+ and Trustee's TDX/DCAP dependencies, from
 `cczoo/agent-cc`:
 
 ```bash
@@ -40,6 +40,22 @@ Environment=ARGUS_TRUCON_CONFIG=/etc/argus-trucon/config.json
 The verifier/configuration must be regular root-owned files without group or
 other write permission. Their parent directories and the Python environment
 must also remain administrator-controlled.
+
+### Python verifier dependency
+
+The verifier pins `sigstore==3.6.7`. The
+[upstream release](https://github.com/sigstore/sigstore-python/releases/tag/v3.6.7)
+backports the OIDC state-validation fix for CVE-2026-24408, also included in
+4.2.0. Its [OAuth callback](https://github.com/sigstore/sigstore-python/blob/v3.6.7/sigstore/oidc.py#L332-L333)
+rejects a returned state that differs from the session state. Review this
+backport evidence alongside vulnerability-feed version ranges.
+
+This pin also retains the reviewed 3.x APIs for the original Rekor
+`intoto` entry and its authenticated signing time. Sigstore 4.x changes the
+log-entry/trust models and verifier API, and its standard entry conversion
+rejects `intoto`; changing only the requirement would break this path.
+Any upgrade must preserve verification of the original leaf, checkpoint/SET,
+Fulcio chain/SCT, signer identity, signed time and DSSE payload.
 
 ## Trust configuration
 
