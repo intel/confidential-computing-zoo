@@ -32,7 +32,7 @@ import (
 	"github.com/intel/confidential-computing-zoo/cczoo/agent-cc/core/spire/plugins/argus-tdx-nodeattestor/internal/protocol"
 )
 
-const nodeEvidenceURL = "http://unix/node-evidence"
+const nodeEvidenceURL = "http://unix/ra/v1/node-evidence"
 
 type nodeEvidenceRequest struct {
 	Nonce          string `json:"nonce"`

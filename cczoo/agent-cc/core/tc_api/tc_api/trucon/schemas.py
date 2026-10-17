@@ -43,6 +43,9 @@ class ChainStateResponse(BaseModel):
     sequence_num: int = 0
     mr_value: Optional[str] = None
     updated_at: Optional[str] = None
+    # Present only when the caller requests complete, confirmed history.
+    # Ordered retrieval references preserve backend formats; they are not proof.
+    log_ids: Optional[List[str]] = None
 
 
 class CommitQueueStatusResponse(BaseModel):

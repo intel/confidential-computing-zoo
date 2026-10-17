@@ -1,0 +1,17 @@
+[Unit]
+Description=Official SPIRE v1.15.3 Agent with preserved Node and Workload attestors
+Requires=argus-tdx-provider.service
+After=argus-tdx-provider.service network-online.target
+
+[Service]
+Type=simple
+User=root
+# Separate local Workload API and authenticated Broker sockets. The generated
+# Agent config authorizes only the configured Helper to use PID references.
+RuntimeDirectory=@RUN_NAME@-spire-agent @RUN_NAME@-spire-broker
+RuntimeDirectoryMode=0700
+ExecStart=@SPIRE@/spire-agent run -config @ETC@/agent.conf
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=5
+KillMode=control-group

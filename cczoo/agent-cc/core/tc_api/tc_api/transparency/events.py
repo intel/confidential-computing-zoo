@@ -44,6 +44,10 @@ class EventEntryKey(str, Enum):
     privileged = "privileged"
     network_mode = "network_mode"
     mounts = "mounts"
+    tmpfs = "tmpfs"
+    published_ports = "published_ports"
+    read_only_rootfs = "read_only_rootfs"
+    attestation_profile = "attestation_profile"
     devices = "devices"
     capabilities = "capabilities"
     launch_env_keys = "launch_env_keys"
@@ -148,6 +152,8 @@ def publish_identity_entries(*, pushed_subject_digest: Optional[str], target_ref
 
 
 def launch_security_entries(security_projection: Mapping[str, Any], *, image_digest: Any, launch_config_digest: str) -> List[Entry]:
+    # Keep launch restrictions in the signed event while recording environment
+    # values only by digest. These fields describe launch policy, not a Quote.
     return event_entries(
         {
             EventEntryKey.image_digest: image_digest,
@@ -155,8 +161,12 @@ def launch_security_entries(security_projection: Mapping[str, Any], *, image_dig
             EventEntryKey.privileged: security_projection.get("privileged"),
             EventEntryKey.network_mode: security_projection.get("network_mode"),
             EventEntryKey.mounts: security_projection.get("mounts"),
+            EventEntryKey.tmpfs: security_projection.get("tmpfs"),
             EventEntryKey.devices: security_projection.get("devices"),
             EventEntryKey.capabilities: security_projection.get("capabilities"),
+            EventEntryKey.published_ports: security_projection.get("published_ports"),
+            EventEntryKey.read_only_rootfs: security_projection.get("read_only_rootfs"),
+            EventEntryKey.attestation_profile: security_projection.get("attestation_profile"),
             EventEntryKey.launch_env_keys: security_projection.get("launch_env_keys"),
             EventEntryKey.launch_env_digest: security_projection.get("launch_env_digest"),
         }

@@ -8,6 +8,7 @@ This document provides a comprehensive reference for all configuration options a
 - [Configuration File](#configuration-file)
 - [CLI Arguments](#cli-arguments)
 - [SPIRE Node Attestation](#spire-node-attestation)
+- [SPIRE Workload Attestation](#spire-workload-attestation)
 - [Binding Assurance Levels](#binding-assurance-levels)
 - [Verifier Configuration](#verifier-configuration)
 - [Policy Configuration](#policy-configuration)
@@ -200,7 +201,7 @@ provide the SPIRE Agent/Server, bootstrap trust, proof key, and Trustee policy.
 
 | Component | Input | Contract |
 |-----------|-------|----------|
-| Provider CLI | `--agent-id` | Required SPIRE Agent ID; must equal the Server plugin's `agent_id`. It is fixed for the lifetime of the Provider process and cannot be supplied in `/node-evidence` requests. |
+| Provider CLI | `--agent-id` | Required SPIRE Agent ID; must equal the Server plugin's `agent_id`. It is fixed for the lifetime of the Provider process and cannot be supplied in `/ra/v1/node-evidence` requests. |
 | Provider CLI | `--socket-path` | Defaults to `/run/argus/evidence-provider.sock`; the SPIRE Agent in the same TD must be able to access it. |
 | Provider CLI | `--tsm-report-root` | Defaults to `/sys/kernel/config/tsm/report`; Linux TSM supplies the Quote. |
 | Agent plugin HCL | `evidence_socket_path` | Absolute path matching the Provider socket. |
@@ -226,6 +227,30 @@ attestation and registration policy. A SPIFFE trust domain is an identity
 namespace; it is distinct from the TDX trust domain (TD) containing the Agent.
 
 ---
+
+## SPIRE Workload Attestation
+
+The workload deployment extends the same Provider with
+`POST /ra/v1/workload-evidence` when a target registration is configured.
+`POST /ra/v1/node-evidence` remains the NodeAttestor endpoint.
+
+| Provider argument | Contract |
+|---|---|
+| `--workload-registration-path` | Protected absolute registration file for the approved PID instance; enables the workload endpoint |
+| `--workload-data-path` | Required with workload registration; the single allowed persistent writable path inside the container |
+| `--trucon-socket-path` | Root-only TruCon UDS; defaults to `/var/run/trucon/trucon.sock`; supplies complete confirmed history |
+
+The [deployment configuration](../../spire/workload/config/environment.example.json)
+supplies identities, directories, ports, approved measurements/digests and
+Trustee/EAR trust. The [deployment tool](../../spire/workload/README.md)
+renders Agent HCL, Helper/NGINX configuration, systemd units, policy and the
+minimal TC API launch configuration from that input. See the
+[WorkloadAttestor reference](../../spire/plugins/argus-tdx-workloadattestor/README.md)
+for plugin fields and selectors. Registration records the target; evidence
+appraisal and entry matching govern instance admission. Registering a process
+does not approve it or issue an SVID. The logical SPIFFE ID can stay the same
+across replacements, but PID/start/boot/container/launch bindings must be
+registered and appraised for each new instance.
 
 ## Binding Assurance Levels
 
@@ -397,8 +422,6 @@ RTMR (Runtime Measurement Register) values are extracted from specific offsets i
 | RTMR1 | 880 | 48 bytes | Additional measurements |
 | RTMR2 | 928 | 48 bytes | Additional measurements |
 | RTMR3 | 976 | 48 bytes | Additional measurements |
-  minimum_assurance_level: L2
-```
 
 ---
 
@@ -424,7 +447,6 @@ export TRUSTEE_ENDPOINT=http://localhost:8080
 verifier:
   kind: "trustee"
   timeout: 30
-  expected_verifier: "trustee-v1"
 ```
 
 ### Verifier Options
@@ -433,7 +455,11 @@ verifier:
 |--------|------|---------|-------------|
 | `kind` | `VerifierKind` | `trustee` | Verifier backend type |
 | `timeout` | `u64` | `30` | Verification timeout in seconds |
-| `expected_verifier` | `Option<String>` | `None` | Expected verifier identifier |
+| `expected_verifier` | `Option<String>` | `None` | Optional exact verifier identifier |
+
+When set, `expected_verifier` must exactly match the configured backend's
+`verifier_id`. It is separate from the backend `kind`; the optional field is
+omitted from these examples rather than assigning the backend name as an ID.
 
 ---
 
@@ -571,7 +597,6 @@ The Evidence Provider and Guard service use CORS with the following defaults:
 verification:
   require_quote: true
   require_attested_identity: false
-  expected_verifier: "trustee-v1"
   freshness_window: 300  # seconds
 ```
 

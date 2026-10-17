@@ -1,0 +1,70 @@
+{
+  "identity": {
+    "trust_domain": "argus.local",
+    "agent_id": "spiffe://argus.local/spire/agent/argus_tdx/openviking-node",
+    "helper_id": "spiffe://argus.local/infra/openviking-helper",
+    "target_id": "spiffe://argus.local/service/openviking-cmem",
+    "client_id": "spiffe://argus.local/agent/openclaw"
+  },
+  "paths": {
+    "install_dir": "/opt/argus-workload",
+    "config_dir": "/etc/argus-workload",
+    "records_dir": "/var/log/argus-workload",
+    "spire_bin_dir": "/opt/spire-1.15.3/bin",
+    "run_name": "argus"
+  },
+  "workload": {
+    "id": "openviking-cmem",
+    "config_host_path": "/srv/openviking/ov.conf",
+    "data_host_path": "/srv/openviking/data",
+    "config_path": "/etc/openviking/ov.conf",
+    "data_path": "/var/lib/openviking",
+    "listen_port": 1933,
+    "tls_port": 1943,
+    "published_port": 1943,
+    "config_env": "OPENVIKING_CONFIG_FILE",
+    "environment": {
+      "OPENVIKING_CONFIG_FILE": "/etc/openviking/ov.conf",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "OPENVIKING_WITH_BOT": "0"
+    },
+    "config_json_checks": [
+      {"pointer": "/server/host", "value": "127.0.0.1"},
+      {"pointer": "/server/port", "workload_field": "listen_port"},
+      {"pointer": "/storage/workspace", "workload_field": "data_path"}
+    ]
+  },
+  "node_agent_config": "/etc/spire/argus-poc/agent.conf",
+  "trucon_socket_path": "/var/run/trucon/trucon.sock",
+  "request_timeout_seconds": 55,
+  "trustee_url": "https://trustee.example.internal",
+  "trustee_ca_path": "/etc/argus-workload/trustee-ca.pem",
+  "trustee_server_name": "trustee.example.internal",
+  "ear_public_key_path": "/etc/argus-workload/ear-public.pem",
+  "ear_expected_issuer": "https://trustee.example.internal",
+  "ear_expected_profile": "tag:github.com,2024:confidential-containers/Trustee",
+  "approved": {
+    "policy_id": "openviking-workload",
+    "image_config_digest": "REQUIRED_sha256_ACTUAL_IMAGE_CONFIG_CONTENT_ID",
+    "config_digest": "REQUIRED_sha256_APPROVED_OV_CONF",
+    "executable": "/REQUIRED_ACTUAL_LISTENER_EXECUTABLE",
+    "mr_td": "REQUIRED_96_LOWERCASE_HEX",
+    "rtmr_0": "REQUIRED_96_LOWERCASE_HEX",
+    "rtmr_1": "REQUIRED_96_LOWERCASE_HEX",
+    "rtmr2_baseline": "REQUIRED_96_LOWERCASE_HEX"
+  },
+  "server_ssh": "spire-server",
+  "server_script": "/opt/argus-workload/scripts/workload.py",
+  "server_config": "/etc/argus-workload/environment.json",
+  "server_unit": "spire-server.service",
+  "server_socket": "/run/spire/server/private/api.sock",
+  "tc_api_url": "http://127.0.0.1:8000",
+  "tc_api_user_id": "openviking-demo",
+  "image_id": "openviking-cmem",
+  "image_url": "docker://registry:5000/openviking:APPROVED_RELEASE",
+  "client_cert": "/etc/argus-workload/client/svid.pem",
+  "client_key": "/etc/argus-workload/client/key.pem",
+  "client_bundle": "/etc/argus-workload/client/bundle.pem",
+  "business_url": "https://127.0.0.1:1943/health",
+  "business_headers": {"X-API-Key": "OPENVIKING_API_KEY"}
+}

@@ -1,6 +1,6 @@
 # Argus
 
-Argus v1.5 is a runtime trust verification framework for agent-to-service
+Argus is a runtime trust verification framework for agent-to-service
 (A2S) communication in Intel TDX environments. It supports general deployment
 mode for checking a peer before a sensitive call, and SPIFFE mode for
 establishing infrastructure identities through TDX-backed SPIRE attestation.
@@ -55,7 +55,7 @@ SPIRE implements this model through two stages:
 2. **Workload Attestation** subsequently identifies a service process or
    container and enables its own workload SVID under registration policy.
 
-The current implementation covers the node stage. The SVID issued here belongs
+The NodeAttestor implementation covers the node stage. Its SVID belongs
 to the SPIRE Agent, not to a business service instance. Argus supplies the guest-local
 SPIRE Evidence Provider and external `argus_tdx` Agent and Server plugins;
 Trustee appraises the Quote and SPIRE's Server CA issues the Agent's SVID.
@@ -66,12 +66,33 @@ The SPIRE Agent and Provider run inside the attested TD. The SPIRE Server and
 Trustee run on the verifier side. See [Architecture](./docs/architecture.md)
 for the exchange, identity binding, and trust boundaries.
 
+### SPIFFE/SPIRE Identity: Workload Attestation
+
+The external `argus_tdx` WorkloadAttestor checks a registered workload
+instance through SPIRE's Broker API. A fresh Provider Quote binds current
+target facts; Trustee appraises the Quote and authenticated TruCon history
+before returning a signed attestation result (EAR). Verified selectors
+must match the workload entry before SPIRE Server's CA issues its X.509-SVID.
+Helper binds NGINX's use of that identity to the registered backend. This
+NGINX endpoint enforces mTLS and exact client SPIFFE-ID authorization,
+while the application retains its own authorization. OpenViking is the
+supplied example; application environment and optional configuration checks
+are explicit deployment settings.
+
+Ordinary requests and SVID updates on the same valid Broker subscription
+reuse admission under local instance supervision. A new subscription collects
+fresh evidence; a replacement instance needs its own registration and admission.
+
+See the [workload deployment guide](../spire/workload/README.md) and
+[trust boundaries](../spire/workload/ARCHITECTURE.md). This path requires
+Linux TDX, SPIRE 1.15.3 and its experimental Broker API.
+
 ### Evidence Provider Programs
 
 | Program | Mode and client | API |
 |---------|-----------------|-----|
 | `argus-evidence-provider` | General mode; called by the caller-side Argus Guard | HTTP `POST /ra/v1/evidence` with request and workload binding claims |
-| `argus-spire-evidence-provider` | SPIFFE mode; called by the SPIRE Agent in the same TD | Guest-local UDS `POST /node-evidence` with nonce and proof public key |
+| `argus-spire-evidence-provider` | SPIFFE mode; called by the SPIRE Agent in the same TD | Guest-local UDS `POST /ra/v1/node-evidence`; optional `POST /ra/v1/workload-evidence` for a registered PID instance |
 
 Both use the shared `tdx-quote` crate for hardware evidence generation. Their
 request contracts and clients differ. `start_argus.sh` starts the general-mode

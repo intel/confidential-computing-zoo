@@ -1,0 +1,49 @@
+package policy
+import rego.v1
+
+# Trustee supplies these fields only after authenticating the TDX Quote
+# and matching SHA-384(JCS(runtime_data)) to REPORTDATA. The AS TruCon hook
+# verifies Rekor material before generating the reserved tdx.trucon claims.
+# Each rule replaces its conservative default only when all conditions match.
+default hardware := 97
+default executables := 33
+default configuration := 36
+trust_claims := {"hardware": hardware, "executables": executables, "configuration": configuration}
+hardware := 2 if {
+ input.tdx.quote.header.tee_type == "81000000"
+ input.tdx.quote.header.vendor_id == "939a7233f79c4ca9940a0db3957f0607"
+ input.tdx.tcb_status == "UpToDate"
+ input.tdx.collateral_expiration_status == "0"
+ input.tdx.quote.body.mr_td == @MR_TD@
+ input.tdx.td_attributes.debug == false
+}
+executables := 3 if {
+ input.tdx.quote.body.rtmr_0 == @RTMR_0@
+ input.tdx.quote.body.rtmr_1 == @RTMR_1@
+ input.tdx.trucon.verified == true
+ input.tdx.trucon.baseline_rtmr == @RTMR2_BASELINE@
+ input.runtime_data_claims.image_config_digest == @IMAGE_CONFIG_DIGEST@
+}
+configuration := 2 if {
+ r := input.runtime_data_claims
+ # These placeholders are rendered from the approved deployment configuration,
+ # independently of the target registration supplied during collection.
+ r.protocol == "argus.workload.tdx"
+ r.agent_id == @AGENT_ID@
+ r.workload_id == @WORKLOAD_ID@
+ r.policy_id == @POLICY_ID@
+ r.config_digest == @CONFIG_DIGEST@
+ r.config_path == @CONFIG_PATH@
+ r.config_env == @CONFIG_ENV@
+ r.executable == @EXECUTABLE@
+ r.listen_port == @LISTEN_PORT@
+ r.rootfs_read_only == "true"
+ regex.match("^[A-Za-z0-9_-]{43}$", r.nonce)
+ regex.match("^[1-9][0-9]*$", r.pid)
+ regex.match("^[1-9][0-9]*$", r.start_time)
+ regex.match("^[0-9a-f]{64}$", r.container_id)
+ regex.match("^[A-Za-z0-9_.-]{1,128}$", r.launch_id)
+ regex.match("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", r.boot_id)
+ regex.match("^pid:\\[[1-9][0-9]*\\]$", r.pid_namespace)
+ regex.match("^net:\\[[1-9][0-9]*\\]$", r.net_namespace)
+}

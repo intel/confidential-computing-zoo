@@ -1,2 +1,31 @@
+# Keep the application image thin: Provider, SPIRE, Helper and NGINX run on the
+# guest host. Approve the final built image's config digest before deployment.
 ARG OPENVIKING_BASE=ghcr.io/volcengine/openviking@sha256:27d3c97bddbe81f31d2c5af1f31e9d504b5928506c88f559a23faf86358169b7
+
 FROM ${OPENVIKING_BASE}
+
+# The bind-mounted configuration remains root-owned; this account needs only
+# group-read access to it and ownership of its separate writable workspace.
+RUN groupadd --gid 10001 openviking \
+    && useradd --uid 10001 --gid 10001 --home-dir /var/lib/openviking \
+        --no-create-home --shell /usr/sbin/nologin openviking \
+    && install -d -m 0755 /etc/openviking \
+    && install -d -m 0700 -o 10001 -g 10001 /var/lib/openviking
+
+# Keep user state/cache on the data mount, not the read-only application rootfs.
+ENV HOME=/var/lib/openviking \
+    XDG_CACHE_HOME=/var/lib/openviking/.cache \
+    OPENVIKING_CONFIG_FILE=/etc/openviking/ov.conf \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TMPDIR=/tmp
+
+USER 10001:10001
+
+# /health is the application's unauthenticated liveness endpoint. Read the
+# configured port rather than assuming the example's port; this is not an
+# attestation, client-authorization or external-provider readiness check.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["python", "-c", "import http.client,json,os,sys; config=json.load(open(os.environ['OPENVIKING_CONFIG_FILE'], encoding='utf-8')); port=config['server']['port'];\nif type(port) is not int or not 1 <= port <= 65535: raise ValueError('invalid server.port')\nconnection=http.client.HTTPConnection('127.0.0.1', port, timeout=3); connection.request('GET', '/health'); response=connection.getresponse(); sys.exit(0 if response.status == 200 else 1)"]
+
+ENTRYPOINT ["openviking-server"]
+CMD []
