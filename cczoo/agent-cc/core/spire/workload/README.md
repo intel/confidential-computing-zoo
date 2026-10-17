@@ -19,9 +19,15 @@ SPIRE Agent and one registered application process.
 
 Use Linux x86_64 with real TDX/TSM Quote support, Docker, systemd, Python 3.11+,
 NGINX with `http_auth_request_module`, `nsenter`, OpenSSL, `timeout`, `curl`
-and SSH. Build dependencies include Go 1.25.3+, Rust 1.88+, pkg-config and
-OpenSSL development files. TC API, Docktap, TruCon and their existing trust
+and SSH. Build dependencies include a patched Go toolchain: Go 1.26.9 or a
+later 1.26 patch, or Go 1.27.2 or a later 1.27 patch. Rust 1.88+, pkg-config
+and OpenSSL development files are also required. TC API, Docktap, TruCon and their existing trust
 services must be configured on the guest.
+
+The build checks and pins the effective Go toolchain for all local Go artifacts,
+including the existing NodeAttestor. The language minimum in `go.mod` alone does
+not ensure patched standard-library code. Other Go release lines require review
+before the build accepts them.
 
 Create a separate root-owned `0600` input based on
 [environment.example.json](config/environment.example.json). All placeholders

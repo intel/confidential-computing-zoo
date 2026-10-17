@@ -22,24 +22,41 @@ docker image inspect "$OPENVIKING_IMAGE" --format '{{.Id}}'
 ```
 
 [Dockerfile.openviking](configs/Dockerfile.openviking)固定
-`ENTRYPOINT ["openviking-server"]` 并清空继承的 CMD。构建后的实际 image config
-ID 用于部署配置的 `approved.image_config_digest`；它与 registry manifest
-digest、基础镜像 digest 是不同的值。
+`ENTRYPOINT ["openviking-server"]`、清空继承的 CMD，并以 UID/GID
+`10001:10001` 运行应用。共享启动工具使用镜像的 `USER`，TC API 无须加入
+应用专用的用户处理逻辑。构建后的实际 image config ID 用于部署配置的
+`approved.image_config_digest`；它与 registry manifest digest、基础镜像
+digest 是不同的值。镜像内容发生变化时，包括用户、环境变量或健康检查，
+必须重新构建并批准新的 image config ID。
+
+显式 Docker 健康检查从 `OPENVIKING_CONFIG_FILE` 指向的配置文件读取
+`server.port`，不携带 API key，访问 `http://127.0.0.1:<port>/health`。
+配置缺失或不可读、端口非法、HTTP 检查失败时，容器会被标记为不健康。
+该检查只反映应用存活，不验证工作负载认证、API-key 授权或 Embedding/VLM
+可用性，也不替代独立的 Helper/NGINX 就绪检查。
 
 ## 应用配置
 
 配置文件与可写数据使用 TDX 客户机内两个独立的容器宿主路径：
 
 ```bash
-sudo install -d -m 0700 /srv/openviking /srv/openviking/data
-sudo install -m 0600 configs/ov.conf.example /srv/openviking/ov.conf
+sudo install -d -o root -g root -m 0700 /srv/openviking
+sudo install -d -o 10001 -g 10001 -m 0700 /srv/openviking/data
+sudo install -o root -g 10001 -m 0640 configs/ov.conf.example /srv/openviking/ov.conf
 ```
 
-填写 [ov.conf.example](configs/ov.conf.example) 中的 root API key、Embedding
-和 VLM 的 provider、model、endpoint、密钥，以及所选 Embedding 模型的输出
-维度，并确保应用运行账号可以写入数据目录。审查完成后，将配置文件的准确
-SHA-256 以 `sha256:<hex>` 格式填入 `approved.config_digest`。
+参考 [ov.conf.example](configs/ov.conf.example)，填写
+`/srv/openviking/ov.conf` 中的 root API key、Embedding 和 VLM 的 provider、
+model、endpoint、密钥，以及所选 Embedding 模型的输出维度。保留配置文件的
+root 所有权及组 `10001` 的读取权限（`0640`），应用不应拥有或修改该只读
+配置文件。数据目录须允许容器内 UID/GID `10001:10001` 写入。上述属主示例
+适用于未启用 user-namespace remapping 的 Docker；启用映射时，应使用对应
+的宿主机映射 ID。审查完成后，将配置文件的准确 SHA-256 以 `sha256:<hex>`
+格式填入 `approved.config_digest`。
 运行时观察值仍须与批准配置匹配。
+
+已有工作目录应先停止工作负载，再将数据文件属主迁移到应用账号后切换镜像。
+创建数据目录的命令不会修改目录内已有文件的属主。
 
 示例与统一部署配置保持以下对应关系：
 
@@ -60,6 +77,13 @@ SHA-256 以 `sha256:<hex>` 格式填入 `approved.config_digest`。
 容器使用只读 rootfs、独立 bridge network namespace、无 capabilities 和受限
 `/tmp`，仅发布 NGINX TLS 端口。业务容器不挂载 TDX 设备、SPIRE socket 或
 SVID 私钥。
+镜像设置 `HOME=/var/lib/openviking` 和
+`XDG_CACHE_HOME=/var/lib/openviking/.cache`，使用户状态与缓存写入数据挂载；
+`TMPDIR=/tmp` 使用受限临时挂载，`PYTHONDONTWRITEBYTECODE=1` 避免在已安装
+Python 模块旁写入字节码。若修改 `data_path`，须在 `workload.environment`
+中显式将 `HOME` 和 `XDG_CACHE_HOME` 改为该可写挂载内的路径。
+宿主机上的 NGINX、Provider 和 Helper 继续使用各自的服务权限；应用用户变化
+不改变这些组件的账号或进入 network namespace 的方式。
 
 ## 部署与业务访问
 
@@ -72,6 +96,9 @@ Trustee policy 和 SPIRE entries，并向 TC API 提供 `ARGUS_WORKLOAD_CONFIG`�
 登记必须定位到一个实际监听进程，核对批准的 executable、镜像和配置摘要以及
 当前 launch。启动中断后使用 `resume-launch` 查询或完成原来的操作，不重新
 创建替代容器。
+`approved.executable` 须填写在可信客户机上观察到的实际监听进程
+`/proc/<pid>/exe` 解析路径，不要从示例推断 Python 次版本。升级解释器时，
+应同时审查该路径和新的 image config ID。
 
 客户端使用有效 SVID、私钥与信任 bundle 访问 `https://<guest>:1943`，其完整
 SPIFFE ID 必须在精确 allowlist 中，同时验证配置中的目标 SPIFFE ID。

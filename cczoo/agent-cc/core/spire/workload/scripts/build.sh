@@ -4,6 +4,22 @@ WORKLOAD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SPIRE_ROOT="$(dirname "$WORKLOAD_ROOT")"
 OUT="${ARGUS_WORKLOAD_BUILD_DIR:-$WORKLOAD_ROOT/build}"
 [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] || { echo "TDX build requires Linux x86_64" >&2; exit 1; }
+# Check the effective compiler, not the language minimum in go.mod: HTTP/TLS
+# fixes also live in the standard library linked into every local Go artifact.
+build_go_version="$(go env GOVERSION)"
+if [[ ! "$build_go_version" =~ ^go1\.([0-9]+)\.([0-9]+)$ ]]; then
+    echo "Use a stable patched Go toolchain (1.26.9+ or 1.27.2+ on those release lines)" >&2
+    exit 1
+fi
+build_go_minor=$((10#${BASH_REMATCH[1]}))
+build_go_patch=$((10#${BASH_REMATCH[2]}))
+if ! (( (build_go_minor == 26 && build_go_patch >= 9) || (build_go_minor == 27 && build_go_patch >= 2) )); then
+    echo "Unsupported Go toolchain $build_go_version; use Go 1.26.9+ or 1.27.2+ on those release lines" >&2
+    exit 1
+fi
+# Pin this checked compiler for every module, including the existing NodeAttestor;
+# per-module automatic toolchain selection must not bypass the security floor.
+export GOTOOLCHAIN="$build_go_version"
 mkdir -p "$OUT/bin"
 OUT="$(cd "$OUT" && pwd)"
 # Remove success metadata first so a later build failure cannot leave an older

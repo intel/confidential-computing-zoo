@@ -47,7 +47,7 @@
     "policy_id": "openviking-workload",
     "image_config_digest": "REQUIRED_sha256_ACTUAL_IMAGE_CONFIG_CONTENT_ID",
     "config_digest": "REQUIRED_sha256_APPROVED_OV_CONF",
-    "executable": "/usr/local/bin/python3.12",
+    "executable": "/REQUIRED_ACTUAL_LISTENER_EXECUTABLE",
     "mr_td": "REQUIRED_96_LOWERCASE_HEX",
     "rtmr_0": "REQUIRED_96_LOWERCASE_HEX",
     "rtmr_1": "REQUIRED_96_LOWERCASE_HEX",
