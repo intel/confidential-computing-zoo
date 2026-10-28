@@ -15,6 +15,16 @@ configured application paths must also be visible to TC API at the same paths
 used by the Docker host. A launch with
 `metadata.workload_attestation_profile = "nginx-spiffe"` uses the
 approved profile and rejects `dockercmd` overrides.
+The protected workload settings must declare
+`data_encryption = "luks-dm-crypt"` and the expected `data_luks_uuid`.
+Before launch, TC API checks the data path against the Docker daemon process's
+mount namespace and host `/sys/dev/block`, requires a matching LUKS device-mapper UUID, and rejects
+symlinked paths, nested mounts, unsafe data-path parents or missing host device metadata. Containerized
+TC API must be configured with read-only views of the Docker daemon host's
+`/proc`, Docker PID file and `/sys/dev/block` as well as the bind-mounted data
+path; otherwise launch fails closed. It reads the daemon PID and validates
+that process's mount table. The source path there must resolve to the expected
+LUKS UUID and match the device seen by TC API.
 
 The protected export contains the workload launch settings. Application
 environment values come from `workload.environment`, with

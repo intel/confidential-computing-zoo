@@ -58,21 +58,23 @@ It does not replace the separate Helper/NGINX readiness check.
 ## Prepare application configuration and encrypted data
 
 Mount the dedicated LUKS filesystem at `/srv/openviking` before creating these
-paths. The TC-API profile validates configured paths and keeps mounts
-structured, but it does not verify the backing filesystem type. Confirm the
-mount source is the intended dm-crypt device and keep the mount active for the
-workload's lifetime:
+paths. Record the UUID of its LUKS backing device during provisioning and set
+that exact value as `workload.data_luks_uuid` in the protected workload
+configuration. The TC-API profile checks the visible mount and device-mapper
+LUKS UUID before launch; it fails closed if the mount cannot be verified.
+Keep the mount active for the workload's lifetime:
 
 ```bash
-findmnt --mountpoint /srv/openviking >/dev/null || {
-  echo "/srv/openviking must be the active LUKS mount point" >&2
-  exit 1
-}
 findmnt --noheadings --output SOURCE,FSTYPE --mountpoint /srv/openviking
 sudo install -d -o root -g root -m 0700 /srv/openviking
 sudo install -d -o 10001 -g 10001 -m 0700 /srv/openviking/data
 sudo install -o root -g 10001 -m 0640 configs/ov.conf.example /srv/openviking/ov.conf
 ```
+
+For a mapper device shown by `findmnt`, use `cryptsetup status <mapper>`
+to identify its backing LUKS device, then obtain the expected UUID with
+`cryptsetup luksUUID <backing-device>`. Do not substitute the mapper name or
+the filesystem UUID.
 
 Fill in the root API key, embedding and VLM providers/models/endpoints/keys
 in `/srv/openviking/ov.conf`, based on [ov.conf.example](configs/ov.conf.example),
@@ -134,7 +136,12 @@ OpenViking host/container paths.
 Set TC-API's `ARGUS_WORKLOAD_CONFIG` to the protected workload export. If
 TC-API runs in a container, mount that file read-only and make
 `config_host_path` and `data_host_path` visible at the same paths used by the
-Docker host. The request selects `workload_attestation_profile=nginx-spiffe`;
+Docker host. Also mount the Docker host's `/proc`, `/run/docker.pid` and `/sys`
+read-only at the paths declared by `docker_host_proc_path`,
+`docker_host_pid_path` and `docker_host_sysfs_dev_block_path`; do not point
+those settings at TC-API's private container namespace. The provided
+[TC-API Compose file](configs/docker-compose.tc-api.yml) includes these mounts.
+The request selects `workload_attestation_profile=nginx-spiffe`;
 the profile derives Docker options and environment from the protected export
 and rejects arbitrary command overrides.
 

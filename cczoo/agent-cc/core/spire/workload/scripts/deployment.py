@@ -29,7 +29,9 @@ PACKAGE = Path(__file__).resolve().parents[1]
 IDENTITY_KEYS = {"trust_domain", "agent_id", "helper_id", "target_id"}
 PATH_KEYS = {"install_dir", "config_dir", "records_dir", "spire_bin_dir", "run_name"}
 WORKLOAD_KEYS = {"id", "config_host_path", "data_host_path", "config_path", "data_path",
-                 "listen_port", "tls_port", "published_port", "config_env", "environment", "config_json_checks"}
+                 "data_encryption", "data_luks_uuid", "docker_host_proc_path", "docker_host_pid_path",
+                 "docker_host_sysfs_dev_block_path", "listen_port", "tls_port", "published_port",
+                 "config_env", "environment", "config_json_checks"}
 EXISTING_KEYS = {"node_agent_config", "trustee_url", "trustee_ca_path", "trustee_server_name",
                  "ear_public_key_path", "ear_expected_issuer", "ear_expected_profile", "approved",
                  "server_ssh", "server_script", "server_config", "server_unit", "server_socket",
@@ -121,8 +123,12 @@ class Deployment:
                 raise ValueError(f"invalid workload {key}")
         if w["listen_port"] == w["tls_port"]:
             raise ValueError("business and TLS listener ports must differ")
-        for key in ("config_host_path", "data_host_path", "config_path", "data_path"):
+        for key in ("config_host_path", "data_host_path", "config_path", "data_path",
+                    "docker_host_proc_path", "docker_host_pid_path", "docker_host_sysfs_dev_block_path"):
             linux_path(w[key])
+        if w["data_encryption"] != "luks-dm-crypt" or not isinstance(w["data_luks_uuid"], str) or \
+                not re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", w["data_luks_uuid"]):
+            raise ValueError("workload data must declare its LUKS dm-crypt UUID")
         if not isinstance(w["config_env"], str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", w["config_env"]):
             raise ValueError("invalid configuration environment variable")
         environment = w["environment"]

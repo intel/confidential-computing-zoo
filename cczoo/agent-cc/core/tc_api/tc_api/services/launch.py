@@ -463,6 +463,14 @@ class LaunchServiceMixin:
                     docker_cmd.extend(["--env-file", environment_file])
                 docker_cmd.append(loaded_image_ref)
                 logger.info(f"Runcmd : {' '.join(docker_cmd)}")
+                if attested_settings is not None:
+                    workload_profile.validate_luks_data_path(
+                        attested_settings["data_host_path"],
+                        attested_settings["data_luks_uuid"],
+                        attested_settings["docker_host_proc_path"],
+                        attested_settings["docker_host_pid_path"],
+                        attested_settings["docker_host_sysfs_dev_block_path"],
+                    )
                 dockerRUn = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=120)
             finally:
                 if environment_file is not None:
