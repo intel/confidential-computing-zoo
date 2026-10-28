@@ -24,6 +24,7 @@ from pathlib import Path, PurePosixPath
 import stat
 
 PROFILE = "nginx-spiffe"
+DATA_ENCRYPTION = "luks-dm-crypt"
 TMPFS = "/tmp:rw,noexec,nosuid,size=256m"
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 WORKLOAD_FIELDS = {"id", "config_path", "data_path", "listen_port", "tls_port", "published_port"}
@@ -83,6 +84,100 @@ def check_application_config(settings):
         if type(value) is not type(expected) or value != expected:
             raise ValueError("workload configuration does not satisfy a configured JSON check")
 
+
+def _mountinfo_path(value):
+    return re.sub(r"\\(040|011|012|134)", lambda match: chr(int(match.group(1), 8)), value)
+
+
+def validate_luks_data_path(
+    path,
+    expected_luks_uuid,
+    docker_host_proc_path="/proc",
+    docker_host_pid_path="/run/docker.pid",
+    docker_host_sysfs_dev_block_path="/sys/dev/block",
+):
+    if not isinstance(expected_luks_uuid, str) or not re.fullmatch(
+        r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", expected_luks_uuid
+    ):
+        raise ValueError("workload data LUKS UUID must be a canonical UUID")
+    data_path = Path(path)
+    if not data_path.is_dir() or data_path.resolve(strict=True) != data_path:
+        raise ValueError("workload data path must be a real directory without symlink components")
+    data_device = data_path.stat().st_dev
+    expected_device = f"{os.major(data_device)}:{os.minor(data_device)}"
+    target = PurePosixPath(str(data_path))
+    covering_mounts = []
+    descendant_mounts = []
+    try:
+        daemon_pid = Path(docker_host_pid_path).read_text(encoding="ascii").strip()
+        if not re.fullmatch(r"[1-9][0-9]{0,9}", daemon_pid):
+            raise ValueError("invalid Docker daemon PID file")
+        daemon_proc = Path(docker_host_proc_path) / daemon_pid
+        if (daemon_proc / "comm").read_text(encoding="ascii").strip() != "dockerd":
+            raise ValueError("configured Docker daemon PID does not identify dockerd")
+        daemon_data_path = daemon_proc / "root" / str(data_path).lstrip("/")
+        if daemon_data_path.resolve(strict=True) != data_path:
+            raise ValueError("Docker daemon resolves the data path to a different host path")
+        daemon_data_stat = daemon_data_path.stat()
+        if not stat.S_ISDIR(daemon_data_stat.st_mode) or daemon_data_stat.st_mode & 0o022 or \
+                (daemon_data_stat.st_dev, daemon_data_stat.st_ino) != (data_device, data_path.stat().st_ino):
+            raise ValueError("Docker daemon resolves the data path to a different filesystem object")
+        mountinfo = (daemon_proc / "mountinfo").read_text(encoding="utf-8")
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError("cannot read Docker daemon host process metadata") from exc
+    for line in mountinfo.splitlines():
+        fields = line.split()
+        if len(fields) < 10 or "-" not in fields:
+            raise ValueError("invalid mount information")
+        mountpoint = PurePosixPath(_mountinfo_path(fields[4]))
+        device = fields[2]
+        if not re.fullmatch(r"[0-9]+:[0-9]+", device):
+            raise ValueError("invalid mount device information")
+        if target == mountpoint or target.is_relative_to(mountpoint):
+            covering_mounts.append((len(mountpoint.parts), device, mountpoint))
+        elif mountpoint.is_relative_to(target):
+            descendant_mounts.append((device, mountpoint))
+    if not covering_mounts:
+        raise ValueError("workload data path is not covered by a visible mount")
+    _, mount_device, _ = max(covering_mounts, key=lambda item: item[0])
+    if mount_device != expected_device:
+        raise ValueError("workload data path device does not match its mount")
+    if descendant_mounts:
+        raise ValueError("workload data path must not contain nested mount points")
+    current = daemon_proc / "root"
+    for component in target.parts[1:]:
+        parent_stat = current.stat()
+        child = current / component
+        child_stat = child.stat()
+        sticky_protected = (
+            parent_stat.st_uid == 0
+            and parent_stat.st_mode & stat.S_ISVTX
+            and child_stat.st_uid in (0, os.geteuid())
+        )
+        if not stat.S_ISDIR(parent_stat.st_mode) or parent_stat.st_uid not in (0, os.geteuid()) or \
+                (parent_stat.st_mode & 0o022 and not sticky_protected):
+            raise ValueError("Docker daemon data-path ancestors are writable by an untrusted principal")
+        current = child
+    final_stat = current.stat()
+    if not stat.S_ISDIR(final_stat.st_mode) or final_stat.st_mode & 0o022:
+        raise ValueError("Docker daemon data path must not be group/other-writable")
+    sysfs_root = Path(docker_host_sysfs_dev_block_path)
+    if not sysfs_root.is_dir():
+        raise ValueError("cannot read Docker daemon host device metadata")
+    uuid_path = sysfs_root / expected_device / "dm" / "uuid"
+    try:
+        dm_uuid = uuid_path.read_text(encoding="ascii").strip()
+    except OSError as exc:
+        raise ValueError("workload data device is not a visible device-mapper device") from exc
+    if not dm_uuid.startswith(("CRYPT-LUKS1-", "CRYPT-LUKS2-")):
+        raise ValueError("workload data device is not backed by a LUKS device-mapper mapping")
+    if not dm_uuid.lower().startswith(("crypt-luks1-" + expected_luks_uuid.lower() + "-",
+                                       "crypt-luks2-" + expected_luks_uuid.lower() + "-")):
+        raise ValueError("workload data device does not match the approved LUKS UUID")
+
+
 def profile_settings(metadata, workload_id):
     # Request metadata only selects this profile. Paths, mounts and environment
     # come from the protected operator-owned file, never from request overrides.
@@ -102,11 +197,14 @@ def profile_settings(metadata, workload_id):
     if not isinstance(deployment, dict) or set(deployment) != {"workload"}:
         raise ValueError("invalid workload launch configuration fields")
     settings = deployment["workload"]
-    keys = {"id", "config_host_path", "data_host_path", "config_path", "data_path", "listen_port", "tls_port", "published_port",
+    keys = {"id", "config_host_path", "data_host_path", "config_path", "data_path", "data_encryption", "data_luks_uuid",
+            "docker_host_proc_path", "docker_host_pid_path", "docker_host_sysfs_dev_block_path",
+            "listen_port", "tls_port", "published_port",
             "config_env", "environment", "config_json_checks"}
     if not isinstance(settings, dict) or set(settings) != keys or settings["id"] != workload_id:
         raise ValueError("workload configuration fields or workload ID mismatch")
-    for key in ("config_host_path", "data_host_path", "config_path", "data_path"):
+    for key in ("config_host_path", "data_host_path", "config_path", "data_path",
+                "docker_host_proc_path", "docker_host_pid_path", "docker_host_sysfs_dev_block_path"):
         value = settings[key]
         if not isinstance(value, str) or not re.fullmatch(r"/[A-Za-z0-9_./-]+", value) or value.startswith("//") or str(PurePosixPath(value)) != value or ".." in PurePosixPath(value).parts:
             raise ValueError("workload paths must be clean absolute Linux paths")
@@ -119,10 +217,17 @@ def profile_settings(metadata, workload_id):
             raise ValueError("invalid workload port")
     if settings["listen_port"] == settings["tls_port"]:
         raise ValueError("business and TLS listener ports must differ")
+    if settings["data_encryption"] != DATA_ENCRYPTION:
+        raise ValueError("workload data must declare LUKS dm-crypt storage")
     application_settings(settings)
     check_application_config(settings)
-    if not Path(settings["data_host_path"]).is_dir():
-        raise ValueError("workload data directory is missing")
+    validate_luks_data_path(
+        settings["data_host_path"],
+        settings["data_luks_uuid"],
+        settings["docker_host_proc_path"],
+        settings["docker_host_pid_path"],
+        settings["docker_host_sysfs_dev_block_path"],
+    )
     return settings
 
 def launch_environment(settings):
@@ -136,7 +241,9 @@ def security_projection(settings, launch_id, workload_id):
             "network_mode": "bridge", "mounts": mounts,
             "devices": [], "capabilities": [], "read_only_rootfs": True,
             "tmpfs": [TMPFS],
-            "published_ports": [f"{settings['published_port']}:{settings['tls_port']}"], "attestation_profile": PROFILE,
+            "published_ports": [f"{settings['published_port']}:{settings['tls_port']}"],
+            "data_encryption": settings["data_encryption"], "data_luks_uuid": settings["data_luks_uuid"],
+            "attestation_profile": PROFILE,
             "launch_env_keys": sorted(launch_environment(settings))}
 
 def docker_command(binary, settings):

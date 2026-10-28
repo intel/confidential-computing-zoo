@@ -45,6 +45,7 @@ services:
       - DOCKER_REGISTRY=registry:5000
       - DOCKER_REPOSITORY=registry:5000/openviking
       - ALLOWED_EXTERNAL_IMAGE_REGISTRIES=localhost:5000,registry:5000,docker.io
+      - ARGUS_WORKLOAD_CONFIG=/etc/argus-workload/tc-api-workload.json
       - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN:-openviking-dev-token}
       - DOCKTAP_REQUIRE_ATTESTATION=0
       - INIT_DEFAULT_CHAIN_ON_STARTUP=false
@@ -64,6 +65,21 @@ services:
       - /sys/kernel/config:/sys/kernel/config
       - /etc/tdx-attest.conf:/etc/tdx-attest.conf:ro
       - /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf:ro
+      - type: bind
+        source: /etc/argus-workload/tc-api-workload.json
+        target: /etc/argus-workload/tc-api-workload.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/openviking
+        target: /srv/openviking
+        read_only: true
+        bind:
+          create_host_path: false
+      - /proc:/run/argus-docker-host/proc:ro
+      - /run/docker.pid:/run/argus-docker-host/docker.pid:ro
+      - /sys:/run/argus-docker-host/sys:ro
     tmpfs:
       - /dev/shm
     mem_swappiness: 0

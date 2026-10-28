@@ -50,20 +50,21 @@ digest 是不同的值。镜像内容发生变化时，包括用户、环境变�
 
 ## 准备应用配置和加密数据
 
-先将专用 LUKS 文件系统挂载到 `/srv/openviking`，再创建以下路径。TC-API profile
-会校验配置路径并以结构化方式挂载，但不会验证底层文件系统类型。请确认挂载源
-是预期的 dm-crypt 设备，并在工作负载运行期间保持挂载：
+先将专用 LUKS 文件系统挂载到 `/srv/openviking`，再创建以下路径。配置受保护的
+workload 配置时，应记录该 LUKS 后端设备的 UUID，并填入
+`workload.data_luks_uuid`。TC-API profile 会在启动前检查数据路径对应的挂载和
+device-mapper LUKS UUID；无法验证时会 fail-closed。工作负载运行期间应保持挂载：
 
 ```bash
-findmnt --mountpoint /srv/openviking >/dev/null || {
-  echo "/srv/openviking 必须是已挂载的 LUKS 挂载点" >&2
-  exit 1
-}
 findmnt --noheadings --output SOURCE,FSTYPE --mountpoint /srv/openviking
 sudo install -d -o root -g root -m 0700 /srv/openviking
 sudo install -d -o 10001 -g 10001 -m 0700 /srv/openviking/data
 sudo install -o root -g 10001 -m 0640 configs/ov.conf.example /srv/openviking/ov.conf
 ```
+
+对于 `findmnt` 显示的 mapper 设备，使用 `cryptsetup status <mapper>` 确认其
+后端 LUKS 设备，再用 `cryptsetup luksUUID <backing-device>` 获取期望 UUID。
+不要填 mapper 名称或文件系统 UUID。
 
 参考 [ov.conf.example](configs/ov.conf.example)，填写
 `/srv/openviking/ov.conf` 中的 root API key、Embedding 和 VLM 的 provider、
@@ -116,7 +117,11 @@ Python 模块旁写入字节码。若修改 `data_path`，须在 `workload.envir
 
 将 TC-API 的 `ARGUS_WORKLOAD_CONFIG` 指向受保护的 workload export。如果 TC-API
 运行在容器中，应只读挂载该文件，并将 `config_host_path` 与 `data_host_path`
-以 Docker host 使用的相同路径提供给容器。请求通过
+以 Docker host 使用的相同路径提供给容器。还需将 Docker host 的 `/proc`、
+`/run/docker.pid` 和 `/sys` 只读挂载到配置中的 `docker_host_proc_path`、
+`docker_host_pid_path` 和 `docker_host_sysfs_dev_block_path` 对应位置，不能
+指向 TC-API 自身隔离的容器 namespace。示例
+[TC-API Compose 文件](configs/docker-compose.tc-api.yml)已包含这些挂载。请求通过
 `workload_attestation_profile=nginx-spiffe` 选择 profile；该 profile 从受保护的
 export 派生 Docker 参数和环境变量，并拒绝任意命令覆盖。
 

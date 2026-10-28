@@ -140,7 +140,29 @@ Installation exports `/etc/argus-workload/tc-api-workload.json`, containing
 the workload launch settings. Set TC API's
 `ARGUS_WORKLOAD_CONFIG` to that protected file. For containerized TC API,
 mount it read-only, and make `config_host_path` and `data_host_path` visible
-at the same paths used by the Docker host.
+at the same paths used by the Docker host. The workload config's
+`docker_host_proc_path`, `docker_host_pid_path`, and
+`docker_host_sysfs_dev_block_path` must point to read-only views of the Docker
+daemon host's `/proc`, its Docker PID file, and `/sys/dev/block`, respectively.
+TC API reads the daemon PID, requires its process name to be `dockerd`, and
+uses that process's mount table. Do not point these settings at TC API's private
+container namespace. The OpenViking Compose example mounts these host resources.
+For a host-native TC API, configure the corresponding host paths.
+
+The exported workload configuration pins `data_encryption` to
+`luks-dm-crypt` and `data_luks_uuid` to the expected LUKS UUID. Immediately
+before launching the container, TC API checks that the configured data path
+is a real directory, has no nested mounts, resolves to a visible device-mapper
+LUKS mapping in the Docker daemon process's mount table, and matches that exact
+UUID. The TC API process's `stat` device ID must match the daemon mount table.
+Ordinary filesystems, other LUKS volumes, unavailable host metadata and
+mismatched mount devices are rejected. Every ancestor in the Docker daemon's
+resolved data path must be root-owned or owned by the TC API process and not
+group/other-writable; root-owned sticky directories are accepted only when the
+next path component is trusted-owned. This prevents an untrusted local user
+from replacing a path component between validation and container creation.
+The final data directory may be owned by the application UID, but must not be
+group/other-writable.
 
 The application must listen on `127.0.0.1:<listen_port>`. The OpenViking
 example declares `/server/host`, `/server/port` and `/storage/workspace`
