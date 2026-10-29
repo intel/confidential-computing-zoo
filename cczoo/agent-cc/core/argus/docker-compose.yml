@@ -72,7 +72,6 @@ services:
       - ARGUS_API_TOKEN=${ARGUS_API_TOKEN:?ARGUS_API_TOKEN must be set}
       - INTEL_CA_CERT_PATH=/etc/argus/intel-ca.pem
       - AGENT_TC_API_URL=${AGENT_TC_API_URL:-}
-      - TRUCON_SERVICE_TOKEN=${TRUCON_SERVICE_TOKEN:-}
     volumes:
       - ${INTEL_CA_CERT_PATH:?INTEL_CA_CERT_PATH must be set}:/etc/argus/intel-ca.pem:ro
     depends_on:
