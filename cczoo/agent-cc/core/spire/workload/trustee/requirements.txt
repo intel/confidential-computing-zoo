@@ -1,4 +1,4 @@
 # Includes the OIDC state-validation fix for CVE-2026-24408:
 # https://github.com/sigstore/sigstore-python/releases/tag/v3.6.7
 # Keep the reviewed 3.x APIs used to verify original Rekor intoto entries.
-sigstore==3.6.7
+sigstore==4.2.0
