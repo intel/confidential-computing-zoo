@@ -26,4 +26,4 @@ pyOpenSSL>=23.3.0
 structlog==23.2.0
 
 # Sigstore
-sigstore==3.6.7
+sigstore==4.2.0
