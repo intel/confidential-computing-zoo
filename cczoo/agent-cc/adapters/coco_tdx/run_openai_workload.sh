@@ -32,7 +32,7 @@ Options:
   --secret NAME             Secret containing OPENAI_API_KEY (default: nano-bot-api-key)
   --model-config FILE       Provider profile with MODEL_* settings
   --api-address URL         OpenAI-compatible base URL (default: https://openrouter.ai/api/v1)
-  --model NAME              Model name (default: minimax/minimax-m3:free)
+  --model NAME              Model name (default: nvidia/nemotron-3.5-lightning:free)
   --proxy URL               Workload HTTP(S) proxy, guest-resolvable
   --no-proxy LIST           Workload no_proxy value
   --namespace NAME          Kubernetes namespace (default: default)
@@ -46,7 +46,7 @@ EOF
 IMAGE_REF="${IMAGE_REF:-docker.io/library/nano_bot:1.0}"
 SECRET_NAME="${SECRET_NAME:-nano-bot-api-key}"
 API_ADDRESS="${MODEL_API_ADDRESS:-${OPENAI_API_ADDRESS:-https://openrouter.ai/api/v1}}"
-MODEL="${MODEL_NAME:-${NANO_BOT_MODEL:-minimax/minimax-m3:free}}"
+MODEL="${MODEL_NAME:-${NANO_BOT_MODEL:-nvidia/nemotron-3.5-lightning:free}}"
 PROXY_URL="${PROXY_URL:-${HTTPS_PROXY:-${https_proxy:-}}}"
 NO_PROXY_VALUE="${NO_PROXY_VALUE:-127.0.0.1,localhost,10.244.0.0/16,10.96.0.0/12}"
 FARADAY_SSL_VERIFY="${FARADAY_SSL_VERIFY:-}"
@@ -229,7 +229,7 @@ $proxy_env
   volumes:
     - name: confidential-workdir
       emptyDir:
-        sizeLimit: 1Gi
+                sizeLimit: 1Gi
 EOF
 
 if [[ -n "$NODE_NAME" ]]; then

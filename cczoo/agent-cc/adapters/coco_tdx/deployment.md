@@ -24,7 +24,7 @@ Keep these values outside git. Set them in a local shell or deployment system:
 export COCO_CONTAINER=<container-name>
 export IMAGE_REF=docker.io/library/nano_bot:1.0
 export API_ADDRESS=https://openrouter.ai/api/v1
-export MODEL=minimax/minimax-m3:free
+export MODEL=nvidia/nemotron-3.5-lightning:free
 export PROXY_URL=http://<guest-resolvable-proxy>:<port>  # empty if direct
 export NODE_NAME=<optional-node-name>
 ```

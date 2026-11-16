@@ -235,7 +235,7 @@ docker exec -i -e KUBECONFIG=/etc/kubernetes/super-admin.conf \
   --image docker.io/library/nano_bot:1.0 \
   --secret nano-bot-api-key \
   --api-address https://openrouter.ai/api/v1 \
-  --model minimax/minimax-m3:free \
+  --model nvidia/nemotron-3.5-lightning:free \
   < cczoo/agent-cc/adapters/coco_tdx/run_openai_workload.sh
 ```
 
@@ -252,7 +252,7 @@ docker exec -i \
   --image docker.io/library/nano_bot:1.0 \
   --secret nano-bot-api-key \
   --api-address https://openrouter.ai/api/v1 \
-  --model minimax/minimax-m3:free \
+  --model nvidia/nemotron-3.5-lightning:free \
   --proxy "$WORKLOAD_PROXY_URL" \
   < cczoo/agent-cc/adapters/coco_tdx/run_openai_workload.sh
 ```
@@ -275,7 +275,7 @@ bash /path/to/coco_tdx/run_openai_workload.sh \
   --image docker.io/library/nano_bot:1.0 \
   --secret nano-bot-api-key \
   --api-address https://openrouter.ai/api/v1 \
-  --model minimax/minimax-m3:free
+  --model nvidia/nemotron-3.5-lightning:free
 ```
 
 The script creates the Pod, waits for `Ready`, and prints a probe command.

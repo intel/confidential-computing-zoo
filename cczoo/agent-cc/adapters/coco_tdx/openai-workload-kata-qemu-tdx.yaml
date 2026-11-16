@@ -48,7 +48,7 @@ spec:
         - name: OPENAI_API_ADDRESS
           value: "https://openrouter.ai/api/v1"
         - name: NANO_BOT_MODEL
-          value: "minimax/minimax-m3:free"
+          value: "nvidia/nemotron-3.5-lightning:free"
         - name: FARADAY_SSL_VERIFY
           value: ""
         - name: NO_PROXY
